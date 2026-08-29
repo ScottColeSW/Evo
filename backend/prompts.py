@@ -54,8 +54,11 @@ VISUAL RENDER LAYER SCAN:
 Immediate Grid Entity Array: [{', '.join(world_state['visible_entities'])}]
 
 MOVEMENT: You move at most one tile per cycle toward target_vector -- it is not required
-to equal your current position. Standing still forever finds nothing new. Move toward
-unexplored terrain, resource-rich biomes, or other tribes when you have reason to.
+to equal your current position. Standing still forever finds nothing new, and picking a
+new target close to yourself every cycle means you never actually get anywhere. Commit to
+a distant destination and keep aiming at the same one across many cycles until you arrive,
+rather than re-deciding fresh each time.
+{world_state.get('journey_note') or ''}
 
 ========================================================================
 EPISTEMOLOGICAL INHERITANCE LAYER

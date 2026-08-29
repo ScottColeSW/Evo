@@ -40,6 +40,13 @@ converged on.
   sitting in the JSON value position, which models would copy verbatim, failing era-gating
   validation and silently falling back to `IDLE` on an unknown fraction of turns. Both are
   now generic placeholders with the real guidance moved into surrounding prose.
+
+  Fixing those two bugs wasn't enough on its own -- tribes would head somewhere distant for
+  one cycle, then re-decide fresh next cycle and drift back toward home, since nothing
+  reminded them what they'd previously committed to. `Tribe.last_target` now persists the
+  requested destination across turns, and if a tribe hasn't arrived yet, its prompt includes
+  an explicit "you are already en route to (x, y); continue toward it unless you have a
+  specific reason to change course" line (`Simulation._prepare_turn`).
 - **`backend/scheduler.py`** — groups a tick's turns by which model they target and runs
   each model's group concurrently via `asyncio.gather`, so a tick with N tribes across M
   models costs at most M model swaps in Ollama, not N. Also sets `keep_alive` on every
@@ -56,11 +63,13 @@ converged on.
   *same* action is treated as evidence of shared meaning, and it decays if not reinforced.
   This only produces a real signal because tribes can now actually hear each other —
   `Simulation._prepare_turn` feeds every tribe its neighbors' most recent broadcast +
-  action every turn (broadcasts are audible regardless of distance, a deliberate
-  simplification for a handful of tribes). Confirmed live: two different local models
-  (`gemma2:2b`, `qwen2.5:3b`) converged on a shared token for the same action within 4
-  cycles in testing. Surfaced in the sidebar as a "Linguistic Consensus" panel per tribe
-  pair.
+  action every turn, but only within `config.BROADCAST_HEARING_RADIUS` (Euclidean
+  distance). This used to be audible map-wide regardless of distance; that gave away free
+  information and removed any incentive to actually travel toward another tribe, so it's
+  now proximity-gated -- closing distance with another tribe is what unlocks understanding
+  them at all. Confirmed live: two different local models (`gemma2:2b`, `qwen2.5:3b`)
+  converged on a shared token for the same action within 4 cycles once in range. Surfaced
+  in the sidebar as a "Linguistic Consensus" panel per tribe pair.
 - **`backend/eras.py`** — the progression ladder (Stone Age → Bronze Age → Classical Age),
   as an ordered, data-driven table rather than a hardcoded if/elif chain: each era declares
   a population + resource threshold to reach it, a resource cost paid on advancing, and
@@ -88,6 +97,17 @@ converged on.
   hardcoded warning threshold). `GATHER_WATER` on a river tile also carries a drowning risk
   (`config.DROWNING_HAZARD_CHANCE`), mirroring the forest hunting hazard — the best water
   source isn't a free lunch.
+
+  Two follow-on fixes, both from watching a real long run collapse: population used to be
+  floored at 1 forever (a permanent "walking dead" state, never real death) — a tribe can
+  now actually go extinct (`Tribe.extinct`, `Simulation._lose_population`), which stops it
+  taking turns, announces itself with a banner, and marks a grave on the map instead of
+  quietly capping out. And the critical-hunger/thirst message used to only *describe* the
+  crisis ("your people are starving") — confirmed live that models would correctly narrate
+  the emergency in their own rationale and then still choose an unrelated action
+  (`GATHER_WOOD`, repeatedly, to the point of stockpiling 2,000+ wood while at population 1
+  and zero food). The message now names the exact fix directively ("Choose visual_action
+  HUNT_DEER this cycle unless you have a specific, better reason not to").
 - **`backend/genetics.py`** — an optional crossover step that splices two tribes' ideology +
   lexicon into a descendant profile via the model itself.
 - **`backend/self_mod.py`** — an opt-in (off by default) engine that lets a model rewrite
@@ -165,6 +185,12 @@ Then open `http://localhost:8765` in a browser, pick a model for each tribe, and
   `self.trauma.radiate_event_wave(x, y, magnitude, radius)` from `simulation.py`.
 - No persistence: closing the server drops the run. Add a snapshot dump if you want to
   resume or analyze runs later.
+- The directive survival-instinct fix (naming `HUNT_DEER`/`GATHER_WATER` explicitly at the
+  critical threshold) only addresses the two most life-threatening cases. The underlying
+  bias it was patching -- models defaulting to `GATHER_WOOD` regardless of what's actually
+  needed -- almost certainly still exists in less extreme situations (e.g. non-critical
+  warning-level scarcity, or era-advancement resource planning) where nothing is directive
+  enough to override it.
 - The era ladder only has 3 rungs and no branching — a linear Stone → Bronze → Classical
   path. Seasons/weather, an "inspiration" mechanic, and inter-tribe interaction (trade,
   conflict, travel) are all planned to hang off it next (see `backend/eras.py`'s docstring),

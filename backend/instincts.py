@@ -18,13 +18,17 @@ def survival_bias_string(food: int, water: int) -> tuple[str, bool]:
     critical = False
 
     if food <= config.HUNGER_CRITICAL_THRESHOLD:
-        urgent.append("Your people are starving. Finding food outweighs every other goal.")
+        # Naming the exact action, not just describing the crisis, is deliberate: models
+        # reliably articulated "we are starving" in their own rationale while still
+        # choosing an unrelated action (GATHER_WOOD) in practice. A named directive
+        # closes that gap between what a model says and what it actually does.
+        urgent.append("Your people are starving. Choose visual_action HUNT_DEER this cycle unless you have a specific, better reason not to.")
         critical = True
     elif food <= config.HUNGER_WARNING_THRESHOLD:
         urgent.append("Food stores are running low.")
 
     if water <= config.THIRST_CRITICAL_THRESHOLD:
-        urgent.append("Your people are dying of thirst. Finding water outweighs every other goal.")
+        urgent.append("Your people are dying of thirst. Choose visual_action GATHER_WATER this cycle unless you have a specific, better reason not to.")
         critical = True
     elif water <= config.THIRST_WARNING_THRESHOLD:
         urgent.append("Water stores are running low.")

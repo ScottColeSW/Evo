@@ -37,6 +37,7 @@
   #canvas-container { flex: 1; display: flex; justify-content: center; align-items: center; background: #0b0b0f; position: relative; padding: 12px; min-width: 0; }
   #era-banner { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); background: rgba(67,56,202,0.95); color: #fff; padding: 14px 28px; border-radius: 8px; font-weight: bold; font-size: 15px; opacity: 0; pointer-events: none; transition: opacity 0.5s ease; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,0.4); white-space: nowrap; }
   #era-banner.show { opacity: 1; }
+  #era-banner.danger { background: rgba(127,29,29,0.95); }
   canvas { background: #111; border: 2px solid #2a2a3a; border-radius: 4px; display: block; }
 
   #sidebar { width: 360px; flex-shrink: 0; background: #1a1a24; border-left: 2px solid #2a2a3a; padding: 14px; display: flex; flex-direction: column; min-height: 0; }
@@ -56,6 +57,7 @@
   .stat-card .stat-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
   .stat-card .era-pill { font-size: 10px; background: #2a2a3a; color: #a5b4fc; padding: 2px 6px; border-radius: 10px; white-space: nowrap; }
   .stat-card .resources { color: #c7c7d1; margin-top: 6px; }
+  .stat-card.extinct { opacity: 0.55; filter: grayscale(0.6); }
   .speech { font-style: italic; color: #fbbf24; display: block; margin-top: 4px; }
   .survival-warning { color: #f87171; font-size: 11px; margin-top: 4px; }
 
@@ -180,11 +182,13 @@ document.getElementById("btn-start").addEventListener("click", () => {
   populateInjectModelSelect();
   requestAnimationFrame(resizeCanvas);
 
+  lastExtinctByTribe = {};
   socket = new WebSocket(`ws://${location.host}/ws`);
   socket.onopen = () => socket.send(JSON.stringify({ command: "START", tribes }));
   socket.onmessage = (event) => {
     latestState = JSON.parse(event.data);
     checkEraTransitions(latestState);
+    checkExtinctions(latestState);
     updateSidebar(latestState);
   };
 });
@@ -261,12 +265,31 @@ function checkEraTransitions(state) {
   });
 }
 
-function showEraBanner(text) {
+function showEraBanner(text, danger) {
   const banner = document.getElementById("era-banner");
   banner.textContent = text;
   banner.classList.add("show");
+  banner.classList.toggle("danger", !!danger);
   clearTimeout(eraBannerTimeout);
-  eraBannerTimeout = setTimeout(() => banner.classList.remove("show"), 4000);
+  const duration = danger ? 6000 : 4000;
+  eraBannerTimeout = setTimeout(() => banner.classList.remove("show"), duration);
+}
+
+/* ---------- Extinction ---------- */
+
+let lastExtinctByTribe = {};
+
+function checkExtinctions(state) {
+  Object.entries(state.tribes || {}).forEach(([id, t]) => {
+    if (lastExtinctByTribe[id] === undefined) {
+      lastExtinctByTribe[id] = t.extinct;  // first sighting -- don't fire on page load
+      return;
+    }
+    if (!lastExtinctByTribe[id] && t.extinct) {
+      showEraBanner(`💀 ${t.name} has gone extinct`, true);
+    }
+    lastExtinctByTribe[id] = t.extinct;
+  });
 }
 
 /* ---------- Canvas rendering ---------- */
@@ -313,6 +336,20 @@ function hashUnit(seed) {
 function drawTribeIndividuals(tribeId, t) {
   const centerX = t.x * TILE + TILE / 2;
   const centerY = t.y * TILE + TILE / 2;
+
+  if (t.extinct) {
+    // A grave marker at the last known position, not a fading cluster -- extinction is
+    // a permanent, visible event, not just a state that quietly stops updating.
+    ctx.strokeStyle = "#6b7280";
+    ctx.lineWidth = Math.max(1.5, TILE * 0.18);
+    const r = Math.max(3, TILE * 0.5);
+    ctx.beginPath();
+    ctx.moveTo(centerX - r, centerY - r); ctx.lineTo(centerX + r, centerY + r);
+    ctx.moveTo(centerX + r, centerY - r); ctx.lineTo(centerX - r, centerY + r);
+    ctx.stroke();
+    return;
+  }
+
   const count = Math.max(1, Math.min(t.population, 24));
   const clusterRadius = Math.min(TILE * 2.2, 24);
   const dotRadius = Math.max(1.4, TILE * 0.22);
@@ -391,19 +428,30 @@ function updateSidebar(state) {
   consensus.innerHTML = "";
 
   Object.entries(state.tribes || {}).forEach(([id, t]) => {
-    stats.innerHTML += `
-      <div class="stat-card" style="border-left-color:${t.color}">
-        <div class="stat-top">
-          <strong>${t.name}${t.founded_city ? " 🏛️" : ""}</strong>
-          <span class="era-pill">${t.era_label}</span>
-        </div>
-        <div class="resources">
-          (${t.x}, ${t.y}) · ${t.model} · Pop ${t.population}<br>
-          🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${t.food} &nbsp;💧 ${t.water}
-        </div>
-        <span class="speech">"${t.last_broadcast || "..."}"</span>
-        ${t.survival_warning ? `<div class="survival-warning">⚠️ ${t.survival_warning.replace("[SURVIVAL INSTINCT]: ", "")}</div>` : ""}
-      </div>`;
+    if (t.extinct) {
+      stats.innerHTML += `
+        <div class="stat-card extinct" style="border-left-color:${t.color}">
+          <div class="stat-top">
+            <strong>💀 ${t.name}</strong>
+            <span class="era-pill">${t.era_label} · extinct</span>
+          </div>
+          <div class="resources">Perished at (${t.x}, ${t.y}) · ${t.model}</div>
+        </div>`;
+    } else {
+      stats.innerHTML += `
+        <div class="stat-card" style="border-left-color:${t.color}">
+          <div class="stat-top">
+            <strong>${t.name}${t.founded_city ? " 🏛️" : ""}</strong>
+            <span class="era-pill">${t.era_label}</span>
+          </div>
+          <div class="resources">
+            (${t.x}, ${t.y}) · ${t.model} · Pop ${t.population}<br>
+            🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${t.food} &nbsp;💧 ${t.water}
+          </div>
+          <span class="speech">"${t.last_broadcast || "..."}"</span>
+          ${t.survival_warning ? `<div class="survival-warning">⚠️ ${t.survival_warning.replace("[SURVIVAL INSTINCT]: ", "")}</div>` : ""}
+        </div>`;
+    }
     (t.history || []).forEach(entry => {
       log.innerHTML += `<div>[${id}] ${entry}</div>`;
     });

@@ -66,7 +66,7 @@ def test_build_fire_radiates_pride_not_dread():
     assert "PRIDE" in sim.trauma.bias_string(50, 50)
 
 
-def test_overheard_broadcast_reaches_other_tribes_prompt():
+def test_overheard_broadcast_reaches_other_tribes_prompt_when_nearby():
     sim = Simulation(
         [
             {"name": "Forest Tribe", "model": "gemma2:2b"},
@@ -75,12 +75,30 @@ def test_overheard_broadcast_reaches_other_tribes_prompt():
     )
     forest = sim.tribes["tribe_0"]
     mountain = sim.tribes["tribe_1"]
+    mountain.x, mountain.y = forest.x - 5, forest.y  # within BROADCAST_HEARING_RADIUS
     mountain.last_broadcast = "KRA-ZUL"
     mountain.last_action = "HUNT_DEER"
 
     request, _ctx = sim._prepare_turn(forest)
 
     assert "overheard: Mountain Tribe broadcasted 'KRA-ZUL' while performing HUNT_DEER" in request["prompt"]
+
+
+def test_broadcast_not_overheard_beyond_hearing_radius():
+    sim = Simulation(
+        [
+            {"name": "Forest Tribe", "model": "gemma2:2b"},
+            {"name": "Mountain Tribe", "model": "qwen2.5:3b"},
+        ]
+    )
+    forest = sim.tribes["tribe_0"]
+    mountain = sim.tribes["tribe_1"]  # default spawns are far apart (different biomes)
+    mountain.last_broadcast = "KRA-ZUL"
+    mountain.last_action = "HUNT_DEER"
+
+    request, _ctx = sim._prepare_turn(forest)
+
+    assert "overheard" not in request["prompt"]
 
 
 def test_translation_matrix_is_updated_on_apply_turn():
@@ -119,6 +137,36 @@ def test_action_outside_current_era_is_rejected_to_idle():
 
     sim._apply_turn(tribe, {"visual_action": "CONSTRUCT_WALL"}, 50.0, ctx)
     assert "IDLE" in tribe.history[-1]
+
+
+def test_apply_turn_records_last_target_for_journey_persistence():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    ctx = {"biome": "forest", "available_actions": ["IDLE"]}
+
+    sim._apply_turn(tribe, {"visual_action": "IDLE", "target_vector": [20, 30]}, 10.0, ctx)
+
+    assert tribe.last_target == [20, 30]
+
+
+def test_prepare_turn_reminds_tribe_of_unfinished_journey():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.last_target = [tribe.x - 20, tribe.y]  # far off, not yet arrived
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "already en route" in request["prompt"]
+
+
+def test_prepare_turn_has_no_journey_note_once_arrived():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.last_target = [tribe.x, tribe.y]  # arrived
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "already en route" not in request["prompt"]
 
 
 def test_era_advances_once_population_and_resources_are_met():
@@ -193,7 +241,9 @@ def test_unpaid_water_upkeep_causes_dehydration():
     assert "DREAD" in sim.trauma.bias_string(50, 50)
 
 
-def test_population_never_drops_below_one_from_starvation():
+def test_starvation_can_cause_real_extinction():
+    """The old behavior floored population at 1 forever (a permanent "walking dead"
+    state); a tribe can now actually go extinct."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.population = 1
@@ -202,7 +252,40 @@ def test_population_never_drops_below_one_from_starvation():
 
     sim._apply_upkeep(tribe)
 
-    assert tribe.population == 1
+    assert tribe.population == 0
+    assert tribe.extinct is True
+    assert any("gone extinct" in entry for entry in tribe.history)
+    assert "DREAD" in sim.trauma.bias_string(50, 50)
+
+
+def test_extinct_tribe_loses_no_further_population():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 0
+    tribe.extinct = True
+
+    sim._lose_population(tribe, 5)
+
+    assert tribe.population == 0
+
+
+@run_async
+async def test_step_skips_extinct_tribes_entirely():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    dead = sim.tribes["tribe_0"]
+    dead.extinct = True
+    dead.population = 0
+    frozen_history = list(dead.history)
+
+    async def fake_run_batch(requests):
+        # only the living tribe ("B") should ever be asked for a turn
+        assert [r["id"] for r in requests] == ["tribe_1"]
+        return {"tribe_1": {"intent": {"visual_action": "IDLE"}, "latency_ms": 0.0}}
+
+    with mock.patch.object(sim.scheduler, "run_batch", fake_run_batch):
+        await sim.step()
+
+    assert dead.history == frozen_history  # untouched -- no turn was ever prepared for it
 
 
 def test_drowning_hazard_on_river_tile():

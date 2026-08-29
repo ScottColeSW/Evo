@@ -23,10 +23,10 @@ def _gather_stone(sim, tribe, biome):
 
 def _gather_water(sim, tribe, biome):
     if biome == "river" and random.random() < config.DROWNING_HAZARD_CHANCE:
-        tribe.population = max(1, tribe.population - config.DROWNING_HAZARD_POPULATION_LOSS)
         sim.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.DROWNING_TRAUMA_MAGNITUDE, config.DROWNING_TRAUMA_RADIUS
         )
+        sim._lose_population(tribe, config.DROWNING_HAZARD_POPULATION_LOSS)
         return "the river's current pulled someone under"
     tribe.water += config.WATER_YIELD_RIVER if biome == "river" else config.WATER_YIELD_OFF_RIVER
     return None
@@ -35,10 +35,10 @@ def _gather_water(sim, tribe, biome):
 def _hunt_deer(sim, tribe, biome):
     if biome == "forest" and random.random() < config.HUNT_HAZARD_CHANCE:
         tribe.food = max(0, tribe.food - config.HUNT_HAZARD_FOOD_LOSS)
-        tribe.population = max(1, tribe.population - config.HUNT_HAZARD_POPULATION_LOSS)
         sim.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.HUNT_HAZARD_TRAUMA_MAGNITUDE, config.HUNT_HAZARD_TRAUMA_RADIUS
         )
+        sim._lose_population(tribe, config.HUNT_HAZARD_POPULATION_LOSS)
         return "a wolf pack struck the hunting party"
     tribe.food += 15
     return None

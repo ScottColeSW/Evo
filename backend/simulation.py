@@ -36,9 +36,11 @@ class Tribe:
         self.era = ERAS[0].key
         self.last_broadcast = ""
         self.last_action = ""
+        self.last_target: list[int] | None = None
         self.history: list[str] = []
         self.memory = TribeMemory(tribe_id)
         self.founded_city = False
+        self.extinct = False
 
     def to_dict(self) -> dict:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
@@ -60,6 +62,7 @@ class Tribe:
             "history": self.history[-6:],
             "founded_city": self.founded_city,
             "survival_warning": survival_warning,
+            "extinct": self.extinct,
         }
 
 
@@ -154,6 +157,8 @@ class Simulation:
         requests = []
         contexts = {}
         for tid, tribe in self.tribes.items():
+            if tribe.extinct:
+                continue
             request, ctx = self._prepare_turn(tribe)
             requests.append(request)
             contexts[tid] = ctx
@@ -161,6 +166,8 @@ class Simulation:
         results = await self.scheduler.run_batch(requests)
 
         for tid, tribe in self.tribes.items():
+            if tribe.extinct:
+                continue
             outcome = results.get(tid, {"intent": {}, "latency_ms": 0.0})
             self._apply_turn(tribe, outcome["intent"], outcome["latency_ms"], contexts[tid])
             self._apply_upkeep(tribe)
@@ -192,16 +199,26 @@ class Simulation:
         visible_entities = [f"structure:{s['type']}@({s['x']},{s['y']})" for s in nearby]
         visible_entities += [f"memory(cycle {m['cycle']}): {m['text']}" for m in memories]
         visible_entities += [f"taboo: {t}" for t in tribe.memory.taboos[:3]]
-        # Other tribes' broadcasts are audible regardless of distance (a simplification
-        # for a small tribe count) -- this is what makes shared-vocabulary convergence
-        # in translation_matrix.py possible at all.
+        # A broadcast is only overheard within BROADCAST_HEARING_RADIUS -- previously
+        # audible map-wide regardless of distance, which gave away free information and
+        # removed any incentive to actually travel toward another tribe.
         for other in self.tribes.values():
-            if other.id != tribe.id and other.last_broadcast:
+            if other.id == tribe.id or other.extinct or not other.last_broadcast:
+                continue
+            distance = ((other.x - tribe.x) ** 2 + (other.y - tribe.y) ** 2) ** 0.5
+            if distance <= config.BROADCAST_HEARING_RADIUS:
                 visible_entities.append(
                     f"overheard: {other.name} broadcasted '{other.last_broadcast}' while performing {other.last_action}"
                 )
         if not visible_entities:
             visible_entities = ["none"]
+
+        journey_note = ""
+        if tribe.last_target and tribe.last_target != [tribe.x, tribe.y]:
+            journey_note = (
+                f"You are already en route to ({tribe.last_target[0]}, {tribe.last_target[1]}); "
+                "you have not yet arrived. Continue toward it unless you have a specific reason to change course."
+            )
 
         world_state = {
             "cycle": self.cycle,
@@ -216,6 +233,7 @@ class Simulation:
             "era": tribe.era,
             "available_actions": available_actions,
             "visible_entities": visible_entities,
+            "journey_note": journey_note,
         }
         base_prompt = get_prime_consciousness_prompt(tribe.name, tribe.model)
         prompt = compile_live_state_prompt(base_prompt, world_state, ghost_bias, survival_bias)
@@ -252,7 +270,9 @@ class Simulation:
         tribe.memory.remember(memory_text, self.cycle, weight)
 
         try:
-            nx, ny = physics.calculate_next_step(tribe.x, tribe.y, int(target[0]), int(target[1]))
+            target_x, target_y = int(target[0]), int(target[1])
+            tribe.last_target = [target_x, target_y]
+            nx, ny = physics.calculate_next_step(tribe.x, tribe.y, target_x, target_y)
             tribe.x, tribe.y = nx, ny
         except Exception:
             pass
@@ -276,23 +296,34 @@ class Simulation:
             tribe.water = 0
             self._dehydrate(tribe)
 
-    def _starve(self, tribe: Tribe) -> None:
-        if tribe.population <= 1:
+    def _lose_population(self, tribe: Tribe, amount: int) -> None:
+        """The single place population ever decreases. A tribe can now actually go
+        extinct (population 0) rather than being propped up at a permanent
+        population-1 floor -- extinction is marked, announced, and radiates a much
+        larger trauma event than an ordinary death."""
+        if tribe.extinct:
             return
-        tribe.population -= config.STARVATION_POPULATION_LOSS
+        tribe.population = max(0, tribe.population - amount)
+        if tribe.population == 0:
+            tribe.extinct = True
+            tribe.history.append(f"{tribe.name} has gone extinct.")
+            self.trauma.radiate_event_wave(
+                tribe.x, tribe.y, config.EXTINCTION_TRAUMA_MAGNITUDE, config.EXTINCTION_TRAUMA_RADIUS
+            )
+
+    def _starve(self, tribe: Tribe) -> None:
         tribe.history.append("starvation claimed lives")
         self.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.STARVATION_TRAUMA_MAGNITUDE, config.STARVATION_TRAUMA_RADIUS
         )
+        self._lose_population(tribe, config.STARVATION_POPULATION_LOSS)
 
     def _dehydrate(self, tribe: Tribe) -> None:
-        if tribe.population <= 1:
-            return
-        tribe.population -= config.DEHYDRATION_POPULATION_LOSS
         tribe.history.append("thirst claimed lives")
         self.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.DEHYDRATION_TRAUMA_MAGNITUDE, config.DEHYDRATION_TRAUMA_RADIUS
         )
+        self._lose_population(tribe, config.DEHYDRATION_POPULATION_LOSS)
 
     def _grow_population(self, tribe: Tribe) -> None:
         if tribe.food > 80 and tribe.population < 80:

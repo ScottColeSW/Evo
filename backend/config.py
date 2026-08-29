@@ -80,3 +80,15 @@ DROWNING_HAZARD_CHANCE = 0.08
 DROWNING_HAZARD_POPULATION_LOSS = 1
 DROWNING_TRAUMA_MAGNITUDE = -0.4
 DROWNING_TRAUMA_RADIUS = 6
+
+# A tribe can now actually go extinct (population 0) instead of being propped up at a
+# permanent population-1 floor. Extinction is a far larger trauma event than an ordinary
+# death -- it should be visible on the map for a long time afterward.
+EXTINCTION_TRAUMA_MAGNITUDE = -0.6
+EXTINCTION_TRAUMA_RADIUS = 10
+
+# A tribe can only overhear another tribe's broadcast (and therefore only converge on
+# shared vocabulary with them) within this Euclidean distance -- previously broadcasts
+# were audible map-wide regardless of distance, which gave away free information and
+# removed any incentive to actually travel toward another tribe.
+BROADCAST_HEARING_RADIUS = 15
