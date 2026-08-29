@@ -21,7 +21,15 @@ from .world import BIOME_LABELS, Landscape, biome_at
 # tribes in the biome their name implies. Coordinates match backend/world.py's geography:
 # mountains in the northwest, forest along the north/east, plains in the south, and a
 # river cutting from the highlands down to the eastern coast.
-SPAWN_POINTS = [(80, 10), (10, 10), (50, 90), (40, 37)]
+#
+# Each point is also chosen to sit within real reach of fresh river water (roughly
+# 11-13 tiles by nearest_water, verified directly rather than eyeballed) -- the original
+# points were picked purely to land in the right-named biome and turned out to be 36-42
+# tiles from any river, well beyond what a 3-day/speed-6 scouting expedition can ever
+# reach (see config.EXPEDITION_MAX_DAYS/EXPEDITION_SPEED). No amount of good in-fiction
+# reasoning could have found water from there; real settlements cluster near water for
+# the same reason, so this is a world-geography fix, not a difficulty adjustment.
+SPAWN_POINTS = [(80, 38), (15, 10), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 
 
@@ -208,6 +216,7 @@ class Simulation:
             "status": self.status,
             "tribes": {tid: t.to_dict() for tid, t in self.tribes.items()},
             "structures": [{"x": x, "y": y, **info} for (x, y), info in self.world.constructions.items()],
+            "trails": [{"x": x, "y": y, "wear": wear} for (x, y), wear in self.world.trails.items()],
             "linguistic_consensus": consensus,
         }
 

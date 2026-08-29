@@ -303,6 +303,25 @@ def test_omitting_spawn_coordinates_still_falls_back_to_spawn_points():
     assert (sim.tribes["tribe_0"].x, sim.tribes["tribe_0"].y) == SPAWN_POINTS[0]
 
 
+def test_every_spawn_point_is_within_a_single_expeditions_reach_of_water():
+    """Regression test: the original spawn points were picked purely to land in the
+    right-named biome and turned out to be 36-42 tiles from any river -- unreachable
+    within EXPEDITION_MAX_DAYS at EXPEDITION_SPEED no matter how well a tribe reasoned.
+    Every default spawn should be close enough that a genuine, well-aimed expedition can
+    actually succeed."""
+    from backend import config
+    from backend.world import Landscape
+
+    land = Landscape(100)
+    max_reach = config.EXPEDITION_SPEED * config.EXPEDITION_MAX_DAYS
+    for x, y in SPAWN_POINTS:
+        if land.biome(x, y) == "river":
+            continue
+        nx, ny = land.nearest_water(x, y, kinds=("river",))
+        dist = ((nx - x) ** 2 + (ny - y) ** 2) ** 0.5
+        assert dist <= max_reach, f"({x},{y}) is {dist:.1f} tiles from water, beyond a {max_reach}-tile expedition"
+
+
 def test_era_advances_once_population_and_resources_are_met():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
@@ -330,6 +349,17 @@ def test_era_does_not_advance_without_meeting_resource_requirements():
     sim._advance_era_if_ready(tribe)
 
     assert tribe.era == "stone_age"
+
+
+def test_snapshot_includes_worn_trails_for_the_frontend_to_render():
+    sim = _bare_simulation()
+    sim.world.wear_trail(12, 34, 0.5)
+    sim.tribes = {}
+    sim.status = "OPERATIONAL"
+
+    trails = sim.snapshot()["trails"]
+
+    assert {"x": 12, "y": 34, "wear": 0.5} in trails
 
 
 def test_upkeep_consumes_food_and_water_proportional_to_population():

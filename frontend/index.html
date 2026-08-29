@@ -549,12 +549,23 @@ function drawExpedition(t) {
   ctx.fillText(label, fx - w / 2, fy + r + 11);
 }
 
+// Worn trails (backend/world.py's Landscape.trails) drawn as a tan tint scaled by wear
+// -- the inverse of depletion, so a well-used route actually looks different from
+// untouched ground instead of being an invisible number only the backend knows about.
+function drawTrails() {
+  (latestState.trails || []).forEach(tr => {
+    ctx.fillStyle = `rgba(217, 180, 118, ${Math.min(0.6, tr.wear * 0.6)})`;
+    ctx.fillRect(tr.x * TILE, tr.y * TILE, TILE + 0.6, TILE + 0.6);
+  });
+}
+
 function drawFrame() {
   animFrame++;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(terrainCanvas, 0, 0);
 
   if (latestState) {
+    drawTrails();
     (latestState.structures || []).forEach(s => {
       const px = s.x * TILE, py = s.y * TILE;
       if (s.type === "fire") {
