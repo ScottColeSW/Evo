@@ -53,6 +53,10 @@ METABOLIC STOCKPILES:
 VISUAL RENDER LAYER SCAN:
 Immediate Grid Entity Array: [{', '.join(world_state['visible_entities'])}]
 
+MOVEMENT: You move at most one tile per cycle toward target_vector -- it is not required
+to equal your current position. Standing still forever finds nothing new. Move toward
+unexplored terrain, resource-rich biomes, or other tribes when you have reason to.
+
 ========================================================================
 EPISTEMOLOGICAL INHERITANCE LAYER
 ========================================================================
@@ -66,14 +70,18 @@ SURVIVAL INSTINCT LAYER
 ========================================================================
 MANDATORY REACTION SCHEMA (VALID JSON MODE ONLY)
 ========================================================================
-Compile your tactical intent precisely matching this JSON template. Any malformed syntax \
-will trigger an automated retry:
+Your "visual_action" value must be exactly one of these era-appropriate action names,
+copied verbatim with no other text: {world_state['available_actions']}
+
+Compile your tactical intent by substituting your own values into this JSON template --
+do not copy the placeholder text itself into your answer. Any malformed syntax will
+trigger an automated retry:
 
 {{
-    "metacognitive_rationale": "Deep analytical evaluation of current survival vectors, resource shortages, and instinctual ancestral biases.",
-    "visual_action": "SELECT STRICTLY ONE: {world_state['available_actions']}",
-    "synthetic_language_broadcast": "A sequence of custom phonetic tokens transmitting the tribe's internal socio-cultural state to the spatial grid.",
-    "target_vector": [{world_state['x']}, {world_state['y']}]
+    "metacognitive_rationale": "<your brief private reasoning>",
+    "visual_action": "<one action name from the list above, nothing else>",
+    "synthetic_language_broadcast": "<your invented-language phrase, or empty string>",
+    "target_vector": [x, y]
 }}
 ========================================================================
 EXECUTION LAYER INITIALIZED. EMIT JSON PAYLOAD NOW:
