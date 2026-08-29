@@ -22,6 +22,12 @@ def _gather_stone(sim, tribe, biome):
 
 
 def _gather_water(sim, tribe, biome):
+    if biome == "river" and random.random() < config.DROWNING_HAZARD_CHANCE:
+        tribe.population = max(1, tribe.population - config.DROWNING_HAZARD_POPULATION_LOSS)
+        sim.trauma.radiate_event_wave(
+            tribe.x, tribe.y, config.DROWNING_TRAUMA_MAGNITUDE, config.DROWNING_TRAUMA_RADIUS
+        )
+        return "the river's current pulled someone under"
     tribe.water += config.WATER_YIELD_RIVER if biome == "river" else config.WATER_YIELD_OFF_RIVER
     return None
 

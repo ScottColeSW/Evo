@@ -50,3 +50,33 @@ WATER_YIELD_OFF_RIVER = 3
 # moment, not just a silent counter change.
 ERA_ADVANCE_PRIDE_MAGNITUDE = 0.5
 ERA_ADVANCE_PRIDE_RADIUS = 8
+
+# Population upkeep (backend/simulation.py._apply_upkeep). Larger tribes cost more to
+# sustain each tick -- this is what makes growth an ongoing pressure instead of a
+# one-time threshold crossed once and then irrelevant.
+UPKEEP_POPULATION_DIVISOR = 10  # cost per tick = max(1, population // this)
+
+# Survival instinct thresholds (backend/instincts.py). "Critical" also raises inference
+# temperature, same as ancestral dread -- real panic, not just different wording.
+HUNGER_WARNING_THRESHOLD = 20
+HUNGER_CRITICAL_THRESHOLD = 5
+THIRST_WARNING_THRESHOLD = 15
+THIRST_CRITICAL_THRESHOLD = 5
+
+# What happens when upkeep can't be paid -- someone dies, and the ground remembers it.
+# Magnitude matches the other hazard deaths (wolf attack, drowning) so any death reliably
+# clears the -0.35 dread threshold in ancestral_matrix.py, not just repeated ones.
+STARVATION_POPULATION_LOSS = 1
+STARVATION_TRAUMA_MAGNITUDE = -0.4
+STARVATION_TRAUMA_RADIUS = 5
+DEHYDRATION_POPULATION_LOSS = 1
+DEHYDRATION_TRAUMA_MAGNITUDE = -0.4
+DEHYDRATION_TRAUMA_RADIUS = 5
+
+# Drowning: gathering water from a river carries real risk, mirroring the forest
+# hunting hazard. Lower than the wolf-attack chance since it's a deliberate act, not
+# an ambush, but water gathering elsewhere is still slower -- a genuine risk/reward.
+DROWNING_HAZARD_CHANCE = 0.08
+DROWNING_HAZARD_POPULATION_LOSS = 1
+DROWNING_TRAUMA_MAGNITUDE = -0.4
+DROWNING_TRAUMA_RADIUS = 6

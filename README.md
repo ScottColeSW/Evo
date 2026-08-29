@@ -68,6 +68,19 @@ converged on.
   extending a branch chain in `Simulation`. Includes `GATHER_WATER` (river tiles yield far
   more than elsewhere, `config.WATER_YIELD_RIVER` vs `WATER_YIELD_OFF_RIVER`), the first
   resource requirement gating advancement into the Bronze Age.
+- **`backend/instincts.py`** — physiological survival pressure, distinct from
+  `ancestral_matrix.py`'s location-based bias: this is about a tribe's *current* condition
+  (starving or dehydrated right now), not the history of the ground it's standing on.
+  Surfaced as its own "SURVIVAL INSTINCT LAYER" in the prompt, and a critical state raises
+  inference temperature the same way ancestral dread does. Population upkeep
+  (`Simulation._apply_upkeep`, scales with population) is what makes this real: food and
+  water previously only ever went up, so hunger and thirst had no actual stakes. Failing to
+  pay upkeep costs a life (starvation/dehydration), radiates dread at that location, and
+  the tribe's own reasoning visibly responds to the pressure before it even turns critical
+  (confirmed live — a model started saying "resource scarcity is evident" well before the
+  hardcoded warning threshold). `GATHER_WATER` on a river tile also carries a drowning risk
+  (`config.DROWNING_HAZARD_CHANCE`), mirroring the forest hunting hazard — the best water
+  source isn't a free lunch.
 - **`backend/genetics.py`** — an optional crossover step that splices two tribes' ideology +
   lexicon into a descendant profile via the model itself.
 - **`backend/self_mod.py`** — an opt-in (off by default) engine that lets a model rewrite
@@ -143,6 +156,11 @@ Then open `http://localhost:8765` in a browser, pick a model for each tribe, and
   path. Seasons/weather, an "inspiration" mechanic, and inter-tribe interaction (trade,
   conflict, travel) are all planned to hang off it next (see `backend/eras.py`'s docstring),
   rather than being bolted on independently.
-- Water only has one consumer right now (era advancement cost/requirement) — there's no
-  ongoing upkeep or drought mechanic yet, so a tribe that stops gathering water never
-  actually suffers for it outside of failing to advance eras.
+- Drowning risk is tied specifically to the `GATHER_WATER` action on a river tile, not to
+  movement — a tribe can path directly across a river tile with no risk as long as it
+  doesn't choose to gather there. Full "crossing dangerous terrain" risk is a natural fit
+  for whenever travel/movement gets built out more deliberately (inter-tribe interaction).
+- The sidebar has accumulated a lot of ad hoc stat lines (era, water, survival warnings,
+  linguistic consensus) without a real layout pass — flagged by the user as worth
+  revisiting properly (a component library, or at least a redesign) rather than continuing
+  to squeeze more lines into the existing card.

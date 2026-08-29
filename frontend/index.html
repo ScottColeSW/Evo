@@ -34,6 +34,7 @@
   .stat-card { background: #222232; padding: 10px; border-radius: 6px; font-size: 12px; border-left: 4px solid #6366f1; margin-bottom: 8px; }
   .log-box { background: #0f0f15; border: 1px solid #2a2a3a; border-radius: 6px; padding: 8px; font-family: monospace; font-size: 10px; overflow-y: auto; color: #34d399; max-height: 200px; }
   .speech { font-style: italic; color: #fbbf24; }
+  .survival-warning { color: #f87171; font-size: 11px; margin-top: 4px; }
   .consensus-row { background: #222232; padding: 8px; border-radius: 6px; font-size: 11px; margin-bottom: 6px; }
   .consensus-bar { height: 4px; background: #333344; border-radius: 2px; margin-top: 4px; overflow: hidden; }
   .consensus-fill { height: 100%; background: #34d399; }
@@ -250,6 +251,7 @@ function updateSidebar(state) {
         ${t.era_label} — (${t.x}, ${t.y}) | Pop: ${t.population}<br>
         🪵 ${t.wood} | 🪨 ${t.stone} | 🍖 ${t.food} | 💧 ${t.water}<br>
         <span class="speech">"${t.last_broadcast || "..."}"</span>
+        ${t.survival_warning ? `<div class="survival-warning">⚠️ ${t.survival_warning.replace("[SURVIVAL INSTINCT]: ", "")}</div>` : ""}
       </div>`;
     (t.history || []).forEach(entry => {
       log.innerHTML += `<div>[${id}] ${entry}</div>`;

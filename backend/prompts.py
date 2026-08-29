@@ -26,7 +26,7 @@ assigned it a meaning -- your private rationale field may be plain English, your
 field may not."""
 
 
-def compile_live_state_prompt(base_prompt: str, world_state: dict, ancestral_bias: str) -> str:
+def compile_live_state_prompt(base_prompt: str, world_state: dict, ancestral_bias: str, survival_bias: str) -> str:
     """Assembles the final text block injected into Ollama for a specific simulation turn.
 
     `world_state['visible_entities']` must be a list of plain strings -- nearby structures,
@@ -34,6 +34,9 @@ def compile_live_state_prompt(base_prompt: str, world_state: dict, ancestral_bia
     `world_state['available_actions']` is the era-gated action list for THIS tribe right
     now, not a fixed global list -- what a Stone Age tribe can attempt differs from what a
     Bronze Age tribe can attempt (see backend/eras.py).
+    `ancestral_bias` is location-based (what happened *here*, historically);
+    `survival_bias` is state-based (is this tribe starving or dehydrated *right now*) --
+    kept as separate layers since they come from unrelated causes (see instincts.py).
     """
     state_injection = f"""
 ========================================================================
@@ -54,6 +57,11 @@ Immediate Grid Entity Array: [{', '.join(world_state['visible_entities'])}]
 EPISTEMOLOGICAL INHERITANCE LAYER
 ========================================================================
 {ancestral_bias or '[ANCESTRAL MATRIX STATE: NEUTRAL // NO INHERITED BIAS FIELD DETECTED]'}
+
+========================================================================
+SURVIVAL INSTINCT LAYER
+========================================================================
+{survival_bias or '[SURVIVAL STATE: STABLE // NO IMMEDIATE PHYSIOLOGICAL PRESSURE]'}
 
 ========================================================================
 MANDATORY REACTION SCHEMA (VALID JSON MODE ONLY)

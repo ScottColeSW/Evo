@@ -4,6 +4,7 @@ from . import config, physics
 from .actions import ACTION_REGISTRY
 from .ancestral_matrix import AncestralTraumaMatrix
 from .eras import ERAS, next_era, unlocked_actions_through
+from .instincts import survival_bias_string
 from .memory import TribeMemory
 from .ollama_client import OllamaClient
 from .prompts import compile_live_state_prompt, get_prime_consciousness_prompt
@@ -41,6 +42,7 @@ class Tribe:
 
     def to_dict(self) -> dict:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
+        survival_warning, _ = survival_bias_string(self.food, self.water)
         return {
             "name": self.name,
             "model": self.model,
@@ -57,6 +59,7 @@ class Tribe:
             "last_broadcast": self.last_broadcast,
             "history": self.history[-6:],
             "founded_city": self.founded_city,
+            "survival_warning": survival_warning,
         }
 
 
@@ -139,6 +142,7 @@ class Simulation:
         for tid, tribe in self.tribes.items():
             outcome = results.get(tid, {"intent": {}, "latency_ms": 0.0})
             self._apply_turn(tribe, outcome["intent"], outcome["latency_ms"], contexts[tid])
+            self._apply_upkeep(tribe)
             self._grow_population(tribe)
             self._advance_era_if_ready(tribe)
 
@@ -160,6 +164,7 @@ class Simulation:
         biome = self.world.biome(tribe.x, tribe.y)
         nearby = self.world.nearby_structures(tribe.x, tribe.y)
         ghost_bias = self.trauma.bias_string(tribe.x, tribe.y)
+        survival_bias, survival_critical = survival_bias_string(tribe.food, tribe.water)
         memories = tribe.memory.recall(f"{biome} at {tribe.x},{tribe.y}")
         available_actions = sorted(unlocked_actions_through(tribe.era))
 
@@ -192,8 +197,9 @@ class Simulation:
             "visible_entities": visible_entities,
         }
         base_prompt = get_prime_consciousness_prompt(tribe.name, tribe.model)
-        prompt = compile_live_state_prompt(base_prompt, world_state, ghost_bias)
-        temperature = config.ANCESTRAL_DREAD_TEMPERATURE if "DREAD" in ghost_bias else config.DEFAULT_TEMPERATURE
+        prompt = compile_live_state_prompt(base_prompt, world_state, ghost_bias, survival_bias)
+        panicked = "DREAD" in ghost_bias or survival_critical
+        temperature = config.ANCESTRAL_DREAD_TEMPERATURE if panicked else config.DEFAULT_TEMPERATURE
 
         request = {"id": tribe.id, "model": tribe.model, "prompt": prompt, "temperature": temperature}
         return request, {"biome": biome, "available_actions": available_actions}
@@ -233,6 +239,39 @@ class Simulation:
     def _apply_action(self, tribe: Tribe, action: str, biome: str) -> str | None:
         handler = ACTION_REGISTRY.get(action, ACTION_REGISTRY["IDLE"])
         return handler(self, tribe, biome)
+
+    def _apply_upkeep(self, tribe: Tribe) -> None:
+        """Larger tribes cost more to sustain each tick. Left unpaid, someone dies --
+        this is what makes hunger and thirst actual stakes rather than numbers that
+        only ever go up."""
+        upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+        tribe.food -= upkeep
+        tribe.water -= upkeep
+
+        if tribe.food < 0:
+            tribe.food = 0
+            self._starve(tribe)
+        if tribe.water < 0:
+            tribe.water = 0
+            self._dehydrate(tribe)
+
+    def _starve(self, tribe: Tribe) -> None:
+        if tribe.population <= 1:
+            return
+        tribe.population -= config.STARVATION_POPULATION_LOSS
+        tribe.history.append("starvation claimed lives")
+        self.trauma.radiate_event_wave(
+            tribe.x, tribe.y, config.STARVATION_TRAUMA_MAGNITUDE, config.STARVATION_TRAUMA_RADIUS
+        )
+
+    def _dehydrate(self, tribe: Tribe) -> None:
+        if tribe.population <= 1:
+            return
+        tribe.population -= config.DEHYDRATION_POPULATION_LOSS
+        tribe.history.append("thirst claimed lives")
+        self.trauma.radiate_event_wave(
+            tribe.x, tribe.y, config.DEHYDRATION_TRAUMA_MAGNITUDE, config.DEHYDRATION_TRAUMA_RADIUS
+        )
 
     def _grow_population(self, tribe: Tribe) -> None:
         if tribe.food > 80 and tribe.population < 80:

@@ -100,8 +100,10 @@ def test_gather_water_yields_more_on_river_than_elsewhere():
     river_tribe = Tribe("tribe_0", "River Tribe", "gemma2:2b", 50, 50, "#60a5fa")
     plains_tribe = Tribe("tribe_1", "Plains Tribe", "gemma2:2b", 65, 85, "#34d399")
 
-    sim._apply_action(river_tribe, "GATHER_WATER", "river")
-    sim._apply_action(plains_tribe, "GATHER_WATER", "plains")
+    # Force the drowning roll to miss so this test isn't flaky against the ~8% hazard.
+    with mock.patch("backend.actions.random.random", return_value=0.99):
+        sim._apply_action(river_tribe, "GATHER_WATER", "river")
+        sim._apply_action(plains_tribe, "GATHER_WATER", "plains")
 
     assert river_tribe.water > plains_tribe.water
 
@@ -145,6 +147,90 @@ def test_era_does_not_advance_without_meeting_resource_requirements():
     sim._advance_era_if_ready(tribe)
 
     assert tribe.era == "stone_age"
+
+
+def test_upkeep_consumes_food_and_water_proportional_to_population():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 25  # upkeep = max(1, 25 // 10) = 2
+    tribe.food = 40
+    tribe.water = 40
+
+    sim._apply_upkeep(tribe)
+
+    assert tribe.food == 38
+    assert tribe.water == 38
+
+
+def test_unpaid_food_upkeep_causes_starvation():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    tribe.food = 0
+    tribe.water = 40
+
+    sim._apply_upkeep(tribe)
+
+    assert tribe.food == 0  # floored, not negative
+    assert tribe.population == 9
+    assert "starvation" in tribe.history[-1]
+    assert "DREAD" in sim.trauma.bias_string(50, 50)
+
+
+def test_unpaid_water_upkeep_causes_dehydration():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    tribe.food = 40
+    tribe.water = 0
+
+    sim._apply_upkeep(tribe)
+
+    assert tribe.water == 0
+    assert tribe.population == 9
+    assert "thirst" in tribe.history[-1]
+    assert "DREAD" in sim.trauma.bias_string(50, 50)
+
+
+def test_population_never_drops_below_one_from_starvation():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 1
+    tribe.food = 0
+    tribe.water = 40
+
+    sim._apply_upkeep(tribe)
+
+    assert tribe.population == 1
+
+
+def test_drowning_hazard_on_river_tile():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "River Tribe", "gemma2:2b", 50, 50, "#60a5fa")
+    tribe.population = 10
+    tribe.water = 30
+
+    with mock.patch("backend.actions.random.random", return_value=0.01):
+        note = sim._apply_action(tribe, "GATHER_WATER", "river")
+
+    assert note == "the river's current pulled someone under"
+    assert tribe.population == 9
+    assert tribe.water == 30  # no gain on a drowning turn
+    assert "DREAD" in sim.trauma.bias_string(50, 50)
+
+
+def test_drowning_hazard_never_fires_off_river():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Plains Tribe", "gemma2:2b", 65, 85, "#34d399")
+    tribe.population = 10
+    tribe.water = 30
+
+    with mock.patch("backend.actions.random.random", return_value=0.01):
+        note = sim._apply_action(tribe, "GATHER_WATER", "plains")
+
+    assert note is None
+    assert tribe.population == 10
+    assert tribe.water == 33
 
 
 def test_reaching_classical_age_marks_founded_city():

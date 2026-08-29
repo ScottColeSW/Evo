@@ -1,0 +1,32 @@
+from backend.instincts import survival_bias_string
+
+
+def test_healthy_food_and_water_produce_no_bias():
+    text, critical = survival_bias_string(food=50, water=50)
+    assert text == ""
+    assert critical is False
+
+
+def test_low_food_produces_warning_not_critical():
+    text, critical = survival_bias_string(food=15, water=50)
+    assert "running low" in text
+    assert critical is False
+
+
+def test_critical_food_produces_urgent_text_and_critical_flag():
+    text, critical = survival_bias_string(food=3, water=50)
+    assert "starving" in text
+    assert critical is True
+
+
+def test_critical_water_produces_urgent_text_and_critical_flag():
+    text, critical = survival_bias_string(food=50, water=2)
+    assert "thirst" in text
+    assert critical is True
+
+
+def test_both_critical_combines_into_one_message():
+    text, critical = survival_bias_string(food=1, water=1)
+    assert "starving" in text
+    assert "thirst" in text
+    assert critical is True
