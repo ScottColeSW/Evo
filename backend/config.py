@@ -123,14 +123,19 @@ EXTINCTION_TRAUMA_RADIUS = 10
 # removed any incentive to actually travel toward another tribe.
 BROADCAST_HEARING_RADIUS = 15
 
-# Worn trails (backend/world.py, backend/actions.py): the inverse of resource depletion.
-# Repeatedly relocating through the same tile wears a trail there, which speeds up
-# travel through it later -- rewarding a tribe for reusing a route it (or another tribe)
-# already scouted, rather than every journey being an equally slow trek through
-# untouched ground. Fades slowly if the tile falls out of use.
-TRAIL_WEAR_PER_PASS = 0.08
-TRAIL_DECAY_PER_CYCLE = 0.01
-MAX_TRAIL_BONUS_SPEED = 3  # added to MOVEMENT_SPEED at full wear
+# Worn trails (backend/world.py, backend/actions.py, backend/simulation.py's
+# _advance_expedition): the inverse of resource depletion. Repeatedly relocating or
+# scouting through the same tile wears a trail there, which speeds up both RELOCATE and
+# expedition travel through it later -- rewarding a tribe for reusing a route it (or
+# another tribe) already traveled, rather than every journey being an equally slow trek
+# through untouched ground. Low wear-per-pass and slow decay are deliberate: a single
+# trip barely matters (0.03 wear -> ~0.09 speed at MAX_TRAIL_BONUS_SPEED=3), but a route
+# used repeatedly compounds into a real shortcut, and durably so -- a destination just
+# out of one expedition's EXPEDITION_MAX_DAYS reach can become reachable a few attempts
+# later along the same path, without any distance rule being overridden.
+TRAIL_WEAR_PER_PASS = 0.03
+TRAIL_DECAY_PER_CYCLE = 0.002
+MAX_TRAIL_BONUS_SPEED = 3  # added to MOVEMENT_SPEED/EXPEDITION_SPEED at full wear
 
 # Scouting expeditions (backend/actions.py._scout, backend/simulation.py._advance_expeditions).
 # A small, self-sufficient party travels out looking for water or distant terrain, turning
@@ -140,3 +145,13 @@ MAX_TRAIL_BONUS_SPEED = 3  # added to MOVEMENT_SPEED at full wear
 # the whole camp and its belongings.
 EXPEDITION_SPEED = 6
 EXPEDITION_MAX_DAYS = 3
+
+# A traveling party forages and hunts along the way rather than being a pure resource
+# black hole -- more on the outbound leg (fresh, unpicked ground, no urgency yet), less
+# on the way back (already-passed terrain, hurrying home with news). Delivered to the
+# tribe's stockpile only on arrival home, same as the water/terrain finding itself --
+# still self-sufficient enough not to starve in the field, but not free income either.
+EXPEDITION_OUTBOUND_DAILY_FOOD = 3
+EXPEDITION_OUTBOUND_DAILY_WATER = 2
+EXPEDITION_RETURN_DAILY_FOOD = 1
+EXPEDITION_RETURN_DAILY_WATER = 1

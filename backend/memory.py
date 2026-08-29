@@ -1,44 +1,66 @@
-import hashlib
+import re
 import time
-
-import numpy as np
 
 
 class TribeMemory:
     """A lightweight episodic memory store per tribe.
 
-    Uses a deterministic hash-based pseudo-embedding so it works fully offline with
-    no extra model pulls. If you want real semantic recall, swap `_embed` to call
-    Ollama's /api/embeddings with a model like nomic-embed-text.
+    `recall` previously scored relevance with a hash-seeded pseudo-random vector per
+    text -- since a cryptographic hash is deliberately decorrelated from meaning, two
+    memories about the exact same topic ("wolf attack in the forest" vs "forest hunting
+    danger") got essentially random similarity scores. It looked like semantic search
+    but was closer to retrieving noise. Replaced with token-overlap (Jaccard) scoring:
+    cruder than real embeddings, but it actually correlates with what the text is
+    about, which the hash version never did. A real upgrade path is Ollama's
+    /api/embeddings with a model like nomic-embed-text, but that's an async network
+    call and today's remember()/recall() call sites are synchronous -- left as a
+    follow-up, not bundled into this fix.
     """
 
-    def __init__(self, tribe_id: str, dim: int = 256, max_episodes: int = 40):
+    _WORD_RE = re.compile(r"[a-z0-9]+")
+
+    def __init__(self, tribe_id: str, max_episodes: int = 40):
         self.tribe_id = tribe_id
-        self.dim = dim
         self.max_episodes = max_episodes
-        self.vectors: list[np.ndarray] = []
         self.entries: list[dict] = []
         self.taboos: list[str] = []
 
-    def _embed(self, text: str) -> np.ndarray:
-        seed = int(hashlib.sha256(text.encode("utf-8")).hexdigest(), 16) % (2**32)
-        rng = np.random.default_rng(seed)
-        vec = rng.standard_normal(self.dim).astype(np.float32)
-        return vec / np.linalg.norm(vec)
+    def _tokenize(self, text: str) -> set[str]:
+        return set(self._WORD_RE.findall(text.lower()))
 
     def remember(self, text: str, cycle: int, weight: float = 0.5) -> None:
-        self.vectors.append(self._embed(text))
-        self.entries.append({"text": text, "cycle": cycle, "weight": weight, "ts": time.time()})
-        if len(self.vectors) > self.max_episodes * 2:
+        self.entries.append({
+            "text": text,
+            "tokens": self._tokenize(text),
+            "cycle": cycle,
+            "weight": weight,
+            "ts": time.time(),
+        })
+        if len(self.entries) > self.max_episodes * 2:
             self.consolidate()
 
     def recall(self, query: str, top_k: int = 2) -> list[dict]:
-        if not self.vectors:
+        """Returns up to `top_k` past entries that actually share vocabulary with
+        `query`, ranked by Jaccard overlap. Entries with zero shared tokens are
+        excluded rather than padded in -- no match is a more honest answer than a
+        random one."""
+        if not self.entries:
             return []
-        q = self._embed(query)
-        sims = np.array([float(np.dot(q, v)) for v in self.vectors])
-        idx = np.argsort(sims)[-top_k:][::-1]
-        return [self.entries[i] for i in idx]
+        query_tokens = self._tokenize(query)
+        if not query_tokens:
+            return []
+
+        scored = []
+        for entry in self.entries:
+            tokens = entry["tokens"]
+            if not tokens:
+                continue
+            overlap = len(query_tokens & tokens) / len(query_tokens | tokens)
+            if overlap > 0:
+                scored.append((overlap, entry))
+
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        return [entry for _, entry in scored[:top_k]]
 
     def consolidate(self) -> None:
         """Distills high-weight memories into permanent taboos, then trims the log."""
@@ -46,5 +68,4 @@ class TribeMemory:
         for e in ranked[:3]:
             if e["weight"] >= 0.75 and e["text"] not in self.taboos:
                 self.taboos.append(e["text"])
-        self.vectors = self.vectors[-self.max_episodes:]
         self.entries = self.entries[-self.max_episodes:]

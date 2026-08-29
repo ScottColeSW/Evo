@@ -401,14 +401,25 @@ class Simulation:
         reaching the destination, or giving up after EXPEDITION_MAX_DAYS. Returning:
         walk back toward camp; arrival is the only moment a finding becomes real,
         actionable knowledge (memory + chronicle) -- a party that hasn't made it home
-        yet knows something the tribe as a whole does not."""
+        yet knows something the tribe as a whole does not.
+
+        Wears (and benefits from) the same worn-trail mechanic as RELOCATE: a route
+        used by enough expeditions gets faster over time, so a destination just out of
+        one expedition's EXPEDITION_MAX_DAYS reach can become reachable a few attempts
+        later purely by repeatedly trying the same path -- effort compounding into
+        infrastructure, not a scripted distance override."""
         exp = tribe.expedition
         if exp["phase"] == "outbound":
             exp["day"] += 1
             px, py = exp["pos"]
             tx, ty = exp["target"]
-            nx, ny = physics.calculate_next_step(px, py, tx, ty, speed=config.EXPEDITION_SPEED)
+            bonus = self.world.trail_speed_bonus(px, py, config.MAX_TRAIL_BONUS_SPEED)
+            speed = round(config.EXPEDITION_SPEED + bonus)
+            nx, ny = physics.calculate_next_step(px, py, tx, ty, speed=speed)
+            self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS)
             exp["pos"] = [nx, ny]
+            exp["food_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_FOOD
+            exp["water_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_WATER
             reached_biome = biome_at(nx, ny)
 
             if reached_biome == "river":
@@ -426,20 +437,43 @@ class Simulation:
         else:  # returning
             px, py = exp["pos"]
             ox, oy = exp["origin"]
-            nx, ny = physics.calculate_next_step(px, py, ox, oy, speed=config.EXPEDITION_SPEED)
+            bonus = self.world.trail_speed_bonus(px, py, config.MAX_TRAIL_BONUS_SPEED)
+            speed = round(config.EXPEDITION_SPEED + bonus)
+            nx, ny = physics.calculate_next_step(px, py, ox, oy, speed=speed)
+            self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS)
             exp["pos"] = [nx, ny]
+            exp["food_gathered"] += config.EXPEDITION_RETURN_DAILY_FOOD
+            exp["water_gathered"] += config.EXPEDITION_RETURN_DAILY_WATER
             if [nx, ny] == [ox, oy]:
+                # Whatever was foraged along the way comes home regardless of whether the
+                # expedition succeeded -- the trip cost real time either way, so it isn't
+                # a total loss on a failed search. The findings themselves only become
+                # real, actionable knowledge for the tribe at this exact moment.
+                tribe.food += exp["food_gathered"]
+                tribe.water += exp["water_gathered"]
+                forage_note = f"bringing back {exp['food_gathered']} food and {exp['water_gathered']} water foraged along the way"
+                recipient = f"Chief {tribe.chief_name}" if tribe.chief_name else "the tribe"
+
                 if exp["found"]:
                     fx, fy = exp["found"]
                     tribe.memory.remember(f"Scouts confirmed fresh water at ({fx},{fy}).", self.cycle, weight=0.9)
-                    tribe.history.append(f"{tribe.name}'s scouts are home and report fresh water at ({fx},{fy})")
+                    tribe.history.append(
+                        f"{tribe.name}'s scouts are home and give {recipient} a full report: "
+                        f"fresh water confirmed at ({fx},{fy}), {forage_note}"
+                    )
                 elif exp["terrain_report"]:
                     label = BIOME_LABELS.get(exp["terrain_report"], exp["terrain_report"])
                     tx, ty = exp["target"]
                     tribe.memory.remember(f"Scouts explored toward ({tx},{ty}) and found {label} terrain.", self.cycle, weight=0.6)
-                    tribe.history.append(f"{tribe.name}'s scouts are home and report {label} to the ({tx},{ty}) area")
+                    tribe.history.append(
+                        f"{tribe.name}'s scouts are home and give {recipient} a full report: "
+                        f"{label} terrain at ({tx},{ty}), {forage_note}"
+                    )
                 else:
-                    tribe.history.append(f"{tribe.name}'s scouts are home, empty-handed")
+                    tribe.history.append(
+                        f"{tribe.name}'s scouts are home and give {recipient} a full report: "
+                        f"nothing new found, though not empty-handed -- {forage_note}"
+                    )
                 tribe.expedition = None
 
     def _apply_action(self, tribe: Tribe, action: str, biome: str, target: tuple[int, int]) -> str | None:

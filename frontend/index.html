@@ -420,12 +420,61 @@ function isRiver(x, y) {
   return Math.abs(y - riverCenterY(x)) <= RIVER_HALF_WIDTH;
 }
 
-function biomeColor(x, y) {
-  if (x >= OCEAN_X_START) return "#0b3d5c";
-  if (isRiver(x, y)) return "#1d4ed8";
-  if (x < MOUNTAIN_X_END && y < MOUNTAIN_Y_END) return "#3a3a42";
-  if (y < 18 || x >= 70) return "#14321e";
-  return "#224d1a";
+// Mirrors backend/world.py's biome_at exactly -- one source of truth for both the
+// terrain color and which biome-relevant flora/fauna decoration a tile can show.
+function biomeNameAt(x, y) {
+  if (x >= OCEAN_X_START) return "ocean";
+  if (isRiver(x, y)) return "river";
+  if (x < MOUNTAIN_X_END && y < MOUNTAIN_Y_END) return "mountains";
+  if (y < 18 || x >= 70) return "forest";
+  return "plains";
+}
+
+function biomeColor(biome) {
+  switch (biome) {
+    case "ocean": return "#0b3d5c";
+    case "river": return "#1d4ed8";
+    case "mountains": return "#3a3a42";
+    case "forest": return "#14321e";
+    default: return "#224d1a";
+  }
+}
+
+// Sparse, deterministic-per-tile flora/fauna hinting at what's actually harvestable
+// here (backend/actions.py's BIOME_YIELD_MULTIPLIER) -- resources used to be an
+// invisible number with nothing to look at; a tribe standing on bare mountain rock
+// could "hunt deer" as well as one in a forest. These are decorative (harvest yield
+// is still computed server-side from biome + depletion, not from what's drawn here),
+// but a forest should visibly look like it has wood and game, a mountain like it has
+// stone, not just read as a different shade of green.
+function drawResourceDecoration(tctx, x, y, biome, px, py) {
+  const roll = hashUnit(stringSeed(`res:${x},${y}`));
+  if (biome === "forest" && roll < 0.4) {
+    tctx.fillStyle = "#0b2912";
+    tctx.beginPath();
+    tctx.moveTo(px + TILE * 0.5, py + TILE * 0.05);
+    tctx.lineTo(px + TILE * 0.12, py + TILE * 0.9);
+    tctx.lineTo(px + TILE * 0.88, py + TILE * 0.9);
+    tctx.closePath();
+    tctx.fill();
+  } else if (biome === "mountains" && roll < 0.45) {
+    tctx.fillStyle = "#6b6b78";
+    tctx.beginPath();
+    tctx.moveTo(px + TILE * 0.15, py + TILE * 0.85);
+    tctx.lineTo(px + TILE * 0.5, py + TILE * 0.2);
+    tctx.lineTo(px + TILE * 0.85, py + TILE * 0.85);
+    tctx.closePath();
+    tctx.fill();
+  } else if (biome === "plains" && roll < 0.3) {
+    tctx.strokeStyle = "#4a7a3a";
+    tctx.lineWidth = Math.max(0.5, TILE * 0.1);
+    tctx.beginPath();
+    tctx.moveTo(px + TILE * 0.35, py + TILE * 0.9);
+    tctx.lineTo(px + TILE * 0.3, py + TILE * 0.35);
+    tctx.moveTo(px + TILE * 0.62, py + TILE * 0.9);
+    tctx.lineTo(px + TILE * 0.67, py + TILE * 0.4);
+    tctx.stroke();
+  }
 }
 
 function renderTerrainCache() {
@@ -434,8 +483,11 @@ function renderTerrainCache() {
   const tctx = terrainCanvas.getContext("2d");
   for (let x = 0; x < GRID; x++) {
     for (let y = 0; y < GRID; y++) {
-      tctx.fillStyle = biomeColor(x, y);
-      tctx.fillRect(x * TILE, y * TILE, TILE + 0.6, TILE + 0.6); // slight overlap hides seams
+      const biome = biomeNameAt(x, y);
+      const px = x * TILE, py = y * TILE;
+      tctx.fillStyle = biomeColor(biome);
+      tctx.fillRect(px, py, TILE + 0.6, TILE + 0.6); // slight overlap hides seams
+      drawResourceDecoration(tctx, x, y, biome, px, py);
     }
   }
 }
@@ -549,13 +601,22 @@ function drawExpedition(t) {
   ctx.fillText(label, fx - w / 2, fy + r + 11);
 }
 
-// Worn trails (backend/world.py's Landscape.trails) drawn as a tan tint scaled by wear
-// -- the inverse of depletion, so a well-used route actually looks different from
-// untouched ground instead of being an invisible number only the backend knows about.
+// Worn trails (backend/world.py's Landscape.trails) -- the inverse of depletion, so a
+// well-used route actually looks different from untouched ground instead of being an
+// invisible number only the backend knows about. A tan tint scaled to the tile's exact
+// footprint was too subtle to spot next to the bolder tribe dots/speech bubbles at
+// typical canvas sizes, so this draws bright yellow and oversized (min ~7px, well
+// past a single tile at small zoom) with a visible dark outline, scaled by wear.
 function drawTrails() {
   (latestState.trails || []).forEach(tr => {
-    ctx.fillStyle = `rgba(217, 180, 118, ${Math.min(0.6, tr.wear * 0.6)})`;
-    ctx.fillRect(tr.x * TILE, tr.y * TILE, TILE + 0.6, TILE + 0.6);
+    const cx = tr.x * TILE + TILE / 2;
+    const cy = tr.y * TILE + TILE / 2;
+    const size = Math.max(7, TILE * 1.6);
+    ctx.fillStyle = `rgba(250, 204, 21, ${Math.min(0.85, 0.35 + tr.wear * 0.5)})`;
+    ctx.strokeStyle = "rgba(120, 90, 10, 0.7)";
+    ctx.lineWidth = 1;
+    ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
+    ctx.strokeRect(cx - size / 2, cy - size / 2, size, size);
   });
 }
 

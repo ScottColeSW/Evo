@@ -19,23 +19,40 @@ from . import config, physics
 from .world import BIOME_LABELS, biome_at
 
 
-def _harvest(sim, tribe, resource_key, base_yield):
+# Real biomes don't hand out every resource equally -- a mountain has essentially no
+# game to hunt, a forest has no stone to quarry. Previously GATHER_WOOD/GATHER_STONE/
+# HUNT_DEER paid the same flat yield in every biome (only local depletion scaled them),
+# so a tribe standing on a bare mountain peak could "hunt deer" as effectively as one
+# deep in a forest -- resources were an abstract number with no connection to what was
+# actually around them. GATHER_WATER was already biome-aware (river vs. elsewhere);
+# this brings the other three in line with it.
+BIOME_YIELD_MULTIPLIER = {
+    "wood": {"forest": 1.0, "plains": 0.4, "river": 0.3, "mountains": 0.15, "ocean": 0.0},
+    "stone": {"mountains": 1.0, "forest": 0.1, "plains": 0.1, "river": 0.1, "ocean": 0.0},
+    "game": {"forest": 1.0, "plains": 0.6, "river": 0.3, "mountains": 0.15, "ocean": 0.0},
+}
+
+
+def _harvest(sim, tribe, resource_key, base_yield, biome):
     """Shared depletion logic: yield at this tile shrinks the more it's been harvested
     recently, and harvesting here raises that further. Capped below total depletion
-    (config.MAX_SCARCITY) so staying put is costly, not a guaranteed dead end."""
+    (config.MAX_SCARCITY) so staying put is costly, not a guaranteed dead end. Also
+    scales by how much this biome actually supports the resource in the first place --
+    see BIOME_YIELD_MULTIPLIER."""
+    biome_factor = BIOME_YIELD_MULTIPLIER.get(resource_key, {}).get(biome, 1.0)
     scarcity = sim.world.scarcity(resource_key, tribe.x, tribe.y)
-    yield_amount = round(base_yield * (1 - scarcity))
+    yield_amount = round(base_yield * biome_factor * (1 - scarcity))
     sim.world.deplete(resource_key, tribe.x, tribe.y, config.DEPLETION_PER_HARVEST, config.MAX_SCARCITY)
     return yield_amount
 
 
 def _gather_wood(sim, tribe, biome, target):
-    tribe.wood += _harvest(sim, tribe, "wood", 10)
+    tribe.wood += _harvest(sim, tribe, "wood", 10, biome)
     return None
 
 
 def _gather_stone(sim, tribe, biome, target):
-    tribe.stone += _harvest(sim, tribe, "stone", 10)
+    tribe.stone += _harvest(sim, tribe, "stone", 10, biome)
     return None
 
 
@@ -47,7 +64,7 @@ def _gather_water(sim, tribe, biome, target):
         sim._lose_population(tribe, config.DROWNING_HAZARD_POPULATION_LOSS)
         return "the river's current pulled someone under"
     base = config.WATER_YIELD_RIVER if biome == "river" else config.WATER_YIELD_OFF_RIVER
-    tribe.water += _harvest(sim, tribe, "water", base)
+    tribe.water += _harvest(sim, tribe, "water", base, biome)
     return None
 
 
@@ -59,7 +76,7 @@ def _hunt_deer(sim, tribe, biome, target):
         )
         sim._lose_population(tribe, config.HUNT_HAZARD_POPULATION_LOSS)
         return "a wolf pack struck the hunting party"
-    tribe.food += _harvest(sim, tribe, "game", 15)
+    tribe.food += _harvest(sim, tribe, "game", 15, biome)
     return None
 
 
@@ -120,6 +137,8 @@ def _scout(sim, tribe, biome, target):
         "phase": "outbound",
         "found": None,
         "terrain_report": None,
+        "food_gathered": 0,
+        "water_gathered": 0,
     }
     return f"scouts depart camp to explore toward ({tx},{ty})"
 
@@ -166,10 +185,10 @@ ACTION_REGISTRY = {
 # category as the nearest_water fact already given to a founding chief: information the
 # simulation legitimately has, not an instruction about what to pick.
 ACTION_DESCRIPTIONS = {
-    "GATHER_WOOD": "Harvest wood at your current tile. Yield drops the more this exact spot has been harvested recently.",
-    "GATHER_STONE": "Harvest stone at your current tile. Yield drops the more this exact spot has been harvested recently.",
+    "GATHER_WOOD": "Harvest wood at your current tile -- forest yields the most, plains and river tiles some, mountains and ocean almost none. Yield also drops the more this exact spot has been harvested recently.",
+    "GATHER_STONE": "Harvest stone at your current tile -- mountains yield the most by far, every other biome almost none. Yield also drops the more this exact spot has been harvested recently.",
     "GATHER_WATER": "Harvest water at your current tile -- works in any biome, though a river tile yields more than elsewhere. Small drowning risk if you're on a river.",
-    "HUNT_DEER": "Attempt to harvest food at your current tile. Small risk of losing a hunter to a wolf pack, most likely in forest.",
+    "HUNT_DEER": "Attempt to harvest food at your current tile -- forest has the most game, plains and river tiles some, mountains and ocean almost none. Small risk of losing a hunter to a wolf pack, most likely in forest.",
     "BUILD_FIRE": "Build a fire at your current tile using stored wood. Does nothing if one is already built here.",
     "CONSTRUCT_WALL": "Build a wall at your current tile using stored wood and stone. Does nothing if one is already built here.",
     "SCOUT": "Dispatch an expedition toward target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home -- choosing SCOUT again while one is already out just checks on it, it doesn't send a second one.",

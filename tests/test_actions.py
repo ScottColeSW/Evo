@@ -21,7 +21,7 @@ def test_first_harvest_at_a_tile_yields_full_amount():
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.wood = 0
 
-    ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "plains", _NO_TARGET)
+    ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "forest", _NO_TARGET)
 
     assert tribe.wood == 10
 
@@ -31,10 +31,10 @@ def test_repeated_harvest_at_the_same_tile_yields_less_each_time():
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.wood = 0
 
-    ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "plains", _NO_TARGET)
+    ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "forest", _NO_TARGET)
     first_gain = tribe.wood
     tribe.wood = 0
-    ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "plains", _NO_TARGET)
+    ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "forest", _NO_TARGET)
     second_gain = tribe.wood
 
     assert second_gain < first_gain
@@ -45,13 +45,37 @@ def test_harvesting_elsewhere_is_unaffected_by_a_depleted_tile():
     depleted_tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     for _ in range(5):
         depleted_tribe.wood = 0
-        ACTION_REGISTRY["GATHER_WOOD"](sim, depleted_tribe, "plains", _NO_TARGET)
+        ACTION_REGISTRY["GATHER_WOOD"](sim, depleted_tribe, "forest", _NO_TARGET)
 
     fresh_tribe = Tribe("tribe_1", "Mountain Tribe", "qwen2.5:3b", 10, 45, "#fb923c")
     fresh_tribe.wood = 0
-    ACTION_REGISTRY["GATHER_WOOD"](sim, fresh_tribe, "mountains", _NO_TARGET)
+    ACTION_REGISTRY["GATHER_WOOD"](sim, fresh_tribe, "forest", _NO_TARGET)
 
     assert fresh_tribe.wood == 10  # full yield at an untouched tile
+
+
+def test_wood_yield_is_scaled_down_outside_forest():
+    """Regression test: GATHER_WOOD/GATHER_STONE/HUNT_DEER used to pay the exact same
+    flat yield in every biome (only local depletion scaled them) -- a tribe standing on
+    a bare mountain peak could "hunt deer" as effectively as one deep in a forest.
+    Resources should actually depend on what's around the tribe."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Mountain Tribe", "gemma2:2b", 20, 20, "#fb923c")
+    tribe.wood = 0
+
+    ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "mountains", _NO_TARGET)
+
+    assert 0 < tribe.wood < 10  # some wood, but far less than a forest tile
+
+
+def test_stone_yield_is_negligible_outside_mountains():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.stone = 0
+
+    ACTION_REGISTRY["GATHER_STONE"](sim, tribe, "forest", _NO_TARGET)
+
+    assert tribe.stone == 1  # round(10 * 0.1)
 
 
 def test_second_fire_at_the_same_tile_costs_nothing_and_gains_no_pride():
@@ -94,7 +118,7 @@ def test_hunting_success_also_depletes_local_game():
 
     ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "plains", _NO_TARGET)  # plains has no wolf hazard
 
-    assert tribe.food == 15
+    assert tribe.food == 9  # round(15 * 0.6 plains game multiplier)
     assert sim.world.scarcity("game", 65, 85) > 0
 
 
