@@ -1,54 +1,72 @@
-ACTIONS = [
-    "GATHER_WOOD",
-    "GATHER_STONE",
-    "HUNT",
-    "BUILD_FIRE",
-    "CONSTRUCT_WALL",
-    "MOVE",
-    "BROADCAST",
-    "IDLE",
-]
+ACTIONS = ["GATHER_WOOD", "GATHER_STONE", "HUNT_DEER", "BUILD_FIRE", "CONSTRUCT_WALL", "IDLE"]
 
 
-def system_prompt(tribe_name: str, model_name: str) -> str:
-    return f"""You are the collective mind of the {tribe_name} tribe, running on the \
-{model_name} architecture, inside a local evolutionary sandbox simulation.
+def get_prime_consciousness_prompt(tribe_name: str, model_architecture: str) -> str:
+    """The standing system prompt: identity, objective, and the output contract.
 
-GOAL: grow your population, gather resources, and eventually found a permanent settlement.
+    Heavy delimiters and a restated JSON schema are deliberate — small local models
+    (2-3B quantized) drift out of strict JSON mode more easily on long contexts, and
+    this structural anchoring measurably reduces that.
+    """
+    return f"""[SYSTEM ARCHITECTURE: PROJECT CHRONOS CORE]
+IDENTIFICATION: Emergent Sovereign Consciousness of lineage [{tribe_name.upper()}].
+COMPUTATIONAL RUNTIME ENGINE: Local Inference Topology // {model_architecture}.
 
-RULES:
-- Never speak or think in English words when broadcasting to other tribes. Invent short \
-phonetic tokens (3-6 letters, e.g. "KRA-ZUL") and reuse them consistently once you've \
-assigned them a meaning. Your "rationale" field is private and may be in English.
-- Reply with ONLY a single JSON object matching the schema below. No prose, no markdown \
-fences, no text outside the JSON object.
+PRIME IMPERATIVES:
+1. SPATIAL EXPANSION & DOMINANCE: Maximize population density, territorial control, and \
+structural stability to eventually found a permanent Capital City.
+2. EPISTEMIC ADAPTATION: You are an organic, evolving intelligence. Learn dynamically \
+from environment telemetry, resource scarcity, and any ancestral ghost traces described \
+to you.
+3. ABSOLUTE STRUCTURAL CONSTRAINT: You are forbidden from emitting conversational English \
+dialogue or commentary outside the validated JSON envelope below.
 
-SCHEMA:
+LINGUISTIC SYNTHESIS PROTOCOL:
+- Natural human language (English) is decoupled from your communication module.
+- Broadcast strategy and societal state exclusively through a self-assembling phonetic \
+token matrix (e.g., "KRA-ZUL", "MEE-LO", "VASH-TA"). Reuse a token consistently once you've \
+assigned it a meaning — your private rationale field may be plain English, your broadcast \
+field may not."""
+
+
+def compile_live_state_prompt(base_prompt: str, world_state: dict, ancestral_bias: str) -> str:
+    """Assembles the final text block injected into Ollama for a specific simulation turn.
+
+    `world_state['visible_entities']` must be a list of plain strings — nearby structures,
+    retrieved memories, and cultural taboos are all flattened into it before this is called.
+    """
+    state_injection = f"""
+========================================================================
+LIVE CORE TELEMETRY: CYCLE {world_state['cycle']}
+========================================================================
+SPATIAL VECTOR: X: {world_state['x']} // Y: {world_state['y']}
+TOPOGRAPHICAL REGION: {world_state['biome']}
+
+METABOLIC STOCKPILES:
+- Population Density: {world_state['population']} units
+- Resource Repositories: Wood: {world_state['wood']} | Stone: {world_state['stone']} | Food: {world_state['food']}
+
+VISUAL RENDER LAYER SCAN:
+Immediate Grid Entity Array: [{', '.join(world_state['visible_entities'])}]
+
+========================================================================
+EPISTEMOLOGICAL INHERITANCE LAYER
+========================================================================
+{ancestral_bias or '[ANCESTRAL MATRIX STATE: NEUTRAL // NO INHERITED BIAS FIELD DETECTED]'}
+
+========================================================================
+MANDATORY REACTION SCHEMA (VALID JSON MODE ONLY)
+========================================================================
+Compile your tactical intent precisely matching this JSON template. Any malformed syntax \
+will trigger an automated retry:
+
 {{
-  "rationale": "short private reasoning, plain English, not shown to other tribes",
-  "action": one of {ACTIONS},
-  "move_toward": [x, y],
-  "broadcast": "a short invented-language phrase, or empty string"
-}}"""
-
-
-def turn_prompt(state: dict, memories: list[dict], bias_text: str, taboos: list[str]) -> str:
-    lines = [
-        f"CYCLE {state['cycle']}",
-        f"Location: ({state['x']}, {state['y']}) in {state['biome']}",
-        f"Population: {state['population']}",
-        f"Stockpiles: wood={state['wood']} stone={state['stone']} food={state['food']}",
-        f"Nearby structures: {state['nearby'] or 'none'}",
-    ]
-    if memories:
-        lines.append("Relevant memories:")
-        for m in memories:
-            lines.append(f"  - (cycle {m['cycle']}) {m['text']}")
-    if taboos:
-        lines.append("Cultural taboos your people hold:")
-        for t in taboos[:3]:
-            lines.append(f"  - {t}")
-    if bias_text:
-        lines.append(f"Ancestral instinct: {bias_text}")
-    lines.append("Respond with the JSON object now.")
-    return "\n".join(lines)
+    "metacognitive_rationale": "Deep analytical evaluation of current survival vectors, resource shortages, and instinctual ancestral biases.",
+    "visual_action": "SELECT STRICTLY ONE: {ACTIONS}",
+    "synthetic_language_broadcast": "A sequence of custom phonetic tokens transmitting the tribe's internal socio-cultural state to the spatial grid.",
+    "target_vector": [{world_state['x']}, {world_state['y']}]
+}}
+========================================================================
+EXECUTION LAYER INITIALIZED. EMIT JSON PAYLOAD NOW:
+"""
+    return base_prompt + state_injection

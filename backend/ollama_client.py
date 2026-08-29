@@ -19,13 +19,16 @@ class OllamaClient:
             except Exception:
                 return []
 
-    async def generate_json(self, model: str, prompt: str, temperature: float = 0.7, num_ctx: int = 4096) -> dict:
+    async def generate_json(
+        self, model: str, prompt: str, temperature: float = 0.7, num_ctx: int = 4096, keep_alive: str = "5m"
+    ) -> dict:
         payload = {
             "model": model,
             "prompt": prompt,
             "format": "json",
             "stream": False,
             "options": {"temperature": temperature, "num_ctx": num_ctx},
+            "keep_alive": keep_alive,
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             r = await client.post(f"{self.base_url}/api/generate", json=payload)
@@ -36,12 +39,13 @@ class OllamaClient:
             except json.JSONDecodeError:
                 return {}
 
-    async def generate_text(self, model: str, prompt: str, temperature: float = 0.5) -> str:
+    async def generate_text(self, model: str, prompt: str, temperature: float = 0.5, keep_alive: str = "5m") -> str:
         payload = {
             "model": model,
             "prompt": prompt,
             "stream": False,
             "options": {"temperature": temperature},
+            "keep_alive": keep_alive,
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             r = await client.post(f"{self.base_url}/api/generate", json=payload)
