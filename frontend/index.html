@@ -32,6 +32,9 @@
   .stat-card { background: #222232; padding: 10px; border-radius: 6px; font-size: 12px; border-left: 4px solid #6366f1; margin-bottom: 8px; }
   .log-box { background: #0f0f15; border: 1px solid #2a2a3a; border-radius: 6px; padding: 8px; font-family: monospace; font-size: 10px; overflow-y: auto; color: #34d399; max-height: 200px; }
   .speech { font-style: italic; color: #fbbf24; }
+  .consensus-row { background: #222232; padding: 8px; border-radius: 6px; font-size: 11px; margin-bottom: 6px; }
+  .consensus-bar { height: 4px; background: #333344; border-radius: 2px; margin-top: 4px; overflow: hidden; }
+  .consensus-fill { height: 100%; background: #34d399; }
   #status-banner { padding: 8px; background: #065f46; color: #34d399; font-weight: bold; border-radius: 4px; text-align: center; font-size: 11px; font-family: monospace; }
   #status-banner.refactoring { background: #991b1b; color: #fca5a5; }
   #btn-pause { width: 100%; background: #4338ca; color: white; }
@@ -57,6 +60,8 @@
     <button id="btn-pause">PAUSE SIMULATION</button>
     <h3 class="section">Tribes</h3>
     <div id="tribe-stats"></div>
+    <h3 class="section">Linguistic Consensus</h3>
+    <div id="consensus-panel"></div>
     <h3 class="section">Chronicle</h3>
     <div id="log-chronicle" class="log-box"></div>
   </div>
@@ -205,8 +210,10 @@ function updateSidebar(state) {
 
   const stats = document.getElementById("tribe-stats");
   const log = document.getElementById("log-chronicle");
+  const consensus = document.getElementById("consensus-panel");
   stats.innerHTML = "";
   log.innerHTML = "";
+  consensus.innerHTML = "";
   Object.entries(state.tribes || {}).forEach(([id, t]) => {
     stats.innerHTML += `
       <div class="stat-card" style="border-left-color:${t.color}">
@@ -218,6 +225,15 @@ function updateSidebar(state) {
     (t.history || []).forEach(entry => {
       log.innerHTML += `<div>[${id}] ${entry}</div>`;
     });
+  });
+
+  (state.linguistic_consensus || []).forEach(pair => {
+    const pct = Math.round((pair.mean_confidence || 0) * 100);
+    consensus.innerHTML += `
+      <div class="consensus-row">
+        ${pair.a} ↔ ${pair.b}: ${pct}% (${pair.stabilized_tokens}/${pair.tracked_tokens} stabilized)
+        <div class="consensus-bar"><div class="consensus-fill" style="width:${pct}%"></div></div>
+      </div>`;
   });
 }
 

@@ -49,7 +49,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
             if command == "START":
                 tribe_configs = data.get("tribes", [])
                 if tribe_configs:
-                    sim_holder["sim"] = Simulation(tribe_configs, config.OLLAMA_URL)
+                    sim_holder["sim"] = await Simulation.create(tribe_configs, config.OLLAMA_URL)
             elif command == "TOGGLE_PAUSE" and sim_holder["sim"] is not None:
                 sim_holder["sim"].toggle_pause()
     finally:

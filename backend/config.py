@@ -14,6 +14,10 @@ SELF_MOD_COOLDOWN_CYCLES = 20
 
 MEMORY_CONSOLIDATE_EVERY_N_CYCLES = 40
 
+# Rough pre-flight sanity check against a model's on-disk size (backend/vram_guard.py).
+# Not a live enforcement layer -- see that module's docstring for why.
+VRAM_LIMIT_GB = 14.0
+
 # Inference temperature: bumped when a tribe stands on ancestrally traumatic ground,
 # so panic/urgency actually reads as less predictable model output, not just flavor text.
 DEFAULT_TEMPERATURE = 0.55

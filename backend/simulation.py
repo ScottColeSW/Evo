@@ -8,8 +8,9 @@ from .ollama_client import OllamaClient
 from .prompts import ACTIONS, compile_live_state_prompt, get_prime_consciousness_prompt
 from .scheduler import ModelBatchScheduler
 from .self_mod import SelfModEngine
+from .translation_matrix import TranslationConfidenceMatrix
+from .vram_guard import HardwareVRAMBoundaryGuard
 from .world import Landscape
-
 
 # One spawn per biome (forest, mountains, plains, river) so the default picker order
 # (Forest Tribe, Mountain Tribe, ...) actually starts tribes in the biome their name
@@ -32,6 +33,7 @@ class Tribe:
         self.food = 40
         self.population = 8
         self.last_broadcast = ""
+        self.last_action = ""
         self.history: list[str] = []
         self.memory = TribeMemory(tribe_id)
         self.founded_city = False
@@ -61,6 +63,7 @@ class Simulation:
         self.scheduler = ModelBatchScheduler(self.client)
         self.world = Landscape(config.GRID_SIZE)
         self.trauma = AncestralTraumaMatrix(config.GRID_SIZE)
+        self.translation = TranslationConfidenceMatrix()
         self.tribes: dict[str, Tribe] = {}
         for i, cfg in enumerate(tribe_configs[: config.MAX_TRIBES]):
             x, y = SPAWN_POINTS[i % len(SPAWN_POINTS)]
@@ -75,12 +78,39 @@ class Simulation:
             else None
         )
 
+    @classmethod
+    async def create(cls, tribe_configs: list[dict], ollama_url: str = config.OLLAMA_URL) -> "Simulation":
+        """Preferred constructor: runs a one-time VRAM sanity check per model before
+        building the simulation, and drops a warning into a tribe's chronicle (rather
+        than blocking it) if its model looks too large for the configured budget."""
+        guard = HardwareVRAMBoundaryGuard(ollama_url, config.VRAM_LIMIT_GB)
+        warnings: dict[str, str] = {}
+        for cfg in tribe_configs[: config.MAX_TRIBES]:
+            ok, warning = await guard.verify_vram_safety_margin(cfg["model"])
+            if not ok:
+                warnings[cfg["name"]] = warning
+
+        sim = cls(tribe_configs, ollama_url)
+        for tribe in sim.tribes.values():
+            if tribe.name in warnings:
+                tribe.history.append(f"VRAM WARNING: {warnings[tribe.name]}")
+        return sim
+
     def snapshot(self) -> dict:
+        tribe_ids = list(self.tribes.keys())
+        consensus = []
+        for i in range(len(tribe_ids)):
+            for j in range(i + 1, len(tribe_ids)):
+                a_id, b_id = tribe_ids[i], tribe_ids[j]
+                summary = self.translation.pair_summary(a_id, b_id)
+                consensus.append({"a": self.tribes[a_id].name, "b": self.tribes[b_id].name, **summary})
+
         return {
             "cycle": self.cycle,
             "status": self.status,
             "tribes": {tid: t.to_dict() for tid, t in self.tribes.items()},
             "structures": [{"x": x, "y": y, **info} for (x, y), info in self.world.constructions.items()],
+            "linguistic_consensus": consensus,
         }
 
     def toggle_pause(self) -> None:
@@ -90,6 +120,7 @@ class Simulation:
         if self.paused:
             return
         self.cycle += 1
+        self.translation.decay()
 
         requests = []
         contexts = {}
@@ -128,6 +159,15 @@ class Simulation:
         visible_entities = [f"structure:{s['type']}@({s['x']},{s['y']})" for s in nearby]
         visible_entities += [f"memory(cycle {m['cycle']}): {m['text']}" for m in memories]
         visible_entities += [f"taboo: {t}" for t in tribe.memory.taboos[:3]]
+        # Other tribes' broadcasts are audible regardless of distance (a simplification
+        # for a small tribe count) -- this is what makes shared-vocabulary convergence
+        # in translation_matrix.py possible at all, since nothing else lets a tribe
+        # observe another tribe's invented tokens.
+        for other in self.tribes.values():
+            if other.id != tribe.id and other.last_broadcast:
+                visible_entities.append(
+                    f"overheard: {other.name} broadcasted '{other.last_broadcast}' while performing {other.last_action}"
+                )
         if not visible_entities:
             visible_entities = ["none"]
 
@@ -160,6 +200,8 @@ class Simulation:
 
         hazard_note = self._apply_action(tribe, action, ctx["biome"])
         tribe.last_broadcast = broadcast
+        tribe.last_action = action
+        self.translation.record_broadcast(tribe.id, broadcast, action)
 
         rationale = str(intent.get("metacognitive_rationale", ""))[:60]
         entry = f"[{latency_ms:.0f}ms] {action}: {rationale}"

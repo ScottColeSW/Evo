@@ -37,6 +37,23 @@ converged on.
   each model's group concurrently via `asyncio.gather`, so a tick with N tribes across M
   models costs at most M model swaps in Ollama, not N. Also sets `keep_alive` on every
   request so Ollama doesn't evict a model between ticks.
+- **`backend/vram_guard.py`** — a one-time-per-tribe sanity check (not a live enforcement
+  layer) against a model's real on-disk size from `/api/tags`. Runs once when a simulation
+  starts (`Simulation.create`, the async factory `app.py` actually calls); an oversized
+  model gets a warning in that tribe's chronicle rather than being silently excluded from
+  ever taking a turn again.
+- **`backend/translation_matrix.py`** — tracks whether two tribes are converging on shared
+  vocabulary. There's no ground-truth "correct guess" signal available (nobody, including
+  a tribe itself, knows what its own invented token "really" means), so convergence is
+  measured empirically: two tribes independently broadcasting the *same* phrase for the
+  *same* action is treated as evidence of shared meaning, and it decays if not reinforced.
+  This only produces a real signal because tribes can now actually hear each other —
+  `Simulation._prepare_turn` feeds every tribe its neighbors' most recent broadcast +
+  action every turn (broadcasts are audible regardless of distance, a deliberate
+  simplification for a handful of tribes). Confirmed live: two different local models
+  (`gemma2:2b`, `qwen2.5:3b`) converged on a shared token for the same action within 4
+  cycles in testing. Surfaced in the sidebar as a "Linguistic Consensus" panel per tribe
+  pair.
 - **`backend/genetics.py`** — an optional crossover step that splices two tribes' ideology +
   lexicon into a descendant profile via the model itself.
 - **`backend/self_mod.py`** — an opt-in (off by default) engine that lets a model rewrite
