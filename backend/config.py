@@ -117,6 +117,22 @@ DROWNING_TRAUMA_RADIUS = 6
 EXTINCTION_TRAUMA_MAGNITUDE = -0.6
 EXTINCTION_TRAUMA_RADIUS = 10
 
+# Raiding (backend/actions.py._raid): the mechanical outlet for an aggressive/warlord
+# chief philosophy (backend/leadership.py can already generate one) that otherwise has
+# nothing to actually act on. Real risk on both sides -- a smaller raiding party can
+# still lose to a larger defender, and even a winning raid costs the attacker
+# something. Available from the Stone Age (see eras.py): inter-tribal conflict is at
+# least as old as inter-tribal cooperation, not a later "advanced" capability.
+RAID_PROXIMITY_RADIUS = 3
+RAID_STEAL_FRACTION = 0.3
+RAID_DEFENDER_POPULATION_LOSS = 2
+RAID_ATTACKER_POPULATION_LOSS_ON_WIN = 1
+RAID_ATTACKER_POPULATION_LOSS_ON_LOSS = 2
+RAID_TRAUMA_MAGNITUDE = -0.5
+RAID_TRAUMA_RADIUS = 6
+RAID_PRIDE_MAGNITUDE = 0.4
+RAID_PRIDE_RADIUS = 5
+
 # A tribe can only overhear another tribe's broadcast (and therefore only converge on
 # shared vocabulary with them) within this Euclidean distance -- previously broadcasts
 # were audible map-wide regardless of distance, which gave away free information and

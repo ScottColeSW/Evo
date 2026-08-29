@@ -165,6 +165,42 @@ def _idle(sim, tribe, biome, target):
     return None
 
 
+def _raid(sim, tribe, biome, target):
+    """Attempt to raid a rival tribe found at target_vector -- the mechanical outlet
+    for an aggressive/warlord chief philosophy (leadership.py can already generate one)
+    that otherwise has nothing to act on. Real risk on both sides: win chance is just
+    the attacker's share of the two tribes' combined population, so a smaller raiding
+    party can still lose to a larger defender, and even a winning raid costs the
+    attacker people -- violence isn't a free lever here."""
+    tx, ty = target
+    defender = None
+    for other in sim.tribes.values():
+        if other.id == tribe.id or other.extinct:
+            continue
+        if (other.x - tx) ** 2 + (other.y - ty) ** 2 <= config.RAID_PROXIMITY_RADIUS ** 2:
+            defender = other
+            break
+
+    if defender is None:
+        return "found no rival encampment there to raid"
+
+    attacker_win_chance = tribe.population / max(1, tribe.population + defender.population)
+    if random.random() < attacker_win_chance:
+        for resource in ("wood", "stone", "food", "water"):
+            stolen = round(getattr(defender, resource) * config.RAID_STEAL_FRACTION)
+            setattr(defender, resource, getattr(defender, resource) - stolen)
+            setattr(tribe, resource, getattr(tribe, resource) + stolen)
+        sim._lose_population(defender, config.RAID_DEFENDER_POPULATION_LOSS)
+        sim._lose_population(tribe, config.RAID_ATTACKER_POPULATION_LOSS_ON_WIN)
+        sim.trauma.radiate_event_wave(defender.x, defender.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
+        sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
+        return f"raided {defender.name} and seized supplies"
+    else:
+        sim._lose_population(tribe, config.RAID_ATTACKER_POPULATION_LOSS_ON_LOSS)
+        sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
+        return f"attempted to raid {defender.name} and was repelled"
+
+
 ACTION_REGISTRY = {
     "GATHER_WOOD": _gather_wood,
     "GATHER_STONE": _gather_stone,
@@ -174,6 +210,7 @@ ACTION_REGISTRY = {
     "CONSTRUCT_WALL": _construct_wall,
     "SCOUT": _scout,
     "RELOCATE": _relocate,
+    "RAID": _raid,
     "IDLE": _idle,
 }
 
@@ -193,5 +230,6 @@ ACTION_DESCRIPTIONS = {
     "CONSTRUCT_WALL": "Build a wall at your current tile using stored wood and stone. Does nothing if one is already built here.",
     "SCOUT": "Dispatch an expedition toward target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home -- choosing SCOUT again while one is already out just checks on it, it doesn't send a second one.",
     "RELOCATE": "Move your whole tribe several tiles toward target_vector this cycle, possibly over several cycles for a far destination. Produces no resources while traveling and costs extra food and water for the effort.",
+    "RAID": "Attempt to raid a rival tribe if one is near target_vector. A win steals some of their stockpile but still costs you people; a loss costs you more. Does nothing if no rival is there.",
     "IDLE": "Do nothing this cycle.",
 }

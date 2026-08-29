@@ -75,6 +75,7 @@
   .log-box .log-decree { color: #fbbf24; }
   .log-box .log-extinct { color: #f87171; font-weight: bold; }
   .log-box .log-hazard { color: #f87171; }
+  .log-box .log-raid { color: #fb7185; font-weight: bold; }
   .log-box .log-vram { color: #f59e0b; }
   .consensus-row { background: #222232; padding: 8px; border-radius: 6px; font-size: 11px; }
   .consensus-bar { height: 4px; background: #333344; border-radius: 2px; margin-top: 4px; overflow: hidden; }
@@ -658,6 +659,7 @@ function chronicleEntryClass(entry) {
   if (entry.includes("decrees:")) return "log-decree";
   if (entry.includes("claimed lives")) return "log-hazard";
   if (entry.includes("wolf pack struck") || entry.includes("current pulled someone under")) return "log-hazard";
+  if (entry.includes("raided ") || entry.includes("was repelled")) return "log-raid";
   if (entry.startsWith("VRAM WARNING")) return "log-vram";
   return "";
 }
@@ -668,6 +670,7 @@ function chronicleEntryIcon(entry) {
     case "log-chief": return "👑 ";
     case "log-decree": return "📜 ";
     case "log-hazard": return "⚠️ ";
+    case "log-raid": return "⚔️ ";
     case "log-vram": return "🖥️ ";
     default: return "";
   }

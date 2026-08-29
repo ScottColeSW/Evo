@@ -161,8 +161,9 @@ def test_relocate_stamina_cost_never_goes_negative():
 def test_other_actions_never_move_the_tribe():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
 
-    for action in ("GATHER_WOOD", "GATHER_STONE", "HUNT_DEER", "BUILD_FIRE", "CONSTRUCT_WALL", "IDLE"):
+    for action in ("GATHER_WOOD", "GATHER_STONE", "HUNT_DEER", "BUILD_FIRE", "CONSTRUCT_WALL", "RAID", "IDLE"):
         ACTION_REGISTRY[action](sim, tribe, "plains", (80, 80))
         assert (tribe.x, tribe.y) == (50, 50), f"{action} should not move the tribe"
 
@@ -179,6 +180,66 @@ def test_scout_does_not_move_the_tribe_but_launches_an_expedition():
     assert tribe.expedition["day"] == 0
     assert tribe.expedition["phase"] == "outbound"
     assert "depart" in note
+
+
+def test_raid_with_no_rival_nearby_does_nothing():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+
+    note = ACTION_REGISTRY["RAID"](sim, tribe, "plains", (10, 10))
+
+    assert "no rival" in note
+    assert tribe.population == 8
+
+
+def test_raid_win_steals_resources_and_costs_both_sides_population():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    defender.wood = 20
+    sim.tribes = {"tribe_0": attacker, "tribe_1": defender}
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # any positive win chance wins
+        note = ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 51))
+
+    assert "raided Mountain Tribe" in note
+    assert attacker.wood == 56  # 50 starting + round(20 * 0.3) stolen
+    assert defender.wood == 14  # 20 - 6
+    assert defender.population == 6  # 8 - RAID_DEFENDER_POPULATION_LOSS (2)
+    assert attacker.population == 7  # 8 - RAID_ATTACKER_POPULATION_LOSS_ON_WIN (1)
+
+
+def test_raid_loss_costs_the_attacker_without_stealing_anything():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    defender.wood = 20
+    sim.tribes = {"tribe_0": attacker, "tribe_1": defender}
+
+    with mock.patch("backend.actions.random.random", return_value=0.999):  # forces a loss
+        note = ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 51))
+
+    assert "repelled" in note
+    assert defender.wood == 20  # untouched
+    assert attacker.population == 6  # 8 - RAID_ATTACKER_POPULATION_LOSS_ON_LOSS (2)
+    assert defender.population == 8  # untouched
+
+
+def test_raid_ignores_extinct_tribes_and_self():
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    dead_rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    dead_rival.extinct = True
+    sim.tribes = {"tribe_0": attacker, "tribe_1": dead_rival}
+
+    note = ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 51))
+
+    assert "no rival" in note
 
 
 def test_scout_while_already_out_does_not_launch_a_second_expedition():
