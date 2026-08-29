@@ -38,7 +38,14 @@
   #era-banner { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); background: rgba(67,56,202,0.95); color: #fff; padding: 14px 28px; border-radius: 8px; font-weight: bold; font-size: 15px; opacity: 0; pointer-events: none; transition: opacity 0.5s ease; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,0.4); white-space: nowrap; }
   #era-banner.show { opacity: 1; }
   #era-banner.danger { background: rgba(127,29,29,0.95); }
+  #era-banner.chief { background: rgba(180,131,10,0.95); }
   canvas { background: #111; border: 2px solid #2a2a3a; border-radius: 4px; display: block; }
+
+  #spawn-splash { position: absolute; inset: 0; background: rgba(11,11,15,0.94); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 20; border-radius: 4px; transition: opacity 0.4s ease; }
+  #spawn-splash.hidden { display: none; }
+  .spawn-spinner { width: 34px; height: 34px; border: 3px solid #2a2a3a; border-top-color: #a5b4fc; border-radius: 50%; animation: spawn-spin 0.9s linear infinite; }
+  @keyframes spawn-spin { to { transform: rotate(360deg); } }
+  #spawn-splash .spawn-text { color: #c7d2fe; font-size: 13px; font-family: monospace; letter-spacing: 0.3px; }
 
   #sidebar { width: 360px; flex-shrink: 0; background: #1a1a24; border-left: 2px solid #2a2a3a; padding: 14px; display: flex; flex-direction: column; min-height: 0; }
   #sidebar-tabs { display: flex; gap: 4px; margin-bottom: 12px; flex-shrink: 0; }
@@ -63,6 +70,12 @@
   .survival-warning { color: #f87171; font-size: 11px; margin-top: 4px; }
 
   .log-box { background: #0f0f15; border: 1px solid #2a2a3a; border-radius: 6px; padding: 8px; font-family: monospace; font-size: 10px; overflow-y: auto; color: #34d399; flex: 1; }
+  .log-box div { padding: 1px 0; }
+  .log-box .log-chief { color: #fbbf24; font-weight: bold; }
+  .log-box .log-decree { color: #fbbf24; }
+  .log-box .log-extinct { color: #f87171; font-weight: bold; }
+  .log-box .log-hazard { color: #f87171; }
+  .log-box .log-vram { color: #f59e0b; }
   .consensus-row { background: #222232; padding: 8px; border-radius: 6px; font-size: 11px; }
   .consensus-bar { height: 4px; background: #333344; border-radius: 2px; margin-top: 4px; overflow: hidden; }
   .consensus-fill { height: 100%; background: #34d399; }
@@ -91,6 +104,10 @@
   <div id="theater-body">
     <div id="canvas-container">
       <div id="era-banner"></div>
+      <div id="spawn-splash" class="hidden">
+        <div class="spawn-spinner"></div>
+        <div class="spawn-text" id="spawn-splash-text">Tribes are forming their first councils...</div>
+      </div>
       <canvas id="simCanvas"></canvas>
     </div>
     <div id="sidebar">
@@ -184,15 +201,56 @@ document.getElementById("btn-start").addEventListener("click", () => {
   requestAnimationFrame(resizeCanvas);
 
   lastExtinctByTribe = {};
+  lastChiefByTribe = {};
+  firstStateReceived = false;
+  showSpawnSplash();
+
   socket = new WebSocket(`ws://${location.host}/ws`);
   socket.onopen = () => socket.send(JSON.stringify({ command: "START", tribes }));
   socket.onmessage = (event) => {
     latestState = JSON.parse(event.data);
+    if (!firstStateReceived) {
+      firstStateReceived = true;
+      hideSpawnSplash();
+    }
     checkEraTransitions(latestState);
     checkExtinctions(latestState);
+    checkChiefElections(latestState);
     updateSidebar(latestState);
   };
 });
+
+/* ---------- Spawn splash: covers the warm-up window while Simulation.create()
+   runs VRAM checks and every tribe's founding chief election, entirely before the
+   first websocket message arrives -- without this the theater just sat frozen and
+   blank for however long that took, with zero indication anything was happening. */
+
+let firstStateReceived = false;
+let spawnFlavorTimer = null;
+const SPAWN_FLAVOR = [
+  "Tribes are forming their first councils...",
+  "Contests for chiefdom are underway...",
+  "Waking the local models...",
+  "The first fires have not yet been lit...",
+];
+
+function showSpawnSplash() {
+  const splash = document.getElementById("spawn-splash");
+  const text = document.getElementById("spawn-splash-text");
+  let i = 0;
+  text.textContent = SPAWN_FLAVOR[0];
+  splash.classList.remove("hidden");
+  clearInterval(spawnFlavorTimer);
+  spawnFlavorTimer = setInterval(() => {
+    i = (i + 1) % SPAWN_FLAVOR.length;
+    text.textContent = SPAWN_FLAVOR[i];
+  }, 2200);
+}
+
+function hideSpawnSplash() {
+  clearInterval(spawnFlavorTimer);
+  document.getElementById("spawn-splash").classList.add("hidden");
+}
 
 /* ---------- Theater chrome: header, tabs, resize ---------- */
 
@@ -260,20 +318,45 @@ function checkEraTransitions(state) {
       return;
     }
     if (lastEraByTribe[id] !== t.era) {
-      showEraBanner(`${t.name} enters the ${t.era_label}!`);
+      queueBanner(`${t.name} enters the ${t.era_label}!`);
       lastEraByTribe[id] = t.era;
     }
   });
 }
 
-function showEraBanner(text, danger) {
+function showEraBanner(text, danger, variant) {
   const banner = document.getElementById("era-banner");
   banner.textContent = text;
   banner.classList.add("show");
   banner.classList.toggle("danger", !!danger);
+  banner.classList.toggle("chief", variant === "chief");
   clearTimeout(eraBannerTimeout);
   const duration = danger ? 6000 : 4000;
   eraBannerTimeout = setTimeout(() => banner.classList.remove("show"), duration);
+}
+
+// Era transitions, extinctions, and chief elections can all land in the same tick
+// (a founding chief election resolves before the first snapshot ever arrives), so a
+// single shared banner element needs a queue rather than the last call silently
+// stomping the others.
+let bannerQueue = [];
+let bannerBusy = false;
+
+function queueBanner(text, danger, variant) {
+  bannerQueue.push({ text, danger, variant });
+  if (!bannerBusy) advanceBannerQueue();
+}
+
+function advanceBannerQueue() {
+  if (bannerQueue.length === 0) {
+    bannerBusy = false;
+    return;
+  }
+  bannerBusy = true;
+  const { text, danger, variant } = bannerQueue.shift();
+  showEraBanner(text, danger, variant);
+  const duration = (danger ? 6000 : 4000) + 300;
+  setTimeout(advanceBannerQueue, duration);
 }
 
 /* ---------- Extinction ---------- */
@@ -287,9 +370,36 @@ function checkExtinctions(state) {
       return;
     }
     if (!lastExtinctByTribe[id] && t.extinct) {
-      showEraBanner(`💀 ${t.name} has gone extinct`, true);
+      queueBanner(`💀 ${t.name} has gone extinct`, true);
     }
     lastExtinctByTribe[id] = t.extinct;
+  });
+}
+
+/* ---------- Chief elections ---------- */
+
+// Unlike era/extinction, the founding contest is *always* already decided by the time
+// a tribe is first seen -- Simulation.create() runs every tribe's election before the
+// first snapshot goes out. So this fires ON first sighting (the opposite rule from
+// checkEraTransitions/checkExtinctions above), announcing what already happened during
+// the spawn-splash window rather than watching for a future change.
+let lastChiefByTribe = {};
+
+function checkChiefElections(state) {
+  Object.entries(state.tribes || {}).forEach(([id, t]) => {
+    if (lastChiefByTribe[id] === undefined) {
+      lastChiefByTribe[id] = t.chief_name || "";
+      if (t.chief_name) {
+        queueBanner(`👑 ${t.chief_name} becomes chief of ${t.name}!`, false, "chief");
+      }
+      return;
+    }
+    // A later ADD_TRIBE also runs its own election after the tribe already exists
+    // client-side, so a chief appearing after the fact is announced too.
+    if (!lastChiefByTribe[id] && t.chief_name) {
+      queueBanner(`👑 ${t.chief_name} becomes chief of ${t.name}!`, false, "chief");
+    }
+    lastChiefByTribe[id] = t.chief_name || "";
   });
 }
 
@@ -422,6 +532,33 @@ function drawFrame() {
   requestAnimationFrame(drawFrame);
 }
 
+/* ---------- Chronicle line styling ---------- */
+
+// Every history entry has read identically (green monospace) regardless of whether it
+// was a routine gather or a tribe going extinct -- classifying by the fixed substrings
+// each backend site already writes (simulation.py, actions.py) gives the log visual
+// weight without the backend needing to emit a separate "kind" field.
+function chronicleEntryClass(entry) {
+  if (entry.includes("has gone extinct")) return "log-extinct";
+  if (entry.includes("has become chief")) return "log-chief";
+  if (entry.includes("decrees:")) return "log-decree";
+  if (entry.includes("claimed lives")) return "log-hazard";
+  if (entry.includes("wolf pack struck") || entry.includes("current pulled someone under")) return "log-hazard";
+  if (entry.startsWith("VRAM WARNING")) return "log-vram";
+  return "";
+}
+
+function chronicleEntryIcon(entry) {
+  switch (chronicleEntryClass(entry)) {
+    case "log-extinct": return "💀 ";
+    case "log-chief": return "👑 ";
+    case "log-decree": return "📜 ";
+    case "log-hazard": return "⚠️ ";
+    case "log-vram": return "🖥️ ";
+    default: return "";
+  }
+}
+
 /* ---------- Sidebar ---------- */
 
 function updateSidebar(state) {
@@ -465,13 +602,14 @@ function updateSidebar(state) {
             (${t.x}, ${t.y}) · ${t.model} · Pop ${t.population}<br>
             🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${t.food} &nbsp;💧 ${t.water}
             ${t.chief_name ? `<br><span class="chief-line">👑 ${t.chief_name} — ${t.chief_philosophy}</span>` : ""}
+            ${t.chief_decree ? `<br><span class="chief-line">📜 decreed: ${t.chief_decree}</span>` : ""}
           </div>
           <span class="speech">"${t.last_broadcast || "..."}"</span>
           ${t.survival_warning ? `<div class="survival-warning">⚠️ ${t.survival_warning.replace("[SURVIVAL INSTINCT]: ", "")}</div>` : ""}
         </div>`;
     }
     (t.history || []).forEach(entry => {
-      log.innerHTML += `<div>[${id}] ${entry}</div>`;
+      log.innerHTML += `<div class="${chronicleEntryClass(entry)}">${chronicleEntryIcon(entry)}[${t.name}] ${entry}</div>`;
     });
   });
 
