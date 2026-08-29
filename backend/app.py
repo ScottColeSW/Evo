@@ -59,7 +59,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                 name = data.get("name") or "New Tribe"
                 model = data.get("model")
                 if model:
-                    await session["sim"].add_tribe(name, model)
+                    await session["sim"].add_tribe(name, model, data.get("x"), data.get("y"))
     finally:
         request.app["sessions"].pop(ws, None)
     return ws

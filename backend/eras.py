@@ -36,7 +36,10 @@ ERAS: tuple[Era, ...] = (
         requires_population=0,
         requires_resources={},
         advancement_cost={},
-        unlocks_actions=("GATHER_WOOD", "GATHER_STONE", "GATHER_WATER", "HUNT_DEER", "BUILD_FIRE", "IDLE"),
+        unlocks_actions=(
+            "GATHER_WOOD", "GATHER_STONE", "GATHER_WATER", "HUNT_DEER", "BUILD_FIRE",
+            "SCOUT", "RELOCATE", "IDLE",
+        ),
         announcement="{tribe} has awakened as a Stone Age tribe.",
     ),
     Era(

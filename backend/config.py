@@ -12,6 +12,12 @@ MAX_TRIBES = 4
 # on screen.
 MOVEMENT_SPEED = 4
 
+# Marching costs stamina -- without this, RELOCATE was a free action while every gathering
+# action costs time/risk, which would make endless relocation strictly better than settling
+# anywhere. Paid on top of ordinary upkeep, same resources, not a separate stat.
+RELOCATE_FOOD_COST = 2
+RELOCATE_WATER_COST = 2
+
 # The self-modification engine lets a model rewrite backend/physics.py on disk and
 # hot-reloads it when turns get slow. It's validated with an AST parse + cooldown
 # lockout, but it is still an LLM writing code to your machine — off by default.

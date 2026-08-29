@@ -1,7 +1,7 @@
 from unittest import mock
 
 from backend.ancestral_matrix import AncestralTraumaMatrix
-from backend.simulation import Simulation, Tribe
+from backend.simulation import SPAWN_POINTS, Simulation, Tribe
 from backend.world import Landscape
 from tests.conftest import run_async
 
@@ -22,7 +22,7 @@ def test_hunting_hazard_applies_all_effects_when_triggered():
     tribe.population = 10
 
     with mock.patch("backend.actions.random.random", return_value=0.01):
-        note = sim._apply_action(tribe, "HUNT_DEER", "forest")
+        note = sim._apply_action(tribe, "HUNT_DEER", "forest", (0, 0))
 
     assert note == "a wolf pack struck the hunting party"
     assert tribe.food == 30
@@ -37,7 +37,7 @@ def test_hunting_succeeds_when_hazard_roll_misses():
     tribe.food = 40
 
     with mock.patch("backend.actions.random.random", return_value=0.99):
-        note = sim._apply_action(tribe, "HUNT_DEER", "forest")
+        note = sim._apply_action(tribe, "HUNT_DEER", "forest", (0, 0))
 
     assert note is None
     assert tribe.food == 55
@@ -49,7 +49,7 @@ def test_hunting_hazard_never_fires_outside_forest():
     tribe.food = 40
 
     with mock.patch("backend.actions.random.random", return_value=0.01):
-        note = sim._apply_action(tribe, "HUNT_DEER", "mountains")
+        note = sim._apply_action(tribe, "HUNT_DEER", "mountains", (0, 0))
 
     assert note is None
     assert tribe.food == 55
@@ -60,7 +60,7 @@ def test_build_fire_radiates_pride_not_dread():
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.wood = 50
 
-    sim._apply_action(tribe, "BUILD_FIRE", "forest")
+    sim._apply_action(tribe, "BUILD_FIRE", "forest", (0, 0))
 
     assert tribe.wood == 40
     assert "PRIDE" in sim.trauma.bias_string(50, 50)
@@ -121,8 +121,8 @@ def test_gather_water_yields_more_on_river_than_elsewhere():
 
     # Force the drowning roll to miss so this test isn't flaky against the ~8% hazard.
     with mock.patch("backend.actions.random.random", return_value=0.99):
-        sim._apply_action(river_tribe, "GATHER_WATER", "river")
-        sim._apply_action(plains_tribe, "GATHER_WATER", "plains")
+        sim._apply_action(river_tribe, "GATHER_WATER", "river", (0, 0))
+        sim._apply_action(plains_tribe, "GATHER_WATER", "plains", (0, 0))
 
     assert river_tribe.water > plains_tribe.water
 
@@ -139,14 +139,39 @@ def test_action_outside_current_era_is_rejected_to_idle():
     assert "IDLE" in tribe.history[-1]
 
 
-def test_apply_turn_records_last_target_for_journey_persistence():
+def test_apply_turn_records_last_target_only_for_relocate():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    ctx = {"biome": "forest", "available_actions": ["RELOCATE", "IDLE"]}
+
+    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [20, 30]}, 10.0, ctx)
+
+    assert tribe.last_target == [20, 30]
+
+
+def test_apply_turn_does_not_record_last_target_for_non_relocate_actions():
+    """Only RELOCATE actually moves the tribe; other actions' target_vector shouldn't
+    create a phantom "journey" reminder for a trip the tribe never intended to take."""
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
     ctx = {"biome": "forest", "available_actions": ["IDLE"]}
 
     sim._apply_turn(tribe, {"visual_action": "IDLE", "target_vector": [20, 30]}, 10.0, ctx)
 
-    assert tribe.last_target == [20, 30]
+    assert tribe.last_target is None
+
+
+def test_only_relocate_moves_the_tribe_via_apply_turn():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    start = (tribe.x, tribe.y)
+    ctx = {"biome": "forest", "available_actions": ["GATHER_WOOD", "RELOCATE"]}
+
+    sim._apply_turn(tribe, {"visual_action": "GATHER_WOOD", "target_vector": [90, 90]}, 10.0, ctx)
+    assert (tribe.x, tribe.y) == start  # gathering never moves the tribe
+
+    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [90, 90]}, 10.0, ctx)
+    assert (tribe.x, tribe.y) != start  # relocating does
 
 
 def test_prepare_turn_reminds_tribe_of_unfinished_journey():
@@ -167,6 +192,20 @@ def test_prepare_turn_has_no_journey_note_once_arrived():
     request, _ctx = sim._prepare_turn(tribe)
 
     assert "you have not yet arrived there" not in request["prompt"]
+
+
+def test_explicit_spawn_coordinates_override_the_default_spawn_points():
+    sim = Simulation([
+        {"name": "A", "model": "gemma2:2b", "x": 40, "y": 35},
+        {"name": "B", "model": "qwen2.5:3b", "x": 45, "y": 40},
+    ])
+    assert (sim.tribes["tribe_0"].x, sim.tribes["tribe_0"].y) == (40, 35)
+    assert (sim.tribes["tribe_1"].x, sim.tribes["tribe_1"].y) == (45, 40)
+
+
+def test_omitting_spawn_coordinates_still_falls_back_to_spawn_points():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    assert (sim.tribes["tribe_0"].x, sim.tribes["tribe_0"].y) == SPAWN_POINTS[0]
 
 
 def test_era_advances_once_population_and_resources_are_met():
@@ -295,7 +334,7 @@ def test_drowning_hazard_on_river_tile():
     tribe.water = 30
 
     with mock.patch("backend.actions.random.random", return_value=0.01):
-        note = sim._apply_action(tribe, "GATHER_WATER", "river")
+        note = sim._apply_action(tribe, "GATHER_WATER", "river", (0, 0))
 
     assert note == "the river's current pulled someone under"
     assert tribe.population == 9
@@ -310,7 +349,7 @@ def test_drowning_hazard_never_fires_off_river():
     tribe.water = 30
 
     with mock.patch("backend.actions.random.random", return_value=0.01):
-        note = sim._apply_action(tribe, "GATHER_WATER", "plains")
+        note = sim._apply_action(tribe, "GATHER_WATER", "plains", (0, 0))
 
     assert note is None
     assert tribe.population == 10

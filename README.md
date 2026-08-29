@@ -44,26 +44,25 @@ converged on.
   validation and silently falling back to `IDLE` on an unknown fraction of turns. Both are
   now generic placeholders with the real guidance moved into surrounding prose.
 
-  Fixing those two bugs wasn't enough on its own. `Tribe.last_target` persists the requested
-  destination across turns, and if a tribe hasn't arrived yet, its prompt states that fact
-  plainly ("last cycle you set target_vector to (x, y); you have not yet arrived there") --
-  stated as information, not an instruction to continue, since whether to keep going or
-  change course is left to the model. The prompt also clarifies that `visual_action` and
-  `target_vector` are independent fields (an action happens wherever the tribe currently
-  stands; movement toward the target happens the same cycle regardless of which action was
-  chosen) -- models were behaving as though gathering or building required staying put.
-  `config.MOVEMENT_SPEED` (`backend/physics.py`) also moves a tribe up to N tiles per axis
-  per cycle instead of 1, since at ~2 seconds of real inference time per cycle, even a
-  correct decision to travel far was visually imperceptible for minutes.
+  Fixing those two bugs still wasn't enough -- several follow-on attempts (`Tribe.last_target`
+  persistence across turns, `config.MOVEMENT_SPEED` moving several tiles per cycle instead of
+  1) didn't close the gap either. A live run showed a model oscillating between two points
+  exactly `MOVEMENT_SPEED` tiles apart, net displacement zero, forever.
 
-  None of these closed the actual gap. A live run showed a model oscillating between two
-  points exactly `MOVEMENT_SPEED` tiles apart, cycle after cycle, net displacement zero --
-  it reaches whatever nearby target it picks in a single cycle now, so the "not yet arrived"
-  reminder never even triggers, and raising movement speed just made short, non-committal
-  hops resolve faster rather than encouraging longer ones. This is being left as an honest,
-  observed limitation of what these small local models do with a free choice of
-  destination, not something to patch with more directive prompt text (see the leadership
-  system below for the approach taken instead of that).
+  The actual root cause: every action moved the tribe toward `target_vector` regardless of
+  what that action was, every single cycle. A model choosing `GATHER_WOOD` had no reason to
+  also specify a distant destination -- gathering happens where you stand -- so `target_vector`
+  defaulted to "wherever I already am," and the tribe drifted at most a few tiles before
+  snapping back to routine. The fix (see `backend/actions.py`) was architectural, not another
+  prompt patch: only a new `RELOCATE` action moves the tribe at all. Every other action
+  (gathering, hunting, building, a new `SCOUT` that looks at a distant tile and reports back
+  without moving anyone) happens at the tribe's current camp and leaves its position alone.
+  Confirmed live: a model committed to `RELOCATE` for 8 consecutive cycles, actually
+  traveling the full 30 tiles to its stated destination, then scouted, reconsidered, and
+  relocated again toward a new one -- a real explore-then-commit pattern, not oscillation.
+  `RELOCATE` costs stamina (`config.RELOCATE_FOOD_COST`/`RELOCATE_WATER_COST`, on top of
+  ordinary upkeep) so marching isn't strictly free compared to every action that does cost
+  something.
 - **`backend/scheduler.py`** — groups a tick's turns by which model they target and runs
   each model's group concurrently via `asyncio.gather`, so a tick with N tribes across M
   models costs at most M model swaps in Ollama, not N. Also sets `keep_alive` on every
@@ -105,7 +104,10 @@ converged on.
   choosing `BUILD_FIRE` for 7 straight cycles at the same spot, each one radiating *more*
   ancestral pride at zero additional benefit, a self-reinforcing loop that made staying put
   look increasingly attractive. That was a real mechanical gap, not model behavior to work
-  around.
+  around. Also includes `SCOUT` (looks at a distant tile and writes what's found -- terrain
+  and any structures observed -- into memory, without moving the tribe there) and
+  `RELOCATE` (the only action that actually moves the tribe; costs stamina). See the
+  `backend/prompts.py` entry above for why this action/movement split exists.
 - **`backend/instincts.py`** — physiological survival pressure, distinct from
   `ancestral_matrix.py`'s location-based bias: this is about a tribe's *current* condition
   (starving or dehydrated right now), not the history of the ground it's standing on.
@@ -181,7 +183,11 @@ converged on.
 
 Spawn points are one-per-biome (`SPAWN_POINTS` in `backend/simulation.py`) so the default
 picker order (Forest Tribe, Mountain Tribe, ...) actually starts each tribe in the biome
-its name implies.
+its name implies. A tribe config (in `START` or `ADD_TRIBE`) can include explicit `x`/`y` to
+override this -- used to set up two tribes starting near each other for a demo. This is an
+initial condition, same category as `SPAWN_POINTS` itself; it says nothing about what either
+tribe then chooses to do about being close (there's no UI for it in the picker yet, only the
+underlying support).
 
 ## Multiple simulations at once
 
@@ -250,16 +256,22 @@ Then open `http://localhost:8765` in a browser, pick a model for each tribe, and
   doesn't choose to gather there. Full "crossing dangerous terrain" risk is a natural fit
   for whenever travel/movement gets built out more deliberately (inter-tribe interaction).
 - Leadership (`backend/leadership.py`) is a one-time election at tribe creation with a
-  static standing philosophy, not an ongoing role. Two natural extensions, neither started:
-  a chief that periodically re-issues a fresh directive reflecting current tribe state
-  (a second, less-frequent LLM call, to avoid doubling inference cost every tick), and
-  leader-to-leader contact when two tribes' chiefs come into proximity -- today, tribes
-  getting close only means their people can overhear each other via the existing broadcast
-  mechanism; nothing about chiefs specifically triggers a summit, alliance, or rivalry.
-  Also unexplored: an "education" system unlocked once a tribe is established enough
-  (a Classical-Age-or-later structure), which could be what finally triggers
-  `genetics.py`'s still-unwired crossover -- a real generational knowledge-transfer event
-  rather than just prompt splicing.
+  static standing philosophy, not an ongoing role. Several natural extensions, none started:
+  - A chief that periodically re-issues a fresh directive reflecting current tribe state
+    (a second, less-frequent LLM call, to avoid doubling inference cost every tick).
+  - The election deciding on an initial relocation, not just a philosophy -- e.g. "the
+    newly elected chief decides the tribe should migrate toward reliable water." The
+    *fact* of where the nearest water is would be legitimate map knowledge for the
+    simulation to supply (a game master telling players what's nearby), while whether to
+    act on it stays the model's own decision -- same category as the leadership system
+    itself, not a scripted directive.
+  - Leader-to-leader contact when two tribes' chiefs come into proximity -- today,
+    proximity only means their people can overhear each other via the broadcast
+    mechanism; nothing about chiefs specifically triggers a summit, alliance, or rivalry.
+  - An "education" system unlocked once a tribe is established enough (a
+    Classical-Age-or-later structure), which could be what finally triggers
+    `genetics.py`'s still-unwired crossover -- a real generational knowledge-transfer
+    event rather than just prompt splicing.
 - Multiple individuals per tribe are a rendering layer only (deterministic wander animation
   keyed off population count) — there's still one authoritative (x, y) and one LLM call per
   tribe per tick, not per individual. Simulating individual members with their own
@@ -269,3 +281,22 @@ Then open `http://localhost:8765` in a browser, pick a model for each tribe, and
   (the fix there was the already-built no-op guard, a different mechanism). It also doesn't
   yet appear to be strong enough, on its own, to force relocation within the timeframe of a
   short observed run -- whether it does over a genuinely long run is untested.
+- There's no sense of what a tribe's invented tokens actually *mean*, even to itself.
+  `translation_matrix.py` tracks whether two tribes converge on the *same* token for the
+  same action, but nothing tallies a single tribe's own token-to-action history to infer
+  "this word is used with GATHER_WOOD 80% of the time." Would reuse the same co-occurrence
+  idea already proven out in that module.
+- `RELOCATE` currently moves at a flat `config.MOVEMENT_SPEED` regardless of context.
+  Raised in conversation but not built: some notion of velocity/momentum (sustained travel
+  in one direction building up speed, matching how a model committing to a multi-cycle
+  RELOCATE run was the actual fix for the oscillation bug above) and of exposure while away
+  from an established camp (a temporary camp mid-journey being more vulnerable than a
+  built fire/wall) -- a real hazard-rate difference, not a scripted warning.
+- No biome-specific fauna beyond forest deer -- rivers, oceans, and other biomes have no
+  wildlife of their own yet, and `HUNT_DEER` succeeds the same way regardless of biome
+  (including, oddly, in the ocean). Also unbuilt: a driftwood/raft mechanic -- floating
+  material spotted along the river inspiring a boat, which would give the large wood
+  stockpiles tribes tend to accumulate an actual use, and would be a concrete first
+  instance of the "inspiration" mechanic that's existed only as a concept so far
+  (observing something ordinary from a new angle and building something nobody
+  specifically asked for).

@@ -85,7 +85,13 @@ class Simulation:
         self.translation = TranslationConfidenceMatrix()
         self.tribes: dict[str, Tribe] = {}
         for i, cfg in enumerate(tribe_configs[: config.MAX_TRIBES]):
-            x, y = SPAWN_POINTS[i % len(SPAWN_POINTS)]
+            # An explicit x/y (e.g. to set up two tribes starting near each other) is an
+            # initial condition, same category as SPAWN_POINTS itself -- it says nothing
+            # about what either tribe then chooses to do about being close.
+            if "x" in cfg and "y" in cfg:
+                x, y = cfg["x"], cfg["y"]
+            else:
+                x, y = SPAWN_POINTS[i % len(SPAWN_POINTS)]
             tid = f"tribe_{i}"
             self.tribes[tid] = Tribe(tid, cfg["name"], cfg["model"], x, y, COLORS[i % len(COLORS)])
         self.cycle = 0
@@ -128,7 +134,7 @@ class Simulation:
             note = f"{tribe.chief_name} has become chief"
             tribe.history.append(f"{note} ({victory})." if victory else f"{note}.")
 
-    async def add_tribe(self, name: str, model: str) -> str | None:
+    async def add_tribe(self, name: str, model: str, x: int | None = None, y: int | None = None) -> str | None:
         """Injects a new tribe into an already-running simulation. Returns an error
         message on failure (max tribes reached), or None on success. Runs the same
         one-time VRAM check and chief election as Simulation.create()."""
@@ -137,7 +143,8 @@ class Simulation:
 
         index = len(self.tribes)
         tid = f"tribe_{index}"
-        x, y = SPAWN_POINTS[index % len(SPAWN_POINTS)]
+        if x is None or y is None:
+            x, y = SPAWN_POINTS[index % len(SPAWN_POINTS)]
         color = COLORS[index % len(COLORS)]
         tribe = Tribe(tid, name, model, x, y, color)
 
@@ -283,8 +290,19 @@ class Simulation:
         target = intent.get("target_vector", [tribe.x, tribe.y])
         if not (isinstance(target, list) and len(target) == 2):
             target = [tribe.x, tribe.y]
+        try:
+            target = (int(target[0]), int(target[1]))
+        except (TypeError, ValueError):
+            target = (tribe.x, tribe.y)
 
-        hazard_note = self._apply_action(tribe, action, ctx["biome"])
+        # Only RELOCATE actually moves the tribe -- everything else happens wherever it
+        # currently stands. last_target/journey_note (see _prepare_turn) specifically
+        # track an in-progress relocation, not just whatever coordinate a GATHER_WOOD
+        # turn happened to carry.
+        if action == "RELOCATE":
+            tribe.last_target = [target[0], target[1]]
+
+        hazard_note = self._apply_action(tribe, action, ctx["biome"], target)
         tribe.last_broadcast = broadcast
         tribe.last_action = action
         self.translation.record_broadcast(tribe.id, broadcast, action)
@@ -301,17 +319,9 @@ class Simulation:
             memory_text += f" {hazard_note}."
         tribe.memory.remember(memory_text, self.cycle, weight)
 
-        try:
-            target_x, target_y = int(target[0]), int(target[1])
-            tribe.last_target = [target_x, target_y]
-            nx, ny = physics.calculate_next_step(tribe.x, tribe.y, target_x, target_y, speed=config.MOVEMENT_SPEED)
-            tribe.x, tribe.y = nx, ny
-        except Exception:
-            pass
-
-    def _apply_action(self, tribe: Tribe, action: str, biome: str) -> str | None:
+    def _apply_action(self, tribe: Tribe, action: str, biome: str, target: tuple[int, int]) -> str | None:
         handler = ACTION_REGISTRY.get(action, ACTION_REGISTRY["IDLE"])
-        return handler(self, tribe, biome)
+        return handler(self, tribe, biome, target)
 
     def _apply_upkeep(self, tribe: Tribe) -> None:
         """Larger tribes cost more to sustain each tick. Left unpaid, someone dies --

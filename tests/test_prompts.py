@@ -31,12 +31,14 @@ def test_action_placeholder_does_not_repeat_select_strictly_one_pattern():
     assert "GATHER_WOOD" in prompt  # the actual action list is still shown, just as prose
 
 
-def test_prompt_clarifies_action_and_movement_are_independent():
-    """Not a behavioral nudge -- a factual clarification of how the two fields interact,
-    since models were assuming an action like GATHER_WOOD required staying in place."""
+def test_prompt_clarifies_only_relocate_moves_the_tribe():
+    """Factual clarification, not a behavioral nudge: only RELOCATE moves the tribe, and
+    SCOUT looks without moving -- earlier models assumed any action required staying put,
+    then later a per-turn target_vector caused the tribe to drift on every single turn
+    regardless of the action chosen. Both were architecture bugs, not model failures."""
     prompt = compile_live_state_prompt("base", _world_state(), "", "")
-    assert "independent" in prompt
-    assert "not required to equal your current position" in prompt
+    assert "Only RELOCATE moves your tribe" in prompt
+    assert "SCOUT looks at target_vector without moving" in prompt
 
 
 def test_system_prompt_includes_tribe_name_and_model():

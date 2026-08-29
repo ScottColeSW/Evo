@@ -63,10 +63,11 @@ METABOLIC STOCKPILES:
 VISUAL RENDER LAYER SCAN:
 Immediate Grid Entity Array: [{', '.join(world_state['visible_entities'])}]
 
-MOVEMENT: visual_action and target_vector are independent fields. Whatever action you
-choose happens wherever you currently stand this cycle. Separately, you move at most one
-tile toward target_vector this same cycle, regardless of which action you chose.
-target_vector is not required to equal your current position.
+MOVEMENT: Only RELOCATE moves your tribe -- every other action (gathering, hunting,
+building, scouting, idling) happens wherever you currently stand this cycle and does not
+move you. SCOUT looks at target_vector without moving anyone there, reporting back what
+is found. RELOCATE moves the whole tribe up to several tiles per cycle toward
+target_vector; this may take multiple cycles for a distant destination.
 {world_state.get('journey_note') or ''}
 
 ========================================================================
