@@ -525,9 +525,9 @@ class Simulation:
         self._lose_population(tribe, config.DEHYDRATION_POPULATION_LOSS)
 
     def _grow_population(self, tribe: Tribe) -> None:
-        if tribe.food > 80 and tribe.population < 80:
+        if tribe.food > config.POPULATION_GROWTH_FOOD_THRESHOLD and tribe.population < config.POPULATION_GROWTH_CAP:
             tribe.population += 1
-            tribe.food -= 30
+            tribe.food -= config.POPULATION_GROWTH_FOOD_COST
 
     def _advance_era_if_ready(self, tribe: Tribe) -> None:
         nxt = next_era(tribe.era)

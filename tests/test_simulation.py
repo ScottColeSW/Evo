@@ -457,6 +457,52 @@ def test_snapshot_includes_worn_trails_for_the_frontend_to_render():
     assert {"x": 12, "y": 34, "wear": 0.5} in trails
 
 
+def test_population_grows_once_food_clears_the_threshold():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 8
+    tribe.food = config.POPULATION_GROWTH_FOOD_THRESHOLD + 1
+
+    sim._grow_population(tribe)
+
+    assert tribe.population == 9
+    assert tribe.food == config.POPULATION_GROWTH_FOOD_THRESHOLD + 1 - config.POPULATION_GROWTH_FOOD_COST
+
+
+def test_population_does_not_grow_below_the_food_threshold():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 8
+    tribe.food = config.POPULATION_GROWTH_FOOD_THRESHOLD
+
+    sim._grow_population(tribe)
+
+    assert tribe.population == 8
+
+
+def test_population_growth_threshold_is_reachable_by_realistic_sustained_play():
+    """Regression test: the original threshold (food > 80, costing 30) was verified
+    live to be unreachable -- a real 79-cycle run under realistic mixed play never got
+    food above ~38 for either tribe, starting from 40. A tribe that hunts successfully
+    in forest a few cycles in a row (the single best-case income action) should be able
+    to clear the threshold well within a normal run, not require inhuman optimization."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 65, 85, "#c084fc")
+
+    with mock.patch("backend.actions.random.random", return_value=0.99):  # no wolf hazard
+        for _ in range(6):  # HUNT_DEER in forest, undepleted, nets +14/cycle after upkeep
+            sim._apply_action(tribe, "HUNT_DEER", "forest", (0, 0))
+            sim._apply_upkeep(tribe)
+
+    assert tribe.food > config.POPULATION_GROWTH_FOOD_THRESHOLD
+
+
 def test_upkeep_consumes_food_and_water_proportional_to_population():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")

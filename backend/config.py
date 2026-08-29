@@ -86,6 +86,18 @@ ERA_ADVANCE_PRIDE_RADIUS = 8
 # one-time threshold crossed once and then irrelevant.
 UPKEEP_POPULATION_DIVISOR = 10  # cost per tick = max(1, population // this)
 
+# Population growth (backend/simulation.py._grow_population). Originally food > 80
+# costing 30 -- verified live that a real 79-cycle run under realistic mixed play
+# (gathering, hunting, scouting, not a maximally-optimized single-resource grind)
+# never got food above ~38 for either tribe, starting from 40. Reaching Bronze Age
+# needs population 20, which at the old cost was 12 growth events needing ~360+
+# cumulative food surplus above ordinary living costs -- not a difficulty tuning
+# choice, just unreachable under any plausible play. Lowered to a threshold/cost pair
+# actually inside the range tribes were shown to reach.
+POPULATION_GROWTH_FOOD_THRESHOLD = 50
+POPULATION_GROWTH_FOOD_COST = 15
+POPULATION_GROWTH_CAP = 80
+
 # Survival instinct thresholds (backend/instincts.py). "Critical" also raises inference
 # temperature, same as ancestral dread -- real panic, not just different wording.
 HUNGER_WARNING_THRESHOLD = 20

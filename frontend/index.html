@@ -627,7 +627,6 @@ function drawFrame() {
   ctx.drawImage(terrainCanvas, 0, 0);
 
   if (latestState) {
-    drawTrails();
     (latestState.structures || []).forEach(s => {
       const px = s.x * TILE, py = s.y * TILE;
       if (s.type === "fire") {
@@ -643,6 +642,10 @@ function drawFrame() {
     });
 
     Object.entries(latestState.tribes || {}).forEach(([id, t]) => drawTribeIndividuals(id, t));
+    // Drawn last, on top of everything -- a trail at a tribe's own home tile (very
+    // common, since journeys start and end there) was getting completely hidden under
+    // that tribe's own dot cluster when drawn earlier in the pass.
+    drawTrails();
   }
   requestAnimationFrame(drawFrame);
 }
