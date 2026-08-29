@@ -15,8 +15,15 @@ MOVEMENT_SPEED = 4
 # Marching costs stamina -- without this, RELOCATE was a free action while every gathering
 # action costs time/risk, which would make endless relocation strictly better than settling
 # anywhere. Paid on top of ordinary upkeep, same resources, not a separate stat.
-RELOCATE_FOOD_COST = 2
-RELOCATE_WATER_COST = 2
+#
+# At 2 each, a real multi-cycle journey (the kind SCOUT/RELOCATE was split out to
+# encourage) stacked with ordinary upkeep to drain 3 food + 3 water per cycle with zero
+# income -- an 8-cycle, 30-tile crossing cost 24 of a 40/30 starting stockpile, making
+# the escape route out of a depleted home tile nearly as lethal as staying. Verified via
+# direct computation before lowering: at 1 each, the same journey costs 16, leaving real
+# margin while relocating is still twice as costly per cycle as standing still.
+RELOCATE_FOOD_COST = 1
+RELOCATE_WATER_COST = 1
 
 # The self-modification engine lets a model rewrite backend/physics.py on disk and
 # hot-reloads it when turns get slow. It's validated with an AST parse + cooldown

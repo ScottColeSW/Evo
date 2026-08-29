@@ -118,8 +118,8 @@ def test_relocate_costs_stamina():
 
     ACTION_REGISTRY["RELOCATE"](sim, tribe, "plains", (80, 50))
 
-    assert tribe.food == 38
-    assert tribe.water == 28
+    assert tribe.food == 39
+    assert tribe.water == 29
 
 
 def test_relocate_stamina_cost_never_goes_negative():

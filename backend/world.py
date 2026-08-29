@@ -86,3 +86,34 @@ class Landscape:
                 del self.depletion[key]
             else:
                 self.depletion[key] = remaining
+
+    def nearest_water(
+        self, x: int, y: int, kinds: tuple[str, ...] = ("river", "ocean")
+    ) -> tuple[int, int] | None:
+        """Full-grid search for the closest tile among `kinds` by true Euclidean
+        distance. A one-time fact supplied to a tribe's leadership election (see
+        leadership.py) -- legitimate map knowledge for the simulation to hand over, the
+        way a game master would tell players what's nearby, not a live gameplay check
+        run every tick. Deliberately a plain scan rather than an outward ring search:
+        an early version of the latter stopped at the first ring containing any match,
+        which can be farther in true Euclidean distance than a match in a nominally
+        "later" ring along a shallower angle -- caught by checking against a brute-force
+        reference before trusting it. Grid is only 100x100 and this runs once per tribe,
+        so the simple, obviously-correct version costs nothing that matters.
+
+        `kinds` defaults to both river and ocean, but a caller specifically after
+        drinkable fresh water should pass `("river",)` -- seawater doesn't quench
+        thirst, so treating a coastal tribe as already having solved its water problem
+        would be wrong. What else the ocean might be good for (fishing, salt, a raft
+        eventually) is left entirely open, not decided here."""
+        if biome_at(x, y) in kinds:
+            return (x, y)
+        best, best_dist = None, None
+        for cx in range(self.grid_size):
+            for cy in range(self.grid_size):
+                if biome_at(cx, cy) not in kinds:
+                    continue
+                dist = (cx - x) ** 2 + (cy - y) ** 2
+                if best_dist is None or dist < best_dist:
+                    best, best_dist = (cx, cy), dist
+        return best

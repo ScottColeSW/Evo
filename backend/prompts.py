@@ -1,5 +1,9 @@
 def get_prime_consciousness_prompt(
-    tribe_name: str, model_architecture: str, chief_name: str = "", chief_philosophy: str = ""
+    tribe_name: str,
+    model_architecture: str,
+    chief_name: str = "",
+    chief_philosophy: str = "",
+    chief_decree: str = "",
 ) -> str:
     """The standing system prompt: identity, objective, and the output contract.
 
@@ -9,9 +13,10 @@ def get_prime_consciousness_prompt(
     """
     leadership_block = ""
     if chief_name:
+        decree_line = f" The chief has also decreed: {chief_decree}." if chief_decree else ""
         leadership_block = f"""
 
-LEADERSHIP: Your chief, {chief_name}, holds this guiding philosophy: {chief_philosophy}
+LEADERSHIP: Your chief, {chief_name}, holds this guiding philosophy: {chief_philosophy}{decree_line}
 This is context about who leads you, not a command -- your own reasoning still decides \
 what your tribe actually does each cycle."""
 

@@ -75,3 +75,35 @@ def test_river_crosses_more_than_one_biome_on_its_way_to_the_sea():
         for dy in (-4, 0, 4):  # sample just off the river's own centerline
             biomes_crossed.add(biome_at(x, y + dy))
     assert {"mountains", "plains", "forest"}.issubset(biomes_crossed)
+
+
+def test_nearest_water_returns_own_tile_when_already_on_water():
+    land = Landscape(100)
+    assert land.nearest_water(40, 37) == (40, 37)  # on the river
+    assert land.nearest_water(95, 50) == (95, 50)  # in the ocean
+
+
+def test_nearest_water_matches_brute_force_reference():
+    """Regression test: an earlier ring-by-ring search stopped at the first ring
+    containing any match, which can be farther in true Euclidean distance than a match
+    in a nominally "later" ring along a shallower angle. Caught by comparing against
+    this same brute-force scan before trusting the faster version -- replaced with the
+    brute-force approach directly rather than debugging the ring search further, since
+    it only runs once per tribe and costs nothing that matters."""
+    land = Landscape(100)
+
+    def brute_force(x, y):
+        best, best_dist = None, None
+        for cx in range(100):
+            for cy in range(100):
+                if biome_at(cx, cy) in ("river", "ocean"):
+                    dist = (cx - x) ** 2 + (cy - y) ** 2
+                    if best_dist is None or dist < best_dist:
+                        best, best_dist = (cx, cy), dist
+        return best, best_dist
+
+    for spawn in [(10, 10), (80, 10), (50, 90), (0, 0), (99, 0), (0, 99)]:
+        result = land.nearest_water(*spawn)
+        expected, expected_dist = brute_force(*spawn)
+        result_dist = (result[0] - spawn[0]) ** 2 + (result[1] - spawn[1]) ** 2
+        assert result_dist == expected_dist, f"{spawn}: got {result} ({result_dist}), expected {expected} ({expected_dist})"

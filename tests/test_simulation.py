@@ -426,3 +426,75 @@ async def test_add_tribe_installs_a_chief():
     assert new_tribe.chief_name == "Test Chief"
     assert new_tribe.chief_philosophy == "test philosophy"
     assert any("Test Chief has become chief" in entry for entry in new_tribe.history)
+
+
+@run_async
+async def test_install_chief_records_decree_when_decreed_and_not_on_water():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.x, tribe.y = 10, 10  # mountains spawn, not on water
+    fake_result = {
+        "chief_name": "Ashgar",
+        "victory_method": "endurance",
+        "guiding_philosophy": "expansion",
+        "relocate_decision": {"decreed": True, "reason": "our people need water"},
+    }
+    with mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=fake_result)):
+        await sim._install_chief(tribe)
+
+    assert "reliable water access" in tribe.chief_decree
+    assert any("decrees" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_install_chief_no_decree_when_chief_declines():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.x, tribe.y = 10, 10
+    fake_result = {
+        "chief_name": "Ashgar",
+        "guiding_philosophy": "expansion",
+        "relocate_decision": {"decreed": False, "reason": "our shelter here is strong"},
+    }
+    with mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=fake_result)):
+        await sim._install_chief(tribe)
+
+    assert tribe.chief_decree == ""
+
+
+@run_async
+async def test_install_chief_skips_water_fact_when_already_on_water():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.x, tribe.y = 40, 37  # on the river
+    captured = {}
+
+    async def fake_elect(client, model, name, nearest_water=None):
+        captured["nearest_water"] = nearest_water
+        return {"chief_name": "Ashgar", "guiding_philosophy": "x", "relocate_decision": {"decreed": False, "reason": ""}}
+
+    with mock.patch("backend.simulation.elect_chief", fake_elect):
+        await sim._install_chief(tribe)
+
+    assert captured["nearest_water"] is None
+    assert tribe.chief_decree == ""
+
+
+@run_async
+async def test_install_chief_does_not_treat_ocean_as_solving_the_water_need():
+    """Standing on the coast doesn't mean the tribe has drinking water -- seawater isn't
+    a substitute for a river, so being on the ocean must not skip the water fact."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.x, tribe.y = 95, 50  # ocean, not river
+    captured = {}
+
+    async def fake_elect(client, model, name, nearest_water=None):
+        captured["nearest_water"] = nearest_water
+        return {"chief_name": "Ashgar", "guiding_philosophy": "x", "relocate_decision": {"decreed": False, "reason": ""}}
+
+    with mock.patch("backend.simulation.elect_chief", fake_elect):
+        await sim._install_chief(tribe)
+
+    assert captured["nearest_water"] is not None  # a real river was still searched for
+    assert sim.world.biome(*captured["nearest_water"]) == "river"
