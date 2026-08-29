@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Evolution2Civ</title>
+<style>
+  body { margin: 0; background: #141419; color: #e2e2e7; font-family: system-ui, sans-serif; }
+  h1, h3 { margin-top: 0; }
+
+  /* --- Picker screen --- */
+  #picker { max-width: 640px; margin: 60px auto; padding: 30px; background: #1a1a24; border-radius: 8px; }
+  #picker h1 { color: #a5b4fc; font-size: 22px; }
+  #picker p { color: #9ca3af; font-size: 13px; }
+  .tribe-row { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; background: #222232; padding: 10px; border-radius: 6px; }
+  .tribe-row input[type=text] { flex: 1; background: #141419; border: 1px solid #333344; color: #e2e2e7; padding: 8px; border-radius: 4px; }
+  .tribe-row select { flex: 1; background: #141419; border: 1px solid #333344; color: #e2e2e7; padding: 8px; border-radius: 4px; }
+  .swatch { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; }
+  #picker-controls { display: flex; gap: 10px; margin-top: 16px; }
+  button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; padding: 10px 16px; }
+  #btn-add { background: #333344; color: #e2e2e7; }
+  #btn-start { background: #4338ca; color: white; flex: 1; }
+  #btn-start:disabled { background: #333344; color: #666; cursor: not-allowed; }
+  #model-warning { color: #f59e0b; font-size: 12px; margin-top: 8px; display: none; }
+
+  /* --- Theater screen --- */
+  #theater { display: none; height: 100vh; }
+  #theater.active { display: flex; }
+  #sidebar { width: 340px; background: #1a1a24; border-right: 2px solid #2a2a3a; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+  #canvas-container { flex-grow: 1; display: flex; justify-content: center; align-items: center; background: #0b0b0f; }
+  canvas { background: #111; border: 2px solid #2a2a3a; border-radius: 4px; }
+  h3.section { text-transform: uppercase; letter-spacing: 1px; font-size: 12px; color: #a5b4fc; border-bottom: 1px solid #2a2a3a; padding-bottom: 5px; }
+  .stat-card { background: #222232; padding: 10px; border-radius: 6px; font-size: 12px; border-left: 4px solid #6366f1; margin-bottom: 8px; }
+  .log-box { background: #0f0f15; border: 1px solid #2a2a3a; border-radius: 6px; padding: 8px; font-family: monospace; font-size: 10px; overflow-y: auto; color: #34d399; max-height: 200px; }
+  .speech { font-style: italic; color: #fbbf24; }
+  #status-banner { padding: 8px; background: #065f46; color: #34d399; font-weight: bold; border-radius: 4px; text-align: center; font-size: 11px; font-family: monospace; }
+  #status-banner.refactoring { background: #991b1b; color: #fca5a5; }
+  #btn-pause { width: 100%; background: #4338ca; color: white; }
+</style>
+</head>
+<body>
+
+<div id="picker">
+  <h1>Evolution2Civ — Choose Your Tribes</h1>
+  <p>Pick a local Ollama model per tribe, then press start. This is a spectator sandbox — the tribes play entirely on their own.</p>
+  <div id="tribe-list"></div>
+  <div id="model-warning">No local Ollama models found at localhost:11434. Run <code>ollama pull llama3</code> (or similar) and reload this page.</div>
+  <div id="picker-controls">
+    <button id="btn-add">+ Add Tribe</button>
+    <button id="btn-start">Begin Simulation</button>
+  </div>
+</div>
+
+<div id="theater">
+  <div id="sidebar">
+    <h3 class="section">System</h3>
+    <div id="status-banner">CORE ENGINE STATUS: OPERATIONAL</div>
+    <button id="btn-pause">PAUSE SIMULATION</button>
+    <h3 class="section">Tribes</h3>
+    <div id="tribe-stats"></div>
+    <h3 class="section">Chronicle</h3>
+    <div id="log-chronicle" class="log-box"></div>
+  </div>
+  <div id="canvas-container">
+    <canvas id="simCanvas" width="600" height="600"></canvas>
+  </div>
+</div>
+
+<script>
+const TILE = 6;
+const GRID = 100;
+const TRIBE_COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"];
+let tribeCount = 0;
+let socket = null;
+let latestState = null;
+let animFrame = 0;
+
+function addTribeRow(defaultName, models) {
+  if (tribeCount >= 4) return;
+  const idx = tribeCount++;
+  const row = document.createElement("div");
+  row.className = "tribe-row";
+  row.innerHTML = `
+    <div class="swatch" style="background:${TRIBE_COLORS[idx % 4]}"></div>
+    <input type="text" value="${defaultName}" />
+    <select>${models.map(m => `<option value="${m}">${m}</option>`).join("")}</select>
+  `;
+  document.getElementById("tribe-list").appendChild(row);
+}
+
+async function loadModelsAndInit() {
+  let models = [];
+  try {
+    const res = await fetch("/api/models");
+    const data = await res.json();
+    models = data.models || [];
+  } catch (e) { /* server not reachable yet */ }
+
+  const startBtn = document.getElementById("btn-start");
+  if (models.length === 0) {
+    document.getElementById("model-warning").style.display = "block";
+    startBtn.disabled = true;
+    models = ["(no models found)"];
+  }
+  addTribeRow("Forest Tribe", models);
+  addTribeRow("Mountain Tribe", models);
+}
+
+document.getElementById("btn-add").addEventListener("click", async () => {
+  const res = await fetch("/api/models");
+  const data = await res.json();
+  addTribeRow(`Tribe ${tribeCount + 1}`, data.models || []);
+});
+
+document.getElementById("btn-start").addEventListener("click", () => {
+  const rows = document.querySelectorAll("#tribe-list .tribe-row");
+  const tribes = Array.from(rows).map(row => ({
+    name: row.querySelector("input").value || "Unnamed Tribe",
+    model: row.querySelector("select").value,
+  }));
+  if (tribes.length === 0) return;
+
+  document.getElementById("picker").style.display = "none";
+  document.getElementById("theater").classList.add("active");
+
+  socket = new WebSocket(`ws://${location.host}/ws`);
+  socket.onopen = () => socket.send(JSON.stringify({ command: "START", tribes }));
+  socket.onmessage = (event) => {
+    latestState = JSON.parse(event.data);
+    updateSidebar(latestState);
+  };
+});
+
+document.getElementById("btn-pause").addEventListener("click", () => {
+  if (!socket) return;
+  socket.send(JSON.stringify({ command: "TOGGLE_PAUSE" }));
+  const btn = document.getElementById("btn-pause");
+  btn.textContent = btn.textContent.startsWith("PAUSE") ? "RESUME SIMULATION" : "PAUSE SIMULATION";
+});
+
+function biomeColor(x, y) {
+  if (x > 70 || y < 30) return "#14321e";
+  if (x < 25 && y < 60) return "#3a3a42";
+  if (Math.abs(x - y) < 4) return "#1d4ed8";
+  return "#224d1a";
+}
+
+function drawTerrain() {
+  const ctx = document.getElementById("simCanvas").getContext("2d");
+  for (let x = 0; x < GRID; x++) {
+    for (let y = 0; y < GRID; y++) {
+      ctx.fillStyle = biomeColor(x, y);
+      ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+    }
+  }
+}
+
+function drawFrame() {
+  animFrame++;
+  const canvas = document.getElementById("simCanvas");
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawTerrain();
+
+  if (latestState) {
+    (latestState.structures || []).forEach(s => {
+      const px = s.x * TILE, py = s.y * TILE;
+      if (s.type === "fire") {
+        const r = 3 + Math.sin(animFrame * 0.2) * 1.5;
+        ctx.fillStyle = "rgba(245,158,11,0.5)";
+        ctx.beginPath(); ctx.arc(px + TILE / 2, py + TILE / 2, r + 2, 0, 2 * Math.PI); ctx.fill();
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath(); ctx.arc(px + TILE / 2, py + TILE / 2, r, 0, 2 * Math.PI); ctx.fill();
+      } else {
+        ctx.fillStyle = "#78350f";
+        ctx.fillRect(px, py, TILE, TILE);
+      }
+    });
+
+    Object.values(latestState.tribes || {}).forEach(t => {
+      const px = t.x * TILE, py = t.y * TILE;
+      ctx.fillStyle = t.color;
+      ctx.fillRect(px - 2, py - 2, TILE + 4, TILE + 4);
+      if (t.last_broadcast) {
+        ctx.font = "bold 10px monospace";
+        const w = ctx.measureText(t.last_broadcast).width;
+        ctx.fillStyle = "rgba(15,15,21,0.85)";
+        ctx.fillRect(px - w / 2, py - 16, w + 6, 12);
+        ctx.fillStyle = "#fbbf24";
+        ctx.fillText(t.last_broadcast, px - w / 2 + 3, py - 7);
+      }
+    });
+  }
+  requestAnimationFrame(drawFrame);
+}
+
+function updateSidebar(state) {
+  const banner = document.getElementById("status-banner");
+  if (state.status === "REFACTORING") {
+    banner.textContent = "SYSTEM SHIFT: REFACTORING SOURCE FILES...";
+    banner.classList.add("refactoring");
+  } else {
+    banner.textContent = "CORE ENGINE STATUS: OPERATIONAL";
+    banner.classList.remove("refactoring");
+  }
+
+  const stats = document.getElementById("tribe-stats");
+  const log = document.getElementById("log-chronicle");
+  stats.innerHTML = "";
+  log.innerHTML = "";
+  Object.entries(state.tribes || {}).forEach(([id, t]) => {
+    stats.innerHTML += `
+      <div class="stat-card" style="border-left-color:${t.color}">
+        <strong>${t.name}</strong> (${t.model})${t.founded_city ? " 🏛️" : ""}<br>
+        (${t.x}, ${t.y}) | Pop: ${t.population}<br>
+        🪵 ${t.wood} | 🪨 ${t.stone} | 🍖 ${t.food}<br>
+        <span class="speech">"${t.last_broadcast || "..."}"</span>
+      </div>`;
+    (t.history || []).forEach(entry => {
+      log.innerHTML += `<div>[${id}] ${entry}</div>`;
+    });
+  });
+}
+
+loadModelsAndInit();
+drawFrame();
+</script>
+</body>
+</html>
