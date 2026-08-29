@@ -74,6 +74,7 @@
   .log-box .log-chief { color: #fbbf24; font-weight: bold; }
   .log-box .log-decree { color: #fbbf24; }
   .log-box .log-extinct { color: #f87171; font-weight: bold; }
+  .log-box .log-chief-death { color: #f87171; font-weight: bold; }
   .log-box .log-hazard { color: #f87171; }
   .log-box .log-raid { color: #fb7185; font-weight: bold; }
   .log-box .log-vram { color: #f59e0b; }
@@ -395,10 +396,15 @@ function checkChiefElections(state) {
       }
       return;
     }
+    const previous = lastChiefByTribe[id];
     // A later ADD_TRIBE also runs its own election after the tribe already exists
-    // client-side, so a chief appearing after the fact is announced too.
-    if (!lastChiefByTribe[id] && t.chief_name) {
+    // client-side, and a chief who dies (see chronicleEntryClass's log-chief-death)
+    // gets a real successor next cycle, not silence -- either way, a chief appearing
+    // where there wasn't one a moment ago is worth announcing.
+    if (!previous && t.chief_name) {
       queueBanner(`👑 ${t.chief_name} becomes chief of ${t.name}!`, false, "chief");
+    } else if (previous && !t.chief_name && !t.extinct) {
+      queueBanner(`💀 Chief ${previous} of ${t.name} has died!`, true);
     }
     lastChiefByTribe[id] = t.chief_name || "";
   });
@@ -658,6 +664,7 @@ function drawFrame() {
 // weight without the backend needing to emit a separate "kind" field.
 function chronicleEntryClass(entry) {
   if (entry.includes("has gone extinct")) return "log-extinct";
+  if (entry.includes("has died. ") && entry.includes("without a leader")) return "log-chief-death";
   if (entry.includes("has become chief")) return "log-chief";
   if (entry.includes("decrees:")) return "log-decree";
   if (entry.includes("claimed lives")) return "log-hazard";
@@ -670,6 +677,7 @@ function chronicleEntryClass(entry) {
 function chronicleEntryIcon(entry) {
   switch (chronicleEntryClass(entry)) {
     case "log-extinct": return "💀 ";
+    case "log-chief-death": return "💀 ";
     case "log-chief": return "👑 ";
     case "log-decree": return "📜 ";
     case "log-hazard": return "⚠️ ";

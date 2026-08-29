@@ -574,6 +574,65 @@ def test_extinct_tribe_loses_no_further_population():
     assert tribe.population == 0
 
 
+def test_a_population_loss_can_claim_the_chief():
+    """Previously a chief, once elected, was permanent flavor text no matter what
+    happened to the population underneath them -- the population was already mortal,
+    the chief was the one thing exempt from it. Any survived loss now carries a real
+    chance of claiming the chief specifically."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 8
+    tribe.chief_name = "Ashgar"
+    tribe.chief_philosophy = "aggressive expansion"
+    tribe.chief_decree = "seek water"
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):  # below any positive chance
+        sim._lose_population(tribe, 1)
+
+    assert tribe.chief_name == ""
+    assert tribe.chief_philosophy == ""
+    assert tribe.chief_decree == ""
+    assert any("Chief Ashgar has died" in entry for entry in tribe.history)
+
+
+def test_a_population_loss_does_not_always_claim_the_chief():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 8
+    tribe.chief_name = "Ashgar"
+
+    with mock.patch("backend.simulation.random.random", return_value=0.999):  # above any plausible chance
+        sim._lose_population(tribe, 1)
+
+    assert tribe.chief_name == "Ashgar"
+
+
+def test_extinction_does_not_also_report_a_separate_chief_death():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 1
+    tribe.chief_name = "Ashgar"
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._lose_population(tribe, 1)
+
+    assert tribe.extinct is True
+    assert not any("Chief Ashgar has died" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_step_installs_a_successor_chief_when_one_is_missing():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = ""  # a fallen chief, mid-run
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=_FAKE_CHIEF)):
+        await sim.step()
+
+    assert tribe.chief_name == "Test Chief"
+
+
 @run_async
 async def test_step_skips_extinct_tribes_entirely():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])

@@ -123,6 +123,16 @@ DROWNING_HAZARD_POPULATION_LOSS = 1
 DROWNING_TRAUMA_MAGNITUDE = -0.4
 DROWNING_TRAUMA_RADIUS = 6
 
+# Chief mortality (backend/simulation.py._lose_population). Previously a chief, once
+# elected, was permanent flavor text -- it never mattered who was actually still alive.
+# Now any population loss (starvation, thirst, a hazard, a lost raid) carries a real
+# chance the chief is among the casualties, clearing the tribe's leadership and forcing
+# a fresh, model-generated succession contest (see _install_chief) rather than leaving
+# the tribe leaderless forever. This is a real consequence of resource mismanagement,
+# not a scripted nudge -- what the tribe does about a leadership vacuum is still its
+# own turn-by-turn call.
+CHIEF_DEATH_CHANCE_ON_LOSS = 0.2
+
 # A tribe can now actually go extinct (population 0) instead of being propped up at a
 # permanent population-1 floor. Extinction is a far larger trauma event than an ordinary
 # death -- it should be visible on the map for a long time afterward.

@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import random
 
 from . import config, physics
 from .actions import ACTION_REGISTRY
@@ -255,6 +256,10 @@ class Simulation:
             if not tribe.extinct and tribe.expedition is not None:
                 self._advance_expedition(tribe)
 
+        for tribe in self.tribes.values():
+            if not tribe.extinct and not tribe.chief_name:
+                await self._install_chief(tribe)
+
         if self.tribes and all(tribe.extinct for tribe in self.tribes.values()):
             await self._trigger_game_over()
 
@@ -499,7 +504,13 @@ class Simulation:
         """The single place population ever decreases. A tribe can now actually go
         extinct (population 0) rather than being propped up at a permanent
         population-1 floor -- extinction is marked, announced, and radiates a much
-        larger trauma event than an ordinary death."""
+        larger trauma event than an ordinary death.
+
+        Any loss also carries a chance of claiming the chief specifically, once a
+        tribe survives it -- a chief was previously permanent flavor text no matter
+        what happened to the people underneath them. A tribe that survives a chief's
+        death gets a genuine leadership vacuum until Simulation.step() runs a fresh
+        succession contest, not a name that just silently stays put forever."""
         if tribe.extinct:
             return
         tribe.population = max(0, tribe.population - amount)
@@ -509,6 +520,12 @@ class Simulation:
             self.trauma.radiate_event_wave(
                 tribe.x, tribe.y, config.EXTINCTION_TRAUMA_MAGNITUDE, config.EXTINCTION_TRAUMA_RADIUS
             )
+        elif tribe.chief_name and random.random() < config.CHIEF_DEATH_CHANCE_ON_LOSS:
+            fallen = tribe.chief_name
+            tribe.chief_name = ""
+            tribe.chief_philosophy = ""
+            tribe.chief_decree = ""
+            tribe.history.append(f"Chief {fallen} has died. {tribe.name} is left without a leader.")
 
     def _starve(self, tribe: Tribe) -> None:
         tribe.history.append("starvation claimed lives")
