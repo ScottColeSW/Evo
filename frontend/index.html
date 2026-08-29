@@ -4,8 +4,10 @@
 <meta charset="UTF-8">
 <title>Evolution2Civ</title>
 <style>
+  * { box-sizing: border-box; }
   body { margin: 0; background: #141419; color: #e2e2e7; font-family: system-ui, sans-serif; }
   h1, h3 { margin-top: 0; }
+  button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
 
   /* --- Picker screen --- */
   #picker { max-width: 640px; margin: 60px auto; padding: 30px; background: #1a1a24; border-radius: 8px; }
@@ -16,31 +18,52 @@
   .tribe-row select { flex: 1; background: #141419; border: 1px solid #333344; color: #e2e2e7; padding: 8px; border-radius: 4px; }
   .swatch { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; }
   #picker-controls { display: flex; gap: 10px; margin-top: 16px; }
-  button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; padding: 10px 16px; }
-  #btn-add { background: #333344; color: #e2e2e7; }
-  #btn-start { background: #4338ca; color: white; flex: 1; }
+  #btn-add { background: #333344; color: #e2e2e7; padding: 10px 16px; }
+  #btn-start { background: #4338ca; color: white; flex: 1; padding: 10px 16px; }
   #btn-start:disabled { background: #333344; color: #666; cursor: not-allowed; }
   #model-warning { color: #f59e0b; font-size: 12px; margin-top: 8px; display: none; }
 
   /* --- Theater screen --- */
-  #theater { display: none; height: 100vh; }
+  #theater { display: none; flex-direction: column; height: 100vh; }
   #theater.active { display: flex; }
-  #sidebar { width: 340px; background: #1a1a24; border-right: 2px solid #2a2a3a; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
-  #canvas-container { flex-grow: 1; display: flex; justify-content: center; align-items: center; background: #0b0b0f; position: relative; }
+
+  #theater-header { display: flex; align-items: center; gap: 16px; padding: 10px 18px; background: #1a1a24; border-bottom: 2px solid #2a2a3a; flex-shrink: 0; }
+  #theater-header h1 { font-size: 15px; color: #a5b4fc; letter-spacing: 0.5px; flex-shrink: 0; }
+  #status-banner { padding: 6px 14px; background: #065f46; color: #34d399; font-weight: bold; border-radius: 4px; font-size: 11px; font-family: monospace; }
+  #status-banner.refactoring { background: #991b1b; color: #fca5a5; }
+  #btn-pause { background: #4338ca; color: white; padding: 8px 16px; font-size: 12px; margin-left: auto; }
+
+  #theater-body { flex: 1; display: flex; min-height: 0; }
+  #canvas-container { flex: 1; display: flex; justify-content: center; align-items: center; background: #0b0b0f; position: relative; padding: 12px; min-width: 0; }
   #era-banner { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); background: rgba(67,56,202,0.95); color: #fff; padding: 14px 28px; border-radius: 8px; font-weight: bold; font-size: 15px; opacity: 0; pointer-events: none; transition: opacity 0.5s ease; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,0.4); white-space: nowrap; }
   #era-banner.show { opacity: 1; }
-  canvas { background: #111; border: 2px solid #2a2a3a; border-radius: 4px; }
-  h3.section { text-transform: uppercase; letter-spacing: 1px; font-size: 12px; color: #a5b4fc; border-bottom: 1px solid #2a2a3a; padding-bottom: 5px; }
-  .stat-card { background: #222232; padding: 10px; border-radius: 6px; font-size: 12px; border-left: 4px solid #6366f1; margin-bottom: 8px; }
-  .log-box { background: #0f0f15; border: 1px solid #2a2a3a; border-radius: 6px; padding: 8px; font-family: monospace; font-size: 10px; overflow-y: auto; color: #34d399; max-height: 200px; }
-  .speech { font-style: italic; color: #fbbf24; }
+  canvas { background: #111; border: 2px solid #2a2a3a; border-radius: 4px; display: block; }
+
+  #sidebar { width: 360px; flex-shrink: 0; background: #1a1a24; border-left: 2px solid #2a2a3a; padding: 14px; display: flex; flex-direction: column; min-height: 0; }
+  #sidebar-tabs { display: flex; gap: 4px; margin-bottom: 12px; flex-shrink: 0; }
+  .tab-btn { flex: 1; background: #202030; color: #8a8a9a; padding: 8px 4px; font-size: 12px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .tab-btn.active { background: #322f6e; color: #c7d2fe; }
+  .tab-panel { display: none; flex-direction: column; gap: 10px; flex: 1; min-height: 0; overflow-y: auto; }
+  .tab-panel.active { display: flex; }
+
+  #inject-tribe-row { display: flex; gap: 6px; flex-shrink: 0; }
+  #inject-tribe-row input, #inject-tribe-row select { min-width: 0; background: #141419; border: 1px solid #333344; color: #e2e2e7; padding: 6px; border-radius: 4px; font-size: 12px; }
+  #inject-tribe-row input { flex: 1.2; }
+  #inject-tribe-row select { flex: 1; }
+  #btn-inject-tribe { background: #4338ca; color: white; padding: 6px 10px; font-size: 12px; flex-shrink: 0; }
+
+  .stat-card { background: #222232; padding: 10px; border-radius: 6px; font-size: 12px; border-left: 4px solid #6366f1; }
+  .stat-card .stat-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+  .stat-card .era-pill { font-size: 10px; background: #2a2a3a; color: #a5b4fc; padding: 2px 6px; border-radius: 10px; white-space: nowrap; }
+  .stat-card .resources { color: #c7c7d1; margin-top: 6px; }
+  .speech { font-style: italic; color: #fbbf24; display: block; margin-top: 4px; }
   .survival-warning { color: #f87171; font-size: 11px; margin-top: 4px; }
-  .consensus-row { background: #222232; padding: 8px; border-radius: 6px; font-size: 11px; margin-bottom: 6px; }
+
+  .log-box { background: #0f0f15; border: 1px solid #2a2a3a; border-radius: 6px; padding: 8px; font-family: monospace; font-size: 10px; overflow-y: auto; color: #34d399; flex: 1; }
+  .consensus-row { background: #222232; padding: 8px; border-radius: 6px; font-size: 11px; }
   .consensus-bar { height: 4px; background: #333344; border-radius: 2px; margin-top: 4px; overflow: hidden; }
   .consensus-fill { height: 100%; background: #34d399; }
-  #status-banner { padding: 8px; background: #065f46; color: #34d399; font-weight: bold; border-radius: 4px; text-align: center; font-size: 11px; font-family: monospace; }
-  #status-banner.refactoring { background: #991b1b; color: #fca5a5; }
-  #btn-pause { width: 100%; background: #4338ca; color: white; }
+  .empty-hint { color: #6b7280; font-size: 12px; padding: 8px 0; }
 </style>
 </head>
 <body>
@@ -57,36 +80,54 @@
 </div>
 
 <div id="theater">
-  <div id="sidebar">
-    <h3 class="section">System</h3>
-    <div id="status-banner">CORE ENGINE STATUS: OPERATIONAL</div>
-    <button id="btn-pause">PAUSE SIMULATION</button>
-    <h3 class="section">Tribes</h3>
-    <div id="tribe-stats"></div>
-    <div id="inject-tribe-row" style="display:flex; gap:6px; margin-bottom:10px;">
-      <input type="text" id="new-tribe-name" placeholder="New Tribe" style="flex:1; min-width:0; background:#141419; border:1px solid #333344; color:#e2e2e7; padding:6px; border-radius:4px; font-size:12px;" />
-      <select id="new-tribe-model" style="flex:1; min-width:0; background:#141419; border:1px solid #333344; color:#e2e2e7; padding:6px; border-radius:4px; font-size:12px;"></select>
-      <button id="btn-inject-tribe" style="background:#4338ca; color:white; padding:6px 10px; font-size:12px;">+ Inject</button>
-    </div>
-    <h3 class="section">Linguistic Consensus</h3>
-    <div id="consensus-panel"></div>
-    <h3 class="section">Chronicle</h3>
-    <div id="log-chronicle" class="log-box"></div>
+  <div id="theater-header">
+    <h1>EVOLUTION2CIV</h1>
+    <div id="status-banner">OPERATIONAL</div>
+    <button id="btn-pause">PAUSE</button>
   </div>
-  <div id="canvas-container">
-    <div id="era-banner"></div>
-    <canvas id="simCanvas" width="600" height="600"></canvas>
+  <div id="theater-body">
+    <div id="canvas-container">
+      <div id="era-banner"></div>
+      <canvas id="simCanvas"></canvas>
+    </div>
+    <div id="sidebar">
+      <div id="sidebar-tabs">
+        <button class="tab-btn active" data-tab="tribes">Tribes</button>
+        <button class="tab-btn" data-tab="consensus">Consensus</button>
+        <button class="tab-btn" data-tab="chronicle">Chronicle</button>
+      </div>
+      <div id="tab-tribes" class="tab-panel active">
+        <div id="inject-tribe-row">
+          <input type="text" id="new-tribe-name" placeholder="New Tribe" />
+          <select id="new-tribe-model"></select>
+          <button id="btn-inject-tribe">+ Inject</button>
+        </div>
+        <div id="tribe-stats"></div>
+      </div>
+      <div id="tab-consensus" class="tab-panel">
+        <div id="consensus-panel"></div>
+      </div>
+      <div id="tab-chronicle" class="tab-panel">
+        <div id="log-chronicle" class="log-box"></div>
+      </div>
+    </div>
   </div>
 </div>
 
 <script>
-const TILE = 6;
 const GRID = 100;
 const TRIBE_COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"];
+let TILE = 6;
 let tribeCount = 0;
 let socket = null;
 let latestState = null;
 let animFrame = 0;
+
+const canvas = document.getElementById("simCanvas");
+const ctx = canvas.getContext("2d");
+const terrainCanvas = document.createElement("canvas");
+
+/* ---------- Picker screen ---------- */
 
 function addTribeRow(defaultName, models) {
   if (tribeCount >= 4) return;
@@ -137,6 +178,7 @@ document.getElementById("btn-start").addEventListener("click", () => {
   document.getElementById("theater").classList.add("active");
   lastEraByTribe = {};
   populateInjectModelSelect();
+  requestAnimationFrame(resizeCanvas);
 
   socket = new WebSocket(`ws://${location.host}/ws`);
   socket.onopen = () => socket.send(JSON.stringify({ command: "START", tribes }));
@@ -147,11 +189,35 @@ document.getElementById("btn-start").addEventListener("click", () => {
   };
 });
 
+/* ---------- Theater chrome: header, tabs, resize ---------- */
+
 document.getElementById("btn-pause").addEventListener("click", () => {
   if (!socket) return;
   socket.send(JSON.stringify({ command: "TOGGLE_PAUSE" }));
   const btn = document.getElementById("btn-pause");
-  btn.textContent = btn.textContent.startsWith("PAUSE") ? "RESUME SIMULATION" : "PAUSE SIMULATION";
+  btn.textContent = btn.textContent === "PAUSE" ? "RESUME" : "PAUSE";
+});
+
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
+  });
+});
+
+function resizeCanvas() {
+  const container = document.getElementById("canvas-container");
+  const size = Math.max(300, Math.floor(Math.min(container.clientWidth, container.clientHeight)) - 24);
+  canvas.width = size;
+  canvas.height = size;
+  TILE = size / GRID;
+  renderTerrainCache();
+}
+
+window.addEventListener("resize", () => {
+  if (document.getElementById("theater").classList.contains("active")) resizeCanvas();
 });
 
 async function populateInjectModelSelect() {
@@ -177,6 +243,8 @@ document.getElementById("btn-inject-tribe").addEventListener("click", () => {
   nameInput.value = "";
 });
 
+/* ---------- Era transition banner ---------- */
+
 let lastEraByTribe = {};
 let eraBannerTimeout = null;
 
@@ -201,6 +269,8 @@ function showEraBanner(text) {
   eraBannerTimeout = setTimeout(() => banner.classList.remove("show"), 4000);
 }
 
+/* ---------- Canvas rendering ---------- */
+
 function biomeColor(x, y) {
   if (x > 70 || y < 30) return "#14321e";
   if (x < 25 && y < 60) return "#3a3a42";
@@ -208,22 +278,75 @@ function biomeColor(x, y) {
   return "#224d1a";
 }
 
-function drawTerrain() {
-  const ctx = document.getElementById("simCanvas").getContext("2d");
+function renderTerrainCache() {
+  terrainCanvas.width = canvas.width;
+  terrainCanvas.height = canvas.height;
+  const tctx = terrainCanvas.getContext("2d");
   for (let x = 0; x < GRID; x++) {
     for (let y = 0; y < GRID; y++) {
-      ctx.fillStyle = biomeColor(x, y);
-      ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+      tctx.fillStyle = biomeColor(x, y);
+      tctx.fillRect(x * TILE, y * TILE, TILE + 0.6, TILE + 0.6); // slight overlap hides seams
     }
+  }
+}
+
+// Deterministic pseudo-random in [0, 1) from a string -- same tribe+index always gets the
+// same wander phase, so individuals move smoothly across frames instead of flickering.
+// A naive rolling hash's last multiply-add step only adds a tiny charCode-sized delta to
+// an otherwise-identical accumulator when inputs share a prefix (e.g. "tribe_0:0" vs
+// "tribe_0:7"), which collapses to the same value once normalized -- every dot ended up
+// with the same seed. The sine-based finalizer below is chaotic enough that even a small
+// difference in the numeric seed spreads across the whole [0,1) range.
+function stringSeed(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
+  return h;
+}
+function hashUnit(seed) {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+// A tribe is many individuals wandering near its actual grid position, not one dot --
+// each gets a deterministic Lissajous-style orbit so the cluster reads as alive (ant
+// colony foraging near the nest) without any extra backend state or per-frame randomness.
+function drawTribeIndividuals(tribeId, t) {
+  const centerX = t.x * TILE + TILE / 2;
+  const centerY = t.y * TILE + TILE / 2;
+  const count = Math.max(1, Math.min(t.population, 24));
+  const clusterRadius = Math.min(TILE * 2.2, 24);
+  const dotRadius = Math.max(1.4, TILE * 0.22);
+
+  ctx.fillStyle = t.color;
+  const tribeBase = stringSeed(tribeId);
+  for (let i = 0; i < count; i++) {
+    const seed = hashUnit(tribeBase + i * 97.31);
+    const phaseA = seed * Math.PI * 2;
+    const phaseB = hashUnit(tribeBase + i * 97.31 + 500) * Math.PI * 2;
+    const speedA = 0.015 + seed * 0.02;
+    const speedB = 0.012 + hashUnit(tribeBase + i * 97.31 + 900) * 0.02;
+    const dx = Math.cos(animFrame * speedA + phaseA) * clusterRadius;
+    const dy = Math.sin(animFrame * speedB + phaseB) * clusterRadius;
+    ctx.beginPath();
+    ctx.arc(centerX + dx, centerY + dy, dotRadius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (t.last_broadcast) {
+    ctx.font = "bold 10px monospace";
+    const w = ctx.measureText(t.last_broadcast).width;
+    const by = centerY - clusterRadius - 14;
+    ctx.fillStyle = "rgba(15,15,21,0.85)";
+    ctx.fillRect(centerX - w / 2 - 3, by - 10, w + 6, 14);
+    ctx.fillStyle = "#fbbf24";
+    ctx.fillText(t.last_broadcast, centerX - w / 2, by);
   }
 }
 
 function drawFrame() {
   animFrame++;
-  const canvas = document.getElementById("simCanvas");
-  const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawTerrain();
+  ctx.drawImage(terrainCanvas, 0, 0);
 
   if (latestState) {
     (latestState.structures || []).forEach(s => {
@@ -240,30 +363,20 @@ function drawFrame() {
       }
     });
 
-    Object.values(latestState.tribes || {}).forEach(t => {
-      const px = t.x * TILE, py = t.y * TILE;
-      ctx.fillStyle = t.color;
-      ctx.fillRect(px - 2, py - 2, TILE + 4, TILE + 4);
-      if (t.last_broadcast) {
-        ctx.font = "bold 10px monospace";
-        const w = ctx.measureText(t.last_broadcast).width;
-        ctx.fillStyle = "rgba(15,15,21,0.85)";
-        ctx.fillRect(px - w / 2, py - 16, w + 6, 12);
-        ctx.fillStyle = "#fbbf24";
-        ctx.fillText(t.last_broadcast, px - w / 2 + 3, py - 7);
-      }
-    });
+    Object.entries(latestState.tribes || {}).forEach(([id, t]) => drawTribeIndividuals(id, t));
   }
   requestAnimationFrame(drawFrame);
 }
 
+/* ---------- Sidebar ---------- */
+
 function updateSidebar(state) {
   const banner = document.getElementById("status-banner");
   if (state.status === "REFACTORING") {
-    banner.textContent = "SYSTEM SHIFT: REFACTORING SOURCE FILES...";
+    banner.textContent = "REFACTORING SOURCE...";
     banner.classList.add("refactoring");
   } else {
-    banner.textContent = "CORE ENGINE STATUS: OPERATIONAL";
+    banner.textContent = "OPERATIONAL";
     banner.classList.remove("refactoring");
   }
 
@@ -272,15 +385,22 @@ function updateSidebar(state) {
   const consensus = document.getElementById("consensus-panel");
   const tribeCountNow = Object.keys(state.tribes || {}).length;
   document.getElementById("inject-tribe-row").style.display = tribeCountNow >= 4 ? "none" : "flex";
+
   stats.innerHTML = "";
   log.innerHTML = "";
   consensus.innerHTML = "";
+
   Object.entries(state.tribes || {}).forEach(([id, t]) => {
     stats.innerHTML += `
       <div class="stat-card" style="border-left-color:${t.color}">
-        <strong>${t.name}</strong> (${t.model})${t.founded_city ? " 🏛️" : ""}<br>
-        ${t.era_label} — (${t.x}, ${t.y}) | Pop: ${t.population}<br>
-        🪵 ${t.wood} | 🪨 ${t.stone} | 🍖 ${t.food} | 💧 ${t.water}<br>
+        <div class="stat-top">
+          <strong>${t.name}${t.founded_city ? " 🏛️" : ""}</strong>
+          <span class="era-pill">${t.era_label}</span>
+        </div>
+        <div class="resources">
+          (${t.x}, ${t.y}) · ${t.model} · Pop ${t.population}<br>
+          🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${t.food} &nbsp;💧 ${t.water}
+        </div>
         <span class="speech">"${t.last_broadcast || "..."}"</span>
         ${t.survival_warning ? `<div class="survival-warning">⚠️ ${t.survival_warning.replace("[SURVIVAL INSTINCT]: ", "")}</div>` : ""}
       </div>`;
@@ -289,7 +409,11 @@ function updateSidebar(state) {
     });
   });
 
-  (state.linguistic_consensus || []).forEach(pair => {
+  const pairs = state.linguistic_consensus || [];
+  if (pairs.length === 0) {
+    consensus.innerHTML = `<div class="empty-hint">Add a second tribe to see linguistic convergence tracked here.</div>`;
+  }
+  pairs.forEach(pair => {
     const pct = Math.round((pair.mean_confidence || 0) * 100);
     consensus.innerHTML += `
       <div class="consensus-row">
@@ -300,6 +424,7 @@ function updateSidebar(state) {
 }
 
 loadModelsAndInit();
+renderTerrainCache();
 drawFrame();
 </script>
 </body>

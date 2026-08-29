@@ -33,6 +33,13 @@ converged on.
   own shared vocabulary over time. Uses heavy structural delimiters and a restated JSON
   schema on every turn — small quantized local models drift out of strict JSON mode more
   easily on long contexts, and this measurably reduces that.
+  Two schema bugs were found and fixed here: the `target_vector` example used to literally
+  interpolate the tribe's own current coordinates, which models reliably echoed back
+  instead of choosing anywhere else — tribes were never actually exploring. And the
+  `visual_action` example was the instruction text itself ("SELECT STRICTLY ONE: [...]")
+  sitting in the JSON value position, which models would copy verbatim, failing era-gating
+  validation and silently falling back to `IDLE` on an unknown fraction of turns. Both are
+  now generic placeholders with the real guidance moved into surrounding prose.
 - **`backend/scheduler.py`** — groups a tick's turns by which model they target and runs
   each model's group concurrently via `asyncio.gather`, so a tick with N tribes across M
   models costs at most M model swaps in Ollama, not N. Also sets `keep_alive` on every
@@ -96,8 +103,13 @@ converged on.
 - **`backend/app.py`** — an `aiohttp` server serving the frontend, a `/api/models` endpoint
   that proxies Ollama's model list for the picker, and a `/ws` websocket streaming state.
 - **`frontend/index.html`** — the tribe picker (choose a local model per tribe, up to 4) and
-  the canvas theater that renders the grid, avatars, speech bubbles, fires, and a live stats
-  sidebar.
+  the canvas theater: a header bar (status + pause), a tabbed sidebar (Tribes / Consensus /
+  Chronicle, so the three panels don't all fight for the same vertical space), and a canvas
+  that resizes to fill available space (terrain is cached to an offscreen canvas and
+  blitted each frame rather than redrawing 10,000 tiles every frame). Each tribe renders as
+  a cluster of individuals wandering near its actual grid position — one per population,
+  capped at 24 — with deterministic per-individual orbits, not one square standing in for
+  the whole tribe.
 
 Spawn points are one-per-biome (`SPAWN_POINTS` in `backend/simulation.py`) so the default
 picker order (Forest Tribe, Mountain Tribe, ...) actually starts each tribe in the biome
@@ -146,10 +158,11 @@ Then open `http://localhost:8765` in a browser, pick a model for each tribe, and
 - `genetics.breed()` is wired but not yet triggered automatically — now that era transitions
   exist as a concrete event (`Simulation._advance_era_if_ready`), that's the natural place
   to call it, e.g. on reaching Bronze Age.
-- The only source of ancestral trauma is the forest hunting hazard
-  (`config.HUNT_HAZARD_CHANCE`). If you want dread from other causes (inter-tribe conflict,
-  starvation, a harsh winter), add the event and call
-  `self.trauma.radiate_event_wave(x, y, negative_magnitude, radius)` from `simulation.py`.
+- Ancestral trauma currently only comes from individual mishaps (wolf attack, drowning,
+  starvation, dehydration) or an individual tribe's own milestones (building a fire,
+  advancing an era) — nothing yet comes from inter-tribe conflict or environmental events
+  (a harsh winter, a plague). Same mechanism either way: call
+  `self.trauma.radiate_event_wave(x, y, magnitude, radius)` from `simulation.py`.
 - No persistence: closing the server drops the run. Add a snapshot dump if you want to
   resume or analyze runs later.
 - The era ladder only has 3 rungs and no branching — a linear Stone → Bronze → Classical
@@ -160,7 +173,14 @@ Then open `http://localhost:8765` in a browser, pick a model for each tribe, and
   movement — a tribe can path directly across a river tile with no risk as long as it
   doesn't choose to gather there. Full "crossing dangerous terrain" risk is a natural fit
   for whenever travel/movement gets built out more deliberately (inter-tribe interaction).
-- The sidebar has accumulated a lot of ad hoc stat lines (era, water, survival warnings,
-  linguistic consensus) without a real layout pass — flagged by the user as worth
-  revisiting properly (a component library, or at least a redesign) rather than continuing
-  to squeeze more lines into the existing card.
+- Governance/leadership is unexplored: the idea (raised in conversation) is that a tribe
+  might eventually want centralized decision-making or an "education" system once it's
+  large enough — this maps naturally onto a Classical-Age-or-later unlock, and onto
+  `genetics.py`'s still-unwired crossover system (a school/library structure could be what
+  finally triggers it: a real generational knowledge-transfer event, not just prompt
+  splicing). Not started — would need a second, less-frequent LLM call per tribe for a
+  "leader" strategic layer, to avoid doubling inference cost every tick.
+- Multiple individuals per tribe are a rendering layer only (deterministic wander animation
+  keyed off population count) — there's still one authoritative (x, y) and one LLM call per
+  tribe per tick, not per individual. Simulating individual members with their own
+  micro-behavior would multiply inference cost by population size and isn't planned.
