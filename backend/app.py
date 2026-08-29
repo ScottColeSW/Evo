@@ -32,10 +32,13 @@ async def models(request: web.Request) -> web.Response:
 
 @routes.get("/ws")
 async def ws_handler(request: web.Request) -> web.WebSocketResponse:
+    """Each connection owns its own Simulation. Two browser tabs (or two clients
+    hitting this server) get two fully independent worlds, rather than one shared
+    global simulation where the second START silently replaces the first."""
     ws = web.WebSocketResponse()
     await ws.prepare(request)
-    request.app["clients"].add(ws)
-    sim_holder = request.app["sim_holder"]
+    session = {"sim": None}
+    request.app["sessions"][ws] = session
 
     try:
         async for msg in ws:
@@ -49,34 +52,37 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
             if command == "START":
                 tribe_configs = data.get("tribes", [])
                 if tribe_configs:
-                    sim_holder["sim"] = await Simulation.create(tribe_configs, config.OLLAMA_URL)
-            elif command == "TOGGLE_PAUSE" and sim_holder["sim"] is not None:
-                sim_holder["sim"].toggle_pause()
+                    session["sim"] = await Simulation.create(tribe_configs, config.OLLAMA_URL)
+            elif command == "TOGGLE_PAUSE" and session["sim"] is not None:
+                session["sim"].toggle_pause()
     finally:
-        request.app["clients"].discard(ws)
+        request.app["sessions"].pop(ws, None)
     return ws
 
 
+async def _tick_session(ws: web.WebSocketResponse, session: dict) -> None:
+    sim = session.get("sim")
+    if sim is None:
+        return
+    try:
+        await sim.step()
+        await ws.send_str(json.dumps(sim.snapshot()))
+    except Exception:
+        pass  # connection may have dropped between the tick starting and finishing
+
+
 async def broadcast_loop(app: web.Application) -> None:
-    sim_holder = app["sim_holder"]
     while True:
-        sim = sim_holder["sim"]
-        if sim is not None:
-            await sim.step()
-            payload = json.dumps(sim.snapshot())
-            dead = set()
-            for ws in app["clients"]:
-                try:
-                    await ws.send_str(payload)
-                except Exception:
-                    dead.add(ws)
-            app["clients"] -= dead
+        # Snapshot the dict before iterating -- a connection can close and remove
+        # itself mid-tick from another coroutine.
+        sessions = list(app["sessions"].items())
+        if sessions:
+            await asyncio.gather(*(_tick_session(ws, session) for ws, session in sessions))
         await asyncio.sleep(config.TICK_SECONDS)
 
 
 async def on_startup(app: web.Application) -> None:
-    app["clients"] = set()
-    app["sim_holder"] = {"sim": None}
+    app["sessions"] = {}
     app["bg_task"] = asyncio.create_task(broadcast_loop(app))
 
 

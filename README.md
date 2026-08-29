@@ -76,6 +76,29 @@ Spawn points are one-per-biome (`SPAWN_POINTS` in `backend/simulation.py`) so th
 picker order (Forest Tribe, Mountain Tribe, ...) actually starts each tribe in the biome
 its name implies.
 
+## Multiple simulations at once
+
+Each websocket connection owns its own `Simulation` (`backend/app.py`), so opening a
+second browser tab starts a second, fully independent world rather than replacing the
+first one's run — this was previously a real limitation (documented below, now fixed).
+`run.py` also takes `--port` if you'd rather run fully separate OS processes:
+
+```bash
+python run.py --port 8766
+```
+
+## Running tests
+
+```bash
+python -m pytest tests/
+```
+
+No `pytest-asyncio` dependency — async tests use a small `asyncio.run()` wrapper in
+`tests/conftest.py` instead. Coverage is deliberately scoped to the deterministic pieces
+(falloff math, decay, hazard rolls under a seeded RNG, scheduler grouping, VRAM threshold
+logic) — anything that requires a live Ollama call is still verified by hand against the
+real server, the way every change in this repo so far has been.
+
 ## Running it
 
 ```bash
@@ -99,8 +122,9 @@ Then open `http://localhost:8765` in a browser, pick a model for each tribe, and
   (`config.HUNT_HAZARD_CHANCE`). If you want dread from other causes (inter-tribe conflict,
   starvation, a harsh winter), add the event and call
   `self.trauma.radiate_event_wave(x, y, negative_magnitude, radius)` from `simulation.py`.
-- Only one simulation runs at a time, shared across every connected websocket client — a
-  second browser tab sending `START` replaces the first tab's run. Fine for solo spectating,
-  not for multiple simultaneous viewers.
 - No persistence: closing the server drops the run. Add a snapshot dump if you want to
   resume or analyze runs later.
+- No progression system yet — "founded a city" is just a population counter crossing a
+  threshold, not an era ladder with unlocks. Water, seasons/weather, an "inspiration"
+  mechanic, and inter-tribe interaction (trade, conflict, travel) are all planned to hang
+  off that ladder once it exists, rather than being bolted on independently.

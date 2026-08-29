@@ -23,8 +23,10 @@ VRAM_LIMIT_GB = 14.0
 DEFAULT_TEMPERATURE = 0.55
 ANCESTRAL_DREAD_TEMPERATURE = 1.15
 
-# Ancestral trauma matrix event weights (see backend/ancestral_matrix.py)
-BUILD_FIRE_PRIDE_MAGNITUDE = 0.3
+# Ancestral trauma matrix event weights (see backend/ancestral_matrix.py). Pride/dread
+# bias text only appears once a tile's score crosses +-0.35 (ancestral_matrix.py), so
+# a single-event magnitude below that never actually surfaces -- keep these above it.
+BUILD_FIRE_PRIDE_MAGNITUDE = 0.4
 BUILD_FIRE_PRIDE_RADIUS = 5
 CITY_FOUNDED_PRIDE_MAGNITUDE = 0.5
 CITY_FOUNDED_PRIDE_RADIUS = 8
