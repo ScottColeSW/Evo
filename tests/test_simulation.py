@@ -194,6 +194,101 @@ def test_prepare_turn_has_no_journey_note_once_arrived():
     assert "you have not yet arrived there" not in request["prompt"]
 
 
+def test_prepare_turn_mentions_an_expedition_already_in_the_field():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.expedition = {
+        "pos": [tribe.x, tribe.y], "origin": [tribe.x, tribe.y], "target": [tribe.x + 10, tribe.y],
+        "day": 1, "phase": "outbound", "found": None, "terrain_report": None,
+    }
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "scouts are still in the field" in request["prompt"]
+    assert "day 1/" in request["prompt"]
+
+
+def test_expedition_succeeds_immediately_on_reaching_real_river_water():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 40, 30, "#c084fc")
+    # From (40, 30) toward (40, 37), one EXPEDITION_SPEED (6) step lands at (40, 36),
+    # which world.py's river geography places on the river -- verified directly against
+    # biome_at before trusting it, same discipline as world.py's nearest_water fix.
+    tribe.expedition = {
+        "pos": [40, 30], "origin": [40, 30], "target": [40, 37],
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+    }
+
+    sim._advance_expedition(tribe)
+
+    assert tribe.expedition["phase"] == "returning"
+    assert tribe.expedition["found"] == [40, 36]
+    assert any("found fresh water" in entry for entry in tribe.history)
+
+
+def test_expedition_reaching_its_target_without_water_still_turns_back():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.expedition = {
+        "pos": [50, 50], "origin": [50, 50], "target": [50, 50],  # already "there"
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+    }
+
+    sim._advance_expedition(tribe)
+
+    assert tribe.expedition["phase"] == "returning"
+    assert tribe.expedition["terrain_report"] is not None
+    assert tribe.expedition["found"] is None
+
+
+def test_expedition_gives_up_after_max_days_without_success():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    # Far enough away that EXPEDITION_MAX_DAYS worth of travel never arrives or finds water.
+    tribe.expedition = {
+        "pos": [50, 50], "origin": [50, 50], "target": [99, 99],
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+    }
+
+    from backend import config
+    for _ in range(config.EXPEDITION_MAX_DAYS):
+        sim._advance_expedition(tribe)
+
+    assert tribe.expedition["phase"] == "returning"
+    assert tribe.expedition["found"] is None
+    assert any("found nothing after" in entry for entry in tribe.history)
+
+
+def test_expedition_arrival_home_delivers_water_finding_to_memory_and_clears_state():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.expedition = {
+        "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
+        "day": 2, "phase": "returning", "found": [40, 37], "terrain_report": None,
+    }
+
+    sim._advance_expedition(tribe)
+
+    assert tribe.expedition is None
+    assert any("(40,37)" in entry for entry in tribe.history)
+    assert any("fresh water at (40,37)" in m["text"] for m in tribe.memory.entries)
+
+
+def test_expedition_arrival_home_empty_handed_clears_state_without_a_water_memory():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.expedition = {
+        "pos": [50, 50], "origin": [50, 50], "target": [99, 99],
+        "day": 3, "phase": "returning", "found": None, "terrain_report": None,
+    }
+
+    sim._advance_expedition(tribe)
+
+    assert tribe.expedition is None
+    assert any("empty-handed" in entry for entry in tribe.history)
+    assert not any("fresh water" in m["text"] for m in tribe.memory.entries)
+
+
 def test_explicit_spawn_coordinates_override_the_default_spawn_points():
     sim = Simulation([
         {"name": "A", "model": "gemma2:2b", "x": 40, "y": 35},
@@ -327,6 +422,52 @@ async def test_step_skips_extinct_tribes_entirely():
     assert dead.history == frozen_history  # untouched -- no turn was ever prepared for it
 
 
+@run_async
+async def test_step_triggers_game_over_and_unloads_models_when_all_tribes_die():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    for tribe in sim.tribes.values():
+        tribe.population = 1
+        tribe.food = 0  # starves to extinction on this tick's upkeep
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
+        await sim.step()
+
+    assert sim.game_over is True
+    assert sim.status == "GAME OVER"
+    assert {c.args[0] for c in mock_unload.call_args_list} == {"gemma2:2b", "qwen2.5:3b"}
+
+
+@run_async
+async def test_step_does_nothing_once_game_over():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    sim.tribes["tribe_0"].extinct = True
+    sim.game_over = True
+    cycle_before = sim.cycle
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock()) as mock_run_batch:
+        await sim.step()
+
+    mock_run_batch.assert_not_called()
+    assert sim.cycle == cycle_before
+
+
+@run_async
+async def test_add_tribe_after_game_over_resumes_the_simulation():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    sim.tribes["tribe_0"].extinct = True
+    sim.game_over = True
+    sim.status = "GAME OVER"
+
+    with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls, \
+         mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=_FAKE_CHIEF)):
+        mock_guard_cls.return_value.verify_vram_safety_margin = mock.AsyncMock(return_value=(True, ""))
+        await sim.add_tribe("B", "qwen2.5:3b")
+
+    assert sim.game_over is False
+    assert sim.status == "OPERATIONAL"
+
+
 def test_drowning_hazard_on_river_tile():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "River Tribe", "gemma2:2b", 50, 50, "#60a5fa")
@@ -437,12 +578,12 @@ async def test_install_chief_records_decree_when_decreed_and_not_on_water():
         "chief_name": "Ashgar",
         "victory_method": "endurance",
         "guiding_philosophy": "expansion",
-        "relocate_decision": {"decreed": True, "reason": "our people need water"},
+        "water_decision": {"decreed": True, "reason": "our people need water"},
     }
     with mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=fake_result)):
         await sim._install_chief(tribe)
 
-    assert "reliable water access" in tribe.chief_decree
+    assert "dispatching scouts" in tribe.chief_decree
     assert any("decrees" in entry for entry in tribe.history)
 
 
@@ -454,7 +595,7 @@ async def test_install_chief_no_decree_when_chief_declines():
     fake_result = {
         "chief_name": "Ashgar",
         "guiding_philosophy": "expansion",
-        "relocate_decision": {"decreed": False, "reason": "our shelter here is strong"},
+        "water_decision": {"decreed": False, "reason": "our shelter here is strong"},
     }
     with mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=fake_result)):
         await sim._install_chief(tribe)
@@ -469,14 +610,14 @@ async def test_install_chief_skips_water_fact_when_already_on_water():
     tribe.x, tribe.y = 40, 37  # on the river
     captured = {}
 
-    async def fake_elect(client, model, name, nearest_water=None):
-        captured["nearest_water"] = nearest_water
-        return {"chief_name": "Ashgar", "guiding_philosophy": "x", "relocate_decision": {"decreed": False, "reason": ""}}
+    async def fake_elect(client, model, name, water_needed=False):
+        captured["water_needed"] = water_needed
+        return {"chief_name": "Ashgar", "guiding_philosophy": "x", "water_decision": {"decreed": False, "reason": ""}}
 
     with mock.patch("backend.simulation.elect_chief", fake_elect):
         await sim._install_chief(tribe)
 
-    assert captured["nearest_water"] is None
+    assert captured["water_needed"] is False
     assert tribe.chief_decree == ""
 
 
@@ -489,12 +630,11 @@ async def test_install_chief_does_not_treat_ocean_as_solving_the_water_need():
     tribe.x, tribe.y = 95, 50  # ocean, not river
     captured = {}
 
-    async def fake_elect(client, model, name, nearest_water=None):
-        captured["nearest_water"] = nearest_water
-        return {"chief_name": "Ashgar", "guiding_philosophy": "x", "relocate_decision": {"decreed": False, "reason": ""}}
+    async def fake_elect(client, model, name, water_needed=False):
+        captured["water_needed"] = water_needed
+        return {"chief_name": "Ashgar", "guiding_philosophy": "x", "water_decision": {"decreed": False, "reason": ""}}
 
     with mock.patch("backend.simulation.elect_chief", fake_elect):
         await sim._install_chief(tribe)
 
-    assert captured["nearest_water"] is not None  # a real river was still searched for
-    assert sim.world.biome(*captured["nearest_water"]) == "river"
+    assert captured["water_needed"] is True

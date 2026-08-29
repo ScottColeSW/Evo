@@ -505,6 +505,48 @@ function drawTribeIndividuals(tribeId, t) {
     ctx.fillStyle = "#fbbf24";
     ctx.fillText(t.last_broadcast, centerX - w / 2, by);
   }
+
+  if (t.expedition) drawExpedition(t);
+}
+
+// The scouting party (backend/actions.py._scout, backend/simulation.py._advance_expedition)
+// is a small fractional group away from the main camp -- rendered as a dashed line back to
+// home and a small hollow marker at their current field position, distinct from the solid
+// filled dots of the main tribe, so their own progress/survival is something you can watch
+// too, not just an invisible timer.
+function drawExpedition(t) {
+  const homeX = t.x * TILE + TILE / 2, homeY = t.y * TILE + TILE / 2;
+  const fx = t.expedition.pos[0] * TILE + TILE / 2, fy = t.expedition.pos[1] * TILE + TILE / 2;
+
+  ctx.save();
+  ctx.strokeStyle = t.color;
+  ctx.globalAlpha = 0.5;
+  ctx.setLineDash([3, 4]);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(homeX, homeY);
+  ctx.lineTo(fx, fy);
+  ctx.stroke();
+  ctx.restore();
+
+  const r = Math.max(2.5, TILE * 0.3);
+  ctx.save();
+  ctx.strokeStyle = t.color;
+  ctx.fillStyle = "#0b0b0f";
+  ctx.lineWidth = Math.max(1.2, TILE * 0.15);
+  ctx.beginPath();
+  ctx.arc(fx, fy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  const label = `${t.expedition.phase === "outbound" ? "→" : "←"} day ${t.expedition.day}/${t.expedition.max_days}`;
+  ctx.font = "9px monospace";
+  const w = ctx.measureText(label).width;
+  ctx.fillStyle = "rgba(15,15,21,0.85)";
+  ctx.fillRect(fx - w / 2 - 2, fy + r + 2, w + 4, 11);
+  ctx.fillStyle = t.color;
+  ctx.fillText(label, fx - w / 2, fy + r + 11);
 }
 
 function drawFrame() {
@@ -566,6 +608,9 @@ function updateSidebar(state) {
   if (state.status === "REFACTORING") {
     banner.textContent = "REFACTORING SOURCE...";
     banner.classList.add("refactoring");
+  } else if (state.status === "GAME OVER") {
+    banner.textContent = "GAME OVER -- MODELS UNLOADED";
+    banner.classList.add("refactoring");
   } else {
     banner.textContent = "OPERATIONAL";
     banner.classList.remove("refactoring");
@@ -603,6 +648,7 @@ function updateSidebar(state) {
             🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${t.food} &nbsp;💧 ${t.water}
             ${t.chief_name ? `<br><span class="chief-line">👑 ${t.chief_name} — ${t.chief_philosophy}</span>` : ""}
             ${t.chief_decree ? `<br><span class="chief-line">📜 decreed: ${t.chief_decree}</span>` : ""}
+            ${t.expedition ? `<br><span class="chief-line">🧭 scouts ${t.expedition.phase}, day ${t.expedition.day}/${t.expedition.max_days} at (${t.expedition.pos[0]},${t.expedition.pos[1]})</span>` : ""}
           </div>
           <span class="speech">"${t.last_broadcast || "..."}"</span>
           ${t.survival_warning ? `<div class="survival-warning">⚠️ ${t.survival_warning.replace("[SURVIVAL INSTINCT]: ", "")}</div>` : ""}

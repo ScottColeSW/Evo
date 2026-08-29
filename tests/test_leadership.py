@@ -34,7 +34,7 @@ async def test_elect_chief_falls_back_when_model_returns_nothing_usable():
 
     assert result["chief_name"] == "Elder of Forest Tribe"
     assert result["guiding_philosophy"]
-    assert result["relocate_decision"] == {"decreed": False, "reason": ""}
+    assert result["water_decision"] == {"decreed": False, "reason": ""}
 
 
 @run_async
@@ -47,21 +47,24 @@ async def test_elect_chief_falls_back_when_chief_name_is_missing():
 
 
 @run_async
-async def test_water_fact_is_omitted_when_no_nearest_water_given():
+async def test_water_fact_is_omitted_when_water_not_needed():
     client = _FakeClient({"chief_name": "Ashgar", "guiding_philosophy": "x"})
 
-    await elect_chief(client, "gemma2:2b", "Forest Tribe", nearest_water=None)
+    await elect_chief(client, "gemma2:2b", "Forest Tribe", water_needed=False)
 
-    assert "nearest reliable water source" not in client.last_prompt
+    assert "No reliable fresh water" not in client.last_prompt
 
 
 @run_async
 async def test_water_fact_is_included_as_a_fact_not_an_instruction():
-    """The coordinates are supplied as information (map knowledge); whether to act on
-    them is explicitly left to the chief's own judgment, not commanded."""
+    """Only whether water is confirmed nearby is supplied (information); whether to act
+    on it -- and where to actually look -- is explicitly left to the chief's own
+    judgment, not commanded. No coordinates are ever handed over: water is something a
+    tribe's own scouts have to go find (see actions.py._scout)."""
     client = _FakeClient({"chief_name": "Ashgar", "guiding_philosophy": "x"})
 
-    await elect_chief(client, "gemma2:2b", "Forest Tribe", nearest_water=(15, 21))
+    await elect_chief(client, "gemma2:2b", "Forest Tribe", water_needed=True)
 
-    assert "(15, 21)" in client.last_prompt
+    assert "No reliable fresh water has been confirmed" in client.last_prompt
     assert "chief's own call, not a requirement" in client.last_prompt
+    assert "doesn't specify where water actually is" in client.last_prompt

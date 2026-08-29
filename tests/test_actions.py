@@ -143,23 +143,27 @@ def test_other_actions_never_move_the_tribe():
         assert (tribe.x, tribe.y) == (50, 50), f"{action} should not move the tribe"
 
 
-def test_scout_does_not_move_the_tribe_but_writes_a_memory():
+def test_scout_does_not_move_the_tribe_but_launches_an_expedition():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
 
     note = ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (10, 10))
 
     assert (tribe.x, tribe.y) == (50, 50)  # scouting doesn't relocate the tribe
-    assert "mountains" in note.lower() or "Crags" in note
-    assert any("Scouts report" in m["text"] for m in tribe.memory.entries)
+    assert tribe.expedition is not None
+    assert tribe.expedition["target"] == [10, 10]
+    assert tribe.expedition["day"] == 0
+    assert tribe.expedition["phase"] == "outbound"
+    assert "depart" in note
 
 
-def test_scout_reports_nearby_structures_when_present():
+def test_scout_while_already_out_does_not_launch_a_second_expedition():
     sim = _bare_simulation()
-    sim.world.add_construction(12, 10, "fire", cycle=1)
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (10, 10))
+    first_expedition = tribe.expedition
 
-    note = ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (10, 10))
+    note = ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (80, 80))
 
-    assert "habitation" in note
-    assert any("fire@(12,10)" in m["text"] for m in tribe.memory.entries)
+    assert tribe.expedition is first_expedition  # unchanged, not replaced
+    assert "field" in note

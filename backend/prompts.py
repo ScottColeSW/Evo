@@ -1,3 +1,6 @@
+from .actions import ACTION_DESCRIPTIONS
+
+
 def get_prime_consciousness_prompt(
     tribe_name: str,
     model_architecture: str,
@@ -90,6 +93,9 @@ MANDATORY REACTION SCHEMA (VALID JSON MODE ONLY)
 ========================================================================
 Your "visual_action" value must be exactly one of these era-appropriate action names,
 copied verbatim with no other text: {world_state['available_actions']}
+
+What each of those actions actually does:
+{chr(10).join(f"- {name}: {ACTION_DESCRIPTIONS[name]}" for name in world_state['available_actions'] if name in ACTION_DESCRIPTIONS)}
 
 Compile your tactical intent by substituting your own values into this JSON template --
 do not copy the placeholder text itself into your answer. Any malformed syntax will

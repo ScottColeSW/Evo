@@ -57,3 +57,24 @@ def test_system_prompt_includes_chief_as_context_not_command():
     assert "Ashgar" in prompt
     assert "expand aggressively" in prompt
     assert "not a command" in prompt
+
+
+def test_prompt_explains_what_each_available_action_does():
+    """Regression test: live runs showed tribes repeatedly deciding they "must relocate
+    to find water" while starving, despite GATHER_WATER already working wherever they
+    stood -- because the prompt only ever listed bare action names, never what any of
+    them actually do. A model has no way to infer GATHER_WATER works off-river from the
+    name alone."""
+    prompt = compile_live_state_prompt(
+        "base", _world_state(available_actions=["GATHER_WATER", "RELOCATE"]), "", ""
+    )
+    assert "GATHER_WATER: Harvest water at your current tile -- works in any biome" in prompt
+    assert "RELOCATE: Move your whole tribe" in prompt
+
+
+def test_prompt_action_glossary_only_lists_currently_available_actions():
+    """Era-gated actions not yet unlocked shouldn't get an explanation either -- the
+    glossary should track available_actions exactly, not the full registry."""
+    prompt = compile_live_state_prompt("base", _world_state(available_actions=["IDLE"]), "", "")
+    assert "IDLE: Do nothing" in prompt
+    assert "GATHER_WOOD:" not in prompt

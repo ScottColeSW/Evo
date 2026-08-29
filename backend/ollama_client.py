@@ -51,3 +51,16 @@ class OllamaClient:
             r = await client.post(f"{self.base_url}/api/generate", json=payload)
             r.raise_for_status()
             return r.json().get("response", "")
+
+    async def unload_model(self, model: str) -> None:
+        """Tells Ollama to evict this model from memory/VRAM right now instead of
+        waiting out its keep_alive window. Called once a simulation's tribes are all
+        extinct -- there will be no more turns for this model, no reason to keep it
+        loaded. Best-effort: a failure here just means the model stays loaded a bit
+        longer, not worth surfacing as an error to a game that's already over."""
+        payload = {"model": model, "keep_alive": 0}
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(f"{self.base_url}/api/generate", json=payload)
+        except Exception:
+            pass

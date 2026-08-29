@@ -93,24 +93,35 @@ def _construct_wall(sim, tribe, biome, target):
 
 
 def _scout(sim, tribe, biome, target):
-    """Looks at a distant tile without moving the tribe -- what a scouting party would
-    report back, not a relocation. Written into memory so it can surface in a later
-    turn's recall, the same channel real experience already uses. Reports any nearby
-    structures too -- a rival's fires or walls across a river aren't automatically
-    visible (nearby_structures is only checked around the tribe's own position), so
-    noticing a neighbor's growth has to be earned by actually scouting toward them."""
+    """Dispatches an expedition toward target_vector -- your most capable people, out
+    searching, not an instant look. They travel and camp under their own supply (no
+    drain on the tribe's stockpile), for up to config.EXPEDITION_MAX_DAYS before turning
+    back empty-handed if they've found nothing. If they reach real fresh water or their
+    intended destination first, they turn back immediately to report it -- but the
+    finding only becomes real, actionable knowledge once they've walked all the way home
+    (Simulation._advance_expeditions runs the day-by-day travel; this handler only
+    launches or no-ops one). Only after that can the tribe's own reasoning choose to
+    RELOCATE the whole camp there. This replaced an instant per-turn terrain check and,
+    before that, handing a newly-elected chief water's exact coordinates outright (see
+    leadership.py) -- water and distant terrain should be things a tribe discovers by
+    actually sending people to go look, not facts the simulation gifts for free."""
+    if tribe.expedition is not None:
+        exp = tribe.expedition
+        return f"scouts remain in the field (day {exp['day']}/{config.EXPEDITION_MAX_DAYS}, {exp['phase']})"
+
     tx, ty = target
     tx = max(0, min(sim.world.grid_size - 1, tx))
     ty = max(0, min(sim.world.grid_size - 1, ty))
-    scouted_biome = biome_at(tx, ty)
-    label = BIOME_LABELS.get(scouted_biome, scouted_biome)
-    report = f"Scouts report {label} terrain at ({tx},{ty})."
-    found = sim.world.nearby_structures(tx, ty, radius=6)
-    if found:
-        structures = ", ".join(f"{s['type']}@({s['x']},{s['y']})" for s in found)
-        report += f" Structures observed: {structures}."
-    tribe.memory.remember(report, sim.cycle, weight=0.5)
-    return f"scouts venture toward ({tx},{ty}) and report {label}" + (" with signs of habitation" if found else "")
+    tribe.expedition = {
+        "pos": [tribe.x, tribe.y],
+        "origin": [tribe.x, tribe.y],
+        "target": [tx, ty],
+        "day": 0,
+        "phase": "outbound",
+        "found": None,
+        "terrain_report": None,
+    }
+    return f"scouts depart camp to explore toward ({tx},{ty})"
 
 
 def _relocate(sim, tribe, biome, target):
@@ -118,11 +129,15 @@ def _relocate(sim, tribe, biome, target):
     relocate the whole camp, not an automatic side effect of doing something else.
     Costs stamina (food/water, on top of ordinary upkeep) -- marching is tiring, and
     without a cost here relocating would be strictly free compared to every gathering
-    action, which all cost time and risk."""
+    action, which all cost time and risk. Moving through a well-worn trail is faster
+    than breaking new ground, and relocating wears that trail a little more."""
     tribe.food = max(0, tribe.food - config.RELOCATE_FOOD_COST)
     tribe.water = max(0, tribe.water - config.RELOCATE_WATER_COST)
     tx, ty = target
-    nx, ny = physics.calculate_next_step(tribe.x, tribe.y, tx, ty, speed=config.MOVEMENT_SPEED)
+    bonus = sim.world.trail_speed_bonus(tribe.x, tribe.y, config.MAX_TRAIL_BONUS_SPEED)
+    speed = round(config.MOVEMENT_SPEED + bonus)
+    nx, ny = physics.calculate_next_step(tribe.x, tribe.y, tx, ty, speed=speed)
+    sim.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS)
     tribe.x, tribe.y = nx, ny
     return None
 
@@ -141,4 +156,23 @@ ACTION_REGISTRY = {
     "SCOUT": _scout,
     "RELOCATE": _relocate,
     "IDLE": _idle,
+}
+
+# Plain mechanical facts about what each verb does, handed to the model in the prompt
+# (see prompts.py) so it can reason about tradeoffs instead of guessing from a bare
+# action name -- live testing showed tribes repeatedly deciding they "must relocate to
+# find water" while starving, apparently never realizing GATHER_WATER already works
+# wherever they stand (just at a lower yield than a river tile gets). This is the same
+# category as the nearest_water fact already given to a founding chief: information the
+# simulation legitimately has, not an instruction about what to pick.
+ACTION_DESCRIPTIONS = {
+    "GATHER_WOOD": "Harvest wood at your current tile. Yield drops the more this exact spot has been harvested recently.",
+    "GATHER_STONE": "Harvest stone at your current tile. Yield drops the more this exact spot has been harvested recently.",
+    "GATHER_WATER": "Harvest water at your current tile -- works in any biome, though a river tile yields more than elsewhere. Small drowning risk if you're on a river.",
+    "HUNT_DEER": "Attempt to harvest food at your current tile. Small risk of losing a hunter to a wolf pack, most likely in forest.",
+    "BUILD_FIRE": "Build a fire at your current tile using stored wood. Does nothing if one is already built here.",
+    "CONSTRUCT_WALL": "Build a wall at your current tile using stored wood and stone. Does nothing if one is already built here.",
+    "SCOUT": "Dispatch an expedition toward target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home -- choosing SCOUT again while one is already out just checks on it, it doesn't send a second one.",
+    "RELOCATE": "Move your whole tribe several tiles toward target_vector this cycle, possibly over several cycles for a far destination. Produces no resources while traveling and costs extra food and water for the effort.",
+    "IDLE": "Do nothing this cycle.",
 }

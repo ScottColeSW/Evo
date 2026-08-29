@@ -8,28 +8,31 @@ the tribe actually does with that context -- follow it, ignore it, contradict it
 still entirely its own reasoning each cycle. The directive, if there is one, comes from
 inside the simulated world, not from the engineering layer around it.
 
-The same principle extends to relocation: nearest_water is a *fact* the simulation
-legitimately knows (real map geometry, the way a game master would tell players what's
-nearby), handed to the election as context. Whether the newly elected chief decides that's
-worth relocating for is still the model's own call, not something the engineering layer
-decides on the tribe's behalf.
+Water used to work the same way: nearest_water's exact coordinates were handed to the
+election as a fact (real map geometry, the way a game master would tell players what's
+nearby). That's gone now -- water is something a tribe's own scouting expeditions have to
+actually go and find (see actions.py._scout / simulation.py._advance_expedition), not a
+freebie the simulation gifts on day one. All the election gets is whether water is already
+confirmed nearby (water_needed=False) or not (water_needed=True); if not, the newly elected
+chief can decree that finding one is a priority, which still just means "the tribe should
+consider dispatching scouts" -- the tribe's own reasoning still picks SCOUT (or doesn't)
+each cycle.
 """
 
 from .ollama_client import OllamaClient
 
 
-async def elect_chief(
-    client: OllamaClient, model: str, tribe_name: str, nearest_water: tuple[int, int] | None = None
-) -> dict:
+async def elect_chief(client: OllamaClient, model: str, tribe_name: str, water_needed: bool = False) -> dict:
     water_context = ""
-    if nearest_water is not None:
+    if water_needed:
         water_context = (
-            f"\n\nThe nearest river (fresh, drinkable water) is at approximately "
-            f"({nearest_water[0]}, {nearest_water[1]}). As part of taking power, the new "
-            "chief must also decide whether relocating the tribe toward it is worthwhile, "
-            "or whether staying put is better for some other reason (established shelter, "
-            "defensible ground, anything else the chief judges more important). This is "
-            "the chief's own call, not a requirement."
+            "\n\nNo reliable fresh water has been confirmed near where this tribe stands. As "
+            "part of taking power, the new chief must also decide whether making water a "
+            "priority -- for instance, by dispatching scouts to search for it -- is worthwhile, "
+            "or whether something else matters more right now (established shelter, defensible "
+            "ground, anything else the chief judges more important). This is the chief's own "
+            "call, not a requirement, and doesn't specify where water actually is -- nobody "
+            "knows that yet."
         )
 
     prompt = f"""You are narrating the founding leadership contest for the {tribe_name} \
@@ -44,7 +47,7 @@ Reply with ONLY JSON:
   "chief_name": "a short name for the winner",
   "victory_method": "one sentence describing how they won",
   "guiding_philosophy": "one sentence describing the governing ethos this chief will hold (e.g. territorial expansion, caution and hoarding, aggressive growth, isolationism)",
-  "relocate_decision": {{"decreed": true or false, "reason": "one sentence, only meaningful if a water source was mentioned above"}}
+  "water_decision": {{"decreed": true or false, "reason": "one sentence, only meaningful if water was mentioned above"}}
 }}"""
     result = await client.generate_json(model, prompt, temperature=0.9)
     if not result or not result.get("chief_name"):
@@ -52,6 +55,6 @@ Reply with ONLY JSON:
             "chief_name": f"Elder of {tribe_name}",
             "victory_method": "no contest was recorded",
             "guiding_philosophy": "steady, unremarkable stewardship",
-            "relocate_decision": {"decreed": False, "reason": ""},
+            "water_decision": {"decreed": False, "reason": ""},
         }
     return result

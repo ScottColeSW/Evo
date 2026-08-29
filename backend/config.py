@@ -122,3 +122,21 @@ EXTINCTION_TRAUMA_RADIUS = 10
 # were audible map-wide regardless of distance, which gave away free information and
 # removed any incentive to actually travel toward another tribe.
 BROADCAST_HEARING_RADIUS = 15
+
+# Worn trails (backend/world.py, backend/actions.py): the inverse of resource depletion.
+# Repeatedly relocating through the same tile wears a trail there, which speeds up
+# travel through it later -- rewarding a tribe for reusing a route it (or another tribe)
+# already scouted, rather than every journey being an equally slow trek through
+# untouched ground. Fades slowly if the tile falls out of use.
+TRAIL_WEAR_PER_PASS = 0.08
+TRAIL_DECAY_PER_CYCLE = 0.01
+MAX_TRAIL_BONUS_SPEED = 3  # added to MOVEMENT_SPEED at full wear
+
+# Scouting expeditions (backend/actions.py._scout, backend/simulation.py._advance_expeditions).
+# A small, self-sufficient party travels out looking for water or distant terrain, turning
+# back the moment they succeed or after EXPEDITION_MAX_DAYS with nothing -- either way, the
+# finding (if any) isn't real, actionable knowledge for the tribe until they've walked all
+# the way home. Faster than a full RELOCATE since it's a handful of unburdened people, not
+# the whole camp and its belongings.
+EXPEDITION_SPEED = 6
+EXPEDITION_MAX_DAYS = 3
