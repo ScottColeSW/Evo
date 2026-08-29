@@ -63,6 +63,11 @@
     <button id="btn-pause">PAUSE SIMULATION</button>
     <h3 class="section">Tribes</h3>
     <div id="tribe-stats"></div>
+    <div id="inject-tribe-row" style="display:flex; gap:6px; margin-bottom:10px;">
+      <input type="text" id="new-tribe-name" placeholder="New Tribe" style="flex:1; min-width:0; background:#141419; border:1px solid #333344; color:#e2e2e7; padding:6px; border-radius:4px; font-size:12px;" />
+      <select id="new-tribe-model" style="flex:1; min-width:0; background:#141419; border:1px solid #333344; color:#e2e2e7; padding:6px; border-radius:4px; font-size:12px;"></select>
+      <button id="btn-inject-tribe" style="background:#4338ca; color:white; padding:6px 10px; font-size:12px;">+ Inject</button>
+    </div>
     <h3 class="section">Linguistic Consensus</h3>
     <div id="consensus-panel"></div>
     <h3 class="section">Chronicle</h3>
@@ -131,6 +136,7 @@ document.getElementById("btn-start").addEventListener("click", () => {
   document.getElementById("picker").style.display = "none";
   document.getElementById("theater").classList.add("active");
   lastEraByTribe = {};
+  populateInjectModelSelect();
 
   socket = new WebSocket(`ws://${location.host}/ws`);
   socket.onopen = () => socket.send(JSON.stringify({ command: "START", tribes }));
@@ -146,6 +152,29 @@ document.getElementById("btn-pause").addEventListener("click", () => {
   socket.send(JSON.stringify({ command: "TOGGLE_PAUSE" }));
   const btn = document.getElementById("btn-pause");
   btn.textContent = btn.textContent.startsWith("PAUSE") ? "RESUME SIMULATION" : "PAUSE SIMULATION";
+});
+
+async function populateInjectModelSelect() {
+  const select = document.getElementById("new-tribe-model");
+  try {
+    const res = await fetch("/api/models");
+    const data = await res.json();
+    const models = (data.models && data.models.length) ? data.models : ["(no models found)"];
+    select.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join("");
+  } catch (e) {
+    select.innerHTML = `<option value="">(unavailable)</option>`;
+  }
+}
+
+document.getElementById("btn-inject-tribe").addEventListener("click", () => {
+  if (!socket) return;
+  const nameInput = document.getElementById("new-tribe-name");
+  const modelSelect = document.getElementById("new-tribe-model");
+  const name = nameInput.value || "New Tribe";
+  const model = modelSelect.value;
+  if (!model) return;
+  socket.send(JSON.stringify({ command: "ADD_TRIBE", name, model }));
+  nameInput.value = "";
 });
 
 let lastEraByTribe = {};
@@ -241,6 +270,8 @@ function updateSidebar(state) {
   const stats = document.getElementById("tribe-stats");
   const log = document.getElementById("log-chronicle");
   const consensus = document.getElementById("consensus-panel");
+  const tribeCountNow = Object.keys(state.tribes || {}).length;
+  document.getElementById("inject-tribe-row").style.display = tribeCountNow >= 4 ? "none" : "flex";
   stats.innerHTML = "";
   log.innerHTML = "";
   consensus.innerHTML = "";

@@ -104,6 +104,27 @@ class Simulation:
                 tribe.history.append(f"VRAM WARNING: {warnings[tribe.name]}")
         return sim
 
+    async def add_tribe(self, name: str, model: str) -> str | None:
+        """Injects a new tribe into an already-running simulation. Returns an error
+        message on failure (max tribes reached), or None on success. Runs the same
+        one-time VRAM check as Simulation.create()."""
+        if len(self.tribes) >= config.MAX_TRIBES:
+            return f"Cannot add tribe: maximum of {config.MAX_TRIBES} tribes reached."
+
+        index = len(self.tribes)
+        tid = f"tribe_{index}"
+        x, y = SPAWN_POINTS[index % len(SPAWN_POINTS)]
+        color = COLORS[index % len(COLORS)]
+        tribe = Tribe(tid, name, model, x, y, color)
+
+        guard = HardwareVRAMBoundaryGuard(self.client.base_url, config.VRAM_LIMIT_GB)
+        ok, warning = await guard.verify_vram_safety_margin(model)
+        if not ok:
+            tribe.history.append(f"VRAM WARNING: {warning}")
+
+        self.tribes[tid] = tribe
+        return None
+
     def snapshot(self) -> dict:
         tribe_ids = list(self.tribes.keys())
         consensus = []

@@ -3,6 +3,7 @@ from unittest import mock
 from backend.ancestral_matrix import AncestralTraumaMatrix
 from backend.simulation import Simulation, Tribe
 from backend.world import Landscape
+from tests.conftest import run_async
 
 
 def _bare_simulation():
@@ -246,3 +247,41 @@ def test_reaching_classical_age_marks_founded_city():
 
     assert tribe.era == "classical_age"
     assert tribe.founded_city is True
+
+
+@run_async
+async def test_add_tribe_appends_with_unique_spawn_and_color():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls:
+        mock_guard_cls.return_value.verify_vram_safety_margin = mock.AsyncMock(return_value=(True, ""))
+        error = await sim.add_tribe("B", "qwen2.5:3b")
+
+    assert error is None
+    assert len(sim.tribes) == 2
+    new_tribe = sim.tribes["tribe_1"]
+    assert new_tribe.name == "B"
+    assert new_tribe.model == "qwen2.5:3b"
+    assert (new_tribe.x, new_tribe.y) != (sim.tribes["tribe_0"].x, sim.tribes["tribe_0"].y)
+    assert new_tribe.color != sim.tribes["tribe_0"].color
+
+
+@run_async
+async def test_add_tribe_rejects_beyond_max_tribes():
+    sim = Simulation([{"name": f"T{i}", "model": "gemma2:2b"} for i in range(4)])
+    with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls:
+        mock_guard_cls.return_value.verify_vram_safety_margin = mock.AsyncMock(return_value=(True, ""))
+        error = await sim.add_tribe("Overflow", "gemma2:2b")
+
+    assert error is not None
+    assert len(sim.tribes) == 4
+
+
+@run_async
+async def test_add_tribe_records_vram_warning_in_new_tribes_history():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls:
+        mock_guard_cls.return_value.verify_vram_safety_margin = mock.AsyncMock(return_value=(False, "too big"))
+        error = await sim.add_tribe("B", "gemma4:26b")
+
+    assert error is None  # the tribe is still added, just warned
+    assert any("VRAM WARNING: too big" in entry for entry in sim.tribes["tribe_1"].history)

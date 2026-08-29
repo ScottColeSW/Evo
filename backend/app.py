@@ -55,6 +55,11 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                     session["sim"] = await Simulation.create(tribe_configs, config.OLLAMA_URL)
             elif command == "TOGGLE_PAUSE" and session["sim"] is not None:
                 session["sim"].toggle_pause()
+            elif command == "ADD_TRIBE" and session["sim"] is not None:
+                name = data.get("name") or "New Tribe"
+                model = data.get("model")
+                if model:
+                    await session["sim"].add_tribe(name, model)
     finally:
         request.app["sessions"].pop(ws, None)
     return ws
