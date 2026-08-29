@@ -295,10 +295,26 @@ function checkExtinctions(state) {
 
 /* ---------- Canvas rendering ---------- */
 
+// Mirrors backend/world.py's biome_at exactly -- the river winds from the mountains
+// (west) to the coast (east) rather than being an arbitrary diagonal band.
+const OCEAN_X_START = 90, MOUNTAIN_X_END = 30, MOUNTAIN_Y_END = 35, RIVER_SOURCE_X = 15, RIVER_HALF_WIDTH = 3;
+
+function riverCenterY(x) {
+  const span = OCEAN_X_START - RIVER_SOURCE_X;
+  const progress = Math.max(0, Math.min(1, (x - RIVER_SOURCE_X) / span));
+  return 18 + progress * 50 + 6 * Math.sin(x * 0.07);
+}
+
+function isRiver(x, y) {
+  if (x < RIVER_SOURCE_X || x >= OCEAN_X_START) return false;
+  return Math.abs(y - riverCenterY(x)) <= RIVER_HALF_WIDTH;
+}
+
 function biomeColor(x, y) {
-  if (x > 70 || y < 30) return "#14321e";
-  if (x < 25 && y < 60) return "#3a3a42";
-  if (Math.abs(x - y) < 4) return "#1d4ed8";
+  if (x >= OCEAN_X_START) return "#0b3d5c";
+  if (isRiver(x, y)) return "#1d4ed8";
+  if (x < MOUNTAIN_X_END && y < MOUNTAIN_Y_END) return "#3a3a42";
+  if (y < 18 || x >= 70) return "#14321e";
   return "#224d1a";
 }
 

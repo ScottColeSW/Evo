@@ -53,7 +53,7 @@ def compile_live_state_prompt(base_prompt: str, world_state: dict, ancestral_bia
 LIVE CORE TELEMETRY: CYCLE {world_state['cycle']}
 ========================================================================
 SPATIAL VECTOR: X: {world_state['x']} // Y: {world_state['y']}
-TOPOGRAPHICAL REGION: {world_state['biome']}
+TOPOGRAPHICAL REGION: {world_state.get('biome_label', world_state['biome'])}
 CURRENT ERA: {world_state['era']}
 
 METABOLIC STOCKPILES:

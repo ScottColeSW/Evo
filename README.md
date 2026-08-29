@@ -16,8 +16,11 @@ converged on.
 
 ## What's actually happening
 
-- **`backend/world.py`** — a 100x100 tile landscape with four biomes (forest, mountains,
-  river, plains) and the structures tribes build on it.
+- **`backend/world.py`** — a 100x100 tile landscape with Earth-like hydrology: mountains
+  in the northwest, an ocean along the entire east edge (`OCEAN_X_START`), and a river that
+  originates in the highlands and winds (a sine-meander, not a straight line) down through
+  plains and forest to the coast, rather than being an arbitrary diagonal band unrelated to
+  anything else on the map. Also tracks the structures tribes build on it.
 - **`backend/ancestral_matrix.py`** — a separate emotional-scar layer over the same grid.
   Triumphant or traumatic events radiate outward with a quadratic falloff (clamped to
   [-1, 1]) and get quietly folded into future prompts near that coordinate as an

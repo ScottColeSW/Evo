@@ -14,12 +14,14 @@ from .scheduler import ModelBatchScheduler
 from .self_mod import SelfModEngine
 from .translation_matrix import TranslationConfidenceMatrix
 from .vram_guard import HardwareVRAMBoundaryGuard
-from .world import Landscape
+from .world import BIOME_LABELS, Landscape
 
-# One spawn per biome (forest, mountains, plains, river) so the default picker order
-# (Forest Tribe, Mountain Tribe, ...) actually starts tribes in the biome their name
-# implies, rather than three of four tribes landing in the same forest band.
-SPAWN_POINTS = [(85, 85), (10, 45), (65, 85), (50, 50)]
+# One spawn per land biome (forest, mountains, plains, river -- not ocean, nothing spawns
+# at sea) so the default picker order (Forest Tribe, Mountain Tribe, ...) actually starts
+# tribes in the biome their name implies. Coordinates match backend/world.py's geography:
+# mountains in the northwest, forest along the north/east, plains in the south, and a
+# river cutting from the highlands down to the eastern coast.
+SPAWN_POINTS = [(80, 10), (10, 10), (50, 90), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 
 
@@ -254,6 +256,7 @@ class Simulation:
             "x": tribe.x,
             "y": tribe.y,
             "biome": biome,
+            "biome_label": BIOME_LABELS.get(biome, biome),
             "population": tribe.population,
             "wood": tribe.wood,
             "stone": tribe.stone,
