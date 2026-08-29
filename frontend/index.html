@@ -26,7 +26,9 @@
   #theater { display: none; height: 100vh; }
   #theater.active { display: flex; }
   #sidebar { width: 340px; background: #1a1a24; border-right: 2px solid #2a2a3a; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
-  #canvas-container { flex-grow: 1; display: flex; justify-content: center; align-items: center; background: #0b0b0f; }
+  #canvas-container { flex-grow: 1; display: flex; justify-content: center; align-items: center; background: #0b0b0f; position: relative; }
+  #era-banner { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); background: rgba(67,56,202,0.95); color: #fff; padding: 14px 28px; border-radius: 8px; font-weight: bold; font-size: 15px; opacity: 0; pointer-events: none; transition: opacity 0.5s ease; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,0.4); white-space: nowrap; }
+  #era-banner.show { opacity: 1; }
   canvas { background: #111; border: 2px solid #2a2a3a; border-radius: 4px; }
   h3.section { text-transform: uppercase; letter-spacing: 1px; font-size: 12px; color: #a5b4fc; border-bottom: 1px solid #2a2a3a; padding-bottom: 5px; }
   .stat-card { background: #222232; padding: 10px; border-radius: 6px; font-size: 12px; border-left: 4px solid #6366f1; margin-bottom: 8px; }
@@ -66,6 +68,7 @@
     <div id="log-chronicle" class="log-box"></div>
   </div>
   <div id="canvas-container">
+    <div id="era-banner"></div>
     <canvas id="simCanvas" width="600" height="600"></canvas>
   </div>
 </div>
@@ -126,11 +129,13 @@ document.getElementById("btn-start").addEventListener("click", () => {
 
   document.getElementById("picker").style.display = "none";
   document.getElementById("theater").classList.add("active");
+  lastEraByTribe = {};
 
   socket = new WebSocket(`ws://${location.host}/ws`);
   socket.onopen = () => socket.send(JSON.stringify({ command: "START", tribes }));
   socket.onmessage = (event) => {
     latestState = JSON.parse(event.data);
+    checkEraTransitions(latestState);
     updateSidebar(latestState);
   };
 });
@@ -141,6 +146,30 @@ document.getElementById("btn-pause").addEventListener("click", () => {
   const btn = document.getElementById("btn-pause");
   btn.textContent = btn.textContent.startsWith("PAUSE") ? "RESUME SIMULATION" : "PAUSE SIMULATION";
 });
+
+let lastEraByTribe = {};
+let eraBannerTimeout = null;
+
+function checkEraTransitions(state) {
+  Object.entries(state.tribes || {}).forEach(([id, t]) => {
+    if (lastEraByTribe[id] === undefined) {
+      lastEraByTribe[id] = t.era;  // first sighting -- don't fire a banner on page load
+      return;
+    }
+    if (lastEraByTribe[id] !== t.era) {
+      showEraBanner(`${t.name} enters the ${t.era_label}!`);
+      lastEraByTribe[id] = t.era;
+    }
+  });
+}
+
+function showEraBanner(text) {
+  const banner = document.getElementById("era-banner");
+  banner.textContent = text;
+  banner.classList.add("show");
+  clearTimeout(eraBannerTimeout);
+  eraBannerTimeout = setTimeout(() => banner.classList.remove("show"), 4000);
+}
 
 function biomeColor(x, y) {
   if (x > 70 || y < 30) return "#14321e";
@@ -218,8 +247,8 @@ function updateSidebar(state) {
     stats.innerHTML += `
       <div class="stat-card" style="border-left-color:${t.color}">
         <strong>${t.name}</strong> (${t.model})${t.founded_city ? " 🏛️" : ""}<br>
-        (${t.x}, ${t.y}) | Pop: ${t.population}<br>
-        🪵 ${t.wood} | 🪨 ${t.stone} | 🍖 ${t.food}<br>
+        ${t.era_label} — (${t.x}, ${t.y}) | Pop: ${t.population}<br>
+        🪵 ${t.wood} | 🪨 ${t.stone} | 🍖 ${t.food} | 💧 ${t.water}<br>
         <span class="speech">"${t.last_broadcast || "..."}"</span>
       </div>`;
     (t.history || []).forEach(entry => {

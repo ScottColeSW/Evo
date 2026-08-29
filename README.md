@@ -54,6 +54,20 @@ converged on.
   (`gemma2:2b`, `qwen2.5:3b`) converged on a shared token for the same action within 4
   cycles in testing. Surfaced in the sidebar as a "Linguistic Consensus" panel per tribe
   pair.
+- **`backend/eras.py`** — the progression ladder (Stone Age → Bronze Age → Classical Age),
+  as an ordered, data-driven table rather than a hardcoded if/elif chain: each era declares
+  a population + resource threshold to reach it, a resource cost paid on advancing, and
+  which actions it unlocks. Advancement is automatic once a tribe clears the threshold —
+  deliberately *not* gated behind the model choosing a special "advance" action, since
+  relying on a small quantized model to correctly reason its way to a meta-progression
+  action would make the payoff moment unreliable. Reaching Classical Age is what "founds a
+  city" now (`Era.founds_city`), replacing the old flat population-threshold flag.
+- **`backend/actions.py`** — the action registry: each action name maps to a handler
+  function (`ACTION_REGISTRY`), looked up rather than dispatched through `if/elif`. This is
+  the Registry Factory pattern — adding an action means registering a handler here, not
+  extending a branch chain in `Simulation`. Includes `GATHER_WATER` (river tiles yield far
+  more than elsewhere, `config.WATER_YIELD_RIVER` vs `WATER_YIELD_OFF_RIVER`), the first
+  resource requirement gating advancement into the Bronze Age.
 - **`backend/genetics.py`** — an optional crossover step that splices two tribes' ideology +
   lexicon into a descendant profile via the model itself.
 - **`backend/self_mod.py`** — an opt-in (off by default) engine that lets a model rewrite
@@ -61,11 +75,11 @@ converged on.
   if the patch is broken. Flip on with `ENABLE_SELF_MODIFICATION = True` in `backend/config.py`
   if you want to see it. It's still model-authored code landing on your disk, sandboxed to
   one small file, so know what you're turning on.
-- **`backend/simulation.py`** — the orchestrator: builds every tribe's prompt (no network
-  calls), hands them to the scheduler as one batch, applies the results, moves avatars,
-  grows population on food surplus, rolls a hunting hazard (wolves, forest biome only —
-  the thing that actually produces ancestral dread), and flags when a tribe crosses the
-  population threshold to "found a city".
+- **`backend/simulation.py`** — the orchestrator: builds every tribe's prompt (only showing
+  the actions its current era has unlocked), hands them to the scheduler as one batch,
+  applies the results through the action registry, moves avatars, grows population on food
+  surplus, rolls a hunting hazard (wolves, forest biome only — the thing that actually
+  produces ancestral dread), and checks era advancement every tick.
 - **`backend/app.py`** — an `aiohttp` server serving the frontend, a `/api/models` endpoint
   that proxies Ollama's model list for the picker, and a `/ws` websocket streaming state.
 - **`frontend/index.html`** — the tribe picker (choose a local model per tribe, up to 4) and
@@ -116,15 +130,19 @@ Then open `http://localhost:8765` in a browser, pick a model for each tribe, and
 - Memory recall uses a deterministic hash-based pseudo-embedding, not real semantics. Swap
   `TribeMemory._embed` in `backend/memory.py` for a call to Ollama's `/api/embeddings` (e.g.
   with `nomic-embed-text`) for genuine similarity search.
-- `genetics.breed()` is wired but not yet triggered automatically on any era/generation
-  transition — call it from `simulation.py` when you decide what should trigger a handoff.
+- `genetics.breed()` is wired but not yet triggered automatically — now that era transitions
+  exist as a concrete event (`Simulation._advance_era_if_ready`), that's the natural place
+  to call it, e.g. on reaching Bronze Age.
 - The only source of ancestral trauma is the forest hunting hazard
   (`config.HUNT_HAZARD_CHANCE`). If you want dread from other causes (inter-tribe conflict,
   starvation, a harsh winter), add the event and call
   `self.trauma.radiate_event_wave(x, y, negative_magnitude, radius)` from `simulation.py`.
 - No persistence: closing the server drops the run. Add a snapshot dump if you want to
   resume or analyze runs later.
-- No progression system yet — "founded a city" is just a population counter crossing a
-  threshold, not an era ladder with unlocks. Water, seasons/weather, an "inspiration"
-  mechanic, and inter-tribe interaction (trade, conflict, travel) are all planned to hang
-  off that ladder once it exists, rather than being bolted on independently.
+- The era ladder only has 3 rungs and no branching — a linear Stone → Bronze → Classical
+  path. Seasons/weather, an "inspiration" mechanic, and inter-tribe interaction (trade,
+  conflict, travel) are all planned to hang off it next (see `backend/eras.py`'s docstring),
+  rather than being bolted on independently.
+- Water only has one consumer right now (era advancement cost/requirement) — there's no
+  ongoing upkeep or drought mechanic yet, so a tribe that stops gathering water never
+  actually suffers for it outside of failing to advance eras.

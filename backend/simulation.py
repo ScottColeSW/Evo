@@ -1,11 +1,12 @@
 import importlib
-import random
 
 from . import config, physics
+from .actions import ACTION_REGISTRY
 from .ancestral_matrix import AncestralTraumaMatrix
+from .eras import ERAS, next_era, unlocked_actions_through
 from .memory import TribeMemory
 from .ollama_client import OllamaClient
-from .prompts import ACTIONS, compile_live_state_prompt, get_prime_consciousness_prompt
+from .prompts import compile_live_state_prompt, get_prime_consciousness_prompt
 from .scheduler import ModelBatchScheduler
 from .self_mod import SelfModEngine
 from .translation_matrix import TranslationConfidenceMatrix
@@ -18,8 +19,6 @@ from .world import Landscape
 SPAWN_POINTS = [(85, 85), (10, 45), (65, 85), (50, 50)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 
-CITY_POPULATION_TARGET = 25
-
 
 class Tribe:
     def __init__(self, tribe_id: str, name: str, model: str, x: int, y: int, color: str):
@@ -31,7 +30,9 @@ class Tribe:
         self.wood = 50
         self.stone = 50
         self.food = 40
+        self.water = config.STARTING_WATER
         self.population = 8
+        self.era = ERAS[0].key
         self.last_broadcast = ""
         self.last_action = ""
         self.history: list[str] = []
@@ -39,6 +40,7 @@ class Tribe:
         self.founded_city = False
 
     def to_dict(self) -> dict:
+        era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
         return {
             "name": self.name,
             "model": self.model,
@@ -48,7 +50,10 @@ class Tribe:
             "wood": self.wood,
             "stone": self.stone,
             "food": self.food,
+            "water": self.water,
             "population": self.population,
+            "era": self.era,
+            "era_label": era_label,
             "last_broadcast": self.last_broadcast,
             "history": self.history[-6:],
             "founded_city": self.founded_city,
@@ -135,6 +140,7 @@ class Simulation:
             outcome = results.get(tid, {"intent": {}, "latency_ms": 0.0})
             self._apply_turn(tribe, outcome["intent"], outcome["latency_ms"], contexts[tid])
             self._grow_population(tribe)
+            self._advance_era_if_ready(tribe)
 
         if self.self_mod:
             self.self_mod.tick()
@@ -155,14 +161,14 @@ class Simulation:
         nearby = self.world.nearby_structures(tribe.x, tribe.y)
         ghost_bias = self.trauma.bias_string(tribe.x, tribe.y)
         memories = tribe.memory.recall(f"{biome} at {tribe.x},{tribe.y}")
+        available_actions = sorted(unlocked_actions_through(tribe.era))
 
         visible_entities = [f"structure:{s['type']}@({s['x']},{s['y']})" for s in nearby]
         visible_entities += [f"memory(cycle {m['cycle']}): {m['text']}" for m in memories]
         visible_entities += [f"taboo: {t}" for t in tribe.memory.taboos[:3]]
         # Other tribes' broadcasts are audible regardless of distance (a simplification
         # for a small tribe count) -- this is what makes shared-vocabulary convergence
-        # in translation_matrix.py possible at all, since nothing else lets a tribe
-        # observe another tribe's invented tokens.
+        # in translation_matrix.py possible at all.
         for other in self.tribes.values():
             if other.id != tribe.id and other.last_broadcast:
                 visible_entities.append(
@@ -180,6 +186,9 @@ class Simulation:
             "wood": tribe.wood,
             "stone": tribe.stone,
             "food": tribe.food,
+            "water": tribe.water,
+            "era": tribe.era,
+            "available_actions": available_actions,
             "visible_entities": visible_entities,
         }
         base_prompt = get_prime_consciousness_prompt(tribe.name, tribe.model)
@@ -187,11 +196,11 @@ class Simulation:
         temperature = config.ANCESTRAL_DREAD_TEMPERATURE if "DREAD" in ghost_bias else config.DEFAULT_TEMPERATURE
 
         request = {"id": tribe.id, "model": tribe.model, "prompt": prompt, "temperature": temperature}
-        return request, {"biome": biome}
+        return request, {"biome": biome, "available_actions": available_actions}
 
     def _apply_turn(self, tribe: Tribe, intent: dict, latency_ms: float, ctx: dict) -> None:
         action = intent.get("visual_action", "IDLE")
-        if action not in ACTIONS:
+        if action not in ctx["available_actions"]:
             action = "IDLE"
         broadcast = intent.get("synthetic_language_broadcast") or ""
         target = intent.get("target_vector", [tribe.x, tribe.y])
@@ -222,39 +231,30 @@ class Simulation:
             pass
 
     def _apply_action(self, tribe: Tribe, action: str, biome: str) -> str | None:
-        """Applies an action's resource effects. Returns a hazard note for the chronicle,
-        or None if nothing eventful happened."""
-        if action == "GATHER_WOOD":
-            tribe.wood += 10
-        elif action == "GATHER_STONE":
-            tribe.stone += 10
-        elif action == "HUNT_DEER":
-            if biome == "forest" and random.random() < config.HUNT_HAZARD_CHANCE:
-                tribe.food = max(0, tribe.food - config.HUNT_HAZARD_FOOD_LOSS)
-                tribe.population = max(1, tribe.population - config.HUNT_HAZARD_POPULATION_LOSS)
-                self.trauma.radiate_event_wave(
-                    tribe.x, tribe.y, config.HUNT_HAZARD_TRAUMA_MAGNITUDE, config.HUNT_HAZARD_TRAUMA_RADIUS
-                )
-                return "a wolf pack struck the hunting party"
-            tribe.food += 15
-        elif action == "BUILD_FIRE" and tribe.wood >= 10:
-            tribe.wood -= 10
-            self.world.add_construction(tribe.x, tribe.y, "fire", self.cycle)
-            self.trauma.radiate_event_wave(
-                tribe.x, tribe.y, config.BUILD_FIRE_PRIDE_MAGNITUDE, config.BUILD_FIRE_PRIDE_RADIUS
-            )
-        elif action == "CONSTRUCT_WALL" and tribe.wood >= 15 and tribe.stone >= 15:
-            tribe.wood -= 15
-            tribe.stone -= 15
-            self.world.add_construction(tribe.x, tribe.y, "wall", self.cycle)
-        return None
+        handler = ACTION_REGISTRY.get(action, ACTION_REGISTRY["IDLE"])
+        return handler(self, tribe, biome)
 
     def _grow_population(self, tribe: Tribe) -> None:
         if tribe.food > 80 and tribe.population < 80:
             tribe.population += 1
             tribe.food -= 30
-        if not tribe.founded_city and tribe.population >= CITY_POPULATION_TARGET:
+
+    def _advance_era_if_ready(self, tribe: Tribe) -> None:
+        nxt = next_era(tribe.era)
+        if nxt is None:
+            return
+        if tribe.population < nxt.requires_population:
+            return
+        for resource, minimum in nxt.requires_resources.items():
+            if getattr(tribe, resource, 0) < minimum:
+                return
+
+        for resource, amount in nxt.advancement_cost.items():
+            setattr(tribe, resource, max(0, getattr(tribe, resource) - amount))
+        tribe.era = nxt.key
+        tribe.history.append(nxt.announcement.format(tribe=tribe.name))
+        if nxt.founds_city:
             tribe.founded_city = True
-            self.trauma.radiate_event_wave(
-                tribe.x, tribe.y, config.CITY_FOUNDED_PRIDE_MAGNITUDE, config.CITY_FOUNDED_PRIDE_RADIUS
-            )
+        self.trauma.radiate_event_wave(
+            tribe.x, tribe.y, config.ERA_ADVANCE_PRIDE_MAGNITUDE, config.ERA_ADVANCE_PRIDE_RADIUS
+        )

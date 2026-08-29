@@ -38,3 +38,15 @@ HUNT_HAZARD_TRAUMA_RADIUS = 6
 HUNT_HAZARD_CHANCE = 0.12
 HUNT_HAZARD_FOOD_LOSS = 10
 HUNT_HAZARD_POPULATION_LOSS = 1
+
+# Water (backend/actions.py, backend/eras.py). River tiles yield far more than
+# scrounging elsewhere, which is what actually gives river tiles strategic pull.
+STARTING_WATER = 30
+WATER_YIELD_RIVER = 15
+WATER_YIELD_OFF_RIVER = 3
+
+# Reaching a new era (backend/eras.py) radiates a pride event at the tribe's location,
+# same mechanism as BUILD_FIRE -- advancement is a genuine "the ground remembers this"
+# moment, not just a silent counter change.
+ERA_ADVANCE_PRIDE_MAGNITUDE = 0.5
+ERA_ADVANCE_PRIDE_RADIUS = 8
