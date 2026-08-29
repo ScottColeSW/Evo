@@ -5,6 +5,13 @@ TICK_SECONDS = 0.5
 GRID_SIZE = 100
 MAX_TRIBES = 4
 
+# Tiles moved per axis per cycle toward target_vector. At 1 (the original value), crossing
+# the 100-tile grid takes 100+ cycles minimum -- at roughly 2 seconds of real inference
+# time per cycle, a "good" decision to travel far was still visually imperceptible for
+# minutes. This doesn't change AI decision quality, just how fast a given decision reads
+# on screen.
+MOVEMENT_SPEED = 4
+
 # The self-modification engine lets a model rewrite backend/physics.py on disk and
 # hot-reloads it when turns get slow. It's validated with an AST parse + cooldown
 # lockout, but it is still an LLM writing code to your machine — off by default.
@@ -38,6 +45,16 @@ HUNT_HAZARD_TRAUMA_RADIUS = 6
 HUNT_HAZARD_CHANCE = 0.12
 HUNT_HAZARD_FOOD_LOSS = 10
 HUNT_HAZARD_POPULATION_LOSS = 1
+
+# Local resource depletion (backend/world.py, backend/actions.py). Each harvest of a
+# given resource at a given tile raises that tile's scarcity; yield there is scaled down
+# by (1 - scarcity). Capped below 1.0 so a tribe that never moves still gets a trickle,
+# rather than a hard lock -- the point is pressure to relocate, not a guaranteed death
+# sentence for staying put. Regeneration is global and constant, independent of whether
+# anyone is currently there.
+DEPLETION_PER_HARVEST = 0.15
+DEPLETION_REGEN_PER_CYCLE = 0.02
+MAX_SCARCITY = 0.8
 
 # Water (backend/actions.py, backend/eras.py). River tiles yield far more than
 # scrounging elsewhere, which is what actually gives river tiles strategic pull.

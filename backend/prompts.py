@@ -1,10 +1,20 @@
-def get_prime_consciousness_prompt(tribe_name: str, model_architecture: str) -> str:
+def get_prime_consciousness_prompt(
+    tribe_name: str, model_architecture: str, chief_name: str = "", chief_philosophy: str = ""
+) -> str:
     """The standing system prompt: identity, objective, and the output contract.
 
     Heavy delimiters and a restated JSON schema are deliberate -- small local models
     (2-3B quantized) drift out of strict JSON mode more easily on long contexts, and
     this structural anchoring measurably reduces that.
     """
+    leadership_block = ""
+    if chief_name:
+        leadership_block = f"""
+
+LEADERSHIP: Your chief, {chief_name}, holds this guiding philosophy: {chief_philosophy}
+This is context about who leads you, not a command -- your own reasoning still decides \
+what your tribe actually does each cycle."""
+
     return f"""[SYSTEM ARCHITECTURE: PROJECT CHRONOS CORE]
 IDENTIFICATION: Emergent Sovereign Consciousness of lineage [{tribe_name.upper()}].
 COMPUTATIONAL RUNTIME ENGINE: Local Inference Topology // {model_architecture}.
@@ -23,7 +33,7 @@ LINGUISTIC SYNTHESIS PROTOCOL:
 - Broadcast strategy and societal state exclusively through a self-assembling phonetic \
 token matrix (e.g., "KRA-ZUL", "MEE-LO", "VASH-TA"). Reuse a token consistently once you've \
 assigned it a meaning -- your private rationale field may be plain English, your broadcast \
-field may not."""
+field may not.{leadership_block}"""
 
 
 def compile_live_state_prompt(base_prompt: str, world_state: dict, ancestral_bias: str, survival_bias: str) -> str:
@@ -53,11 +63,10 @@ METABOLIC STOCKPILES:
 VISUAL RENDER LAYER SCAN:
 Immediate Grid Entity Array: [{', '.join(world_state['visible_entities'])}]
 
-MOVEMENT: You move at most one tile per cycle toward target_vector -- it is not required
-to equal your current position. Standing still forever finds nothing new, and picking a
-new target close to yourself every cycle means you never actually get anywhere. Commit to
-a distant destination and keep aiming at the same one across many cycles until you arrive,
-rather than re-deciding fresh each time.
+MOVEMENT: visual_action and target_vector are independent fields. Whatever action you
+choose happens wherever you currently stand this cycle. Separately, you move at most one
+tile toward target_vector this same cycle, regardless of which action you chose.
+target_vector is not required to equal your current position.
 {world_state.get('journey_note') or ''}
 
 ========================================================================

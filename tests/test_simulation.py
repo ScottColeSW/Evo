@@ -156,7 +156,7 @@ def test_prepare_turn_reminds_tribe_of_unfinished_journey():
 
     request, _ctx = sim._prepare_turn(tribe)
 
-    assert "already en route" in request["prompt"]
+    assert "you have not yet arrived there" in request["prompt"]
 
 
 def test_prepare_turn_has_no_journey_note_once_arrived():
@@ -166,7 +166,7 @@ def test_prepare_turn_has_no_journey_note_once_arrived():
 
     request, _ctx = sim._prepare_turn(tribe)
 
-    assert "already en route" not in request["prompt"]
+    assert "you have not yet arrived there" not in request["prompt"]
 
 
 def test_era_advances_once_population_and_resources_are_met():
@@ -332,10 +332,14 @@ def test_reaching_classical_age_marks_founded_city():
     assert tribe.founded_city is True
 
 
+_FAKE_CHIEF = {"chief_name": "Test Chief", "victory_method": "a coin flip", "guiding_philosophy": "test philosophy"}
+
+
 @run_async
 async def test_add_tribe_appends_with_unique_spawn_and_color():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
-    with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls:
+    with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls, \
+         mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=_FAKE_CHIEF)):
         mock_guard_cls.return_value.verify_vram_safety_margin = mock.AsyncMock(return_value=(True, ""))
         error = await sim.add_tribe("B", "qwen2.5:3b")
 
@@ -362,9 +366,24 @@ async def test_add_tribe_rejects_beyond_max_tribes():
 @run_async
 async def test_add_tribe_records_vram_warning_in_new_tribes_history():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
-    with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls:
+    with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls, \
+         mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=_FAKE_CHIEF)):
         mock_guard_cls.return_value.verify_vram_safety_margin = mock.AsyncMock(return_value=(False, "too big"))
         error = await sim.add_tribe("B", "gemma4:26b")
 
     assert error is None  # the tribe is still added, just warned
     assert any("VRAM WARNING: too big" in entry for entry in sim.tribes["tribe_1"].history)
+
+
+@run_async
+async def test_add_tribe_installs_a_chief():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls, \
+         mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=_FAKE_CHIEF)):
+        mock_guard_cls.return_value.verify_vram_safety_margin = mock.AsyncMock(return_value=(True, ""))
+        await sim.add_tribe("B", "qwen2.5:3b")
+
+    new_tribe = sim.tribes["tribe_1"]
+    assert new_tribe.chief_name == "Test Chief"
+    assert new_tribe.chief_philosophy == "test philosophy"
+    assert any("Test Chief has become chief" in entry for entry in new_tribe.history)

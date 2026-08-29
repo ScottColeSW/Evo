@@ -41,12 +41,26 @@ converged on.
   validation and silently falling back to `IDLE` on an unknown fraction of turns. Both are
   now generic placeholders with the real guidance moved into surrounding prose.
 
-  Fixing those two bugs wasn't enough on its own -- tribes would head somewhere distant for
-  one cycle, then re-decide fresh next cycle and drift back toward home, since nothing
-  reminded them what they'd previously committed to. `Tribe.last_target` now persists the
-  requested destination across turns, and if a tribe hasn't arrived yet, its prompt includes
-  an explicit "you are already en route to (x, y); continue toward it unless you have a
-  specific reason to change course" line (`Simulation._prepare_turn`).
+  Fixing those two bugs wasn't enough on its own. `Tribe.last_target` persists the requested
+  destination across turns, and if a tribe hasn't arrived yet, its prompt states that fact
+  plainly ("last cycle you set target_vector to (x, y); you have not yet arrived there") --
+  stated as information, not an instruction to continue, since whether to keep going or
+  change course is left to the model. The prompt also clarifies that `visual_action` and
+  `target_vector` are independent fields (an action happens wherever the tribe currently
+  stands; movement toward the target happens the same cycle regardless of which action was
+  chosen) -- models were behaving as though gathering or building required staying put.
+  `config.MOVEMENT_SPEED` (`backend/physics.py`) also moves a tribe up to N tiles per axis
+  per cycle instead of 1, since at ~2 seconds of real inference time per cycle, even a
+  correct decision to travel far was visually imperceptible for minutes.
+
+  None of these closed the actual gap. A live run showed a model oscillating between two
+  points exactly `MOVEMENT_SPEED` tiles apart, cycle after cycle, net displacement zero --
+  it reaches whatever nearby target it picks in a single cycle now, so the "not yet arrived"
+  reminder never even triggers, and raising movement speed just made short, non-committal
+  hops resolve faster rather than encouraging longer ones. This is being left as an honest,
+  observed limitation of what these small local models do with a free choice of
+  destination, not something to patch with more directive prompt text (see the leadership
+  system below for the approach taken instead of that).
 - **`backend/scheduler.py`** — groups a tick's turns by which model they target and runs
   each model's group concurrently via `asyncio.gather`, so a tick with N tribes across M
   models costs at most M model swaps in Ollama, not N. Also sets `keep_alive` on every
@@ -83,7 +97,12 @@ converged on.
   the Registry Factory pattern — adding an action means registering a handler here, not
   extending a branch chain in `Simulation`. Includes `GATHER_WATER` (river tiles yield far
   more than elsewhere, `config.WATER_YIELD_RIVER` vs `WATER_YIELD_OFF_RIVER`), the first
-  resource requirement gating advancement into the Bronze Age.
+  resource requirement gating advancement into the Bronze Age. `BUILD_FIRE`/`CONSTRUCT_WALL`
+  are no-ops at a tile that already has that structure -- a live run showed a model
+  choosing `BUILD_FIRE` for 7 straight cycles at the same spot, each one radiating *more*
+  ancestral pride at zero additional benefit, a self-reinforcing loop that made staying put
+  look increasingly attractive. That was a real mechanical gap, not model behavior to work
+  around.
 - **`backend/instincts.py`** — physiological survival pressure, distinct from
   `ancestral_matrix.py`'s location-based bias: this is about a tribe's *current* condition
   (starving or dehydrated right now), not the history of the ground it's standing on.
@@ -98,16 +117,42 @@ converged on.
   (`config.DROWNING_HAZARD_CHANCE`), mirroring the forest hunting hazard — the best water
   source isn't a free lunch.
 
-  Two follow-on fixes, both from watching a real long run collapse: population used to be
-  floored at 1 forever (a permanent "walking dead" state, never real death) — a tribe can
-  now actually go extinct (`Tribe.extinct`, `Simulation._lose_population`), which stops it
-  taking turns, announces itself with a banner, and marks a grave on the map instead of
-  quietly capping out. And the critical-hunger/thirst message used to only *describe* the
-  crisis ("your people are starving") — confirmed live that models would correctly narrate
-  the emergency in their own rationale and then still choose an unrelated action
-  (`GATHER_WOOD`, repeatedly, to the point of stockpiling 2,000+ wood while at population 1
-  and zero food). The message now names the exact fix directively ("Choose visual_action
-  HUNT_DEER this cycle unless you have a specific, better reason not to").
+  Population used to be floored at 1 forever (a permanent "walking dead" state, never real
+  death) — a tribe can now actually go extinct (`Tribe.extinct`, `Simulation._lose_population`),
+  which stops it taking turns, announces itself with a banner, and marks a grave on the map
+  instead of quietly capping out.
+
+  One design reversal worth being explicit about: an earlier version of the critical
+  hunger/thirst message named the exact fix directly ("Choose visual_action HUNT_DEER this
+  cycle") after watching models correctly narrate "we are starving" in their own rationale
+  and then still choose `GATHER_WOOD` (to the point of stockpiling 2,000+ wood at population
+  1 with zero food). That measurably worked, but it's scripting the outcome from outside the
+  simulation, not letting the model reason its way there — reverted back to purely
+  descriptive text ("Your people are starving.") on the position that an honest failure is
+  more informative than a papered-over success. See `backend/leadership.py` below for the
+  approach taken instead: motivation generated *inside* the simulated world, not injected
+  from outside it.
+- **`backend/leadership.py`** — a one-time, in-fiction leadership contest run when a tribe
+  is created: one extra LLM call asks the model to imagine 2-3 individuals competing for
+  chief through whatever trial fits (strength, wisdom, oratory, its choice), then declare a
+  winner and a one-sentence governing philosophy. That philosophy becomes standing context
+  in every future turn (`get_prime_consciousness_prompt`), explicitly framed as *context
+  about who leads you, not a command* — what the tribe actually does with it each cycle is
+  still its own reasoning. This exists specifically as the alternative to the reverted
+  hard-coded survival directive above: motivation generated inside the simulated world
+  by the model itself, rather than injected from the engineering layer around it. Confirmed
+  live: two tribes produced genuinely distinct, in-character elections on their own (one
+  chief won by healing the previous leader with herbal medicine and adopted a
+  "harmony with nature" philosophy; another won through demonstrated wisdom and prioritized
+  "resource sharing").
+- **`backend/world.py`** — local resource depletion: harvesting wood/stone/water/game at a
+  tile raises that tile's scarcity (`config.DEPLETION_PER_HARVEST`), which scales down yield
+  there on subsequent harvests, capped below total depletion (`config.MAX_SCARCITY`) so
+  staying put is costly rather than a hard lock. Regenerates globally and constantly
+  (`Simulation.step` calls `Landscape.regenerate` once per tick), independent of whether a
+  tribe is currently there. Scarcity is surfaced to a tribe as plain telemetry ("local wood
+  scarcity here: 45%"), not a suggestion to move — same principle as the leadership system,
+  real environmental pressure instead of a scripted nudge.
 - **`backend/genetics.py`** — an optional crossover step that splices two tribes' ideology +
   lexicon into a descendant profile via the model itself.
 - **`backend/self_mod.py`** — an opt-in (off by default) engine that lets a model rewrite
@@ -185,12 +230,14 @@ Then open `http://localhost:8765` in a browser, pick a model for each tribe, and
   `self.trauma.radiate_event_wave(x, y, magnitude, radius)` from `simulation.py`.
 - No persistence: closing the server drops the run. Add a snapshot dump if you want to
   resume or analyze runs later.
-- The directive survival-instinct fix (naming `HUNT_DEER`/`GATHER_WATER` explicitly at the
-  critical threshold) only addresses the two most life-threatening cases. The underlying
-  bias it was patching -- models defaulting to `GATHER_WOOD` regardless of what's actually
-  needed -- almost certainly still exists in less extreme situations (e.g. non-critical
-  warning-level scarcity, or era-advancement resource planning) where nothing is directive
-  enough to override it.
+- Models defaulting to `GATHER_WOOD` regardless of what's actually needed (confirmed live,
+  including 2,000+ wood stockpiled at population 1 with zero food) is a real, unaddressed
+  bias. A directive fix that named the correct action explicitly measurably worked but was
+  reverted on principle (see `backend/instincts.py`) in favor of the leadership system,
+  which as of this writing has not yet been observed to fix it in practice -- the two live
+  runs since adding chiefs still showed heavy wood accumulation. Whether an emergent,
+  in-fiction chief philosophy can actually out-compete this bias, versus a hard-coded
+  directive being the only thing that reliably does, is an open, unresolved question.
 - The era ladder only has 3 rungs and no branching — a linear Stone → Bronze → Classical
   path. Seasons/weather, an "inspiration" mechanic, and inter-tribe interaction (trade,
   conflict, travel) are all planned to hang off it next (see `backend/eras.py`'s docstring),
@@ -199,14 +246,23 @@ Then open `http://localhost:8765` in a browser, pick a model for each tribe, and
   movement — a tribe can path directly across a river tile with no risk as long as it
   doesn't choose to gather there. Full "crossing dangerous terrain" risk is a natural fit
   for whenever travel/movement gets built out more deliberately (inter-tribe interaction).
-- Governance/leadership is unexplored: the idea (raised in conversation) is that a tribe
-  might eventually want centralized decision-making or an "education" system once it's
-  large enough — this maps naturally onto a Classical-Age-or-later unlock, and onto
-  `genetics.py`'s still-unwired crossover system (a school/library structure could be what
-  finally triggers it: a real generational knowledge-transfer event, not just prompt
-  splicing). Not started — would need a second, less-frequent LLM call per tribe for a
-  "leader" strategic layer, to avoid doubling inference cost every tick.
+- Leadership (`backend/leadership.py`) is a one-time election at tribe creation with a
+  static standing philosophy, not an ongoing role. Two natural extensions, neither started:
+  a chief that periodically re-issues a fresh directive reflecting current tribe state
+  (a second, less-frequent LLM call, to avoid doubling inference cost every tick), and
+  leader-to-leader contact when two tribes' chiefs come into proximity -- today, tribes
+  getting close only means their people can overhear each other via the existing broadcast
+  mechanism; nothing about chiefs specifically triggers a summit, alliance, or rivalry.
+  Also unexplored: an "education" system unlocked once a tribe is established enough
+  (a Classical-Age-or-later structure), which could be what finally triggers
+  `genetics.py`'s still-unwired crossover -- a real generational knowledge-transfer event
+  rather than just prompt splicing.
 - Multiple individuals per tribe are a rendering layer only (deterministic wander animation
   keyed off population count) — there's still one authoritative (x, y) and one LLM call per
   tribe per tick, not per individual. Simulating individual members with their own
   micro-behavior would multiply inference cost by population size and isn't planned.
+- Resource depletion only applies to the four harvest actions (wood/stone/water/game) --
+  `BUILD_FIRE`/`CONSTRUCT_WALL` consume resources but don't deplete anything themselves
+  (the fix there was the already-built no-op guard, a different mechanism). It also doesn't
+  yet appear to be strong enough, on its own, to force relocation within the timeframe of a
+  short observed run -- whether it does over a genuinely long run is untested.

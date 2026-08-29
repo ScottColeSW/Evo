@@ -11,13 +11,23 @@ import random
 from . import config
 
 
+def _harvest(sim, tribe, resource_key, base_yield):
+    """Shared depletion logic: yield at this tile shrinks the more it's been harvested
+    recently, and harvesting here raises that further. Capped below total depletion
+    (config.MAX_SCARCITY) so staying put is costly, not a guaranteed dead end."""
+    scarcity = sim.world.scarcity(resource_key, tribe.x, tribe.y)
+    yield_amount = round(base_yield * (1 - scarcity))
+    sim.world.deplete(resource_key, tribe.x, tribe.y, config.DEPLETION_PER_HARVEST, config.MAX_SCARCITY)
+    return yield_amount
+
+
 def _gather_wood(sim, tribe, biome):
-    tribe.wood += 10
+    tribe.wood += _harvest(sim, tribe, "wood", 10)
     return None
 
 
 def _gather_stone(sim, tribe, biome):
-    tribe.stone += 10
+    tribe.stone += _harvest(sim, tribe, "stone", 10)
     return None
 
 
@@ -28,7 +38,8 @@ def _gather_water(sim, tribe, biome):
         )
         sim._lose_population(tribe, config.DROWNING_HAZARD_POPULATION_LOSS)
         return "the river's current pulled someone under"
-    tribe.water += config.WATER_YIELD_RIVER if biome == "river" else config.WATER_YIELD_OFF_RIVER
+    base = config.WATER_YIELD_RIVER if biome == "river" else config.WATER_YIELD_OFF_RIVER
+    tribe.water += _harvest(sim, tribe, "water", base)
     return None
 
 
@@ -40,12 +51,21 @@ def _hunt_deer(sim, tribe, biome):
         )
         sim._lose_population(tribe, config.HUNT_HAZARD_POPULATION_LOSS)
         return "a wolf pack struck the hunting party"
-    tribe.food += 15
+    tribe.food += _harvest(sim, tribe, "game", 15)
     return None
 
 
+def _already_built(sim, tribe, kind):
+    existing = sim.world.constructions.get((tribe.x, tribe.y))
+    return existing is not None and existing["type"] == kind
+
+
 def _build_fire(sim, tribe, biome):
-    if tribe.wood < 10:
+    # Without this, repeatedly choosing BUILD_FIRE at an already-built tile radiated
+    # more ancestral pride every time at zero additional benefit -- a self-reinforcing
+    # loop that made staying in one spot forever look increasingly attractive. A second
+    # fire where one already burns accomplishes nothing.
+    if _already_built(sim, tribe, "fire") or tribe.wood < 10:
         return None
     tribe.wood -= 10
     sim.world.add_construction(tribe.x, tribe.y, "fire", sim.cycle)
@@ -56,7 +76,7 @@ def _build_fire(sim, tribe, biome):
 
 
 def _construct_wall(sim, tribe, biome):
-    if tribe.wood < 15 or tribe.stone < 15:
+    if _already_built(sim, tribe, "wall") or tribe.wood < 15 or tribe.stone < 15:
         return None
     tribe.wood -= 15
     tribe.stone -= 15

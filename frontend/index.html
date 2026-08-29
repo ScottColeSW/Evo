@@ -57,6 +57,7 @@
   .stat-card .stat-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
   .stat-card .era-pill { font-size: 10px; background: #2a2a3a; color: #a5b4fc; padding: 2px 6px; border-radius: 10px; white-space: nowrap; }
   .stat-card .resources { color: #c7c7d1; margin-top: 6px; }
+  .chief-line { color: #fbbf24; font-size: 11px; }
   .stat-card.extinct { opacity: 0.55; filter: grayscale(0.6); }
   .speech { font-style: italic; color: #fbbf24; display: block; margin-top: 4px; }
   .survival-warning { color: #f87171; font-size: 11px; margin-top: 4px; }
@@ -447,6 +448,7 @@ function updateSidebar(state) {
           <div class="resources">
             (${t.x}, ${t.y}) · ${t.model} · Pop ${t.population}<br>
             🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${t.food} &nbsp;💧 ${t.water}
+            ${t.chief_name ? `<br><span class="chief-line">👑 ${t.chief_name} — ${t.chief_philosophy}</span>` : ""}
           </div>
           <span class="speech">"${t.last_broadcast || "..."}"</span>
           ${t.survival_warning ? `<div class="survival-warning">⚠️ ${t.survival_warning.replace("[SURVIVAL INSTINCT]: ", "")}</div>` : ""}

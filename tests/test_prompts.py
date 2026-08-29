@@ -31,12 +31,27 @@ def test_action_placeholder_does_not_repeat_select_strictly_one_pattern():
     assert "GATHER_WOOD" in prompt  # the actual action list is still shown, just as prose
 
 
-def test_prompt_explicitly_encourages_movement():
+def test_prompt_clarifies_action_and_movement_are_independent():
+    """Not a behavioral nudge -- a factual clarification of how the two fields interact,
+    since models were assuming an action like GATHER_WOOD required staying in place."""
     prompt = compile_live_state_prompt("base", _world_state(), "", "")
-    assert "Standing still forever finds nothing new" in prompt
+    assert "independent" in prompt
+    assert "not required to equal your current position" in prompt
 
 
 def test_system_prompt_includes_tribe_name_and_model():
     prompt = get_prime_consciousness_prompt("Forest Tribe", "gemma2:2b")
     assert "FOREST TRIBE" in prompt
     assert "gemma2:2b" in prompt
+
+
+def test_system_prompt_omits_leadership_block_without_a_chief():
+    prompt = get_prime_consciousness_prompt("Forest Tribe", "gemma2:2b")
+    assert "LEADERSHIP" not in prompt
+
+
+def test_system_prompt_includes_chief_as_context_not_command():
+    prompt = get_prime_consciousness_prompt("Forest Tribe", "gemma2:2b", "Ashgar", "expand aggressively")
+    assert "Ashgar" in prompt
+    assert "expand aggressively" in prompt
+    assert "not a command" in prompt

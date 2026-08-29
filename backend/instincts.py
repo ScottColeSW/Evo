@@ -17,18 +17,20 @@ def survival_bias_string(food: int, water: int) -> tuple[str, bool]:
     urgent: list[str] = []
     critical = False
 
+    # Describes the crisis honestly without naming a specific action to take. An earlier
+    # version of this named HUNT_DEER/GATHER_WATER directly as a near-command, which
+    # measurably fixed the starvation loop -- but that's scripting the outcome, not
+    # letting the model reason its way there. If a model can't connect "starving" to
+    # "go hunt" on its own, that's real information about that model, worth seeing
+    # honestly rather than papering over.
     if food <= config.HUNGER_CRITICAL_THRESHOLD:
-        # Naming the exact action, not just describing the crisis, is deliberate: models
-        # reliably articulated "we are starving" in their own rationale while still
-        # choosing an unrelated action (GATHER_WOOD) in practice. A named directive
-        # closes that gap between what a model says and what it actually does.
-        urgent.append("Your people are starving. Choose visual_action HUNT_DEER this cycle unless you have a specific, better reason not to.")
+        urgent.append("Your people are starving.")
         critical = True
     elif food <= config.HUNGER_WARNING_THRESHOLD:
         urgent.append("Food stores are running low.")
 
     if water <= config.THIRST_CRITICAL_THRESHOLD:
-        urgent.append("Your people are dying of thirst. Choose visual_action GATHER_WATER this cycle unless you have a specific, better reason not to.")
+        urgent.append("Your people are dying of thirst.")
         critical = True
     elif water <= config.THIRST_WARNING_THRESHOLD:
         urgent.append("Water stores are running low.")
