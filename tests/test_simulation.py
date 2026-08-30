@@ -174,6 +174,20 @@ def test_gather_water_yields_more_on_river_than_elsewhere():
     assert river_tribe.water > plains_tribe.water
 
 
+def test_gather_water_on_a_lake_matches_river_yield_with_no_drowning_risk():
+    from backend import config
+
+    sim = _bare_simulation()
+    lake_tribe = Tribe("tribe_0", "Lake Tribe", "gemma2:2b", 50, 50, "#60a5fa")
+
+    # A drowning roll that would definitely fire on a river must not fire on a lake.
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        note = sim._apply_action(lake_tribe, "GATHER_WATER", "lake", (0, 0))
+
+    assert note is None  # no drowning note
+    assert lake_tribe.water > config.STARTING_WATER  # river-level yield, not the off-water rate
+
+
 def test_action_outside_current_era_is_rejected_to_idle():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
@@ -276,6 +290,25 @@ def test_expedition_succeeds_immediately_on_reaching_real_river_water():
 
     assert tribe.expeditions[0]["phase"] == "returning"
     assert tribe.expeditions[0]["found"] == [40, 37]
+    assert any("found fresh water" in entry for entry in tribe.history)
+
+
+def test_expedition_succeeds_on_reaching_the_lake_same_as_the_river():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 25, 55, "#c084fc")
+    # From (25, 55) toward (25, 65) -- the lake center -- one EXPEDITION_SPEED (10)
+    # step lands exactly there, verified directly against biome_at first.
+    tribe.expeditions = [{
+        "pos": [25, 55], "origin": [25, 55], "target": [25, 65],
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+
+    sim._advance_expeditions(tribe)
+
+    assert tribe.expeditions[0]["phase"] == "returning"
+    assert tribe.expeditions[0]["found"] == [25, 65]
     assert any("found fresh water" in entry for entry in tribe.history)
 
 
@@ -664,6 +697,18 @@ def test_water_bringer_trophy_is_awarded_to_the_current_chief_on_reaching_river(
 
     assert any(t["name"] == "Water Bringer" and t["chief"] == "Ashgar" for t in tribe.trophies)
     assert any("Water Bringer" in entry for entry in tribe.history)
+
+
+def test_water_bringer_trophy_is_also_awarded_on_reaching_the_lake():
+    from backend.world import LAKE_CENTER
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", *LAKE_CENTER, "#c084fc")
+    tribe.chief_name = "Ashgar"
+
+    sim._check_chief_trophies(tribe)
+
+    assert any(t["name"] == "Water Bringer" for t in tribe.trophies)
 
 
 def test_trophies_are_only_awarded_once_per_tribe_lifetime():
@@ -1226,3 +1271,22 @@ async def test_install_chief_does_not_treat_ocean_as_solving_the_water_need():
         await sim._install_chief(tribe)
 
     assert captured["water_needed"] is True
+
+
+@run_async
+async def test_install_chief_skips_water_fact_when_already_on_a_lake():
+    from backend.world import LAKE_CENTER
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.x, tribe.y = LAKE_CENTER
+    captured = {}
+
+    async def fake_elect(client, model, name, water_needed=False, context=""):
+        captured["water_needed"] = water_needed
+        return {"chief_name": "Ashgar", "guiding_philosophy": "x", "water_decision": {"decreed": False, "reason": ""}}
+
+    with mock.patch("backend.simulation.elect_chief", fake_elect):
+        await sim._install_chief(tribe)
+
+    assert captured["water_needed"] is False

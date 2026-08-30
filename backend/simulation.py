@@ -220,7 +220,7 @@ class Simulation:
         water, not "water" generally: a tribe standing on the coast still has no drinking
         water, so ocean doesn't count as already solved. What else the ocean might be
         good for is left entirely open."""
-        water_needed = self.world.biome(tribe.x, tribe.y) != "river"
+        water_needed = self.world.biome(tribe.x, tribe.y) not in ("river", "lake")
         context = tribe.pending_chief_context
         tribe.pending_chief_context = ""  # consumed once, whether or not this election uses it
 
@@ -575,8 +575,8 @@ class Simulation:
             if exp.get("kind") == "hunt":
                 self._advance_hunting_party_outbound(tribe, exp, reached_biome, scout)
                 return False
-            if reached_biome == "river":
-                self._expedition_river_hazard(tribe, nx, ny)
+            if reached_biome in ("river", "lake"):
+                self._expedition_river_hazard(tribe, nx, ny)  # a no-op on a lake tile -- no current to drown in
                 exp["found"] = [nx, ny]
                 exp["phase"] = "returning"
                 tribe.history.append(f"{scout}'s party has found fresh water and is heading home to report it")
@@ -836,7 +836,7 @@ class Simulation:
         moment each is first earned -- 'Water Bringer' is deliberately the standout,
         since reliable water access is the single hardest survival problem this
         simulation poses."""
-        if self.world.biome(tribe.x, tribe.y) == "river":
+        if self.world.biome(tribe.x, tribe.y) in ("river", "lake"):
             self._award_trophy(tribe, "Water Bringer")
         if tribe.food >= config.FOOD_TROPHY_THRESHOLD:
             self._award_trophy(tribe, "Well Fed")

@@ -494,6 +494,9 @@ function checkChiefElections(state) {
 // Mirrors backend/world.py's biome_at exactly -- the river winds from the mountains
 // (west) to the coast (east) rather than being an arbitrary diagonal band.
 const OCEAN_X_START = 90, MOUNTAIN_X_END = 30, MOUNTAIN_Y_END = 35, RIVER_SOURCE_X = 15, RIVER_HALF_WIDTH = 3;
+// A tributary forking off the river toward the lower-middle of the map, ending in a
+// lake -- mirrors world.py's LAKE_CENTER/_is_lake exactly.
+const LAKE_TRIBUTARY_BRANCH_X = 35, LAKE_CENTER = [25, 65], LAKE_RADIUS = 7, LAKE_TRIBUTARY_HALF_WIDTH = 2;
 
 function riverCenterY(x) {
   const span = OCEAN_X_START - RIVER_SOURCE_X;
@@ -506,11 +509,23 @@ function isRiver(x, y) {
   return Math.abs(y - riverCenterY(x)) <= RIVER_HALF_WIDTH;
 }
 
+function isLake(x, y) {
+  const [lx, ly] = LAKE_CENTER;
+  if (Math.hypot(x - lx, y - ly) <= LAKE_RADIUS) return true;
+  const bx = LAKE_TRIBUTARY_BRANCH_X, by = riverCenterY(LAKE_TRIBUTARY_BRANCH_X);
+  const dx = lx - bx, dy = ly - by;
+  const lengthSq = dx * dx + dy * dy;
+  const t = Math.max(0, Math.min(1, ((x - bx) * dx + (y - by) * dy) / lengthSq));
+  const projX = bx + t * dx, projY = by + t * dy;
+  return Math.hypot(x - projX, y - projY) <= LAKE_TRIBUTARY_HALF_WIDTH;
+}
+
 // Mirrors backend/world.py's biome_at exactly -- one source of truth for both the
 // terrain color and which biome-relevant flora/fauna decoration a tile can show.
 function biomeNameAt(x, y) {
   if (x >= OCEAN_X_START) return "ocean";
   if (isRiver(x, y)) return "river";
+  if (isLake(x, y)) return "lake";
   if (x < MOUNTAIN_X_END && y < MOUNTAIN_Y_END) return "mountains";
   if (y < 18 || x >= 70) return "forest";
   return "plains";
@@ -520,6 +535,7 @@ function biomeColor(biome) {
   switch (biome) {
     case "ocean": return "#0b3d5c";
     case "river": return "#1d4ed8";
+    case "lake": return "#2563a8";
     case "mountains": return "#3a3a42";
     case "forest": return "#14321e";
     default: return "#224d1a";

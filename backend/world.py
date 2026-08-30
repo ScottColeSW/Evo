@@ -4,6 +4,7 @@ BIOME_LABELS = {
     "forest": "Whispering Wilds",
     "mountains": "Crags of Oros",
     "river": "Serpent's Vein",
+    "lake": "Stillwater Mere",
     "plains": "Sunken Basin",
     "ocean": "The Boundless Deep",
 }
@@ -16,6 +17,16 @@ MOUNTAIN_X_END = 30
 MOUNTAIN_Y_END = 35
 RIVER_SOURCE_X = 15
 RIVER_HALF_WIDTH = 3
+
+# A tributary forking off the main river toward the lower-middle of the map, ending in
+# a lake -- the only drinkable fresh water on the whole map used to be that single river
+# ribbon, which left most of the grid genuinely far from any water no matter how well a
+# tribe reasoned about it. Same drinkable status as the river (see actions.py's water
+# handling), but calmer -- no drowning hazard, unlike a river's current.
+LAKE_TRIBUTARY_BRANCH_X = 35
+LAKE_CENTER = (25, 65)
+LAKE_RADIUS = 7
+LAKE_TRIBUTARY_HALF_WIDTH = 2
 
 
 def _river_center_y(x: int) -> float:
@@ -32,11 +43,26 @@ def _is_river(x: int, y: int) -> bool:
     return abs(y - _river_center_y(x)) <= RIVER_HALF_WIDTH
 
 
+def _is_lake(x: int, y: int) -> bool:
+    lx, ly = LAKE_CENTER
+    if math.hypot(x - lx, y - ly) <= LAKE_RADIUS:
+        return True
+    # Distance from (x, y) to the tributary's line segment, branch point to lake center.
+    bx, by = LAKE_TRIBUTARY_BRANCH_X, _river_center_y(LAKE_TRIBUTARY_BRANCH_X)
+    dx, dy = lx - bx, ly - by
+    length_sq = dx * dx + dy * dy
+    t = max(0.0, min(1.0, ((x - bx) * dx + (y - by) * dy) / length_sq))
+    proj_x, proj_y = bx + t * dx, by + t * dy
+    return math.hypot(x - proj_x, y - proj_y) <= LAKE_TRIBUTARY_HALF_WIDTH
+
+
 def biome_at(x: int, y: int) -> str:
     if x >= OCEAN_X_START:
         return "ocean"
     if _is_river(x, y):
         return "river"
+    if _is_lake(x, y):
+        return "lake"
     if x < MOUNTAIN_X_END and y < MOUNTAIN_Y_END:
         return "mountains"
     if y < 18 or x >= 70:

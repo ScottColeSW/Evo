@@ -27,9 +27,9 @@ from .world import BIOME_LABELS, biome_at
 # actually around them. GATHER_WATER was already biome-aware (river vs. elsewhere);
 # this brings the other three in line with it.
 BIOME_YIELD_MULTIPLIER = {
-    "wood": {"forest": 1.0, "plains": 0.4, "river": 0.3, "mountains": 0.15, "ocean": 0.0},
-    "stone": {"mountains": 1.0, "forest": 0.1, "plains": 0.1, "river": 0.1, "ocean": 0.0},
-    "game": {"forest": 1.0, "plains": 0.6, "river": 0.3, "mountains": 0.15, "ocean": 0.0},
+    "wood": {"forest": 1.0, "plains": 0.4, "river": 0.3, "lake": 0.3, "mountains": 0.15, "ocean": 0.0},
+    "stone": {"mountains": 1.0, "forest": 0.1, "plains": 0.1, "river": 0.1, "lake": 0.1, "ocean": 0.0},
+    "game": {"forest": 1.0, "plains": 0.6, "river": 0.3, "lake": 0.3, "mountains": 0.15, "ocean": 0.0},
 }
 
 # Which species word to use in a wildlife sighting (see Simulation._build_visible_entities)
@@ -63,13 +63,15 @@ def _gather_stone(sim, tribe, biome, target):
 
 
 def _gather_water(sim, tribe, biome, target):
+    # A lake is calmer than a river's current -- same drinkable status and yield, but
+    # no drowning risk (see world.py's LAKE_CENTER/_is_lake).
     if biome == "river" and random.random() < config.DROWNING_HAZARD_CHANCE:
         sim.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.DROWNING_TRAUMA_MAGNITUDE, config.DROWNING_TRAUMA_RADIUS
         )
         sim._lose_population(tribe, config.DROWNING_HAZARD_POPULATION_LOSS, cause="drowning")
         return "the river's current pulled someone under"
-    base = config.WATER_YIELD_RIVER if biome == "river" else config.WATER_YIELD_OFF_RIVER
+    base = config.WATER_YIELD_RIVER if biome in ("river", "lake") else config.WATER_YIELD_OFF_RIVER
     tribe.water += _harvest(sim, tribe, "water", base, biome)
     return None
 

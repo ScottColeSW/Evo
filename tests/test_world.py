@@ -70,12 +70,40 @@ def test_regeneration_fully_clears_a_tile_eventually():
     assert ("wood", 10, 10) not in land.depletion  # cleaned up, not just floored at 0
 
 
-def test_biome_at_covers_all_five_regions():
+def test_biome_at_covers_all_six_regions():
     assert biome_at(80, 10) == "forest"
     assert biome_at(10, 10) == "mountains"
     assert biome_at(50, 90) == "plains"
     assert biome_at(40, 37) == "river"
     assert biome_at(95, 50) == "ocean"
+    from backend.world import LAKE_CENTER
+    assert biome_at(*LAKE_CENTER) == "lake"
+
+
+def test_lake_center_and_its_tributary_are_lake_biome():
+    from backend.world import LAKE_CENTER, LAKE_TRIBUTARY_BRANCH_X, _river_center_y
+
+    assert biome_at(*LAKE_CENTER) == "lake"
+    by = round(_river_center_y(LAKE_TRIBUTARY_BRANCH_X))
+    assert biome_at(LAKE_TRIBUTARY_BRANCH_X, by) == "river"  # the fork point itself
+
+
+def test_lake_tributary_actually_connects_the_river_to_the_lake():
+    """A real fork, not two disconnected features -- the midpoint between the branch
+    point and the lake center should read as lake (the connecting stream), not plains."""
+    from backend.world import LAKE_CENTER, LAKE_TRIBUTARY_BRANCH_X, _river_center_y
+
+    bx, by = LAKE_TRIBUTARY_BRANCH_X, _river_center_y(LAKE_TRIBUTARY_BRANCH_X)
+    lx, ly = LAKE_CENTER
+    mid_x, mid_y = round((bx + lx) / 2), round((by + ly) / 2)
+    assert biome_at(mid_x, mid_y) == "lake"
+
+
+def test_lake_does_not_extend_beyond_its_radius():
+    from backend.world import LAKE_CENTER, LAKE_RADIUS
+
+    lx, ly = LAKE_CENTER
+    assert biome_at(lx, ly + LAKE_RADIUS + 1) != "lake"
 
 
 def test_ocean_occupies_the_entire_east_edge():
