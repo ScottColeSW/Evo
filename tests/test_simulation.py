@@ -101,6 +101,37 @@ def test_broadcast_not_overheard_beyond_hearing_radius():
     assert "overheard" not in request["prompt"]
 
 
+def test_wildlife_sighting_appears_when_roll_succeeds_in_game_rich_terrain():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # default spawn is forest
+    tribe = sim.tribes["tribe_0"]
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        request, _ctx = sim._prepare_turn(tribe)
+
+    assert "wildlife sighting: signs of deer nearby" in request["prompt"]
+
+
+def test_wildlife_sighting_absent_when_roll_fails():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+
+    with mock.patch("backend.simulation.random.random", return_value=0.99):
+        request, _ctx = sim._prepare_turn(tribe)
+
+    assert "wildlife sighting" not in request["prompt"]
+
+
+def test_wildlife_sighting_never_appears_where_no_game_is_within_range():
+    sim = Simulation([{"name": "Ocean Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.x, tribe.y = 95, 50  # deep ocean; zero game multiplier for miles around
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):  # would trigger if unguarded
+        request, _ctx = sim._prepare_turn(tribe)
+
+    assert "wildlife sighting" not in request["prompt"]
+
+
 def test_translation_matrix_is_updated_on_apply_turn():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
     tribe_a = sim.tribes["tribe_0"]

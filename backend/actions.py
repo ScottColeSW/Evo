@@ -32,6 +32,12 @@ BIOME_YIELD_MULTIPLIER = {
     "game": {"forest": 1.0, "plains": 0.6, "river": 0.3, "mountains": 0.15, "ocean": 0.0},
 }
 
+# Which species word to use in a wildlife sighting (see Simulation._build_visible_entities)
+# for whichever hunting action is currently unlocked -- keyed by action name so a future
+# reframing (e.g. a small-game action alongside or instead of HUNT_DEER) only needs an
+# entry here, not a change to the sighting logic itself.
+GAME_SPECIES_LABEL = {"HUNT_DEER": "deer"}
+
 
 def _harvest(sim, tribe, resource_key, base_yield, biome):
     """Shared depletion logic: yield at this tile shrinks the more it's been harvested

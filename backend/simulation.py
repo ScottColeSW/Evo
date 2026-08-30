@@ -3,7 +3,7 @@ import importlib
 import random
 
 from . import config, physics
-from .actions import ACTION_REGISTRY
+from .actions import ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_LABEL
 from .ancestral_matrix import AncestralTraumaMatrix
 from .eras import ERAS, era_index, next_era, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
@@ -322,15 +322,8 @@ class Simulation:
             for tribe in self.tribes.values():
                 tribe.memory.consolidate()
 
-    def _prepare_turn(self, tribe: Tribe) -> tuple[dict, dict]:
-        """Builds this tribe's prompt with no network calls; returns (request, context)."""
-        biome = self.world.biome(tribe.x, tribe.y)
-        nearby = self.world.nearby_structures(tribe.x, tribe.y)
-        ghost_bias = self.trauma.bias_string(tribe.x, tribe.y)
-        survival_bias, survival_critical = survival_bias_string(tribe.food, tribe.water)
-        memories = tribe.memory.recall(f"{biome} at {tribe.x},{tribe.y}")
-        available_actions = sorted(unlocked_actions_through(tribe.era))
-
+    def _build_visible_entities(self, tribe: Tribe, biome: str, nearby: list[dict],
+                                 memories: list[dict], available_actions: list[str]) -> list[str]:
         visible_entities = [f"structure:{s['type']}@({s['x']},{s['y']})" for s in nearby]
         visible_entities += [f"memory(cycle {m['cycle']}): {m['text']}" for m in memories]
         visible_entities += [f"taboo: {t}" for t in tribe.memory.taboos[:3]]
@@ -340,6 +333,26 @@ class Simulation:
             level = self.world.scarcity(resource, tribe.x, tribe.y)
             if level > 0:
                 visible_entities.append(f"local {resource} scarcity here: {level:.0%}")
+
+        # Resource scarcity above only ever reports *past* depletion -- a tribe standing
+        # on a pristine tile gets no signal that game is even present before it's already
+        # hunted some. This is a real, occasional sighting instead: scan a small radius
+        # (game can be heard/spotted nearby, not just underfoot) and roll a chance scaled
+        # by the richest nearby tile's own game yield -- a mountain or ocean tile is
+        # essentially silent, a forest is the likeliest place to hear something. Named for
+        # whichever hunting action is actually unlocked (GAME_SPECIES_LABEL), so the fact
+        # and the action always agree on what's actually out there.
+        hunting_action = next((a for a in available_actions if a in GAME_SPECIES_LABEL), None)
+        if hunting_action:
+            best_multiplier = 0.0
+            for dx in range(-config.GAME_SIGHTING_RADIUS, config.GAME_SIGHTING_RADIUS + 1):
+                for dy in range(-config.GAME_SIGHTING_RADIUS, config.GAME_SIGHTING_RADIUS + 1):
+                    nearby_biome = self.world.biome(tribe.x + dx, tribe.y + dy)
+                    best_multiplier = max(best_multiplier, BIOME_YIELD_MULTIPLIER["game"].get(nearby_biome, 0.0))
+            if best_multiplier > 0 and random.random() < config.GAME_SIGHTING_CHANCE_BASE * best_multiplier:
+                species = GAME_SPECIES_LABEL[hunting_action]
+                visible_entities.append(f"wildlife sighting: signs of {species} nearby")
+
         # A broadcast is only overheard within BROADCAST_HEARING_RADIUS -- previously
         # audible map-wide regardless of distance, which gave away free information and
         # removed any incentive to actually travel toward another tribe.
@@ -353,6 +366,18 @@ class Simulation:
                 )
         if not visible_entities:
             visible_entities = ["none"]
+        return visible_entities
+
+    def _prepare_turn(self, tribe: Tribe) -> tuple[dict, dict]:
+        """Builds this tribe's prompt with no network calls; returns (request, context)."""
+        biome = self.world.biome(tribe.x, tribe.y)
+        nearby = self.world.nearby_structures(tribe.x, tribe.y)
+        ghost_bias = self.trauma.bias_string(tribe.x, tribe.y)
+        survival_bias, survival_critical = survival_bias_string(tribe.food, tribe.water)
+        memories = tribe.memory.recall(f"{biome} at {tribe.x},{tribe.y}")
+        available_actions = sorted(unlocked_actions_through(tribe.era))
+
+        visible_entities = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
 
         # Stated as fact (what you previously chose), not as an instruction to continue --
         # whether to keep going or change course is left entirely to the model.

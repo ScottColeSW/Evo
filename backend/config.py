@@ -59,6 +59,17 @@ HUNT_HAZARD_CHANCE = 0.12
 HUNT_HAZARD_FOOD_LOSS = 10
 HUNT_HAZARD_POPULATION_LOSS = 1
 
+# A tribe previously had no way to be told wildlife was actually present -- the only
+# fact touching game was local resource scarcity (see below), which only ever reports
+# past depletion, never announces a live sighting before any hunting has happened
+# there. This is a random per-cycle chance (scaled by the richest nearby tile's own
+# game yield multiplier, so a mountain or ocean tile essentially never triggers one) of
+# a real, named encounter fact appearing in the tribe's visible entities. The radius is
+# small and deliberately tighter than BROADCAST_HEARING_RADIUS/nearby_structures --
+# this is "close enough to hear or spot," not "somewhere on the regional map."
+GAME_SIGHTING_CHANCE_BASE = 0.3
+GAME_SIGHTING_RADIUS = 2
+
 # Local resource depletion (backend/world.py, backend/actions.py). Each harvest of a
 # given resource at a given tile raises that tile's scarcity; yield there is scaled down
 # by (1 - scarcity). Capped below 1.0 so a tribe that never moves still gets a trickle,
