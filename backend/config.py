@@ -151,12 +151,14 @@ FOOD_TROPHY_THRESHOLD = 60
 MILESTONE_SCOUT_SUCCESSES = 5
 MILESTONE_HUNT_SUCCESSES = 5
 
-# BREED (backend/actions.py._breed, backend/breeding.py): a solo cost paid by the one
-# tribe raising a child, distinct from the shared/split cost a future tribe-to-tribe
-# "party" merge would use. Real but not crushing -- comparable to a single expedition's
-# outbound daily draw, not a purchase that could bankrupt a tribe outright.
-BREED_FOOD_COST = 10
-BREED_WATER_COST = 8
+# BREED (backend/actions.py._breed, backend/breeding.py). Free -- the two real eligible
+# windows watched live this session both landed inside a full starvation death spiral
+# (0 food/water), meaning the tribe couldn't have afforded any positive cost even if it
+# had chosen BREED. The eligibility gate (two distinct named individuals) is still the
+# real constraint; this just stops affordability from being a second one stacked on top
+# of it during the exact moments eligibility is most likely to appear.
+BREED_FOOD_COST = 0
+BREED_WATER_COST = 0
 
 # Survival instinct thresholds (backend/instincts.py). "Critical" also raises inference
 # temperature, same as ancestral dread -- real panic, not just different wording.

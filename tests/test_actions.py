@@ -435,18 +435,24 @@ def test_breed_deducts_its_solo_cost():
     assert tribe.water == config.STARTING_WATER - config.BREED_WATER_COST
 
 
-def test_breed_refuses_when_food_or_water_cant_cover_the_cost():
+def test_breed_is_free_and_succeeds_even_with_almost_no_food_or_water():
+    """BREED costs nothing (see config.BREED_FOOD_COST/WATER_COST) -- the two real
+    eligible windows watched live were both inside a full starvation spiral, so
+    affordability can't be a second gate stacked on top of the real constraint
+    (two distinct named individuals)."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.chief_name = "Ashgar"
     tribe.trophies = [{"name": "Water Bringer", "chief": "BriMir", "cycle": 1}]
-    tribe.food = 2
+    tribe.food = 0
+    tribe.water = 0
 
     note = ACTION_REGISTRY["BREED"](sim, tribe, "plains", (0, 0))
 
-    assert "too little food and water" in note
-    assert tribe.pending_birth is None
-    assert tribe.food == 2  # unchanged
+    assert "Ashgar and BriMir decide to start a family" in note
+    assert tribe.pending_birth == {"parent_a": "Ashgar", "parent_b": "BriMir"}
+    assert tribe.food == 0
+    assert tribe.water == 0
 
 
 def test_breed_refuses_at_the_population_cap():
