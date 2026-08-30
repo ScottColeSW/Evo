@@ -261,6 +261,26 @@ def test_expedition_succeeds_immediately_on_reaching_real_river_water():
     assert any("found fresh water" in entry for entry in tribe.history)
 
 
+def test_expedition_can_drown_reaching_river_water_but_still_reports_the_find():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 40, 30, "#c084fc")
+    tribe.population = 10
+    tribe.expedition = {
+        "pos": [40, 30], "origin": [40, 30], "target": [40, 37],
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_expedition(tribe)
+
+    assert tribe.population == 9
+    assert tribe.expedition["found"] == [40, 37]  # the crossing still pays off despite the loss
+    assert any("pulled someone under" in entry for entry in tribe.history)
+    assert any("drowned one of our own" in m["text"] for m in tribe.memory.entries)
+
+
 def test_expedition_reaching_its_target_without_water_pushes_onward_if_days_remain():
     """Regression test: a model's own target_vector is usually close (one
     EXPEDITION_SPEED step away), so treating "arrived at the declared spot" as "search
@@ -445,6 +465,25 @@ def test_hunting_party_hazard_ends_the_hunt_and_costs_population():
     assert tribe.expedition["food_caught"] == 0
     assert tribe.population == 9
     assert any("wolf pack struck" in entry for entry in tribe.history)
+
+
+def test_hunting_party_drowns_if_its_daily_step_lands_on_a_river_tile():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 40, 30, "#c084fc")
+    tribe.population = 10
+    tribe.expedition = {
+        "kind": "hunt", "pos": [40, 30], "origin": [40, 30], "target": [40, 37],
+        "day": 0, "phase": "outbound", "food_caught": 0,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
+    }
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_expedition(tribe)
+
+    assert tribe.population == 9
+    assert tribe.expedition["phase"] == "returning"
+    assert any("pulled someone under" in entry for entry in tribe.history)
 
 
 def test_hunting_party_gives_up_after_max_days_without_success():

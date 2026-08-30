@@ -506,6 +506,7 @@ class Simulation:
                 self._advance_hunting_party_outbound(tribe, exp, reached_biome, scout)
                 return
             if reached_biome == "river":
+                self._expedition_river_hazard(tribe, nx, ny)
                 exp["found"] = [nx, ny]
                 exp["phase"] = "returning"
                 tribe.history.append(f"{scout}'s party has found fresh water and is heading home to report it")
@@ -542,6 +543,7 @@ class Simulation:
             exp["path"].append([nx, ny])
             exp["food_gathered"] += config.EXPEDITION_RETURN_DAILY_FOOD
             exp["water_gathered"] += config.EXPEDITION_RETURN_DAILY_WATER
+            self._expedition_river_hazard(tribe, nx, ny)
             if [nx, ny] == [ox, oy]:
                 # Whatever was foraged along the way comes home regardless of whether the
                 # expedition succeeded -- the trip cost real time either way, so it isn't
@@ -582,6 +584,28 @@ class Simulation:
                     )
                 tribe.expedition = None
 
+    def _expedition_river_hazard(self, tribe: Tribe, x: int, y: int) -> bool:
+        """The same drowning risk GATHER_WATER already carries on a river tile
+        (config.DROWNING_HAZARD_CHANCE) -- a traveling party crossing or camped on a
+        river isn't any safer than a tribe standing on one to fill jugs. Returns True
+        if it claimed someone (population loss and trauma already applied).
+
+        Losing someone this way also becomes a real, remembered lesson, not just a
+        chronicle line that scrolls away: a high-weight memory entry (see
+        TribeMemory.consolidate) is what actually promotes into a standing taboo the
+        tribe's own reasoning sees every future turn -- the survivors telling the rest
+        of the tribe what happened, not the simulation warning them directly."""
+        if biome_at(x, y) != "river" or random.random() >= config.DROWNING_HAZARD_CHANCE:
+            return False
+        self.trauma.radiate_event_wave(x, y, config.DROWNING_TRAUMA_MAGNITUDE, config.DROWNING_TRAUMA_RADIUS)
+        self._lose_population(tribe, config.DROWNING_HAZARD_POPULATION_LOSS, cause="drowning")
+        tribe.history.append("the river's current pulled someone under while the party was crossing -- the survivors turn back to warn the others")
+        tribe.memory.remember(
+            f"A river crossing near ({x},{y}) drowned one of our own -- the current there is a real danger.",
+            self.cycle, weight=0.85,
+        )
+        return True
+
     def _advance_hunting_party_outbound(self, tribe: Tribe, exp: dict, current_biome: str, scout: str) -> None:
         """One outbound day for a HUNTING_PARTY expedition (see actions.py._hunting_party).
         Every day out is its own roll of the same wolf-pack hazard an instant hunt
@@ -590,6 +614,11 @@ class Simulation:
         likelier to succeed there than an instant hunt would be. A hazard or a catch
         both end the search immediately; the catch itself still isn't real food until
         the party makes it all the way home (see _report_hunting_party_home)."""
+        px, py = exp["pos"]
+        if self._expedition_river_hazard(tribe, px, py):
+            exp["phase"] = "returning"
+            return
+
         if random.random() < config.HUNT_HAZARD_CHANCE:
             self._lose_population(tribe, config.HUNT_HAZARD_POPULATION_LOSS, cause="wolf_attack")
             exp["phase"] = "returning"
