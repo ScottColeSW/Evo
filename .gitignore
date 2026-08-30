@@ -6,3 +6,5 @@ venv/
 logs/
 server_out.log
 server_err.log
+scripts/*.log
+scripts/*_results.json
