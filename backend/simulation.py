@@ -7,6 +7,7 @@ from .actions import ACTION_REGISTRY
 from .ancestral_matrix import AncestralTraumaMatrix
 from .eras import ERAS, next_era, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
+from .scoreboard import record_tribe_result
 from .instincts import survival_bias_string
 from .leadership import elect_chief
 from .memory import TribeMemory
@@ -61,6 +62,21 @@ class Tribe:
         self.chief_name = ""
         self.chief_philosophy = ""
         self.chief_decree = ""
+        # Lifetime counters for backend/scoreboard.py -- what an evaluator actually
+        # wants to compare across models isn't just "did it survive," it's how it got
+        # there: how often it needed a new leader, how often scouting actually paid
+        # off, how it fared in conflict.
+        self.max_population = self.population
+        self.chiefs_elected = 0
+        self.chief_deaths = 0
+        self.expeditions_launched = 0
+        self.expeditions_succeeded = 0
+        self.raids_won = 0
+        self.raids_lost = 0
+        self.raids_defended = 0
+        # Credited to whichever chief is in power the moment each is first earned --
+        # see Simulation._check_chief_trophies. [{"name", "chief", "cycle"}, ...]
+        self.trophies: list[dict] = []
         # None when no expedition is out; otherwise {"pos", "origin", "target", "day",
         # "phase" ("outbound"/"returning"), "found", "terrain_report"} -- see
         # actions.py._scout and Simulation._advance_expeditions.
@@ -69,6 +85,14 @@ class Tribe:
     def to_dict(self) -> dict:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
         survival_warning, _ = survival_bias_string(self.food, self.water)
+        nxt = next_era(self.era)
+        next_era_info = None
+        if nxt is not None:
+            next_era_info = {
+                "label": nxt.label,
+                "requires_population": nxt.requires_population,
+                "requires_resources": nxt.requires_resources,
+            }
         return {
             "name": self.name,
             "model": self.model,
@@ -90,6 +114,8 @@ class Tribe:
             "chief_name": self.chief_name,
             "chief_philosophy": self.chief_philosophy,
             "chief_decree": self.chief_decree,
+            "trophies": self.trophies,
+            "next_era": next_era_info,
             "expedition": (
                 {
                     "pos": self.expedition["pos"],
@@ -174,6 +200,7 @@ class Simulation:
         tribe.chief_philosophy = result.get("guiding_philosophy", "")
         victory = result.get("victory_method", "")
         if tribe.chief_name:
+            tribe.chiefs_elected += 1
             note = f"{tribe.chief_name} has become chief"
             tribe.history.append(f"{note} ({victory})." if victory else f"{note}.")
 
@@ -261,6 +288,7 @@ class Simulation:
             self._apply_upkeep(tribe)
             self._grow_population(tribe)
             self._advance_era_if_ready(tribe)
+            self._check_chief_trophies(tribe)
 
         for tribe in self.tribes.values():
             if not tribe.extinct and tribe.expedition is not None:
@@ -431,8 +459,8 @@ class Simulation:
             px, py = exp["pos"]
             tx, ty = exp["target"]
             bonus = self.world.trail_speed_bonus(px, py, config.MAX_TRAIL_BONUS_SPEED)
-            speed = round(config.EXPEDITION_SPEED + bonus)
-            nx, ny = physics.calculate_next_step(px, py, tx, ty, speed=speed)
+            base_speed = config.EXPEDITION_SPEED + bonus
+            nx, ny = physics.terrain_aware_step(px, py, tx, ty, base_speed=base_speed)
             self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS)
             exp["pos"] = [nx, ny]
             exp["path"].append([nx, ny])
@@ -471,8 +499,8 @@ class Simulation:
             px, py = exp["pos"]
             ox, oy = exp["origin"]
             bonus = self.world.trail_speed_bonus(px, py, config.MAX_TRAIL_BONUS_SPEED)
-            speed = round(config.EXPEDITION_SPEED + bonus)
-            nx, ny = physics.calculate_next_step(px, py, ox, oy, speed=speed)
+            base_speed = config.EXPEDITION_SPEED + bonus
+            nx, ny = physics.terrain_aware_step(px, py, ox, oy, base_speed=base_speed)
             self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS)
             exp["pos"] = [nx, ny]
             exp["path"].append([nx, ny])
@@ -491,6 +519,8 @@ class Simulation:
 
                 if exp["found"]:
                     fx, fy = exp["found"]
+                    tribe.expeditions_succeeded += 1
+                    self._award_trophy(tribe, "Water Bringer")
                     tribe.memory.remember(f"Scouts confirmed fresh water at ({fx},{fy}).", self.cycle, weight=0.9)
                     tribe.history.append(
                         f"{scout} is home and gives {recipient} a full report: "
@@ -530,11 +560,13 @@ class Simulation:
             tribe.water = 0
             self._dehydrate(tribe)
 
-    def _lose_population(self, tribe: Tribe, amount: int) -> None:
+    def _lose_population(self, tribe: Tribe, amount: int, cause: str = "unknown") -> None:
         """The single place population ever decreases. A tribe can now actually go
         extinct (population 0) rather than being propped up at a permanent
         population-1 floor -- extinction is marked, announced, and radiates a much
-        larger trauma event than an ordinary death.
+        larger trauma event than an ordinary death. `cause` feeds the scoreboard
+        record (backend/scoreboard.py) so a benchmark can distinguish "starved" from
+        "lost a raid," not just "died."
 
         Any loss also carries a chance of claiming the chief specifically, once a
         tribe survives it -- a chief was previously permanent flavor text no matter
@@ -550,8 +582,10 @@ class Simulation:
             self.trauma.radiate_event_wave(
                 tribe.x, tribe.y, config.EXTINCTION_TRAUMA_MAGNITUDE, config.EXTINCTION_TRAUMA_RADIUS
             )
+            record_tribe_result(tribe, cause=cause, cycles_survived=self.cycle)
         elif tribe.chief_name and random.random() < config.CHIEF_DEATH_CHANCE_ON_LOSS:
             fallen = tribe.chief_name
+            tribe.chief_deaths += 1
             tribe.chief_name = ""
             tribe.chief_philosophy = ""
             tribe.chief_decree = ""
@@ -562,19 +596,20 @@ class Simulation:
         self.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.STARVATION_TRAUMA_MAGNITUDE, config.STARVATION_TRAUMA_RADIUS
         )
-        self._lose_population(tribe, config.STARVATION_POPULATION_LOSS)
+        self._lose_population(tribe, config.STARVATION_POPULATION_LOSS, cause="starvation")
 
     def _dehydrate(self, tribe: Tribe) -> None:
         tribe.history.append("thirst claimed lives")
         self.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.DEHYDRATION_TRAUMA_MAGNITUDE, config.DEHYDRATION_TRAUMA_RADIUS
         )
-        self._lose_population(tribe, config.DEHYDRATION_POPULATION_LOSS)
+        self._lose_population(tribe, config.DEHYDRATION_POPULATION_LOSS, cause="thirst")
 
     def _grow_population(self, tribe: Tribe) -> None:
         if tribe.food > config.POPULATION_GROWTH_FOOD_THRESHOLD and tribe.population < config.POPULATION_GROWTH_CAP:
             tribe.population += 1
             tribe.food -= config.POPULATION_GROWTH_FOOD_COST
+        tribe.max_population = max(tribe.max_population, tribe.population)
 
     def _advance_era_if_ready(self, tribe: Tribe) -> None:
         nxt = next_era(tribe.era)
@@ -595,3 +630,22 @@ class Simulation:
         self.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.ERA_ADVANCE_PRIDE_MAGNITUDE, config.ERA_ADVANCE_PRIDE_RADIUS
         )
+
+    def _award_trophy(self, tribe: Tribe, name: str) -> None:
+        if any(t["name"] == name for t in tribe.trophies):
+            return  # once per tribe's lifetime
+        chief = tribe.chief_name or "an unknown chief"
+        tribe.trophies.append({"name": name, "chief": chief, "cycle": self.cycle})
+        tribe.history.append(f"\U0001f3c6 {chief} earns the '{name}' trophy for {tribe.name}!")
+
+    def _check_chief_trophies(self, tribe: Tribe) -> None:
+        """A lightweight legacy system credited to whichever chief is in power the
+        moment each is first earned -- 'Water Bringer' is deliberately the standout,
+        since reliable water access is the single hardest survival problem this
+        simulation poses."""
+        if self.world.biome(tribe.x, tribe.y) == "river":
+            self._award_trophy(tribe, "Water Bringer")
+        if tribe.food >= config.FOOD_TROPHY_THRESHOLD:
+            self._award_trophy(tribe, "Well Fed")
+        if tribe.population > 8:
+            self._award_trophy(tribe, "Growing Legacy")

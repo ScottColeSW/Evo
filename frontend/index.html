@@ -82,6 +82,10 @@
   .consensus-bar { height: 4px; background: #333344; border-radius: 2px; margin-top: 4px; overflow: hidden; }
   .consensus-fill { height: 100%; background: #34d399; }
   .empty-hint { color: #6b7280; font-size: 12px; padding: 8px 0; }
+  .score-card { background: #222232; padding: 10px; border-radius: 6px; font-size: 12px; margin-bottom: 8px; border-left: 4px solid #6366f1; }
+  .score-card .score-model { font-weight: bold; color: #c7d2fe; }
+  .score-card .score-stats { color: #9ca3af; margin-top: 4px; line-height: 1.5; }
+  .score-card .score-stats b { color: #e2e2e7; }
 </style>
 </head>
 <body>
@@ -117,6 +121,7 @@
         <button class="tab-btn active" data-tab="tribes">Tribes</button>
         <button class="tab-btn" data-tab="consensus">Consensus</button>
         <button class="tab-btn" data-tab="chronicle">Chronicle</button>
+        <button class="tab-btn" data-tab="scoreboard">Scoreboard</button>
       </div>
       <div id="tab-tribes" class="tab-panel active">
         <div id="inject-tribe-row">
@@ -125,12 +130,18 @@
           <button id="btn-inject-tribe">+ Inject</button>
         </div>
         <div id="tribe-stats"></div>
+        <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:#8a8a9a; margin-top:6px;">Path to the Next Era</div>
+        <div id="era-ladder"></div>
+        <button id="btn-view-scoreboard" style="width:100%; padding:8px; background:#322f6e; color:#c7d2fe; font-size:12px; border-radius:6px;">View Scoreboard →</button>
       </div>
       <div id="tab-consensus" class="tab-panel">
         <div id="consensus-panel"></div>
       </div>
       <div id="tab-chronicle" class="tab-panel">
         <div id="log-chronicle" class="log-box"></div>
+      </div>
+      <div id="tab-scoreboard" class="tab-panel">
+        <div id="scoreboard-panel"></div>
       </div>
     </div>
   </div>
@@ -269,8 +280,70 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
+    if (btn.dataset.tab === "scoreboard") loadScoreboard();
   });
 });
+
+/* ---------- Era ladder: what each tribe still needs for its next age ---------- */
+
+const RESOURCE_ICON = { wood: "🪵", stone: "🪨", food: "🍖", water: "💧" };
+
+function renderEraLadder(state) {
+  const ladder = document.getElementById("era-ladder");
+  if (!ladder) return;
+  const rows = Object.values(state.tribes || {}).filter(t => !t.extinct && t.next_era);
+  if (rows.length === 0) {
+    ladder.innerHTML = `<div class="empty-hint">No further eras to reach.</div>`;
+    return;
+  }
+  ladder.innerHTML = rows.map(t => {
+    const popDone = t.population >= t.next_era.requires_population;
+    const popLine = `Pop ${t.population}/${t.next_era.requires_population}${popDone ? " ✓" : ""}`;
+    const resourceLines = Object.entries(t.next_era.requires_resources).map(([res, need]) => {
+      const have = t[res] ?? 0;
+      const done = have >= need;
+      return `${RESOURCE_ICON[res] || res} ${have}/${need}${done ? " ✓" : ""}`;
+    });
+    return `
+      <div class="consensus-row" style="border-left:3px solid ${t.color};">
+        <strong>${t.name}</strong> → ${t.next_era.label}<br>
+        ${[popLine, ...resourceLines].join(" &nbsp;·&nbsp; ")}
+      </div>`;
+  }).join("");
+}
+
+/* ---------- Scoreboard: cross-run benchmark (backend/scoreboard.py) ---------- */
+
+async function loadScoreboard() {
+  const panel = document.getElementById("scoreboard-panel");
+  panel.innerHTML = `<div class="empty-hint">Loading...</div>`;
+  let data;
+  try {
+    const res = await fetch("/api/scoreboard");
+    data = await res.json();
+  } catch (e) {
+    panel.innerHTML = `<div class="empty-hint">Could not load the scoreboard.</div>`;
+    return;
+  }
+  const rows = data.by_model || [];
+  if (rows.length === 0) {
+    panel.innerHTML = `<div class="empty-hint">No completed runs yet -- the scoreboard fills in once a tribe's story ends (extinction).</div>`;
+    return;
+  }
+  panel.innerHTML = rows.map(r => `
+    <div class="score-card">
+      <div class="score-model">${r.model}</div>
+      <div class="score-stats">
+        ${r.runs} run${r.runs === 1 ? "" : "s"} recorded<br>
+        Survival: <b>${r.avg_cycles_survived}</b> avg / <b>${r.best_cycles_survived}</b> best cycles<br>
+        Best era reached: <b>${r.best_era_reached}</b><br>
+        Population: <b>${r.avg_max_population}</b> avg peak<br>
+        Leadership: <b>${r.total_chiefs_elected}</b> chiefs elected, <b>${r.total_chief_deaths}</b> died in office<br>
+        Scouting: <b>${r.total_expeditions_succeeded}</b>/<b>${r.total_expeditions_launched}</b> expeditions found water<br>
+        Conflict: <b>${r.total_raids_won}</b> raids won, <b>${r.total_raids_lost}</b> lost, <b>${r.total_raids_defended}</b> defended
+      </div>
+    </div>`).join("");
+}
 
 function resizeCanvas() {
   const container = document.getElementById("canvas-container");
@@ -306,6 +379,10 @@ document.getElementById("btn-inject-tribe").addEventListener("click", () => {
   if (!model) return;
   socket.send(JSON.stringify({ command: "ADD_TRIBE", name, model }));
   nameInput.value = "";
+});
+
+document.getElementById("btn-view-scoreboard").addEventListener("click", () => {
+  document.querySelector('.tab-btn[data-tab="scoreboard"]').click();
 });
 
 /* ---------- Era transition banner ---------- */
@@ -796,6 +873,7 @@ function updateSidebar(state) {
             ${t.chief_name ? `<br><span class="chief-line">👑 ${t.chief_name} — ${t.chief_philosophy}</span>` : ""}
             ${t.chief_decree ? `<br><span class="chief-line">📜 decreed: ${t.chief_decree}</span>` : ""}
             ${t.expedition ? `<br><span class="chief-line">🧭 ${t.expedition.lead_scout}'s party ${t.expedition.phase}, day ${t.expedition.day}/${t.expedition.max_days} at (${t.expedition.pos[0]},${t.expedition.pos[1]}) · 🍖${t.expedition.food_gathered} 💧${t.expedition.water_gathered} foraged</span>` : ""}
+            ${(t.trophies && t.trophies.length) ? `<br><span class="chief-line">🏆 ${t.trophies.map(tr => tr.name).join(", ")}</span>` : ""}
           </div>
           <span class="speech">"${t.last_broadcast || "..."}"</span>
           ${t.survival_warning ? `<div class="survival-warning">⚠️ ${t.survival_warning.replace("[SURVIVAL INSTINCT]: ", "")}</div>` : ""}
@@ -805,6 +883,8 @@ function updateSidebar(state) {
       log.innerHTML += `<div class="${chronicleEntryClass(entry)}">${chronicleEntryIcon(entry)}[${t.name}] ${entry}</div>`;
     });
   });
+
+  renderEraLadder(state);
 
   const pairs = state.linguistic_consensus || [];
   if (pairs.length === 0) {

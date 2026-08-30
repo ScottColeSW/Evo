@@ -14,6 +14,15 @@ def isolate_event_log(tmp_path, monkeypatch):
     monkeypatch.setattr(event_log, "DEFAULT_LOG_DIR", str(tmp_path))
 
 
+@pytest.fixture(autouse=True)
+def isolate_scoreboard(tmp_path, monkeypatch):
+    """Any test that drives a tribe to extinction appends a real record to the
+    project's logs/scoreboard.jsonl (backend/scoreboard.py) -- redirect it the same way
+    as the event log."""
+    from backend import scoreboard
+    monkeypatch.setattr(scoreboard, "DEFAULT_SCOREBOARD_PATH", str(tmp_path / "scoreboard.jsonl"))
+
+
 def run_async(fn):
     """Lets an async test function run under plain pytest, with no pytest-asyncio
     dependency -- just wraps it in asyncio.run()."""

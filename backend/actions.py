@@ -61,7 +61,7 @@ def _gather_water(sim, tribe, biome, target):
         sim.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.DROWNING_TRAUMA_MAGNITUDE, config.DROWNING_TRAUMA_RADIUS
         )
-        sim._lose_population(tribe, config.DROWNING_HAZARD_POPULATION_LOSS)
+        sim._lose_population(tribe, config.DROWNING_HAZARD_POPULATION_LOSS, cause="drowning")
         return "the river's current pulled someone under"
     base = config.WATER_YIELD_RIVER if biome == "river" else config.WATER_YIELD_OFF_RIVER
     tribe.water += _harvest(sim, tribe, "water", base, biome)
@@ -74,7 +74,7 @@ def _hunt_deer(sim, tribe, biome, target):
         sim.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.HUNT_HAZARD_TRAUMA_MAGNITUDE, config.HUNT_HAZARD_TRAUMA_RADIUS
         )
-        sim._lose_population(tribe, config.HUNT_HAZARD_POPULATION_LOSS)
+        sim._lose_population(tribe, config.HUNT_HAZARD_POPULATION_LOSS, cause="wolf_attack")
         return "a wolf pack struck the hunting party"
     tribe.food += _harvest(sim, tribe, "game", 15, biome)
     return None
@@ -179,6 +179,7 @@ def _scout(sim, tribe, biome, target):
         # when they get home, not a permanent feature of the map.
         "path": [[tribe.x, tribe.y]],
     }
+    tribe.expeditions_launched += 1
     return f"scouts led by {scout['name']} depart camp to explore toward ({tx},{ty})"
 
 
@@ -193,8 +194,8 @@ def _relocate(sim, tribe, biome, target):
     tribe.water = max(0, tribe.water - config.RELOCATE_WATER_COST)
     tx, ty = target
     bonus = sim.world.trail_speed_bonus(tribe.x, tribe.y, config.MAX_TRAIL_BONUS_SPEED)
-    speed = round(config.MOVEMENT_SPEED + bonus)
-    nx, ny = physics.calculate_next_step(tribe.x, tribe.y, tx, ty, speed=speed)
+    base_speed = config.MOVEMENT_SPEED + bonus
+    nx, ny = physics.terrain_aware_step(tribe.x, tribe.y, tx, ty, base_speed=base_speed)
     sim.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS)
     tribe.x, tribe.y = nx, ny
     return None
@@ -229,13 +230,16 @@ def _raid(sim, tribe, biome, target):
             stolen = round(getattr(defender, resource) * config.RAID_STEAL_FRACTION)
             setattr(defender, resource, getattr(defender, resource) - stolen)
             setattr(tribe, resource, getattr(tribe, resource) + stolen)
-        sim._lose_population(defender, config.RAID_DEFENDER_POPULATION_LOSS)
-        sim._lose_population(tribe, config.RAID_ATTACKER_POPULATION_LOSS_ON_WIN)
+        tribe.raids_won += 1
+        sim._lose_population(defender, config.RAID_DEFENDER_POPULATION_LOSS, cause="raided")
+        sim._lose_population(tribe, config.RAID_ATTACKER_POPULATION_LOSS_ON_WIN, cause="raid_losses")
         sim.trauma.radiate_event_wave(defender.x, defender.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
         sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
         return f"raided {defender.name} and seized supplies"
     else:
-        sim._lose_population(tribe, config.RAID_ATTACKER_POPULATION_LOSS_ON_LOSS)
+        tribe.raids_lost += 1
+        defender.raids_defended += 1
+        sim._lose_population(tribe, config.RAID_ATTACKER_POPULATION_LOSS_ON_LOSS, cause="failed_raid")
         sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
         return f"attempted to raid {defender.name} and was repelled"
 

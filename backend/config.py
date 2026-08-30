@@ -98,6 +98,13 @@ POPULATION_GROWTH_FOOD_THRESHOLD = 50
 POPULATION_GROWTH_FOOD_COST = 15
 POPULATION_GROWTH_CAP = 80
 
+# Chief trophies (backend/simulation.py._check_chief_trophies): a lightweight legacy
+# system credited to whichever chief is in power the moment each is first earned, once
+# per tribe's lifetime. "Water Bringer" is deliberately the standout -- reliable water
+# access is the single hardest survival problem this simulation poses (see the whole
+# expedition/nearest_water design), so it's the trophy that actually means something.
+FOOD_TROPHY_THRESHOLD = 60
+
 # Survival instinct thresholds (backend/instincts.py). "Critical" also raises inference
 # temperature, same as ancestral dread -- real panic, not just different wording.
 HUNGER_WARNING_THRESHOLD = 20
@@ -186,6 +193,21 @@ MAX_TRAIL_BONUS_SPEED = 3  # added to MOVEMENT_SPEED/EXPEDITION_SPEED at full we
 # finding (if any) isn't real, actionable knowledge for the tribe until they've walked all
 # the way home. Faster than a full RELOCATE since it's a handful of unburdened people, not
 # the whole camp and its belongings.
+# Movement speed scales by whatever terrain is currently being crossed -- previously
+# every RELOCATE/expedition step was a pure straight-line vector toward the target with
+# zero awareness of what lay in between, so a mountain range or a river crossing cost
+# exactly the same as open plains. Ocean gets a multiplier of 0.0, which
+# physics.terrain_aware_step treats as genuinely impassable (no boats exist yet in this
+# Stone Age simulation) and deflects around along a single axis, rather than just being
+# slow -- the one real "obstacle" in the world right now.
+TERRAIN_MOVEMENT_MULTIPLIER = {
+    "plains": 1.0,
+    "forest": 0.8,
+    "mountains": 0.4,
+    "river": 0.3,
+    "ocean": 0.0,
+}
+
 EXPEDITION_SPEED = 6
 EXPEDITION_MAX_DAYS = 3
 

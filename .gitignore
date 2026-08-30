@@ -3,3 +3,6 @@ __pycache__/
 .venv/
 venv/
 .env
+logs/
+server_out.log
+server_err.log

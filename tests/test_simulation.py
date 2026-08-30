@@ -473,6 +473,48 @@ def test_every_spawn_point_is_within_a_single_expeditions_reach_of_water():
         assert dist <= max_reach, f"({x},{y}) is {dist:.1f} tiles from water, beyond a {max_reach}-tile expedition"
 
 
+def test_water_bringer_trophy_is_awarded_to_the_current_chief_on_reaching_river():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 40, 37, "#c084fc")  # (40,37) is river
+    tribe.chief_name = "Ashgar"
+
+    sim._check_chief_trophies(tribe)
+
+    assert any(t["name"] == "Water Bringer" and t["chief"] == "Ashgar" for t in tribe.trophies)
+    assert any("Water Bringer" in entry for entry in tribe.history)
+
+
+def test_trophies_are_only_awarded_once_per_tribe_lifetime():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 40, 37, "#c084fc")
+    tribe.chief_name = "Ashgar"
+
+    sim._check_chief_trophies(tribe)
+    tribe.chief_name = "Successor"  # a later chief shouldn't steal an already-earned trophy
+    sim._check_chief_trophies(tribe)
+
+    water_trophies = [t for t in tribe.trophies if t["name"] == "Water Bringer"]
+    assert len(water_trophies) == 1
+    assert water_trophies[0]["chief"] == "Ashgar"
+
+
+def test_well_fed_and_growing_legacy_trophies_have_their_own_thresholds():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")  # plains, not river
+    tribe.chief_name = "Ashgar"
+    tribe.food = config.FOOD_TROPHY_THRESHOLD
+    tribe.population = 9  # above the starting 8
+
+    sim._check_chief_trophies(tribe)
+
+    names = {t["name"] for t in tribe.trophies}
+    assert "Well Fed" in names
+    assert "Growing Legacy" in names
+    assert "Water Bringer" not in names
+
+
 def test_era_advances_once_population_and_resources_are_met():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")

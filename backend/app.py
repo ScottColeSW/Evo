@@ -6,6 +6,7 @@ import httpx
 from aiohttp import WSMsgType, web
 
 from . import config
+from .scoreboard import read_all_results, summarize_by_model
 from .simulation import Simulation
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -28,6 +29,16 @@ async def models(request: web.Request) -> web.Response:
         except Exception:
             names = []
     return web.json_response({"models": names})
+
+
+@routes.get("/api/scoreboard")
+async def scoreboard(request: web.Request) -> web.Response:
+    """The cross-run benchmark (backend/scoreboard.py) -- every tribe's lifetime
+    summary, across every run this machine has ever completed, plus a per-model
+    leaderboard rollup. This is what an evaluator comparing local models actually
+    wants, not a per-run play-by-play (that's the in-browser Chronicle's job)."""
+    results = read_all_results()
+    return web.json_response({"results": results, "by_model": summarize_by_model(results)})
 
 
 @routes.get("/ws")

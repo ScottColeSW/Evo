@@ -1,4 +1,4 @@
-from backend.physics import calculate_next_step, extend_ray_to_grid_edge
+from backend.physics import calculate_next_step, extend_ray_to_grid_edge, terrain_aware_step
 
 
 def test_moves_one_tile_toward_target():
@@ -51,3 +51,53 @@ def test_extend_ray_with_no_direction_returns_the_same_point():
 def test_extend_ray_toward_the_near_edge_shortens_correctly():
     # Heading west from (50,50) through (48,50) hits the western edge at (0,50).
     assert extend_ray_to_grid_edge(50, 50, 48, 50, 100) == (0, 50)
+
+
+def test_terrain_aware_step_moves_at_full_speed_on_plains():
+    # (50, 50) is plains -- multiplier 1.0, no slowdown from the old flat behavior.
+    assert terrain_aware_step(50, 50, 80, 50, base_speed=4) == (54, 50)
+
+
+def test_terrain_aware_step_slows_down_in_mountains():
+    """Regression test: RELOCATE/expeditions used to be a pure straight-line vector
+    with zero regard for terrain -- a mountain crossing cost exactly the same as open
+    plains. (10, 10) is mountains (multiplier 0.4), so a base speed of 4 should only
+    actually cover round(4 * 0.4) = 2 tiles."""
+    assert terrain_aware_step(10, 10, 40, 10, base_speed=4) == (12, 10)
+
+
+def test_terrain_aware_step_never_drops_below_one_tile_of_progress():
+    # Even in the slowest walkable terrain, movement never fully stalls out.
+    assert terrain_aware_step(40, 37, 60, 37, base_speed=1) != (40, 37)  # (40,37) is river
+
+
+def test_terrain_aware_step_deflects_around_the_ocean_on_a_diagonal():
+    """The one real "obstacle": stepping directly into open ocean is impassable (no
+    boats yet), so a party heading southeast from forest into the sea gets deflected
+    along the y-axis instead of teleported into the water -- still real progress since
+    the target has a y-component to move along."""
+    from backend.world import biome_at
+
+    nx, ny = terrain_aware_step(85, 50, 99, 80, base_speed=8)
+    assert (nx, ny) == (85, 56)
+    assert biome_at(nx, ny) != "ocean"
+
+
+def test_terrain_aware_step_makes_no_progress_when_the_only_path_is_straight_into_the_sea():
+    """A due-east target with no y-component gives the y-axis deflection nothing to
+    work with -- staying put is the only ocean-free option, not a bug."""
+    nx, ny = terrain_aware_step(85, 50, 99, 50, base_speed=8)
+    assert (nx, ny) == (85, 50)
+
+
+def test_terrain_aware_step_falls_back_to_the_y_axis_when_x_is_blocked():
+    """A target out to sea on a diagonal still finds a way to make progress along
+    whichever axis the ocean's straight coastline (x >= OCEAN_X_START) doesn't block --
+    this map's ocean is a simple vertical band, so a pure y-axis move never enters it
+    regardless of target. (The full "every axis blocked, stay put" fallback exists for
+    a differently-shaped coastline, not reachable with this map's geometry.)"""
+    from backend.world import biome_at
+
+    nx, ny = terrain_aware_step(89, 50, 99, 99, base_speed=8)
+    assert biome_at(nx, ny) != "ocean"
+    assert (nx, ny) == (89, 56)  # x held at the shoreline, y-axis progress instead
