@@ -201,11 +201,12 @@ def test_prepare_turn_mentions_an_expedition_already_in_the_field():
         "pos": [tribe.x, tribe.y], "origin": [tribe.x, tribe.y], "target": [tribe.x + 10, tribe.y],
         "day": 1, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3,
     }
 
     request, _ctx = sim._prepare_turn(tribe)
 
-    assert "scouts are still in the field" in request["prompt"]
+    assert "are still in the field" in request["prompt"]
     assert "day 1/" in request["prompt"]
 
 
@@ -219,6 +220,7 @@ def test_expedition_succeeds_immediately_on_reaching_real_river_water():
         "pos": [40, 30], "origin": [40, 30], "target": [40, 37],
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3,
     }
 
     sim._advance_expedition(tribe)
@@ -235,6 +237,7 @@ def test_expedition_reaching_its_target_without_water_still_turns_back():
         "pos": [50, 50], "origin": [50, 50], "target": [50, 50],  # already "there"
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3,
     }
 
     sim._advance_expedition(tribe)
@@ -252,6 +255,7 @@ def test_expedition_gives_up_after_max_days_without_success():
         "pos": [50, 50], "origin": [50, 50], "target": [99, 99],
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3,
     }
 
     from backend import config
@@ -260,7 +264,7 @@ def test_expedition_gives_up_after_max_days_without_success():
 
     assert tribe.expedition["phase"] == "returning"
     assert tribe.expedition["found"] is None
-    assert any("found nothing after" in entry for entry in tribe.history)
+    assert any("calls off the search after" in entry for entry in tribe.history)
 
 
 def test_expedition_arrival_home_delivers_water_finding_to_memory_and_clears_state():
@@ -270,6 +274,7 @@ def test_expedition_arrival_home_delivers_water_finding_to_memory_and_clears_sta
         "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
         "day": 2, "phase": "returning", "found": [40, 37], "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3,
     }
 
     sim._advance_expedition(tribe)
@@ -292,6 +297,7 @@ def test_expedition_arrival_delivers_foraged_food_and_water_to_the_tribe():
         "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
         "day": 2, "phase": "returning", "found": [40, 37], "terrain_report": None,
         "food_gathered": 7, "water_gathered": 5,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3,
     }
 
     sim._advance_expedition(tribe)
@@ -310,6 +316,7 @@ def test_expedition_report_is_attributed_to_the_chief_when_one_exists():
         "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
         "day": 2, "phase": "returning", "found": [40, 37], "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3,
     }
 
     sim._advance_expedition(tribe)
@@ -324,11 +331,12 @@ def test_expedition_report_falls_back_to_the_tribe_when_there_is_no_chief():
         "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
         "day": 2, "phase": "returning", "found": [40, 37], "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3,
     }
 
     sim._advance_expedition(tribe)
 
-    assert any("give the tribe a full report" in entry for entry in tribe.history)
+    assert any("gives the tribe a full report" in entry for entry in tribe.history)
 
 
 def test_expedition_arrival_home_empty_handed_clears_state_without_a_water_memory():
@@ -338,6 +346,7 @@ def test_expedition_arrival_home_empty_handed_clears_state_without_a_water_memor
         "pos": [50, 50], "origin": [50, 50], "target": [99, 99],
         "day": 3, "phase": "returning", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3,
     }
 
     sim._advance_expedition(tribe)
@@ -353,6 +362,7 @@ def test_expedition_wears_a_trail_on_the_tile_it_moves_into():
         "pos": [50, 50], "origin": [50, 50], "target": [80, 80],
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3,
     }
 
     sim._advance_expedition(tribe)
@@ -375,6 +385,7 @@ def test_expedition_travels_farther_along_an_already_worn_trail():
         "pos": [50, 50], "origin": [50, 50], "target": [99, 50],
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3,
     }
 
     sim._advance_expedition(tribe)

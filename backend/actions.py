@@ -109,6 +109,35 @@ def _construct_wall(sim, tribe, biome, target):
     return None
 
 
+# A small, cheap flavor name for whoever is leading an expedition -- not a second LLM
+# agent (that would double Ollama calls per tribe per cycle for a party that doesn't
+# make its own strategic decisions anyway; the tribe already decided to send them).
+# Just enough identity that "the exploration team" reads as a group of people with a
+# lead, not an anonymous abstraction, matching how the tribe's own chief already has a
+# name. Deterministic per (tribe, cycle) so re-reading the same expedition's state
+# doesn't change who's leading it.
+_SCOUT_NAME_SYLLABLES = (
+    "Ka", "Ren", "Tor", "Vel", "Sha", "Nim", "Bri", "Kol", "Tal", "Ora", "Fen", "Mir",
+)
+
+
+def _generate_scout(tribe, cycle: int) -> dict:
+    """A name plus a determination trait (0.0-1.0) that shifts this scout's own
+    personal give-up point by up to EXPEDITION_DETERMINATION_DAY_VARIANCE days either
+    side of the default -- some parties push a little harder, some turn back a little
+    sooner, rather than every expedition behaving identically."""
+    seed = hash((tribe.id, cycle)) & 0xFFFFFFFF
+    rng = random.Random(seed)
+    name = "".join(rng.sample(_SCOUT_NAME_SYLLABLES, 2))
+    determination = rng.random()
+    day_bonus = round((determination - 0.5) * 2 * config.EXPEDITION_DETERMINATION_DAY_VARIANCE)
+    return {
+        "name": name,
+        "determination": determination,
+        "max_days": config.EXPEDITION_MAX_DAYS + day_bonus,
+    }
+
+
 def _scout(sim, tribe, biome, target):
     """Dispatches an expedition toward target_vector -- your most capable people, out
     searching, not an instant look. They travel and camp under their own supply (no
@@ -124,11 +153,12 @@ def _scout(sim, tribe, biome, target):
     actually sending people to go look, not facts the simulation gifts for free."""
     if tribe.expedition is not None:
         exp = tribe.expedition
-        return f"scouts remain in the field (day {exp['day']}/{config.EXPEDITION_MAX_DAYS}, {exp['phase']})"
+        return f"{exp['lead_scout']}'s party remains in the field (day {exp['day']}/{exp['max_days']}, {exp['phase']})"
 
     tx, ty = target
     tx = max(0, min(sim.world.grid_size - 1, tx))
     ty = max(0, min(sim.world.grid_size - 1, ty))
+    scout = _generate_scout(tribe, sim.cycle)
     tribe.expedition = {
         "pos": [tribe.x, tribe.y],
         "origin": [tribe.x, tribe.y],
@@ -139,8 +169,11 @@ def _scout(sim, tribe, biome, target):
         "terrain_report": None,
         "food_gathered": 0,
         "water_gathered": 0,
+        "lead_scout": scout["name"],
+        "determination": scout["determination"],
+        "max_days": scout["max_days"],
     }
-    return f"scouts depart camp to explore toward ({tx},{ty})"
+    return f"scouts led by {scout['name']} depart camp to explore toward ({tx},{ty})"
 
 
 def _relocate(sim, tribe, biome, target):

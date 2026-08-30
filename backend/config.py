@@ -184,6 +184,14 @@ MAX_TRAIL_BONUS_SPEED = 3  # added to MOVEMENT_SPEED/EXPEDITION_SPEED at full we
 EXPEDITION_SPEED = 6
 EXPEDITION_MAX_DAYS = 3
 
+# Every expedition's lead scout gets a procedurally-generated determination trait (see
+# actions.py._generate_scout) that shifts their own personal give-up point by up to
+# this many days either side of EXPEDITION_MAX_DAYS -- a stubborn scout searches a
+# little longer before turning back, a cautious one a little less. Not a second LLM
+# agent making its own choices, just per-expedition character instead of every party
+# behaving identically.
+EXPEDITION_DETERMINATION_DAY_VARIANCE = 1
+
 # A traveling party forages and hunts along the way rather than being a pure resource
 # black hole -- more on the outbound leg (fresh, unpicked ground, no urgency yet), less
 # on the way back (already-passed terrain, hurrying home with news). Delivered to the

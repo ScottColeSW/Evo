@@ -182,6 +182,39 @@ def test_scout_does_not_move_the_tribe_but_launches_an_expedition():
     assert "depart" in note
 
 
+def test_scout_launch_gives_the_expedition_a_named_lead_and_determination_trait():
+    """The exploration party isn't a second LLM agent making its own choices (that
+    would double Ollama calls per tribe per cycle for a party the tribe already
+    decided to send) -- but it does get its own procedurally-generated character, not
+    every expedition behaving identically."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (10, 10))
+
+    assert tribe.expedition["lead_scout"]  # a real, non-empty name
+    assert 0.0 <= tribe.expedition["determination"] <= 1.0
+    span = config.EXPEDITION_DETERMINATION_DAY_VARIANCE
+    assert config.EXPEDITION_MAX_DAYS - span <= tribe.expedition["max_days"] <= config.EXPEDITION_MAX_DAYS + span
+
+
+def test_scout_launch_is_deterministic_per_tribe_and_cycle():
+    """Same tribe, same cycle should always produce the same scout -- re-reading an
+    expedition's state (e.g. across a websocket reconnect) shouldn't change who's
+    leading it."""
+    sim = _bare_simulation()
+    tribe_a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe_b = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    ACTION_REGISTRY["SCOUT"](sim, tribe_a, "plains", (10, 10))
+    ACTION_REGISTRY["SCOUT"](sim, tribe_b, "plains", (10, 10))
+
+    assert tribe_a.expedition["lead_scout"] == tribe_b.expedition["lead_scout"]
+    assert tribe_a.expedition["determination"] == tribe_b.expedition["determination"]
+
+
 def test_raid_with_no_rival_nearby_does_nothing():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")

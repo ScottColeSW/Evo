@@ -90,8 +90,11 @@ class Tribe:
                 {
                     "pos": self.expedition["pos"],
                     "day": self.expedition["day"],
-                    "max_days": config.EXPEDITION_MAX_DAYS,
+                    "max_days": self.expedition["max_days"],
                     "phase": self.expedition["phase"],
+                    "lead_scout": self.expedition["lead_scout"],
+                    "food_gathered": self.expedition["food_gathered"],
+                    "water_gathered": self.expedition["water_gathered"],
                 }
                 if self.expedition
                 else None
@@ -319,8 +322,9 @@ class Simulation:
         if tribe.expedition is not None:
             exp = tribe.expedition
             journey_note += (
-                f" Your scouts are still in the field (day {exp['day']}/{config.EXPEDITION_MAX_DAYS}, "
-                f"{exp['phase']}); choosing SCOUT again won't send a second party."
+                f" Your scouts, led by {exp['lead_scout']}, are still in the field "
+                f"(day {exp['day']}/{exp['max_days']}, {exp['phase']}); choosing SCOUT "
+                "again won't send a second party."
             )
 
         world_state = {
@@ -428,18 +432,24 @@ class Simulation:
             exp["water_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_WATER
             reached_biome = biome_at(nx, ny)
 
+            scout = exp["lead_scout"]
             if reached_biome == "river":
                 exp["found"] = [nx, ny]
                 exp["phase"] = "returning"
-                tribe.history.append(f"{tribe.name}'s scouts have found fresh water and are heading home to report it")
+                tribe.history.append(f"{scout}'s party has found fresh water and is heading home to report it")
             elif [nx, ny] == [tx, ty]:
                 exp["terrain_report"] = reached_biome
                 exp["phase"] = "returning"
                 label = BIOME_LABELS.get(reached_biome, reached_biome)
-                tribe.history.append(f"{tribe.name}'s scouts reached ({nx},{ny}), {label}, and are heading home to report")
-            elif exp["day"] >= config.EXPEDITION_MAX_DAYS:
+                tribe.history.append(f"{scout}'s party reached ({nx},{ny}), {label}, and is heading home to report")
+            elif exp["day"] >= exp["max_days"]:
                 exp["phase"] = "returning"
-                tribe.history.append(f"{tribe.name}'s scouts found nothing after {config.EXPEDITION_MAX_DAYS} days and are turning back")
+                # The party's own survival comes before the search -- a scout's own
+                # max_days (varied by their determination trait, see actions.py
+                # ._generate_scout) is the mechanical expression of that: give up and
+                # come home safely rather than push on indefinitely chasing a find
+                # that isn't there.
+                tribe.history.append(f"{scout} calls off the search after {exp['max_days']} days -- the party's safety comes first, and they turn back")
         else:  # returning
             px, py = exp["pos"]
             ox, oy = exp["origin"]
@@ -457,6 +467,7 @@ class Simulation:
                 # real, actionable knowledge for the tribe at this exact moment.
                 tribe.food += exp["food_gathered"]
                 tribe.water += exp["water_gathered"]
+                scout = exp["lead_scout"]
                 forage_note = f"bringing back {exp['food_gathered']} food and {exp['water_gathered']} water foraged along the way"
                 recipient = f"Chief {tribe.chief_name}" if tribe.chief_name else "the tribe"
 
@@ -464,7 +475,7 @@ class Simulation:
                     fx, fy = exp["found"]
                     tribe.memory.remember(f"Scouts confirmed fresh water at ({fx},{fy}).", self.cycle, weight=0.9)
                     tribe.history.append(
-                        f"{tribe.name}'s scouts are home and give {recipient} a full report: "
+                        f"{scout} is home and gives {recipient} a full report: "
                         f"fresh water confirmed at ({fx},{fy}), {forage_note}"
                     )
                 elif exp["terrain_report"]:
@@ -472,12 +483,12 @@ class Simulation:
                     tx, ty = exp["target"]
                     tribe.memory.remember(f"Scouts explored toward ({tx},{ty}) and found {label} terrain.", self.cycle, weight=0.6)
                     tribe.history.append(
-                        f"{tribe.name}'s scouts are home and give {recipient} a full report: "
+                        f"{scout} is home and gives {recipient} a full report: "
                         f"{label} terrain at ({tx},{ty}), {forage_note}"
                     )
                 else:
                     tribe.history.append(
-                        f"{tribe.name}'s scouts are home and give {recipient} a full report: "
+                        f"{scout} is home and gives {recipient} a full report: "
                         f"nothing new found, though not empty-handed -- {forage_note}"
                     )
                 tribe.expedition = None
