@@ -6,6 +6,7 @@ import httpx
 from aiohttp import WSMsgType, web
 
 from . import config
+from .experiment_log import read_all_experiment_runs, summarize_experiment
 from .scoreboard import read_all_results, summarize_by_model
 from .simulation import Simulation
 
@@ -39,6 +40,19 @@ async def scoreboard(request: web.Request) -> web.Response:
     wants, not a per-run play-by-play (that's the in-browser Chronicle's job)."""
     results = read_all_results()
     return web.json_response({"results": results, "by_model": summarize_by_model(results)})
+
+
+@routes.get("/api/experiments")
+async def experiments(request: web.Request) -> web.Response:
+    """The A/B-test log (backend/experiment_log.py) -- every headless hypothesis test
+    run against this codebase (wording, list order, framing, whatever comes next),
+    grouped by experiment name with a per-variant comparison. This is the standing
+    record of "did the thing we tried actually change model behavior," not a single
+    run's play-by-play."""
+    runs = read_all_experiment_runs()
+    experiment_names = sorted({r["experiment"] for r in runs})
+    by_experiment = {name: summarize_experiment(name, runs) for name in experiment_names}
+    return web.json_response({"runs": runs, "by_experiment": by_experiment})
 
 
 @routes.get("/ws")
