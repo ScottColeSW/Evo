@@ -6,6 +6,7 @@ import httpx
 from aiohttp import WSMsgType, web
 
 from . import config
+from .board_history import record_board_state
 from .experiment_log import read_all_experiment_runs, summarize_experiment
 from .scoreboard import read_all_results, summarize_by_model
 from .simulation import Simulation
@@ -96,7 +97,9 @@ async def _tick_session(ws: web.WebSocketResponse, session: dict) -> None:
         return
     try:
         await sim.step()
-        await ws.send_str(json.dumps(sim.snapshot()))
+        snapshot = sim.snapshot()
+        record_board_state(sim.run_id, sim.cycle, snapshot)
+        await ws.send_str(json.dumps(snapshot))
     except Exception:
         pass  # connection may have dropped between the tick starting and finishing
 

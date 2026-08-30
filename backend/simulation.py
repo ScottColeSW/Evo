@@ -32,7 +32,7 @@ from .world import BIOME_LABELS, Landscape, biome_at
 # reach (see config.EXPEDITION_MAX_DAYS/EXPEDITION_SPEED). No amount of good in-fiction
 # reasoning could have found water from there; real settlements cluster near water for
 # the same reason, so this is a world-geography fix, not a difficulty adjustment.
-SPAWN_POINTS = [(80, 38), (15, 10), (50, 55), (40, 37)]
+SPAWN_POINTS = [(80, 38), (25, 34), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 
 
@@ -157,6 +157,10 @@ class Simulation:
         self.trauma = AncestralTraumaMatrix(config.GRID_SIZE)
         self.translation = TranslationConfidenceMatrix()
         self.event_log = RunEventLog()
+        # Shared identifier with the event log's own filename (e.g. "run_20260830_
+        # 113014") so a full per-cycle board-state row (backend/board_history.py) and
+        # this run's narrative chronicle can be cross-referenced by the same id.
+        self.run_id = self.event_log.path.stem
         self.tribes: dict[str, Tribe] = {}
         for i, cfg in enumerate(tribe_configs[: config.MAX_TRIBES]):
             # An explicit x/y (e.g. to set up two tribes starting near each other) is an
