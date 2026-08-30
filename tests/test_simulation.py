@@ -803,6 +803,68 @@ async def test_resolve_birth_falls_back_to_a_generic_name_if_the_llm_call_fails(
     assert tribe.lineage[0]["child_name"] == "child of Ashgar and BriMir"
 
 
+@run_async
+async def test_night_cycle_updates_philosophy_when_the_reviewer_calls_for_a_change():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.chief_philosophy = "expand aggressively"
+    tribe.history.append("starvation claimed lives")
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events):
+        return {"revised_philosophy": "caution and hoarding", "changed": True, "reasoning": "too many losses"}
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert tribe.chief_philosophy == "caution and hoarding"
+    assert any("reconsiders the tribe's philosophy" in entry and "too many losses" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_night_cycle_leaves_philosophy_and_history_untouched_when_nothing_changed():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.chief_philosophy = "expand aggressively"
+    history_before = list(tribe.history)
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events):
+        return {"revised_philosophy": "expand aggressively", "changed": False, "reasoning": "still working"}
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert tribe.chief_philosophy == "expand aggressively"
+    assert list(tribe.history) == history_before  # no new chronicle noise on an unremarkable review
+
+
+@run_async
+async def test_night_cycle_passes_the_tribes_own_recent_history_and_philosophy():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.chief_philosophy = "expand aggressively"
+    tribe.history.append("starvation claimed lives")
+    captured = {}
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events):
+        captured["reviewer_model"] = reviewer_model
+        captured["tribe_name"] = tribe_name
+        captured["current_philosophy"] = current_philosophy
+        captured["recent_events"] = recent_events
+        return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": ""}
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    from backend import config
+    assert captured["reviewer_model"] == config.NIGHT_CYCLE_REVIEWER_MODEL
+    assert captured["tribe_name"] == "Forest Tribe"
+    assert captured["current_philosophy"] == "expand aggressively"
+    assert "starvation claimed lives" in captured["recent_events"]
+
+
 def test_well_fed_and_growing_legacy_trophies_have_their_own_thresholds():
     from backend import config
 
@@ -1053,6 +1115,58 @@ async def test_step_skips_extinct_tribes_entirely():
         await sim.step()
 
     assert dead.history == frozen_history  # untouched -- no turn was ever prepared for it
+
+
+@run_async
+async def test_step_runs_the_night_cycle_only_on_its_own_interval():
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    sim.cycle = config.NIGHT_CYCLE_EVERY_N_CYCLES - 1  # step() increments before checking
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch("backend.simulation.reflect_on_history", mock.AsyncMock(
+             return_value={"revised_philosophy": "x", "changed": False, "reasoning": ""}
+         )) as mock_reflect:
+        await sim.step()
+
+    mock_reflect.assert_called_once()
+
+
+@run_async
+async def test_step_does_not_run_the_night_cycle_off_its_interval():
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    sim.cycle = config.NIGHT_CYCLE_EVERY_N_CYCLES - 2  # will not land on the interval after +1
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch("backend.simulation.reflect_on_history", mock.AsyncMock()) as mock_reflect:
+        await sim.step()
+
+    mock_reflect.assert_not_called()
+
+
+@run_async
+async def test_step_does_not_run_the_night_cycle_for_a_chiefless_tribe():
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = ""  # between chiefs -- election below fails, so it stays that way
+    sim.cycle = config.NIGHT_CYCLE_EVERY_N_CYCLES - 1
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value={})), \
+         mock.patch("backend.simulation.reflect_on_history", mock.AsyncMock()) as mock_reflect:
+        await sim.step()
+
+    assert tribe.chief_name == ""  # confirms the test setup actually held
+    mock_reflect.assert_not_called()
 
 
 @run_async

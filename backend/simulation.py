@@ -6,6 +6,7 @@ from . import config, physics
 from .actions import ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_LABEL
 from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
+from .reflection import reflect_on_history
 from .eras import ERAS, era_index, next_era, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
@@ -262,6 +263,28 @@ class Simulation:
         entry = f"{parent_a} and {parent_b} welcome a child, {child_name}"
         tribe.history.append(f"{entry} -- {note}" if note else f"{entry}.")
 
+    async def _run_night_cycle(self, tribe: "Tribe") -> None:
+        """The "night cycle" (backend/reflection.py): a larger reviewing model looks
+        back at this tribe's own recent history and decides for itself whether its
+        guiding philosophy should change. Runs far less often than a live turn (see
+        config.NIGHT_CYCLE_EVERY_N_CYCLES) and with a different, larger model than
+        whatever the tribe plays live with -- the piece from the original design
+        transcript that gives a tribe's own accumulated experience a chance to
+        compound into wisdom over time, distinct from breed()/breed_individuals'
+        cross-tribe/cross-individual crossover."""
+        recent_events = list(tribe.history)[-config.NIGHT_CYCLE_HISTORY_WINDOW:]
+        result = await reflect_on_history(
+            self.client, config.NIGHT_CYCLE_REVIEWER_MODEL, tribe.name,
+            tribe.chief_philosophy, recent_events,
+        )
+        if not result.get("changed"):
+            return
+        old_philosophy = tribe.chief_philosophy
+        tribe.chief_philosophy = result.get("revised_philosophy", old_philosophy)
+        reasoning = result.get("reasoning", "")
+        entry = f"Reflecting on recent events, Chief {tribe.chief_name} reconsiders the tribe's philosophy: {tribe.chief_philosophy}"
+        tribe.history.append(f"{entry} ({reasoning})." if reasoning else f"{entry}.")
+
     async def add_tribe(self, name: str, model: str, x: int | None = None, y: int | None = None) -> str | None:
         """Injects a new tribe into an already-running simulation. Returns an error
         message on failure (max tribes reached), or None on success. Runs the same
@@ -352,6 +375,11 @@ class Simulation:
         for tribe in self.tribes.values():
             if not tribe.extinct and not tribe.chief_name:
                 await self._install_chief(tribe)
+
+        if self.cycle % config.NIGHT_CYCLE_EVERY_N_CYCLES == 0:
+            for tribe in self.tribes.values():
+                if not tribe.extinct and tribe.chief_name:
+                    await self._run_night_cycle(tribe)
 
         if self.tribes and all(tribe.extinct for tribe in self.tribes.values()):
             await self._trigger_game_over()

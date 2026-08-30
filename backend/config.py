@@ -34,6 +34,18 @@ SELF_MOD_COOLDOWN_CYCLES = 20
 
 MEMORY_CONSOLIDATE_EVERY_N_CYCLES = 40
 
+# The "night cycle" (backend/reflection.py): periodically, a larger model reviews a
+# tribe's own recent history and decides for itself whether its guiding philosophy
+# should change -- distinct from the fast small model handling every live turn. The
+# reviewer model is deliberately not configurable per-tribe -- it's meant to be a
+# consistently larger, slower, less-often-run reviewer regardless of which small model
+# a tribe actually plays with. Exceeds VRAM_LIMIT_GB on typical hardware (the guard is
+# advisory, not a hard block) -- a real tradeoff of using an actually larger reviewer,
+# not an oversight.
+NIGHT_CYCLE_EVERY_N_CYCLES = 30
+NIGHT_CYCLE_REVIEWER_MODEL = "gemma4:26b"
+NIGHT_CYCLE_HISTORY_WINDOW = 20
+
 # Rough pre-flight sanity check against a model's on-disk size (backend/vram_guard.py).
 # Not a live enforcement layer -- see that module's docstring for why.
 VRAM_LIMIT_GB = 14.0
