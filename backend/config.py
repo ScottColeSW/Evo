@@ -132,6 +132,13 @@ POPULATION_GROWTH_CAP = 80
 # expedition/nearest_water design), so it's the trophy that actually means something.
 FOOD_TROPHY_THRESHOLD = 60
 
+# Milestone trophies (backend/simulation.py._award_trophy's `individual` param): unlike
+# the chief-credited trophies above, these are earned by a specific named scout or
+# hunter and credit them by name, not the chief. Also the pool of "named individuals"
+# the breeding design (not yet built) will eventually draw from alongside the chief.
+MILESTONE_SCOUT_SUCCESSES = 5
+MILESTONE_HUNT_SUCCESSES = 5
+
 # Survival instinct thresholds (backend/instincts.py). "Critical" also raises inference
 # temperature, same as ancestral dread -- real panic, not just different wording.
 HUNGER_WARNING_THRESHOLD = 20

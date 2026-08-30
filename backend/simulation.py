@@ -71,6 +71,12 @@ class Tribe:
         self.chief_deaths = 0
         self.expeditions_launched = 0
         self.expeditions_succeeded = 0
+        # Split from expeditions_succeeded above so a scouting milestone ("Master
+        # Pathfinder") and a hunting milestone ("Master Hunter") can be tracked and
+        # credited to the specific person who earned them separately -- see
+        # Simulation._award_trophy's `individual` param.
+        self.scout_successes = 0
+        self.hunt_successes = 0
         self.raids_won = 0
         self.raids_lost = 0
         self.raids_defended = 0
@@ -581,7 +587,10 @@ class Simulation:
                 if exp["found"]:
                     fx, fy = exp["found"]
                     tribe.expeditions_succeeded += 1
+                    tribe.scout_successes += 1
                     self._award_trophy(tribe, "Water Bringer")
+                    if tribe.scout_successes == config.MILESTONE_SCOUT_SUCCESSES:
+                        self._award_trophy(tribe, "Master Pathfinder", individual=scout)
                     tribe.memory.remember(f"Scouts confirmed fresh water at ({fx},{fy}).", self.cycle, weight=0.9)
                     tribe.history.append(
                         f"{scout} is home and gives {recipient} a full report: "
@@ -662,6 +671,9 @@ class Simulation:
         if caught:
             tribe.food += caught
             tribe.expeditions_succeeded += 1
+            tribe.hunt_successes += 1
+            if tribe.hunt_successes == config.MILESTONE_HUNT_SUCCESSES:
+                self._award_trophy(tribe, "Master Hunter", individual=scout)
             tribe.history.append(
                 f"{scout}'s hunting party is home and gives {recipient} a full report: "
                 f"{caught} food caught, {forage_note}"
@@ -762,12 +774,16 @@ class Simulation:
             tribe.x, tribe.y, config.ERA_ADVANCE_PRIDE_MAGNITUDE, config.ERA_ADVANCE_PRIDE_RADIUS
         )
 
-    def _award_trophy(self, tribe: Tribe, name: str) -> None:
+    def _award_trophy(self, tribe: Tribe, name: str, individual: str | None = None) -> None:
+        """`individual`, when given, credits a specific named person (e.g. the scout or
+        hunter who actually earned a milestone trophy) instead of the chief -- the
+        dict's "chief" key is kept for backward compatibility (existing tests/scoreboard
+        data read it) even though it isn't always literally the chief anymore."""
         if any(t["name"] == name for t in tribe.trophies):
             return  # once per tribe's lifetime
-        chief = tribe.chief_name or "an unknown chief"
-        tribe.trophies.append({"name": name, "chief": chief, "cycle": self.cycle})
-        tribe.history.append(f"\U0001f3c6 {chief} earns the '{name}' trophy for {tribe.name}!")
+        credited = individual or tribe.chief_name or "an unknown chief"
+        tribe.trophies.append({"name": name, "chief": credited, "cycle": self.cycle})
+        tribe.history.append(f"\U0001f3c6 {credited} earns the '{name}' trophy for {tribe.name}!")
 
     def _check_chief_trophies(self, tribe: Tribe) -> None:
         """A lightweight legacy system credited to whichever chief is in power the

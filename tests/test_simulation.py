@@ -664,6 +664,50 @@ def test_trophies_are_only_awarded_once_per_tribe_lifetime():
     assert water_trophies[0]["chief"] == "Ashgar"
 
 
+def test_master_pathfinder_trophy_credited_to_the_specific_scout_at_the_milestone():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    for i in range(config.MILESTONE_SCOUT_SUCCESSES):
+        exp = {
+            "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
+            "day": 2, "phase": "returning", "found": [40, 37], "terrain_report": None,
+            "food_gathered": 0, "water_gathered": 0,
+            "lead_scout": f"Scout{i}", "determination": 0.5, "max_days": 3, "path": [],
+        }
+        tribe.expeditions = [exp]
+        sim._advance_one_expedition(tribe, exp)
+
+    assert tribe.scout_successes == config.MILESTONE_SCOUT_SUCCESSES
+    pathfinder = [t for t in tribe.trophies if t["name"] == "Master Pathfinder"]
+    assert len(pathfinder) == 1
+    assert pathfinder[0]["chief"] == f"Scout{config.MILESTONE_SCOUT_SUCCESSES - 1}"
+
+
+def test_master_hunter_trophy_credited_to_the_specific_hunter_at_the_milestone():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    for i in range(config.MILESTONE_HUNT_SUCCESSES):
+        exp = {
+            "kind": "hunt", "pos": [50, 50], "origin": [50, 50], "target": [50, 50],
+            "day": 2, "phase": "returning", "food_caught": 20,
+            "food_gathered": 0, "water_gathered": 0,
+            "lead_scout": f"Hunter{i}", "determination": 0.5, "max_days": 4, "path": [],
+        }
+        tribe.expeditions = [exp]
+        sim._advance_one_expedition(tribe, exp)
+
+    assert tribe.hunt_successes == config.MILESTONE_HUNT_SUCCESSES
+    hunter_trophy = [t for t in tribe.trophies if t["name"] == "Master Hunter"]
+    assert len(hunter_trophy) == 1
+    assert hunter_trophy[0]["chief"] == f"Hunter{config.MILESTONE_HUNT_SUCCESSES - 1}"
+
+
 def test_well_fed_and_growing_legacy_trophies_have_their_own_thresholds():
     from backend import config
 

@@ -292,6 +292,8 @@ def _raid(sim, tribe, biome, target):
             setattr(defender, resource, getattr(defender, resource) - stolen)
             setattr(tribe, resource, getattr(tribe, resource) + stolen)
         tribe.raids_won += 1
+        if tribe.raids_won == 1:
+            sim._award_trophy(tribe, "First Conquest")
 
         # Population moves rather than just vanishing -- captured or defecting
         # survivors, not pointless casualties. Enough raids like this eventually
@@ -353,6 +355,10 @@ def _trade(sim, tribe, biome, target):
 
     tribe.trades_completed += 1
     partner.trades_completed += 1
+    if tribe.trades_completed == 1:
+        sim._award_trophy(tribe, "First Contact")
+    if partner.trades_completed == 1:
+        sim._award_trophy(partner, "First Contact")
     sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.TRADE_PRIDE_MAGNITUDE, config.TRADE_PRIDE_RADIUS)
     sim.trauma.radiate_event_wave(partner.x, partner.y, config.TRADE_PRIDE_MAGNITUDE, config.TRADE_PRIDE_RADIUS)
     return f"opened trade with {partner.name} -- goods exchanged both ways"

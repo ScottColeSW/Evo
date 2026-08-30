@@ -248,6 +248,22 @@ def test_raid_win_steals_resources_and_absorbs_some_of_the_defenders_population(
     assert attacker.population == 9  # 8 + 2 absorbed - 1 (RAID_ATTACKER_POPULATION_LOSS_ON_WIN)
 
 
+def test_raid_win_awards_first_conquest_trophy_only_on_the_first_win():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    defender.population = 20  # plenty of survivors, won't trigger a merge
+    sim.tribes = {"tribe_0": attacker, "tribe_1": defender}
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 51))
+        ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 51))
+
+    assert len([t for t in attacker.trophies if t["name"] == "First Conquest"]) == 1
+
+
 def test_raid_that_reduces_defender_to_zero_population_merges_into_the_attacker():
     from unittest import mock
 
@@ -340,6 +356,30 @@ def test_trade_increments_both_sides_trade_counter():
 
     assert a.trades_completed == 1
     assert b.trades_completed == 1
+
+
+def test_trade_awards_first_contact_trophy_to_both_sides_on_first_trade():
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    ACTION_REGISTRY["TRADE"](sim, a, "plains", (51, 51))
+
+    assert any(t["name"] == "First Contact" for t in a.trophies)
+    assert any(t["name"] == "First Contact" for t in b.trophies)
+
+
+def test_trade_does_not_re_award_first_contact_on_a_later_trade():
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    ACTION_REGISTRY["TRADE"](sim, a, "plains", (51, 51))
+    ACTION_REGISTRY["TRADE"](sim, a, "plains", (51, 51))
+
+    assert len([t for t in a.trophies if t["name"] == "First Contact"]) == 1
 
 
 def test_trade_ignores_extinct_tribes_and_self():
