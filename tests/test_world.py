@@ -1,6 +1,39 @@
 from backend.world import Landscape, biome_at
 
 
+def test_wear_trail_accumulates_and_caps_at_full_wear():
+    land = Landscape(100)
+    land.wear_trail(10, 10, 0.3)
+    land.wear_trail(10, 10, 0.3)
+    assert land.trails[(10, 10)] == 0.6
+
+    land.wear_trail(10, 10, 0.9)
+    assert land.trails[(10, 10)] == 1.0  # capped, never exceeds full wear
+
+
+def test_wear_trail_affects_only_that_tile():
+    land = Landscape(100)
+    land.wear_trail(10, 10, 0.5)
+    assert land.trail_speed_bonus(10, 10, max_bonus=3) == 1.5
+    assert land.trail_speed_bonus(11, 10, max_bonus=3) == 0.0  # untouched tile
+
+
+def test_trail_speed_bonus_scales_linearly_with_wear():
+    land = Landscape(100)
+    land.wear_trail(10, 10, 0.25)
+    assert land.trail_speed_bonus(10, 10, max_bonus=4) == 1.0
+
+
+def test_decay_trails_reduces_wear_but_not_below_zero():
+    land = Landscape(100)
+    land.wear_trail(10, 10, 0.05)
+    land.decay_trails(0.03)
+    assert round(land.trails[(10, 10)], 6) == 0.02
+
+    land.decay_trails(0.03)
+    assert (10, 10) not in land.trails  # fully decayed, removed rather than negative
+
+
 def test_fresh_tile_has_no_scarcity():
     land = Landscape(100)
     assert land.scarcity("wood", 10, 10) == 0.0

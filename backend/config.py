@@ -171,8 +171,13 @@ BROADCAST_HEARING_RADIUS = 15
 # used repeatedly compounds into a real shortcut, and durably so -- a destination just
 # out of one expedition's EXPEDITION_MAX_DAYS reach can become reachable a few attempts
 # later along the same path, without any distance rule being overridden.
+# At the original 0.03/0.002 pair, a single unreused pass fully decayed in
+# 0.03/0.002 = 15 cycles -- maybe 30-60 seconds of real time, so a viewer could watch a
+# trail form and vanish again before ever really registering it existed. Decay is now
+# zero: a trail, once worn, is permanent infrastructure -- it only ever gets more worn
+# (and faster) with reuse, never fades on its own.
 TRAIL_WEAR_PER_PASS = 0.03
-TRAIL_DECAY_PER_CYCLE = 0.002
+TRAIL_DECAY_PER_CYCLE = 0.0
 MAX_TRAIL_BONUS_SPEED = 3  # added to MOVEMENT_SPEED/EXPEDITION_SPEED at full wear
 
 # Scouting expeditions (backend/actions.py._scout, backend/simulation.py._advance_expeditions).

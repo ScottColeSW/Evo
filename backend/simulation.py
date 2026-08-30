@@ -6,6 +6,7 @@ from . import config, physics
 from .actions import ACTION_REGISTRY
 from .ancestral_matrix import AncestralTraumaMatrix
 from .eras import ERAS, next_era, unlocked_actions_through
+from .event_log import RunEventLog, TribeHistory
 from .instincts import survival_bias_string
 from .leadership import elect_chief
 from .memory import TribeMemory
@@ -35,7 +36,10 @@ COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 
 
 class Tribe:
-    def __init__(self, tribe_id: str, name: str, model: str, x: int, y: int, color: str):
+    def __init__(
+        self, tribe_id: str, name: str, model: str, x: int, y: int, color: str,
+        event_log: RunEventLog | None = None,
+    ):
         self.id = tribe_id
         self.name = name
         self.model = model
@@ -50,7 +54,7 @@ class Tribe:
         self.last_broadcast = ""
         self.last_action = ""
         self.last_target: list[int] | None = None
-        self.history: list[str] = []
+        self.history: list[str] = TribeHistory(name, event_log)
         self.memory = TribeMemory(tribe_id)
         self.founded_city = False
         self.extinct = False
@@ -112,6 +116,7 @@ class Simulation:
         self.world = Landscape(config.GRID_SIZE)
         self.trauma = AncestralTraumaMatrix(config.GRID_SIZE)
         self.translation = TranslationConfidenceMatrix()
+        self.event_log = RunEventLog()
         self.tribes: dict[str, Tribe] = {}
         for i, cfg in enumerate(tribe_configs[: config.MAX_TRIBES]):
             # An explicit x/y (e.g. to set up two tribes starting near each other) is an
@@ -122,7 +127,7 @@ class Simulation:
             else:
                 x, y = SPAWN_POINTS[i % len(SPAWN_POINTS)]
             tid = f"tribe_{i}"
-            self.tribes[tid] = Tribe(tid, cfg["name"], cfg["model"], x, y, COLORS[i % len(COLORS)])
+            self.tribes[tid] = Tribe(tid, cfg["name"], cfg["model"], x, y, COLORS[i % len(COLORS)], self.event_log)
         self.cycle = 0
         self.paused = False
         self.status = "OPERATIONAL"
@@ -191,7 +196,7 @@ class Simulation:
         if x is None or y is None:
             x, y = SPAWN_POINTS[index % len(SPAWN_POINTS)]
         color = COLORS[index % len(COLORS)]
-        tribe = Tribe(tid, name, model, x, y, color)
+        tribe = Tribe(tid, name, model, x, y, color, self.event_log)
 
         guard = HardwareVRAMBoundaryGuard(self.client.base_url, config.VRAM_LIMIT_GB)
         ok, warning = await guard.verify_vram_safety_margin(model)
@@ -232,6 +237,7 @@ class Simulation:
         if self.paused or self.game_over:
             return
         self.cycle += 1
+        self.event_log.current_cycle = self.cycle
         self.translation.decay()
         self.world.regenerate(config.DEPLETION_REGEN_PER_CYCLE)
         self.world.decay_trails(config.TRAIL_DECAY_PER_CYCLE)
