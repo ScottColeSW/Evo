@@ -826,6 +826,7 @@ function drawTrails() {
 // deepening dark tint instead, peaking at midnight).
 const DAY_LENGTH_CYCLES = 20;
 const SUN_COLOR = "255,158,109"; // warm coral, as an r,g,b triplet for template reuse
+const MOON_COLOR = "180,200,255"; // cool pale blue-silver -- the sun's opposite
 
 function drawCelestialLighting(cycle) {
   const progress = ((cycle % DAY_LENGTH_CYCLES) + DAY_LENGTH_CYCLES) % DAY_LENGTH_CYCLES / DAY_LENGTH_CYCLES;
@@ -844,6 +845,22 @@ function drawCelestialLighting(cycle) {
     ctx.beginPath(); ctx.arc(sunX, sunY, glowRadius, 0, 2 * Math.PI); ctx.fill();
     ctx.fillStyle = `rgb(${SUN_COLOR})`;
     ctx.beginPath(); ctx.arc(sunX, sunY, TILE * 1.3, 0, 2 * Math.PI); ctx.fill();
+  } else {
+    // Same arc, same direction, the sun's opposite in every other way: cool pale
+    // color instead of warm coral, a dimmer/tighter glow (moonlight, not sunlight),
+    // and it rises exactly where the sun set and sets where the sun will next rise.
+    const nightFrac = (progress - 0.5) / 0.5; // 0 = dusk, 0.5 = midnight, 1 = dawn
+    const moonX = nightFrac * width;
+    const moonY = height * 0.16 - Math.sin(nightFrac * Math.PI) * height * 0.14;
+    const glowRadius = TILE * 5;
+
+    const glow = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, glowRadius);
+    glow.addColorStop(0, `rgba(${MOON_COLOR},0.35)`);
+    glow.addColorStop(1, `rgba(${MOON_COLOR},0)`);
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(moonX, moonY, glowRadius, 0, 2 * Math.PI); ctx.fill();
+    ctx.fillStyle = `rgb(${MOON_COLOR})`;
+    ctx.beginPath(); ctx.arc(moonX, moonY, TILE * 1.0, 0, 2 * Math.PI); ctx.fill();
   }
 }
 
