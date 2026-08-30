@@ -806,12 +806,65 @@ function drawTrails() {
   });
 }
 
+// A light source that arcs across the sky and back as simulation cycles pass -- tied to
+// latestState.cycle (real simulation time), not animFrame, so it actually reflects "time
+// going by" in the world rather than just real wall-clock elapsed. Coral rather than the
+// usual pure yellow-white, to sit closer to this UI's own warm-accent palette. One full
+// day+night takes DAY_LENGTH_CYCLES simulation cycles; the first half is day (the sun
+// arcs left-to-right across the top of the map), the second half is night (no sun, a
+// deepening dark tint instead, peaking at midnight).
+const DAY_LENGTH_CYCLES = 20;
+const SUN_COLOR = "255,158,109"; // warm coral, as an r,g,b triplet for template reuse
+
+function drawCelestialLighting(cycle) {
+  const progress = ((cycle % DAY_LENGTH_CYCLES) + DAY_LENGTH_CYCLES) % DAY_LENGTH_CYCLES / DAY_LENGTH_CYCLES;
+  const width = canvas.width, height = canvas.height;
+
+  if (progress < 0.5) {
+    const dayFrac = progress / 0.5; // 0 = dawn, 0.5 = noon, 1 = dusk
+    const sunX = dayFrac * width;
+    const sunY = height * 0.16 - Math.sin(dayFrac * Math.PI) * height * 0.14;
+    const glowRadius = TILE * 7;
+
+    const glow = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, glowRadius);
+    glow.addColorStop(0, `rgba(${SUN_COLOR},0.55)`);
+    glow.addColorStop(1, `rgba(${SUN_COLOR},0)`);
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(sunX, sunY, glowRadius, 0, 2 * Math.PI); ctx.fill();
+    ctx.fillStyle = `rgb(${SUN_COLOR})`;
+    ctx.beginPath(); ctx.arc(sunX, sunY, TILE * 1.3, 0, 2 * Math.PI); ctx.fill();
+  }
+}
+
+function drawDayNightOverlay(cycle) {
+  const progress = ((cycle % DAY_LENGTH_CYCLES) + DAY_LENGTH_CYCLES) % DAY_LENGTH_CYCLES / DAY_LENGTH_CYCLES;
+  const width = canvas.width, height = canvas.height;
+
+  if (progress < 0.5) {
+    // A faint warm wash at daytime, strongest at noon -- the sun's own glow already
+    // covers most of the visual interest, this just ties the whole map to it a little.
+    const dayFrac = progress / 0.5;
+    const warmth = Math.sin(dayFrac * Math.PI) * 0.05;
+    ctx.fillStyle = `rgba(${SUN_COLOR},${warmth})`;
+    ctx.fillRect(0, 0, width, height);
+  } else {
+    // Night: a real darkening, deepest at midnight, so the whole scene (tribes and
+    // trails included) genuinely reads as nighttime, not just an absent sun icon.
+    const nightFrac = (progress - 0.5) / 0.5;
+    const darkness = Math.sin(nightFrac * Math.PI) * 0.4;
+    ctx.fillStyle = `rgba(8,12,32,${darkness})`;
+    ctx.fillRect(0, 0, width, height);
+  }
+}
+
 function drawFrame() {
   animFrame++;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(terrainCanvas, 0, 0);
 
   if (latestState) {
+    drawCelestialLighting(latestState.cycle);
+
     (latestState.structures || []).forEach(s => {
       const px = s.x * TILE, py = s.y * TILE;
       if (s.type === "fire") {
@@ -831,6 +884,10 @@ function drawFrame() {
     // common, since journeys start and end there) was getting completely hidden under
     // that tribe's own dot cluster when drawn earlier in the pass.
     drawTrails();
+    // The day/night tint goes over literally everything (tribes, trails, structures
+    // included) so night actually reads as night across the whole scene, not just an
+    // absent sun icon up top.
+    drawDayNightOverlay(latestState.cycle);
   }
   requestAnimationFrame(drawFrame);
 }
