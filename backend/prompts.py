@@ -1,19 +1,34 @@
-from .actions import ACTION_DESCRIPTIONS
-
-
 def get_prime_consciousness_prompt(
     tribe_name: str,
     model_architecture: str,
     chief_name: str = "",
     chief_philosophy: str = "",
     chief_decree: str = "",
+    available_actions: tuple[str, ...] = (),
 ) -> str:
     """The standing system prompt: identity, objective, and the output contract.
 
     Heavy delimiters and a restated JSON schema are deliberate -- small local models
     (2-3B quantized) drift out of strict JSON mode more easily on long contexts, and
     this structural anchoring measurably reduces that.
+
+    The action glossary used to live in compile_live_state_prompt, sandwiched between
+    the survival-crisis text and the JSON template -- live runs showed a repeated
+    pattern of a tribe's own rationale correctly identifying "we are starving," then
+    picking an action that did nothing about it. That's consistent with the crisis
+    fact losing salience across the glossary's several lines of generic reference text
+    before the model ever reaches the decision field. Moved here so the per-turn
+    prompt's last substantial content before the JSON slot is the crisis itself, not a
+    wall of action descriptions -- an explicit, testable hypothesis, not a settled fix.
     """
+    glossary_block = ""
+    if available_actions:
+        from .actions import ACTION_DESCRIPTIONS
+        lines = "\n".join(
+            f"- {name}: {ACTION_DESCRIPTIONS[name]}" for name in available_actions if name in ACTION_DESCRIPTIONS
+        )
+        glossary_block = f"\n\nWHAT EACH OF YOUR CURRENT ACTIONS DOES:\n{lines}"
+
     leadership_block = ""
     if chief_name:
         decree_line = f" The chief has also decreed: {chief_decree}." if chief_decree else ""
@@ -41,7 +56,7 @@ LINGUISTIC SYNTHESIS PROTOCOL:
 - Broadcast strategy and societal state exclusively through a self-assembling phonetic \
 token matrix (e.g., "KRA-ZUL", "MEE-LO", "VASH-TA"). Reuse a token consistently once you've \
 assigned it a meaning -- your private rationale field may be plain English, your broadcast \
-field may not.{leadership_block}"""
+field may not.{leadership_block}{glossary_block}"""
 
 
 def compile_live_state_prompt(base_prompt: str, world_state: dict, ancestral_bias: str, survival_bias: str) -> str:
@@ -93,9 +108,6 @@ MANDATORY REACTION SCHEMA (VALID JSON MODE ONLY)
 ========================================================================
 Your "visual_action" value must be exactly one of these era-appropriate action names,
 copied verbatim with no other text: {world_state['available_actions']}
-
-What each of those actions actually does:
-{chr(10).join(f"- {name}: {ACTION_DESCRIPTIONS[name]}" for name in world_state['available_actions'] if name in ACTION_DESCRIPTIONS)}
 
 Compile your tactical intent by substituting your own values into this JSON template --
 do not copy the placeholder text itself into your answer. Any malformed syntax will

@@ -340,7 +340,8 @@ class Simulation:
             "journey_note": journey_note,
         }
         base_prompt = get_prime_consciousness_prompt(
-            tribe.name, tribe.model, tribe.chief_name, tribe.chief_philosophy, tribe.chief_decree
+            tribe.name, tribe.model, tribe.chief_name, tribe.chief_philosophy, tribe.chief_decree,
+            tuple(available_actions),
         )
         prompt = compile_live_state_prompt(base_prompt, world_state, ghost_bias, survival_bias)
         panicked = "DREAD" in ghost_bias or survival_critical

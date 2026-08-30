@@ -59,22 +59,44 @@ def test_system_prompt_includes_chief_as_context_not_command():
     assert "not a command" in prompt
 
 
-def test_prompt_explains_what_each_available_action_does():
+def test_system_prompt_explains_what_each_available_action_does():
     """Regression test: live runs showed tribes repeatedly deciding they "must relocate
     to find water" while starving, despite GATHER_WATER already working wherever they
     stood -- because the prompt only ever listed bare action names, never what any of
     them actually do. A model has no way to infer GATHER_WATER works off-river from the
-    name alone."""
-    prompt = compile_live_state_prompt(
-        "base", _world_state(available_actions=["GATHER_WATER", "RELOCATE"]), "", ""
+    name alone.
+
+    This glossary lives in the system prompt, not compile_live_state_prompt, so it
+    isn't sitting between the per-turn survival-crisis text and the JSON decision slot
+    -- live runs also showed a tribe's own rationale correctly diagnosing a crisis and
+    then picking an unrelated action, consistent with that crisis losing salience
+    across several lines of generic reference text before the decision field."""
+    prompt = get_prime_consciousness_prompt(
+        "Forest Tribe", "gemma2:2b", available_actions=("GATHER_WATER", "RELOCATE")
     )
     assert "GATHER_WATER: Harvest water at your current tile -- works in any biome" in prompt
     assert "RELOCATE: Move your whole tribe" in prompt
 
 
-def test_prompt_action_glossary_only_lists_currently_available_actions():
+def test_system_prompt_action_glossary_only_lists_currently_available_actions():
     """Era-gated actions not yet unlocked shouldn't get an explanation either -- the
     glossary should track available_actions exactly, not the full registry."""
-    prompt = compile_live_state_prompt("base", _world_state(available_actions=["IDLE"]), "", "")
+    prompt = get_prime_consciousness_prompt("Forest Tribe", "gemma2:2b", available_actions=("IDLE",))
     assert "IDLE: Do nothing" in prompt
     assert "GATHER_WOOD:" not in prompt
+
+
+def test_system_prompt_omits_glossary_when_no_actions_given():
+    prompt = get_prime_consciousness_prompt("Forest Tribe", "gemma2:2b")
+    assert "WHAT EACH OF YOUR CURRENT ACTIONS DOES" not in prompt
+
+
+def test_live_state_prompt_no_longer_carries_the_action_glossary():
+    """The glossary moved to the system prompt (see the tests above) specifically so it
+    doesn't sit between the per-turn survival-crisis text and the JSON decision slot --
+    compile_live_state_prompt should still list bare action names, just not explain them."""
+    prompt = compile_live_state_prompt(
+        "base", _world_state(available_actions=["GATHER_WATER", "RELOCATE"]), "", ""
+    )
+    assert "GATHER_WATER" in prompt  # the bare name list is still there
+    assert "Harvest water at your current tile" not in prompt  # the explanation is not
