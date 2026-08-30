@@ -228,16 +228,18 @@ def test_prepare_turn_has_no_journey_note_once_arrived():
 def test_prepare_turn_mentions_an_expedition_already_in_the_field():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
-    tribe.expedition = {
+    tribe.expeditions = [{
         "pos": [tribe.x, tribe.y], "origin": [tribe.x, tribe.y], "target": [tribe.x + 10, tribe.y],
         "day": 1, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
-    }
+    }]
 
     request, _ctx = sim._prepare_turn(tribe)
 
-    assert "are still in the field" in request["prompt"]
+    assert "Still in the field" in request["prompt"]
+    assert "Test Scout" in request["prompt"]
+    assert "You could send out 1 more at once" in request["prompt"]
     assert "day 1/" in request["prompt"]
 
 
@@ -247,17 +249,17 @@ def test_expedition_succeeds_immediately_on_reaching_real_river_water():
     # From (40, 30) toward (40, 37), one EXPEDITION_SPEED (10) step lands at (40, 37),
     # which world.py's river geography places on the river -- verified directly against
     # biome_at before trusting it, same discipline as world.py's nearest_water fix.
-    tribe.expedition = {
+    tribe.expeditions = [{
         "pos": [40, 30], "origin": [40, 30], "target": [40, 37],
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
-    }
+    }]
 
-    sim._advance_expedition(tribe)
+    sim._advance_expeditions(tribe)
 
-    assert tribe.expedition["phase"] == "returning"
-    assert tribe.expedition["found"] == [40, 37]
+    assert tribe.expeditions[0]["phase"] == "returning"
+    assert tribe.expeditions[0]["found"] == [40, 37]
     assert any("found fresh water" in entry for entry in tribe.history)
 
 
@@ -265,18 +267,18 @@ def test_expedition_can_drown_reaching_river_water_but_still_reports_the_find():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 40, 30, "#c084fc")
     tribe.population = 10
-    tribe.expedition = {
+    tribe.expeditions = [{
         "pos": [40, 30], "origin": [40, 30], "target": [40, 37],
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
-    }
+    }]
 
     with mock.patch("backend.simulation.random.random", return_value=0.0):
-        sim._advance_expedition(tribe)
+        sim._advance_expeditions(tribe)
 
     assert tribe.population == 9
-    assert tribe.expedition["found"] == [40, 37]  # the crossing still pays off despite the loss
+    assert tribe.expeditions[0]["found"] == [40, 37]  # the crossing still pays off despite the loss
     assert any("pulled someone under" in entry for entry in tribe.history)
     assert any("drowned one of our own" in m["text"] for m in tribe.memory.entries)
 
@@ -290,70 +292,70 @@ def test_expedition_reaching_its_target_without_water_pushes_onward_if_days_rema
     the same heading, not end it."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.expedition = {
+    tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [56, 50],  # one step away, not water
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
-    }
+    }]
 
-    sim._advance_expedition(tribe)
+    sim._advance_expeditions(tribe)
 
-    assert tribe.expedition["phase"] == "outbound"  # not turned back
-    assert tribe.expedition["terrain_report"] is not None  # still noted what's there
-    assert tribe.expedition["found"] is None
-    assert tribe.expedition["target"] != [56, 50]  # extended past the original spot
+    assert tribe.expeditions[0]["phase"] == "outbound"  # not turned back
+    assert tribe.expeditions[0]["terrain_report"] is not None  # still noted what's there
+    assert tribe.expeditions[0]["found"] is None
+    assert tribe.expeditions[0]["target"] != [56, 50]  # extended past the original spot
     assert any("pushes onward" in entry for entry in tribe.history)
 
 
 def test_expedition_gives_up_at_a_pushed_onward_target_once_days_run_out():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.expedition = {
+    tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [56, 50],
         "day": 3, "phase": "outbound", "found": None, "terrain_report": None,  # already at max_days
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
-    }
+    }]
 
-    sim._advance_expedition(tribe)
+    sim._advance_expeditions(tribe)
 
-    assert tribe.expedition["phase"] == "returning"
+    assert tribe.expeditions[0]["phase"] == "returning"
 
 
 def test_expedition_gives_up_after_max_days_without_success():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     # Far enough away that EXPEDITION_MAX_DAYS worth of travel never arrives or finds water.
-    tribe.expedition = {
+    tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [99, 99],
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
-    }
+    }]
 
     from backend import config
     for _ in range(config.EXPEDITION_MAX_DAYS):
-        sim._advance_expedition(tribe)
+        sim._advance_expeditions(tribe)
 
-    assert tribe.expedition["phase"] == "returning"
-    assert tribe.expedition["found"] is None
+    assert tribe.expeditions[0]["phase"] == "returning"
+    assert tribe.expeditions[0]["found"] is None
     assert any("calls off the search after" in entry for entry in tribe.history)
 
 
 def test_expedition_arrival_home_delivers_water_finding_to_memory_and_clears_state():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.expedition = {
+    tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
         "day": 2, "phase": "returning", "found": [40, 37], "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
-    }
+    }]
 
-    sim._advance_expedition(tribe)
+    sim._advance_expeditions(tribe)
 
-    assert tribe.expedition is None
+    assert tribe.expeditions == []
     assert any("(40,37)" in entry for entry in tribe.history)
     assert any("fresh water at (40,37)" in m["text"] for m in tribe.memory.entries)
 
@@ -367,14 +369,14 @@ def test_expedition_arrival_delivers_foraged_food_and_water_to_the_tribe():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.food, tribe.water = 10, 10
-    tribe.expedition = {
+    tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
         "day": 2, "phase": "returning", "found": [40, 37], "terrain_report": None,
         "food_gathered": 7, "water_gathered": 5,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
-    }
+    }]
 
-    sim._advance_expedition(tribe)
+    sim._advance_expeditions(tribe)
 
     expected_food = 10 + 7 + config.EXPEDITION_RETURN_DAILY_FOOD
     expected_water = 10 + 5 + config.EXPEDITION_RETURN_DAILY_WATER
@@ -386,14 +388,14 @@ def test_expedition_report_is_attributed_to_the_chief_when_one_exists():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.chief_name = "Ashgar"
-    tribe.expedition = {
+    tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
         "day": 2, "phase": "returning", "found": [40, 37], "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
-    }
+    }]
 
-    sim._advance_expedition(tribe)
+    sim._advance_expeditions(tribe)
 
     assert any("Chief Ashgar" in entry for entry in tribe.history)
 
@@ -401,14 +403,14 @@ def test_expedition_report_is_attributed_to_the_chief_when_one_exists():
 def test_expedition_report_falls_back_to_the_tribe_when_there_is_no_chief():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.expedition = {
+    tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
         "day": 2, "phase": "returning", "found": [40, 37], "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
-    }
+    }]
 
-    sim._advance_expedition(tribe)
+    sim._advance_expeditions(tribe)
 
     assert any("gives the tribe a full report" in entry for entry in tribe.history)
 
@@ -416,34 +418,34 @@ def test_expedition_report_falls_back_to_the_tribe_when_there_is_no_chief():
 def test_expedition_arrival_home_empty_handed_clears_state_without_a_water_memory():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.expedition = {
+    tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [99, 99],
         "day": 3, "phase": "returning", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
-    }
+    }]
 
-    sim._advance_expedition(tribe)
+    sim._advance_expeditions(tribe)
 
-    assert tribe.expedition is None
+    assert tribe.expeditions == []
     assert any("empty-handed" in entry for entry in tribe.history)
 
 
 def test_hunting_party_catches_something_and_heads_home():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 80, 38, "#c084fc")  # forest, game=1.0
-    tribe.expedition = {
+    tribe.expeditions = [{
         "kind": "hunt", "pos": [80, 38], "origin": [80, 38], "target": [80, 38],
         "day": 0, "phase": "outbound", "food_caught": 0,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
-    }
+    }]
 
     with mock.patch("backend.simulation.random.random", side_effect=[0.99, 0.0]):  # miss hazard, hit catch
-        sim._advance_expedition(tribe)
+        sim._advance_expeditions(tribe)
 
-    assert tribe.expedition["phase"] == "returning"
-    assert tribe.expedition["food_caught"] > 0
+    assert tribe.expeditions[0]["phase"] == "returning"
+    assert tribe.expeditions[0]["food_caught"] > 0
     assert any("made a catch" in entry for entry in tribe.history)
 
 
@@ -451,18 +453,18 @@ def test_hunting_party_hazard_ends_the_hunt_and_costs_population():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 80, 38, "#c084fc")
     tribe.population = 10
-    tribe.expedition = {
+    tribe.expeditions = [{
         "kind": "hunt", "pos": [80, 38], "origin": [80, 38], "target": [80, 38],
         "day": 0, "phase": "outbound", "food_caught": 0,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
-    }
+    }]
 
     with mock.patch("backend.simulation.random.random", return_value=0.0):  # hazard roll checked first
-        sim._advance_expedition(tribe)
+        sim._advance_expeditions(tribe)
 
-    assert tribe.expedition["phase"] == "returning"
-    assert tribe.expedition["food_caught"] == 0
+    assert tribe.expeditions[0]["phase"] == "returning"
+    assert tribe.expeditions[0]["food_caught"] == 0
     assert tribe.population == 9
     assert any("wolf pack struck" in entry for entry in tribe.history)
 
@@ -471,36 +473,36 @@ def test_hunting_party_drowns_if_its_daily_step_lands_on_a_river_tile():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 40, 30, "#c084fc")
     tribe.population = 10
-    tribe.expedition = {
+    tribe.expeditions = [{
         "kind": "hunt", "pos": [40, 30], "origin": [40, 30], "target": [40, 37],
         "day": 0, "phase": "outbound", "food_caught": 0,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
-    }
+    }]
 
     with mock.patch("backend.simulation.random.random", return_value=0.0):
-        sim._advance_expedition(tribe)
+        sim._advance_expeditions(tribe)
 
     assert tribe.population == 9
-    assert tribe.expedition["phase"] == "returning"
+    assert tribe.expeditions[0]["phase"] == "returning"
     assert any("pulled someone under" in entry for entry in tribe.history)
 
 
 def test_hunting_party_gives_up_after_max_days_without_success():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 80, 38, "#c084fc")
-    tribe.expedition = {
+    tribe.expeditions = [{
         "kind": "hunt", "pos": [80, 38], "origin": [80, 38], "target": [80, 38],
         "day": 4, "phase": "outbound", "food_caught": 0,  # already at max_days
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
-    }
+    }]
 
     with mock.patch("backend.simulation.random.random", return_value=0.99):  # no hazard, no catch
-        sim._advance_expedition(tribe)
+        sim._advance_expeditions(tribe)
 
-    assert tribe.expedition["phase"] == "returning"
-    assert tribe.expedition["food_caught"] == 0
+    assert tribe.expeditions[0]["phase"] == "returning"
+    assert tribe.expeditions[0]["food_caught"] == 0
     assert any("calls off the hunt" in entry for entry in tribe.history)
 
 
@@ -510,18 +512,18 @@ def test_hunting_party_arrival_home_delivers_caught_food_and_clears_state():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.food = 10
-    tribe.expedition = {
+    tribe.expeditions = [{
         "kind": "hunt", "pos": [50, 50], "origin": [50, 50], "target": [50, 50],
         "day": 2, "phase": "returning", "food_caught": 25,
         "food_gathered": 7, "water_gathered": 5,
         "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
-    }
+    }]
 
-    sim._advance_expedition(tribe)
+    sim._advance_expeditions(tribe)
 
     expected_food = 10 + 25 + 7 + config.EXPEDITION_RETURN_DAILY_FOOD
     assert tribe.food == expected_food
-    assert tribe.expedition is None
+    assert tribe.expeditions == []
     assert any("25 food caught" in entry for entry in tribe.history)
 
 
@@ -529,16 +531,16 @@ def test_hunting_party_arrival_home_empty_handed_still_delivers_forage_and_clear
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.food = 10
-    tribe.expedition = {
+    tribe.expeditions = [{
         "kind": "hunt", "pos": [50, 50], "origin": [50, 50], "target": [50, 50],
         "day": 4, "phase": "returning", "food_caught": 0,
         "food_gathered": 7, "water_gathered": 5,
         "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
-    }
+    }]
 
-    sim._advance_expedition(tribe)
+    sim._advance_expeditions(tribe)
 
-    assert tribe.expedition is None
+    assert tribe.expeditions == []
     assert any("nothing caught, though not empty-handed" in entry for entry in tribe.history)
 
 
@@ -549,35 +551,35 @@ def test_expedition_records_every_tile_it_walks_as_a_breadcrumb_path():
     this one party has actually walked, regardless of reuse."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.expedition = {
+    tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [80, 80],
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [[50, 50]],
-    }
+    }]
 
-    sim._advance_expedition(tribe)
-    sim._advance_expedition(tribe)
+    sim._advance_expeditions(tribe)
+    sim._advance_expeditions(tribe)
 
-    assert tribe.expedition["path"][0] == [50, 50]
-    assert len(tribe.expedition["path"]) == 3
-    assert tribe.expedition["path"][-1] == tribe.expedition["pos"]
+    assert tribe.expeditions[0]["path"][0] == [50, 50]
+    assert len(tribe.expeditions[0]["path"]) == 3
+    assert tribe.expeditions[0]["path"][-1] == tribe.expeditions[0]["pos"]
 
 
 def test_expedition_wears_a_trail_on_the_tile_it_moves_into():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.expedition = {
+    tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [80, 80],
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
-    }
+    }]
 
-    sim._advance_expedition(tribe)
+    sim._advance_expeditions(tribe)
 
     from backend import config
-    landed = tuple(tribe.expedition["pos"])
+    landed = tuple(tribe.expeditions[0]["pos"])
     assert sim.world.trails.get(landed) == config.TRAIL_WEAR_PER_PASS
 
 
@@ -590,17 +592,17 @@ def test_expedition_travels_farther_along_an_already_worn_trail():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     sim.world.wear_trail(50, 50, 1.0)  # fully worn starting tile
-    tribe.expedition = {
+    tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [99, 50],
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
-    }
+    }]
 
-    sim._advance_expedition(tribe)
+    sim._advance_expeditions(tribe)
 
     expected_speed = config.EXPEDITION_SPEED + config.MAX_TRAIL_BONUS_SPEED
-    assert tribe.expedition["pos"] == [50 + expected_speed, 50]
+    assert tribe.expeditions[0]["pos"] == [50 + expected_speed, 50]
     assert not any("fresh water" in m["text"] for m in tribe.memory.entries)
 
 

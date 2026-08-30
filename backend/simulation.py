@@ -83,10 +83,12 @@ class Tribe:
         # see Simulation._merge_tribes) -- consumed and cleared by _install_chief so an
         # election it's informing isn't indistinguishable from an ordinary founding.
         self.pending_chief_context: str = ""
-        # None when no expedition is out; otherwise {"pos", "origin", "target", "day",
-        # "phase" ("outbound"/"returning"), "found", "terrain_report"} -- see
-        # actions.py._scout and Simulation._advance_expeditions.
-        self.expedition: dict | None = None
+        # Empty when no party is out; otherwise a list of {"pos", "origin", "target",
+        # "day", "phase" ("outbound"/"returning"), "found", "terrain_report"} dicts --
+        # see actions.py._scout/_hunting_party and Simulation._advance_expeditions. A
+        # tribe can run more than one party at once (up to config.MAX_CONCURRENT_
+        # EXPEDITIONS), any mix of scouting and hunting.
+        self.expeditions: list[dict] = []
 
     def to_dict(self) -> dict:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
@@ -122,20 +124,20 @@ class Tribe:
             "chief_decree": self.chief_decree,
             "trophies": self.trophies,
             "next_era": next_era_info,
-            "expedition": (
+            "expeditions": [
                 {
-                    "pos": self.expedition["pos"],
-                    "day": self.expedition["day"],
-                    "max_days": self.expedition["max_days"],
-                    "phase": self.expedition["phase"],
-                    "lead_scout": self.expedition["lead_scout"],
-                    "food_gathered": self.expedition["food_gathered"],
-                    "water_gathered": self.expedition["water_gathered"],
-                    "path": self.expedition["path"],
+                    "kind": exp.get("kind", "scout"),
+                    "pos": exp["pos"],
+                    "day": exp["day"],
+                    "max_days": exp["max_days"],
+                    "phase": exp["phase"],
+                    "lead_scout": exp["lead_scout"],
+                    "food_gathered": exp["food_gathered"],
+                    "water_gathered": exp["water_gathered"],
+                    "path": exp["path"],
                 }
-                if self.expedition
-                else None
-            ),
+                for exp in self.expeditions
+            ],
         }
 
 
@@ -299,8 +301,8 @@ class Simulation:
             self._check_chief_trophies(tribe)
 
         for tribe in self.tribes.values():
-            if not tribe.extinct and tribe.expedition is not None:
-                self._advance_expedition(tribe)
+            if not tribe.extinct and tribe.expeditions:
+                self._advance_expeditions(tribe)
 
         for tribe in self.tribes.values():
             if not tribe.extinct and not tribe.chief_name:
@@ -387,13 +389,20 @@ class Simulation:
                 f"Last cycle you set target_vector to ({tribe.last_target[0]}, {tribe.last_target[1]}); "
                 "you have not yet arrived there."
             )
-        if tribe.expedition is not None:
-            exp = tribe.expedition
-            journey_note += (
-                f" Your scouts, led by {exp['lead_scout']}, are still in the field "
-                f"(day {exp['day']}/{exp['max_days']}, {exp['phase']}); choosing SCOUT "
-                "again won't send a second party."
+        if tribe.expeditions:
+            party_word = {"scout": "scouts", "hunt": "a hunting party"}
+            reports = "; ".join(
+                f"{party_word.get(exp.get('kind'), 'a party')} led by {exp['lead_scout']} "
+                f"(day {exp['day']}/{exp['max_days']}, {exp['phase']})"
+                for exp in tribe.expeditions
             )
+            slots_left = config.MAX_CONCURRENT_EXPEDITIONS - len(tribe.expeditions)
+            capacity_note = (
+                " No one left to send out until one returns."
+                if slots_left <= 0
+                else f" You could send out {slots_left} more at once."
+            )
+            journey_note += f" Still in the field: {reports}.{capacity_note}"
 
         world_state = {
             "cycle": self.cycle,
@@ -471,22 +480,31 @@ class Simulation:
         models = {tribe.model for tribe in self.tribes.values()}
         await asyncio.gather(*(self.client.unload_model(model) for model in models), return_exceptions=True)
 
-    def _advance_expedition(self, tribe: Tribe) -> None:
-        """One day of an in-progress scouting expedition (see actions.py._scout). Runs
-        every cycle regardless of what action the tribe chose that turn -- the party is
-        out in the field on its own, not waiting for the tribe's attention each cycle.
-        Outbound: walk toward target, succeeding immediately on real fresh water or on
-        reaching the destination, or giving up after EXPEDITION_MAX_DAYS. Returning:
-        walk back toward camp; arrival is the only moment a finding becomes real,
-        actionable knowledge (memory + chronicle) -- a party that hasn't made it home
-        yet knows something the tribe as a whole does not.
+    def _advance_expeditions(self, tribe: Tribe) -> None:
+        """Advances every one of a tribe's in-field parties by one day (see
+        actions.py._scout/_hunting_party) -- a tribe can have up to config.
+        MAX_CONCURRENT_EXPEDITIONS out at once. Iterates a snapshot of the list since
+        a party can complete (and remove itself) mid-loop."""
+        for exp in list(tribe.expeditions):
+            if self._advance_one_expedition(tribe, exp):
+                tribe.expeditions.remove(exp)
+
+    def _advance_one_expedition(self, tribe: Tribe, exp: dict) -> bool:
+        """One day of an in-progress expedition. Runs every cycle regardless of what
+        action the tribe chose that turn -- the party is out in the field on its own,
+        not waiting for the tribe's attention each cycle. Outbound: walk toward target,
+        succeeding immediately on real fresh water or on reaching the destination, or
+        giving up after EXPEDITION_MAX_DAYS. Returning: walk back toward camp; arrival
+        is the only moment a finding becomes real, actionable knowledge (memory +
+        chronicle) -- a party that hasn't made it home yet knows something the tribe as
+        a whole does not. Returns True once this expedition is over and should be
+        removed from tribe.expeditions.
 
         Wears (and benefits from) the same worn-trail mechanic as RELOCATE: a route
         used by enough expeditions gets faster over time, so a destination just out of
         one expedition's EXPEDITION_MAX_DAYS reach can become reachable a few attempts
         later purely by repeatedly trying the same path -- effort compounding into
         infrastructure, not a scripted distance override."""
-        exp = tribe.expedition
         if exp["phase"] == "outbound":
             exp["day"] += 1
             px, py = exp["pos"]
@@ -504,7 +522,7 @@ class Simulation:
 
             if exp.get("kind") == "hunt":
                 self._advance_hunting_party_outbound(tribe, exp, reached_biome, scout)
-                return
+                return False
             if reached_biome == "river":
                 self._expedition_river_hazard(tribe, nx, ny)
                 exp["found"] = [nx, ny]
@@ -532,6 +550,7 @@ class Simulation:
                 # come home safely rather than push on indefinitely chasing a find
                 # that isn't there.
                 tribe.history.append(f"{scout} calls off the search after {exp['max_days']} days -- the party's safety comes first, and they turn back")
+            return False
         else:  # returning
             px, py = exp["pos"]
             ox, oy = exp["origin"]
@@ -557,8 +576,7 @@ class Simulation:
 
                 if exp.get("kind") == "hunt":
                     self._report_hunting_party_home(tribe, exp, scout, forage_note, recipient)
-                    tribe.expedition = None
-                    return
+                    return True
 
                 if exp["found"]:
                     fx, fy = exp["found"]
@@ -582,7 +600,8 @@ class Simulation:
                         f"{scout} is home and gives {recipient} a full report: "
                         f"nothing new found, though not empty-handed -- {forage_note}"
                     )
-                tribe.expedition = None
+                return True
+            return False
 
     def _expedition_river_hazard(self, tribe: Tribe, x: int, y: int) -> bool:
         """The same drowning risk GATHER_WATER already carries on a river tile

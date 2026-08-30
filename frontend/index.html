@@ -644,7 +644,7 @@ function drawTribeIndividuals(tribeId, t) {
     ctx.fillText(t.last_broadcast, centerX - w / 2, by);
   }
 
-  if (t.expedition) drawExpedition(t, tribeId);
+  (t.expeditions || []).forEach((exp, i) => drawExpedition(t, tribeId, exp, i));
 }
 
 // The scouting party (backend/actions.py._scout, backend/simulation.py._advance_expedition)
@@ -661,16 +661,19 @@ function drawTribeIndividuals(tribeId, t) {
 const expeditionPathReveal = {};
 const PATH_REVEAL_FRAMES = 24;
 
-function drawExpedition(t, tribeId) {
-  const fx = t.expedition.pos[0] * TILE + TILE / 2, fy = t.expedition.pos[1] * TILE + TILE / 2;
-  const path = t.expedition.path || [];
+function drawExpedition(t, tribeId, exp, expIndex) {
+  const fx = exp.pos[0] * TILE + TILE / 2, fy = exp.pos[1] * TILE + TILE / 2;
+  const path = exp.path || [];
+  const revealKey = `${tribeId}:${expIndex}`;
 
-  // Update the reveal tracker for this tribe's expedition before drawing.
-  let reveal = expeditionPathReveal[tribeId];
+  // Update the reveal tracker for this one expedition before drawing -- keyed per
+  // tribe+slot since a tribe can now have more than one party out at once, each with
+  // its own breadcrumb line revealing independently.
+  let reveal = expeditionPathReveal[revealKey];
   if (!reveal || path.length !== reveal.length) {
     const grewByOne = reveal && path.length === reveal.length + 1;
     reveal = { length: path.length, revealFrame: grewByOne ? animFrame : animFrame - PATH_REVEAL_FRAMES };
-    expeditionPathReveal[tribeId] = reveal;
+    expeditionPathReveal[revealKey] = reveal;
   }
 
   // The real walked route (backend/actions.py._scout's "path" list) -- the persistent
@@ -707,7 +710,7 @@ function drawExpedition(t, tribeId) {
   // rather than "out there moving." Drawn as hollow rings, not filled dots, so they
   // read as a distinct away party rather than being mistaken for the main tribe's own
   // (visually similar, same-colored) cluster back at camp.
-  const scoutSeed = stringSeed(`${tribeId}:expedition:${t.expedition.lead_scout}`);
+  const scoutSeed = stringSeed(`${tribeId}:expedition:${exp.lead_scout}`);
   const clusterRadius = Math.min(TILE * 1.1, 10);
   ctx.strokeStyle = t.color;
   ctx.lineWidth = Math.max(1, TILE * 0.14);
@@ -725,9 +728,10 @@ function drawExpedition(t, tribeId) {
   }
   const r = clusterRadius;
 
-  const arrow = t.expedition.phase === "outbound" ? "→" : "←";
-  const line1 = `${t.expedition.lead_scout} ${arrow} day ${t.expedition.day}/${t.expedition.max_days}`;
-  const line2 = `🍖${t.expedition.food_gathered} 💧${t.expedition.water_gathered}`;
+  const arrow = exp.phase === "outbound" ? "→" : "←";
+  const kindIcon = exp.kind === "hunt" ? "🏹" : "🧭";
+  const line1 = `${kindIcon} ${exp.lead_scout} ${arrow} day ${exp.day}/${exp.max_days}`;
+  const line2 = `🍖${exp.food_gathered} 💧${exp.water_gathered}`;
   ctx.font = "9px monospace";
   const w = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width);
   ctx.fillStyle = "rgba(15,15,21,0.85)";
@@ -876,7 +880,7 @@ function updateSidebar(state) {
             🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${t.food} &nbsp;💧 ${t.water}
             ${t.chief_name ? `<br><span class="chief-line">👑 ${t.chief_name} — ${t.chief_philosophy}</span>` : ""}
             ${t.chief_decree ? `<br><span class="chief-line">📜 decreed: ${t.chief_decree}</span>` : ""}
-            ${t.expedition ? `<br><span class="chief-line">🧭 ${t.expedition.lead_scout}'s party ${t.expedition.phase}, day ${t.expedition.day}/${t.expedition.max_days} at (${t.expedition.pos[0]},${t.expedition.pos[1]}) · 🍖${t.expedition.food_gathered} 💧${t.expedition.water_gathered} foraged</span>` : ""}
+            ${(t.expeditions || []).map(exp => `<br><span class="chief-line">${exp.kind === "hunt" ? "🏹" : "🧭"} ${exp.lead_scout}'s ${exp.kind === "hunt" ? "hunting party" : "party"} ${exp.phase}, day ${exp.day}/${exp.max_days} at (${exp.pos[0]},${exp.pos[1]}) · 🍖${exp.food_gathered} 💧${exp.water_gathered} foraged</span>`).join("")}
             ${(t.trophies && t.trophies.length) ? `<br><span class="chief-line">🏆 ${t.trophies.map(tr => tr.name).join(", ")}</span>` : ""}
           </div>
           <span class="speech">"${t.last_broadcast || "..."}"</span>

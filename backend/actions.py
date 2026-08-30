@@ -160,16 +160,22 @@ def _scout(sim, tribe, biome, target):
     RELOCATE the whole camp there. This replaced an instant per-turn terrain check and,
     before that, handing a newly-elected chief water's exact coordinates outright (see
     leadership.py) -- water and distant terrain should be things a tribe discovers by
-    actually sending people to go look, not facts the simulation gifts for free."""
-    if tribe.expedition is not None:
-        exp = tribe.expedition
-        return f"{exp['lead_scout']}'s party remains in the field (day {exp['day']}/{exp['max_days']}, {exp['phase']})"
+    actually sending people to go look, not facts the simulation gifts for free.
+
+    A tribe can have up to config.MAX_CONCURRENT_EXPEDITIONS parties out at once, any
+    mix of scouting and hunting -- capped rather than unlimited since nothing currently
+    deducts population to launch one."""
+    if len(tribe.expeditions) >= config.MAX_CONCURRENT_EXPEDITIONS:
+        fields = ", ".join(
+            f"{e['lead_scout']} (day {e['day']}/{e['max_days']}, {e['phase']})" for e in tribe.expeditions
+        )
+        return f"no one left to send -- every party is already out: {fields}"
 
     tx, ty = target
     tx = max(0, min(sim.world.grid_size - 1, tx))
     ty = max(0, min(sim.world.grid_size - 1, ty))
     scout = _generate_scout(tribe, sim.cycle)
-    tribe.expedition = {
+    tribe.expeditions.append({
         "kind": "scout",
         "pos": [tribe.x, tribe.y],
         "origin": [tribe.x, tribe.y],
@@ -189,34 +195,37 @@ def _scout(sim, tribe, biome, target):
         # actively happening. This is just this one party's breadcrumb line, cleared
         # when they get home, not a permanent feature of the map.
         "path": [[tribe.x, tribe.y]],
-    }
+    })
     tribe.expeditions_launched += 1
     return f"scouts led by {scout['name']} depart camp to explore toward ({tx},{ty})"
 
 
 def _hunting_party(sim, tribe, biome, target):
     """A multi-day alternative to instant HUNT_DEER, sharing the exact same expedition
-    slot and day-by-day travel machinery as SCOUT (a tribe can only ever have one party
-    out at a time, hunting or scouting). Persists day over day -- moving toward
-    target_vector, camping under its own supply -- rolling a fresh catch chance each
-    day (scaled by wherever they currently stand's own game yield) until something is
-    caught or config.HUNTING_PARTY_MAX_DAYS runs out, and carries the same wolf-pack
-    hazard risk as an instant hunt on every single day out, not just once.
+    list and day-by-day travel machinery as SCOUT (up to config.MAX_CONCURRENT_
+    EXPEDITIONS parties out at once, any mix of hunting and scouting). Persists day
+    over day -- moving toward target_vector, camping under its own supply -- rolling a
+    fresh catch chance each day (scaled by wherever they currently stand's own game
+    yield) until something is caught or config.HUNTING_PARTY_MAX_DAYS runs out, and
+    carries the same wolf-pack hazard risk as an instant hunt on every single day out,
+    not just once.
 
     The catch only becomes real food the moment the party walks back into camp -- same
     "findings aren't real until you're home" rule as SCOUT. That's the deliberate,
     testable tension: a tribe that's starving *right now* gets no relief from a hunt
     that's still out in the field, no matter how promising, and every extra day spent
     searching is another chance at a hazard, not a free wait."""
-    if tribe.expedition is not None:
-        exp = tribe.expedition
-        return f"{exp['lead_scout']}'s hunting party remains in the field (day {exp['day']}/{exp['max_days']}, {exp['phase']})"
+    if len(tribe.expeditions) >= config.MAX_CONCURRENT_EXPEDITIONS:
+        fields = ", ".join(
+            f"{e['lead_scout']} (day {e['day']}/{e['max_days']}, {e['phase']})" for e in tribe.expeditions
+        )
+        return f"no one left to send -- every party is already out: {fields}"
 
     tx, ty = target
     tx = max(0, min(sim.world.grid_size - 1, tx))
     ty = max(0, min(sim.world.grid_size - 1, ty))
     scout = _generate_scout(tribe, sim.cycle, base_days=config.HUNTING_PARTY_MAX_DAYS)
-    tribe.expedition = {
+    tribe.expeditions.append({
         "kind": "hunt",
         "pos": [tribe.x, tribe.y],
         "origin": [tribe.x, tribe.y],
@@ -230,7 +239,7 @@ def _hunting_party(sim, tribe, biome, target):
         "determination": scout["determination"],
         "max_days": scout["max_days"],
         "path": [[tribe.x, tribe.y]],
-    }
+    })
     tribe.expeditions_launched += 1
     return f"a hunting party led by {scout['name']} departs camp toward ({tx},{ty})"
 

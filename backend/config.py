@@ -255,6 +255,13 @@ TERRAIN_MOVEMENT_MULTIPLIER = {
 EXPEDITION_SPEED = 10
 EXPEDITION_MAX_DAYS = 3
 
+# A tribe could previously only ever have one party (scouting or hunting) in the field
+# at a time -- a chief with real people to spare had no way to send out more than a
+# single expedition regardless of population. Capped rather than unlimited: nothing
+# currently deducts population to launch a party, so an uncapped tribe could spam
+# expeditions for free.
+MAX_CONCURRENT_EXPEDITIONS = 2
+
 # Every expedition's lead scout gets a procedurally-generated determination trait (see
 # actions.py._generate_scout) that shifts their own personal give-up point by up to
 # this many days either side of EXPEDITION_MAX_DAYS -- a stubborn scout searches a

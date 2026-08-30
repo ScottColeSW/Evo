@@ -175,10 +175,10 @@ def test_scout_does_not_move_the_tribe_but_launches_an_expedition():
     note = ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (10, 10))
 
     assert (tribe.x, tribe.y) == (50, 50)  # scouting doesn't relocate the tribe
-    assert tribe.expedition is not None
-    assert tribe.expedition["target"] == [10, 10]
-    assert tribe.expedition["day"] == 0
-    assert tribe.expedition["phase"] == "outbound"
+    assert len(tribe.expeditions) == 1
+    assert tribe.expeditions[0]["target"] == [10, 10]
+    assert tribe.expeditions[0]["day"] == 0
+    assert tribe.expeditions[0]["phase"] == "outbound"
     assert "depart" in note
 
 
@@ -194,10 +194,11 @@ def test_scout_launch_gives_the_expedition_a_named_lead_and_determination_trait(
 
     ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (10, 10))
 
-    assert tribe.expedition["lead_scout"]  # a real, non-empty name
-    assert 0.0 <= tribe.expedition["determination"] <= 1.0
+    exp = tribe.expeditions[0]
+    assert exp["lead_scout"]  # a real, non-empty name
+    assert 0.0 <= exp["determination"] <= 1.0
     span = config.EXPEDITION_DETERMINATION_DAY_VARIANCE
-    assert config.EXPEDITION_MAX_DAYS - span <= tribe.expedition["max_days"] <= config.EXPEDITION_MAX_DAYS + span
+    assert config.EXPEDITION_MAX_DAYS - span <= exp["max_days"] <= config.EXPEDITION_MAX_DAYS + span
 
 
 def test_scout_launch_is_deterministic_per_tribe_and_cycle():
@@ -211,8 +212,8 @@ def test_scout_launch_is_deterministic_per_tribe_and_cycle():
     ACTION_REGISTRY["SCOUT"](sim, tribe_a, "plains", (10, 10))
     ACTION_REGISTRY["SCOUT"](sim, tribe_b, "plains", (10, 10))
 
-    assert tribe_a.expedition["lead_scout"] == tribe_b.expedition["lead_scout"]
-    assert tribe_a.expedition["determination"] == tribe_b.expedition["determination"]
+    assert tribe_a.expeditions[0]["lead_scout"] == tribe_b.expeditions[0]["lead_scout"]
+    assert tribe_a.expeditions[0]["determination"] == tribe_b.expeditions[0]["determination"]
 
 
 def test_raid_with_no_rival_nearby_does_nothing():
@@ -353,16 +354,34 @@ def test_trade_ignores_extinct_tribes_and_self():
     assert "no rival" in note
 
 
-def test_scout_while_already_out_does_not_launch_a_second_expedition():
+def test_scout_launches_a_second_party_while_capacity_remains():
+    """A tribe can run up to config.MAX_CONCURRENT_EXPEDITIONS parties at once -- a
+    chief with people to spare shouldn't be capped at just one no matter what."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (10, 10))
-    first_expedition = tribe.expedition
+    first_expedition = tribe.expeditions[0]
 
     note = ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (80, 80))
 
-    assert tribe.expedition is first_expedition  # unchanged, not replaced
-    assert "field" in note
+    assert len(tribe.expeditions) == 2
+    assert tribe.expeditions[0] is first_expedition  # the first party is untouched
+    assert "depart" in note
+
+
+def test_scout_refuses_once_at_capacity():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    for _ in range(config.MAX_CONCURRENT_EXPEDITIONS):
+        ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (10, 10))
+    parties = list(tribe.expeditions)
+
+    note = ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (80, 80))
+
+    assert tribe.expeditions == parties  # unchanged, no third party squeezed in
+    assert "no one left to send" in note
 
 
 def test_hunting_party_does_not_move_the_tribe_but_launches_an_expedition():
@@ -372,12 +391,12 @@ def test_hunting_party_does_not_move_the_tribe_but_launches_an_expedition():
     note = ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (10, 10))
 
     assert (tribe.x, tribe.y) == (50, 50)
-    assert tribe.expedition is not None
-    assert tribe.expedition["kind"] == "hunt"
-    assert tribe.expedition["target"] == [10, 10]
-    assert tribe.expedition["day"] == 0
-    assert tribe.expedition["phase"] == "outbound"
-    assert tribe.expedition["food_caught"] == 0
+    assert len(tribe.expeditions) == 1
+    assert tribe.expeditions[0]["kind"] == "hunt"
+    assert tribe.expeditions[0]["target"] == [10, 10]
+    assert tribe.expeditions[0]["day"] == 0
+    assert tribe.expeditions[0]["phase"] == "outbound"
+    assert tribe.expeditions[0]["food_caught"] == 0
     assert "depart" in note
 
 
@@ -390,29 +409,48 @@ def test_hunting_party_launch_uses_its_own_max_days_baseline():
     ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (10, 10))
 
     span = config.EXPEDITION_DETERMINATION_DAY_VARIANCE
-    assert config.HUNTING_PARTY_MAX_DAYS - span <= tribe.expedition["max_days"] <= config.HUNTING_PARTY_MAX_DAYS + span
+    max_days = tribe.expeditions[0]["max_days"]
+    assert config.HUNTING_PARTY_MAX_DAYS - span <= max_days <= config.HUNTING_PARTY_MAX_DAYS + span
 
 
-def test_hunting_party_while_already_out_does_not_launch_a_second_expedition():
+def test_hunting_party_launches_a_second_party_while_capacity_remains():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (10, 10))
-    first_expedition = tribe.expedition
+    first_expedition = tribe.expeditions[0]
 
     note = ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (80, 80))
 
-    assert tribe.expedition is first_expedition
-    assert "field" in note
+    assert len(tribe.expeditions) == 2
+    assert tribe.expeditions[0] is first_expedition
+    assert "depart" in note
 
 
-def test_scout_while_a_hunting_party_is_out_does_not_launch_over_it():
-    """Hunting and scouting share the same single expedition slot -- a tribe can only
-    have one party in the field at a time, whichever kind it is."""
+def test_hunting_party_refuses_once_at_capacity():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    for _ in range(config.MAX_CONCURRENT_EXPEDITIONS):
+        ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (10, 10))
+    parties = list(tribe.expeditions)
+
+    note = ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (80, 80))
+
+    assert tribe.expeditions == parties
+    assert "no one left to send" in note
+
+
+def test_scout_and_hunting_party_can_both_be_out_at_once():
+    """Hunting and scouting share the same expedition list and capacity -- a tribe can
+    mix party types, not just repeat the same one."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (10, 10))
-    hunting_expedition = tribe.expedition
+    hunting_expedition = tribe.expeditions[0]
 
     ACTION_REGISTRY["SCOUT"](sim, tribe, "forest", (80, 80))
 
-    assert tribe.expedition is hunting_expedition
+    assert len(tribe.expeditions) == 2
+    assert tribe.expeditions[0] is hunting_expedition
+    assert tribe.expeditions[1]["kind"] == "scout"
