@@ -39,11 +39,11 @@ MEMORY_CONSOLIDATE_EVERY_N_CYCLES = 40
 # should change -- distinct from the fast small model handling every live turn. The
 # reviewer model is deliberately not configurable per-tribe -- it's meant to be a
 # consistently larger, slower, less-often-run reviewer regardless of which small model
-# a tribe actually plays with. Exceeds VRAM_LIMIT_GB on typical hardware (the guard is
-# advisory, not a hard block) -- a real tradeoff of using an actually larger reviewer,
-# not an oversight.
+# a tribe actually plays with. mistral:7b is a real step up from the 2-3B models
+# tribes actually play with live, without the 26B extremes of the original gemma4:26b
+# default -- gemma4:26b was removed from this machine as too large to actually use.
 NIGHT_CYCLE_EVERY_N_CYCLES = 30
-NIGHT_CYCLE_REVIEWER_MODEL = "gemma4:26b"
+NIGHT_CYCLE_REVIEWER_MODEL = "mistral:7b"
 NIGHT_CYCLE_HISTORY_WINDOW = 20
 
 # Rough pre-flight sanity check against a model's on-disk size (backend/vram_guard.py).
