@@ -882,6 +882,92 @@ def test_well_fed_and_growing_legacy_trophies_have_their_own_thresholds():
     assert "Water Bringer" not in names
 
 
+def test_celebration_fires_on_food_surplus_and_spends_a_real_fraction():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = config.FOOD_TROPHY_THRESHOLD
+
+    sim._check_for_celebration(tribe)
+
+    expected_spent = round(config.FOOD_TROPHY_THRESHOLD * config.CELEBRATION_RESOURCE_COST_FRACTION)
+    assert tribe.food == config.FOOD_TROPHY_THRESHOLD - expected_spent
+    assert any("holds a celebration" in entry and "season of plenty" in entry for entry in tribe.history)
+    assert float(sim.trauma.ghost_tensor[50, 50]) > 0
+
+
+def test_celebration_fires_on_a_fresh_high_weight_discovery_without_food_surplus():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 10  # well under the surplus threshold
+    sim.cycle = 5
+    tribe.memory.remember("Scouts confirmed fresh water at (40,37).", 5, weight=0.9)
+
+    sim._check_for_celebration(tribe)
+
+    assert any("holds a celebration" in entry and "fresh discovery" in entry for entry in tribe.history)
+
+
+def test_celebration_does_not_fire_without_surplus_or_discovery():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 10
+
+    sim._check_for_celebration(tribe)
+
+    assert not any("holds a celebration" in entry for entry in tribe.history)
+
+
+def test_celebration_respects_its_own_cooldown():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = config.FOOD_TROPHY_THRESHOLD * 2
+
+    sim._check_for_celebration(tribe)
+    first_count = sum("holds a celebration" in e for e in tribe.history)
+    sim.cycle += 1
+    sim._check_for_celebration(tribe)
+    second_count = sum("holds a celebration" in e for e in tribe.history)
+
+    assert first_count == 1
+    assert second_count == 1  # unchanged -- still inside the cooldown window
+
+
+def test_celebration_triggers_breeding_when_two_named_individuals_are_eligible():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = config.FOOD_TROPHY_THRESHOLD
+    tribe.chief_name = "Ashgar"
+    tribe.trophies = [{"name": "Water Bringer", "chief": "BriMir", "cycle": 1}]
+
+    sim._check_for_celebration(tribe)
+
+    assert tribe.pending_birth == {"parent_a": "Ashgar", "parent_b": "BriMir"}
+    assert any("decide to start a family" in entry for entry in tribe.history)
+
+
+def test_celebration_does_not_start_a_second_family_while_one_is_already_pending():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = config.FOOD_TROPHY_THRESHOLD
+    tribe.chief_name = "Ashgar"
+    tribe.trophies = [{"name": "Water Bringer", "chief": "BriMir", "cycle": 1}]
+    tribe.pending_birth = {"parent_a": "Someone", "parent_b": "Else"}
+
+    sim._check_for_celebration(tribe)
+
+    assert tribe.pending_birth == {"parent_a": "Someone", "parent_b": "Else"}  # untouched
+
+
 def test_era_advances_once_population_and_resources_are_met():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")

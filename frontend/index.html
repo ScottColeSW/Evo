@@ -80,6 +80,7 @@
   .log-box .log-trade { color: #34d399; font-weight: bold; }
   .log-box .log-birth { color: #f0abfc; font-weight: bold; }
   .log-box .log-reflection { color: #93c5fd; font-style: italic; }
+  .log-box .log-celebration { color: #fbbf24; font-weight: bold; }
   .log-box .log-vram { color: #f59e0b; }
   .consensus-row { background: #222232; padding: 8px; border-radius: 6px; font-size: 11px; }
   .consensus-bar { height: 4px; background: #333344; border-radius: 2px; margin-top: 4px; overflow: hidden; }
@@ -919,6 +920,7 @@ function chronicleEntryClass(entry) {
   if (entry.includes("opened trade")) return "log-trade";
   if (entry.includes("welcome a child") || entry.includes("decide to start a family")) return "log-birth";
   if (entry.includes("reconsiders the tribe's philosophy")) return "log-reflection";
+  if (entry.includes("holds a celebration")) return "log-celebration";
   if (entry.startsWith("VRAM WARNING")) return "log-vram";
   return "";
 }
@@ -934,6 +936,7 @@ function chronicleEntryIcon(entry) {
     case "log-trade": return "🤝 ";
     case "log-birth": return "👶 ";
     case "log-reflection": return "🌙 ";
+    case "log-celebration": return "🎉 ";
     case "log-vram": return "🖥️ ";
     default: return "";
   }

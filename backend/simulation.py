@@ -3,7 +3,7 @@ import importlib
 import random
 
 from . import config, physics
-from .actions import ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_LABEL
+from .actions import ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_LABEL, _eligible_breeding_pair
 from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
 from .reflection import reflect_on_history
@@ -93,6 +93,9 @@ class Tribe:
         # A real parent record per child, not just an anonymous population+1 -- the
         # "capture lineage" requirement. [{"child_name", "parents", "cycle", "note"}, ...]
         self.lineage: list[dict] = []
+        # See Simulation._check_for_celebration -- very negative so a tribe's very
+        # first celebration isn't blocked by a cooldown it never actually used yet.
+        self.last_celebration_cycle: int = -config.CELEBRATION_COOLDOWN_CYCLES
         # A fact for the next chief election to reason about, set when something more
         # specific than "just founded" is true (currently only a raid-conquest merge,
         # see Simulation._merge_tribes) -- consumed and cleared by _install_chief so an
@@ -363,6 +366,7 @@ class Simulation:
             self._grow_population(tribe)
             self._advance_era_if_ready(tribe)
             self._check_chief_trophies(tribe)
+            self._check_for_celebration(tribe)
 
         for tribe in self.tribes.values():
             if not tribe.extinct and tribe.expeditions:
@@ -870,6 +874,49 @@ class Simulation:
             self._award_trophy(tribe, "Well Fed")
         if tribe.population > 8:
             self._award_trophy(tribe, "Growing Legacy")
+
+    def _check_for_celebration(self, tribe: Tribe) -> None:
+        """Automatic and threshold-based, same pattern as era advancement/trophies/
+        population growth -- not a discrete action the model has to remember to pick.
+        This session's own data (BREED sat free and genuinely eligible for 20+ live
+        cycles without ever being chosen) suggests these models rarely reach for a new
+        discrete choice at all, so a reward gated behind choosing one more action would
+        likely suffer the same fate.
+
+        Fires on a real resource surplus (reusing FOOD_TROPHY_THRESHOLD, the same
+        "Well Fed" bar) OR a genuine new discovery -- any memory entry just recorded
+        this exact cycle at or above CELEBRATION_DISCOVERY_WEIGHT, the same weight that
+        already promotes a memory into a permanent taboo/lesson (see TribeMemory.
+        consolidate) -- i.e. this tribe's own definition of "something worth
+        remembering forever," not a threshold invented just for this. Spends a real
+        fraction of the surplus (the mass gathering effort), radiates real pride
+        through the area same as any other proud event, and -- if two distinct named
+        individuals are already eligible -- is what naturally brings them together,
+        without needing the model to separately choose BREED."""
+        if self.cycle - tribe.last_celebration_cycle < config.CELEBRATION_COOLDOWN_CYCLES:
+            return
+
+        surplus = tribe.food >= config.FOOD_TROPHY_THRESHOLD
+        discovery = any(
+            e["cycle"] == self.cycle and e["weight"] >= config.CELEBRATION_DISCOVERY_WEIGHT
+            for e in tribe.memory.entries
+        )
+        if not surplus and not discovery:
+            return
+
+        tribe.last_celebration_cycle = self.cycle
+        spent = round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION)
+        tribe.food -= spent
+        self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        reason = "a fresh discovery" if discovery else "a season of plenty"
+        tribe.history.append(f"\U0001f389 {tribe.name} holds a celebration for {reason}, spending {spent} food on a feast")
+
+        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+            pair = _eligible_breeding_pair(tribe)
+            if pair is not None:
+                parent_a, parent_b = pair
+                tribe.pending_birth = {"parent_a": parent_a, "parent_b": parent_b}
+                tribe.history.append(f"amid the celebration, {parent_a} and {parent_b} decide to start a family together")
 
     def _merge_tribes(self, attacker: Tribe, defender: Tribe) -> str:
         """A defender's population has been driven to zero by accumulated raid

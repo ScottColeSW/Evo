@@ -144,6 +144,26 @@ POPULATION_GROWTH_CAP = 80
 # expedition/nearest_water design), so it's the trophy that actually means something.
 FOOD_TROPHY_THRESHOLD = 60
 
+# Celebrations (backend/simulation.py._check_for_celebration): automatic and threshold-
+# based, same pattern as era advancement/trophies/population growth -- NOT a discrete
+# action the model has to remember to pick. This session's own data (BREED sat free and
+# genuinely eligible for 20+ live cycles without ever being chosen; HUNTING_PARTY is
+# barely picked either) suggests these models rarely reach for a new discrete choice at
+# all, so a reward gated behind choosing one more action would likely suffer the same
+# fate. Fires on a real resource surplus (the same threshold FOOD_TROPHY_THRESHOLD
+# already uses for "Well Fed") OR a genuine new discovery (any memory entry just
+# recorded this cycle at or above CELEBRATION_DISCOVERY_WEIGHT -- the same weight that
+# already promotes a memory into a permanent taboo/lesson, i.e. this tribe's own
+# definition of "something big enough to remember forever"). Spends a real fraction of
+# the surplus (the "mass gathering effort"), radiates real pride through the area, and
+# -- if two distinct named individuals are already eligible -- is what naturally brings
+# them together, without needing the model to separately choose BREED.
+CELEBRATION_DISCOVERY_WEIGHT = 0.75
+CELEBRATION_RESOURCE_COST_FRACTION = 0.3
+CELEBRATION_PRIDE_MAGNITUDE = 0.5
+CELEBRATION_PRIDE_RADIUS = 6
+CELEBRATION_COOLDOWN_CYCLES = 20
+
 # Milestone trophies (backend/simulation.py._award_trophy's `individual` param): unlike
 # the chief-credited trophies above, these are earned by a specific named scout or
 # hunter and credit them by name, not the chief. Also the pool of "named individuals"
