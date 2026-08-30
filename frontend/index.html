@@ -165,6 +165,12 @@ const terrainCanvas = document.createElement("canvas");
 
 /* ---------- Picker screen ---------- */
 
+// Known to actually work well in this sim (fast, reliable JSON-mode output, tested
+// extensively all session) -- picked as defaults over whatever Ollama happens to list
+// first (previously just install order, which put a 26B model in front by accident).
+// Falls back to whatever's actually installed if a preferred model isn't available.
+const PREFERRED_MODELS_BY_ROW = ["gemma2:2b", "qwen2.5:3b"];
+
 function addTribeRow(defaultName, models) {
   if (tribeCount >= 4) return;
   const idx = tribeCount++;
@@ -175,6 +181,10 @@ function addTribeRow(defaultName, models) {
     <input type="text" value="${defaultName}" />
     <select>${models.map(m => `<option value="${m}">${m}</option>`).join("")}</select>
   `;
+  const preferred = PREFERRED_MODELS_BY_ROW[idx];
+  if (preferred && models.includes(preferred)) {
+    row.querySelector("select").value = preferred;
+  }
   document.getElementById("tribe-list").appendChild(row);
 }
 
