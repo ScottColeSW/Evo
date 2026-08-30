@@ -77,6 +77,7 @@
   .log-box .log-chief-death { color: #f87171; font-weight: bold; }
   .log-box .log-hazard { color: #f87171; }
   .log-box .log-raid { color: #fb7185; font-weight: bold; }
+  .log-box .log-trade { color: #34d399; font-weight: bold; }
   .log-box .log-vram { color: #f59e0b; }
   .consensus-row { background: #222232; padding: 8px; border-radius: 6px; font-size: 11px; }
   .consensus-bar { height: 4px; background: #333344; border-radius: 2px; margin-top: 4px; overflow: hidden; }
@@ -340,7 +341,8 @@ async function loadScoreboard() {
         Population: <b>${r.avg_max_population}</b> avg peak<br>
         Leadership: <b>${r.total_chiefs_elected}</b> chiefs elected, <b>${r.total_chief_deaths}</b> died in office<br>
         Scouting: <b>${r.total_expeditions_succeeded}</b>/<b>${r.total_expeditions_launched}</b> expeditions found water<br>
-        Conflict: <b>${r.total_raids_won}</b> raids won, <b>${r.total_raids_lost}</b> lost, <b>${r.total_raids_defended}</b> defended
+        Conflict: <b>${r.total_raids_won}</b> raids won, <b>${r.total_raids_lost}</b> lost, <b>${r.total_raids_defended}</b> defended<br>
+        Diplomacy: <b>${r.total_trades_completed}</b> trades completed
       </div>
     </div>`).join("");
 }
@@ -808,6 +810,7 @@ function chronicleEntryClass(entry) {
   if (entry.includes("claimed lives")) return "log-hazard";
   if (entry.includes("wolf pack struck") || entry.includes("current pulled someone under")) return "log-hazard";
   if (entry.includes("raided ") || entry.includes("was repelled")) return "log-raid";
+  if (entry.includes("opened trade")) return "log-trade";
   if (entry.startsWith("VRAM WARNING")) return "log-vram";
   return "";
 }
@@ -820,6 +823,7 @@ function chronicleEntryIcon(entry) {
     case "log-decree": return "📜 ";
     case "log-hazard": return "⚠️ ";
     case "log-raid": return "⚔️ ";
+    case "log-trade": return "🤝 ";
     case "log-vram": return "🖥️ ";
     default: return "";
   }

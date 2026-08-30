@@ -74,6 +74,7 @@ class Tribe:
         self.raids_won = 0
         self.raids_lost = 0
         self.raids_defended = 0
+        self.trades_completed = 0
         # Credited to whichever chief is in power the moment each is first earned --
         # see Simulation._check_chief_trophies. [{"name", "chief", "cycle"}, ...]
         self.trophies: list[dict] = []

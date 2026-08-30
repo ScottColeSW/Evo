@@ -35,6 +35,7 @@ def record_tribe_result(tribe, cause: str, cycles_survived: int, path: str | Non
         "raids_won": tribe.raids_won,
         "raids_lost": tribe.raids_lost,
         "raids_defended": tribe.raids_defended,
+        "trades_completed": tribe.trades_completed,
     }
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
@@ -78,6 +79,7 @@ def summarize_by_model(results: list[dict]) -> list[dict]:
             "total_raids_won": sum(r["raids_won"] for r in runs),
             "total_raids_lost": sum(r["raids_lost"] for r in runs),
             "total_raids_defended": sum(r["raids_defended"] for r in runs),
+            "total_trades_completed": sum(r.get("trades_completed", 0) for r in runs),
         })
     rows.sort(key=lambda row: row["avg_cycles_survived"], reverse=True)
     return rows

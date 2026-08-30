@@ -244,6 +244,42 @@ def _raid(sim, tribe, biome, target):
         return f"attempted to raid {defender.name} and was repelled"
 
 
+def _trade(sim, tribe, biome, target):
+    """Attempt to open trade with a rival tribe found at target_vector -- the peaceful
+    counterpart to RAID, and the mechanical outlet for a cooperative/community-minded
+    chief philosophy that otherwise has nothing to act on. Both sides give up the same
+    fraction of what they're currently holding and receive the same fraction back --
+    a real, mutual exchange, unconditional once initiated (like RAID, this doesn't ask
+    the other side's permission; it's the tribe's own choice to reach out peacefully,
+    not something requiring the other model to also choose TRADE the same cycle,
+    which would make this nearly impossible to ever actually trigger)."""
+    tx, ty = target
+    partner = None
+    for other in sim.tribes.values():
+        if other.id == tribe.id or other.extinct:
+            continue
+        if (other.x - tx) ** 2 + (other.y - ty) ** 2 <= config.TRADE_PROXIMITY_RADIUS ** 2:
+            partner = other
+            break
+
+    if partner is None:
+        return "found no rival encampment there to trade with"
+
+    for resource in ("wood", "stone", "food", "water"):
+        tribe_amount = getattr(tribe, resource)
+        partner_amount = getattr(partner, resource)
+        tribe_gift = round(tribe_amount * config.TRADE_GIFT_FRACTION)
+        partner_gift = round(partner_amount * config.TRADE_GIFT_FRACTION)
+        setattr(tribe, resource, tribe_amount - tribe_gift + partner_gift)
+        setattr(partner, resource, partner_amount - partner_gift + tribe_gift)
+
+    tribe.trades_completed += 1
+    partner.trades_completed += 1
+    sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.TRADE_PRIDE_MAGNITUDE, config.TRADE_PRIDE_RADIUS)
+    sim.trauma.radiate_event_wave(partner.x, partner.y, config.TRADE_PRIDE_MAGNITUDE, config.TRADE_PRIDE_RADIUS)
+    return f"opened trade with {partner.name} -- goods exchanged both ways"
+
+
 ACTION_REGISTRY = {
     "GATHER_WOOD": _gather_wood,
     "GATHER_STONE": _gather_stone,
@@ -254,6 +290,7 @@ ACTION_REGISTRY = {
     "SCOUT": _scout,
     "RELOCATE": _relocate,
     "RAID": _raid,
+    "TRADE": _trade,
     "IDLE": _idle,
 }
 
@@ -274,5 +311,6 @@ ACTION_DESCRIPTIONS = {
     "SCOUT": "Dispatch an expedition toward target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home -- choosing SCOUT again while one is already out just checks on it, it doesn't send a second one.",
     "RELOCATE": "Move your whole tribe several tiles toward target_vector this cycle, possibly over several cycles for a far destination. Produces no resources while traveling and costs extra food and water for the effort.",
     "RAID": "Attempt to raid a rival tribe if one is near target_vector. A win steals some of their stockpile but still costs you people; a loss costs you more. Does nothing if no rival is there.",
+    "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. Does nothing if no rival is there.",
     "IDLE": "Do nothing this cycle.",
 }

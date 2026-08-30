@@ -163,7 +163,7 @@ def test_other_actions_never_move_the_tribe():
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     sim.tribes = {"tribe_0": tribe}
 
-    for action in ("GATHER_WOOD", "GATHER_STONE", "HUNT_DEER", "BUILD_FIRE", "CONSTRUCT_WALL", "RAID", "IDLE"):
+    for action in ("GATHER_WOOD", "GATHER_STONE", "HUNT_DEER", "BUILD_FIRE", "CONSTRUCT_WALL", "RAID", "TRADE", "IDLE"):
         ACTION_REGISTRY[action](sim, tribe, "plains", (80, 80))
         assert (tribe.x, tribe.y) == (50, 50), f"{action} should not move the tribe"
 
@@ -271,6 +271,59 @@ def test_raid_ignores_extinct_tribes_and_self():
     sim.tribes = {"tribe_0": attacker, "tribe_1": dead_rival}
 
     note = ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 51))
+
+    assert "no rival" in note
+
+
+def test_trade_with_no_rival_nearby_does_nothing():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+
+    note = ACTION_REGISTRY["TRADE"](sim, tribe, "plains", (10, 10))
+
+    assert "no rival" in note
+
+
+def test_trade_exchanges_resources_both_ways_with_no_loss_of_population():
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.wood, a.stone, a.food, a.water = 100, 0, 0, 0
+    b.wood, b.stone, b.food, b.water = 0, 100, 0, 0
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    note = ACTION_REGISTRY["TRADE"](sim, a, "plains", (51, 51))
+
+    assert "opened trade with Mountain Tribe" in note
+    # 15% of A's wood (100) moves to B, 15% of B's stone (100) moves to A
+    assert a.wood == 85
+    assert a.stone == 15
+    assert b.wood == 15
+    assert b.stone == 85
+    assert a.population == 8 and b.population == 8  # no cost, unlike a raid
+
+
+def test_trade_increments_both_sides_trade_counter():
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    ACTION_REGISTRY["TRADE"](sim, a, "plains", (51, 51))
+
+    assert a.trades_completed == 1
+    assert b.trades_completed == 1
+
+
+def test_trade_ignores_extinct_tribes_and_self():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    dead_rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    dead_rival.extinct = True
+    sim.tribes = {"tribe_0": tribe, "tribe_1": dead_rival}
+
+    note = ACTION_REGISTRY["TRADE"](sim, tribe, "plains", (51, 51))
 
     assert "no rival" in note
 

@@ -162,6 +162,17 @@ RAID_TRAUMA_RADIUS = 6
 RAID_PRIDE_MAGNITUDE = 0.4
 RAID_PRIDE_RADIUS = 5
 
+# Trade (backend/actions.py._trade): the peaceful counterpart to RAID, and the
+# mechanical outlet for a cooperative/community-minded chief philosophy
+# (leadership.py can already generate one, e.g. "prioritizes cooperation... believing
+# in sharing resources") that otherwise has nothing to act on. Both sides give up the
+# same fraction of what they're currently holding and receive the same fraction back
+# -- a real, mutual exchange, not a one-sided gift or a raid without the violence.
+TRADE_PROXIMITY_RADIUS = 3
+TRADE_GIFT_FRACTION = 0.15
+TRADE_PRIDE_MAGNITUDE = 0.3
+TRADE_PRIDE_RADIUS = 4
+
 # A tribe can only overhear another tribe's broadcast (and therefore only converge on
 # shared vocabulary with them) within this Euclidean distance -- previously broadcasts
 # were audible map-wide regardless of distance, which gave away free information and
