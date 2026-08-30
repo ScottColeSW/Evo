@@ -107,7 +107,7 @@ class Tribe:
 
     def to_dict(self) -> dict:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
-        survival_warning, _ = survival_bias_string(self.food, self.water)
+        survival_warning, _ = survival_bias_string(self.food, self.water, self.population)
         nxt = next_era(self.era)
         next_era_info = None
         if nxt is not None:
@@ -455,7 +455,7 @@ class Simulation:
         biome = self.world.biome(tribe.x, tribe.y)
         nearby = self.world.nearby_structures(tribe.x, tribe.y)
         ghost_bias = self.trauma.bias_string(tribe.x, tribe.y)
-        survival_bias, survival_critical = survival_bias_string(tribe.food, tribe.water)
+        survival_bias, survival_critical = survival_bias_string(tribe.food, tribe.water, tribe.population)
         memories = tribe.memory.recall(f"{biome} at {tribe.x},{tribe.y}")
         available_actions = sorted(unlocked_actions_through(tribe.era))
 

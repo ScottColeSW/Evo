@@ -160,12 +160,17 @@ MILESTONE_HUNT_SUCCESSES = 5
 BREED_FOOD_COST = 0
 BREED_WATER_COST = 0
 
-# Survival instinct thresholds (backend/instincts.py). "Critical" also raises inference
-# temperature, same as ancestral dread -- real panic, not just different wording.
-HUNGER_WARNING_THRESHOLD = 20
-HUNGER_CRITICAL_THRESHOLD = 5
-THIRST_WARNING_THRESHOLD = 15
-THIRST_CRITICAL_THRESHOLD = 5
+# Survival instinct thresholds (backend/instincts.py), expressed as cycles of upkeep
+# remaining rather than a flat stockpile number -- a flat "food <= 20" meant wildly
+# different things depending on population (20 cycles of buffer for a population-8
+# tribe paying 1/cycle, only 4 cycles for a population-50 tribe paying 5/cycle), so the
+# same number wasn't actually a consistent signal across tribe sizes. "Critical" also
+# raises inference temperature, same as ancestral dread -- real panic, not just
+# different wording.
+HUNGER_WARNING_CYCLES_LEFT = 4
+HUNGER_CRITICAL_CYCLES_LEFT = 1
+THIRST_WARNING_CYCLES_LEFT = 4
+THIRST_CRITICAL_CYCLES_LEFT = 1
 
 # What happens when upkeep can't be paid -- someone dies, and the ground remembers it.
 # Magnitude matches the other hazard deaths (wolf attack, drowning) so any death reliably
