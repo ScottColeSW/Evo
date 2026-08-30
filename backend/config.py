@@ -59,6 +59,18 @@ HUNT_HAZARD_CHANCE = 0.12
 HUNT_HAZARD_FOOD_LOSS = 10
 HUNT_HAZARD_POPULATION_LOSS = 1
 
+# HUNTING_PARTY: a multi-day alternative to instant HUNT_DEER, reusing the SCOUT
+# expedition state machine (see actions.py._hunting_party, simulation.py's
+# _advance_expedition) -- persist day over day until something is caught, rather than
+# one guaranteed-yield roll on the spot. The catch itself only becomes real food once
+# the party walks home (same "findings aren't real until you're home" rule as SCOUT),
+# so a tribe that's starving *right now* gets no relief from a hunt still in the field
+# -- and every extra day out is another HUNT_HAZARD_CHANCE roll, not just one.
+HUNTING_PARTY_MAX_DAYS = 4
+HUNTING_PARTY_CATCH_CHANCE_BASE = 0.35
+HUNTING_PARTY_CATCH_FOOD_MIN = 20
+HUNTING_PARTY_CATCH_FOOD_MAX = 35
+
 # A tribe previously had no way to be told wildlife was actually present -- the only
 # fact touching game was local resource scarcity (see below), which only ever reports
 # past depletion, never announces a live sighting before any hunting has happened

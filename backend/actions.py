@@ -127,11 +127,15 @@ _SCOUT_NAME_SYLLABLES = (
 )
 
 
-def _generate_scout(tribe, cycle: int) -> dict:
+def _generate_scout(tribe, cycle: int, base_days: int = None) -> dict:
     """A name plus a determination trait (0.0-1.0) that shifts this scout's own
     personal give-up point by up to EXPEDITION_DETERMINATION_DAY_VARIANCE days either
     side of the default -- some parties push a little harder, some turn back a little
-    sooner, rather than every expedition behaving identically."""
+    sooner, rather than every expedition behaving identically. `base_days` lets a
+    different expedition kind (e.g. HUNTING_PARTY) use its own default patience instead
+    of SCOUT's."""
+    if base_days is None:
+        base_days = config.EXPEDITION_MAX_DAYS
     seed = hash((tribe.id, cycle)) & 0xFFFFFFFF
     rng = random.Random(seed)
     name = "".join(rng.sample(_SCOUT_NAME_SYLLABLES, 2))
@@ -140,7 +144,7 @@ def _generate_scout(tribe, cycle: int) -> dict:
     return {
         "name": name,
         "determination": determination,
-        "max_days": config.EXPEDITION_MAX_DAYS + day_bonus,
+        "max_days": base_days + day_bonus,
     }
 
 
@@ -166,6 +170,7 @@ def _scout(sim, tribe, biome, target):
     ty = max(0, min(sim.world.grid_size - 1, ty))
     scout = _generate_scout(tribe, sim.cycle)
     tribe.expedition = {
+        "kind": "scout",
         "pos": [tribe.x, tribe.y],
         "origin": [tribe.x, tribe.y],
         "target": [tx, ty],
@@ -187,6 +192,47 @@ def _scout(sim, tribe, biome, target):
     }
     tribe.expeditions_launched += 1
     return f"scouts led by {scout['name']} depart camp to explore toward ({tx},{ty})"
+
+
+def _hunting_party(sim, tribe, biome, target):
+    """A multi-day alternative to instant HUNT_DEER, sharing the exact same expedition
+    slot and day-by-day travel machinery as SCOUT (a tribe can only ever have one party
+    out at a time, hunting or scouting). Persists day over day -- moving toward
+    target_vector, camping under its own supply -- rolling a fresh catch chance each
+    day (scaled by wherever they currently stand's own game yield) until something is
+    caught or config.HUNTING_PARTY_MAX_DAYS runs out, and carries the same wolf-pack
+    hazard risk as an instant hunt on every single day out, not just once.
+
+    The catch only becomes real food the moment the party walks back into camp -- same
+    "findings aren't real until you're home" rule as SCOUT. That's the deliberate,
+    testable tension: a tribe that's starving *right now* gets no relief from a hunt
+    that's still out in the field, no matter how promising, and every extra day spent
+    searching is another chance at a hazard, not a free wait."""
+    if tribe.expedition is not None:
+        exp = tribe.expedition
+        return f"{exp['lead_scout']}'s hunting party remains in the field (day {exp['day']}/{exp['max_days']}, {exp['phase']})"
+
+    tx, ty = target
+    tx = max(0, min(sim.world.grid_size - 1, tx))
+    ty = max(0, min(sim.world.grid_size - 1, ty))
+    scout = _generate_scout(tribe, sim.cycle, base_days=config.HUNTING_PARTY_MAX_DAYS)
+    tribe.expedition = {
+        "kind": "hunt",
+        "pos": [tribe.x, tribe.y],
+        "origin": [tribe.x, tribe.y],
+        "target": [tx, ty],
+        "day": 0,
+        "phase": "outbound",
+        "food_caught": 0,
+        "food_gathered": 0,
+        "water_gathered": 0,
+        "lead_scout": scout["name"],
+        "determination": scout["determination"],
+        "max_days": scout["max_days"],
+        "path": [[tribe.x, tribe.y]],
+    }
+    tribe.expeditions_launched += 1
+    return f"a hunting party led by {scout['name']} departs camp toward ({tx},{ty})"
 
 
 def _relocate(sim, tribe, biome, target):
@@ -311,6 +357,7 @@ ACTION_REGISTRY = {
     "BUILD_FIRE": _build_fire,
     "CONSTRUCT_WALL": _construct_wall,
     "SCOUT": _scout,
+    "HUNTING_PARTY": _hunting_party,
     "RELOCATE": _relocate,
     "RAID": _raid,
     "TRADE": _trade,
@@ -332,6 +379,7 @@ ACTION_DESCRIPTIONS = {
     "BUILD_FIRE": "Build a fire at your current tile using stored wood. Does nothing if one is already built here.",
     "CONSTRUCT_WALL": "Build a wall at your current tile using stored wood and stone. Does nothing if one is already built here.",
     "SCOUT": "Dispatch an expedition toward target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home -- choosing SCOUT again while one is already out just checks on it, it doesn't send a second one.",
+    "HUNTING_PARTY": "Send a hunting party toward target_vector -- shares the same expedition slot as SCOUT, so only one can be in the field at a time. They travel and hunt on their own supply for up to several days, facing the same wolf-pack risk as an instant hunt on every day out, until they catch something or give up. Any food caught only becomes real, usable food once they've walked all the way home -- a hunt still in the field does nothing for hunger right now, no matter how promising.",
     "RELOCATE": "Move your whole tribe several tiles toward target_vector this cycle, possibly over several cycles for a far destination. Produces no resources while traveling and costs extra food and water for the effort.",
     "RAID": "Attempt to raid a rival tribe if one is near target_vector. A win steals some of their stockpile but still costs you people; a loss costs you more. Does nothing if no rival is there.",
     "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. Does nothing if no rival is there.",

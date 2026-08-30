@@ -363,3 +363,56 @@ def test_scout_while_already_out_does_not_launch_a_second_expedition():
 
     assert tribe.expedition is first_expedition  # unchanged, not replaced
     assert "field" in note
+
+
+def test_hunting_party_does_not_move_the_tribe_but_launches_an_expedition():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    note = ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (10, 10))
+
+    assert (tribe.x, tribe.y) == (50, 50)
+    assert tribe.expedition is not None
+    assert tribe.expedition["kind"] == "hunt"
+    assert tribe.expedition["target"] == [10, 10]
+    assert tribe.expedition["day"] == 0
+    assert tribe.expedition["phase"] == "outbound"
+    assert tribe.expedition["food_caught"] == 0
+    assert "depart" in note
+
+
+def test_hunting_party_launch_uses_its_own_max_days_baseline():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (10, 10))
+
+    span = config.EXPEDITION_DETERMINATION_DAY_VARIANCE
+    assert config.HUNTING_PARTY_MAX_DAYS - span <= tribe.expedition["max_days"] <= config.HUNTING_PARTY_MAX_DAYS + span
+
+
+def test_hunting_party_while_already_out_does_not_launch_a_second_expedition():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (10, 10))
+    first_expedition = tribe.expedition
+
+    note = ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (80, 80))
+
+    assert tribe.expedition is first_expedition
+    assert "field" in note
+
+
+def test_scout_while_a_hunting_party_is_out_does_not_launch_over_it():
+    """Hunting and scouting share the same single expedition slot -- a tribe can only
+    have one party in the field at a time, whichever kind it is."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (10, 10))
+    hunting_expedition = tribe.expedition
+
+    ACTION_REGISTRY["SCOUT"](sim, tribe, "forest", (80, 80))
+
+    assert tribe.expedition is hunting_expedition

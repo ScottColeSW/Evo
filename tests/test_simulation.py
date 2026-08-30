@@ -409,6 +409,100 @@ def test_expedition_arrival_home_empty_handed_clears_state_without_a_water_memor
     assert any("empty-handed" in entry for entry in tribe.history)
 
 
+def test_hunting_party_catches_something_and_heads_home():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 80, 38, "#c084fc")  # forest, game=1.0
+    tribe.expedition = {
+        "kind": "hunt", "pos": [80, 38], "origin": [80, 38], "target": [80, 38],
+        "day": 0, "phase": "outbound", "food_caught": 0,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
+    }
+
+    with mock.patch("backend.simulation.random.random", side_effect=[0.99, 0.0]):  # miss hazard, hit catch
+        sim._advance_expedition(tribe)
+
+    assert tribe.expedition["phase"] == "returning"
+    assert tribe.expedition["food_caught"] > 0
+    assert any("made a catch" in entry for entry in tribe.history)
+
+
+def test_hunting_party_hazard_ends_the_hunt_and_costs_population():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 80, 38, "#c084fc")
+    tribe.population = 10
+    tribe.expedition = {
+        "kind": "hunt", "pos": [80, 38], "origin": [80, 38], "target": [80, 38],
+        "day": 0, "phase": "outbound", "food_caught": 0,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
+    }
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):  # hazard roll checked first
+        sim._advance_expedition(tribe)
+
+    assert tribe.expedition["phase"] == "returning"
+    assert tribe.expedition["food_caught"] == 0
+    assert tribe.population == 9
+    assert any("wolf pack struck" in entry for entry in tribe.history)
+
+
+def test_hunting_party_gives_up_after_max_days_without_success():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 80, 38, "#c084fc")
+    tribe.expedition = {
+        "kind": "hunt", "pos": [80, 38], "origin": [80, 38], "target": [80, 38],
+        "day": 4, "phase": "outbound", "food_caught": 0,  # already at max_days
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
+    }
+
+    with mock.patch("backend.simulation.random.random", return_value=0.99):  # no hazard, no catch
+        sim._advance_expedition(tribe)
+
+    assert tribe.expedition["phase"] == "returning"
+    assert tribe.expedition["food_caught"] == 0
+    assert any("calls off the hunt" in entry for entry in tribe.history)
+
+
+def test_hunting_party_arrival_home_delivers_caught_food_and_clears_state():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 10
+    tribe.expedition = {
+        "kind": "hunt", "pos": [50, 50], "origin": [50, 50], "target": [50, 50],
+        "day": 2, "phase": "returning", "food_caught": 25,
+        "food_gathered": 7, "water_gathered": 5,
+        "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
+    }
+
+    sim._advance_expedition(tribe)
+
+    expected_food = 10 + 25 + 7 + config.EXPEDITION_RETURN_DAILY_FOOD
+    assert tribe.food == expected_food
+    assert tribe.expedition is None
+    assert any("25 food caught" in entry for entry in tribe.history)
+
+
+def test_hunting_party_arrival_home_empty_handed_still_delivers_forage_and_clears_state():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 10
+    tribe.expedition = {
+        "kind": "hunt", "pos": [50, 50], "origin": [50, 50], "target": [50, 50],
+        "day": 4, "phase": "returning", "food_caught": 0,
+        "food_gathered": 7, "water_gathered": 5,
+        "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
+    }
+
+    sim._advance_expedition(tribe)
+
+    assert tribe.expedition is None
+    assert any("nothing caught, though not empty-handed" in entry for entry in tribe.history)
+
+
 def test_expedition_records_every_tile_it_walks_as_a_breadcrumb_path():
     """The persistent world-trail mechanic (Landscape.trails) only lights up once a
     route gets reused, so a single fresh journey barely shows anything even while it's

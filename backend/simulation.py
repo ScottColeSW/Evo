@@ -500,8 +500,11 @@ class Simulation:
             exp["food_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_FOOD
             exp["water_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_WATER
             reached_biome = biome_at(nx, ny)
-
             scout = exp["lead_scout"]
+
+            if exp.get("kind") == "hunt":
+                self._advance_hunting_party_outbound(tribe, exp, reached_biome, scout)
+                return
             if reached_biome == "river":
                 exp["found"] = [nx, ny]
                 exp["phase"] = "returning"
@@ -550,6 +553,11 @@ class Simulation:
                 forage_note = f"bringing back {exp['food_gathered']} food and {exp['water_gathered']} water foraged along the way"
                 recipient = f"Chief {tribe.chief_name}" if tribe.chief_name else "the tribe"
 
+                if exp.get("kind") == "hunt":
+                    self._report_hunting_party_home(tribe, exp, scout, forage_note, recipient)
+                    tribe.expedition = None
+                    return
+
                 if exp["found"]:
                     fx, fy = exp["found"]
                     tribe.expeditions_succeeded += 1
@@ -573,6 +581,48 @@ class Simulation:
                         f"nothing new found, though not empty-handed -- {forage_note}"
                     )
                 tribe.expedition = None
+
+    def _advance_hunting_party_outbound(self, tribe: Tribe, exp: dict, current_biome: str, scout: str) -> None:
+        """One outbound day for a HUNTING_PARTY expedition (see actions.py._hunting_party).
+        Every day out is its own roll of the same wolf-pack hazard an instant hunt
+        carries, and its own chance of a catch scaled by wherever the party currently
+        stands' real game yield -- a party camped on a mountain or ocean tile is no
+        likelier to succeed there than an instant hunt would be. A hazard or a catch
+        both end the search immediately; the catch itself still isn't real food until
+        the party makes it all the way home (see _report_hunting_party_home)."""
+        if random.random() < config.HUNT_HAZARD_CHANCE:
+            self._lose_population(tribe, config.HUNT_HAZARD_POPULATION_LOSS, cause="wolf_attack")
+            exp["phase"] = "returning"
+            tribe.history.append(f"a wolf pack struck {scout}'s hunting party -- the survivors turn back")
+            return
+
+        game_multiplier = BIOME_YIELD_MULTIPLIER["game"].get(current_biome, 0.0)
+        if game_multiplier > 0 and random.random() < config.HUNTING_PARTY_CATCH_CHANCE_BASE * game_multiplier:
+            exp["food_caught"] = random.randint(config.HUNTING_PARTY_CATCH_FOOD_MIN, config.HUNTING_PARTY_CATCH_FOOD_MAX)
+            exp["phase"] = "returning"
+            tribe.history.append(f"{scout}'s hunting party made a catch and is heading home")
+            return
+
+        if exp["day"] >= exp["max_days"]:
+            exp["phase"] = "returning"
+            tribe.history.append(
+                f"{scout} calls off the hunt after {exp['max_days']} days with nothing caught -- the party turns back"
+            )
+
+    def _report_hunting_party_home(self, tribe: Tribe, exp: dict, scout: str, forage_note: str, recipient: str) -> None:
+        caught = exp.get("food_caught", 0)
+        if caught:
+            tribe.food += caught
+            tribe.expeditions_succeeded += 1
+            tribe.history.append(
+                f"{scout}'s hunting party is home and gives {recipient} a full report: "
+                f"{caught} food caught, {forage_note}"
+            )
+        else:
+            tribe.history.append(
+                f"{scout}'s hunting party is home and gives {recipient} a full report: "
+                f"nothing caught, though not empty-handed -- {forage_note}"
+            )
 
     def _apply_action(self, tribe: Tribe, action: str, biome: str, target: tuple[int, int]) -> str | None:
         handler = ACTION_REGISTRY.get(action, ACTION_REGISTRY["IDLE"])
