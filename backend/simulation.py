@@ -6,7 +6,7 @@ from . import config, physics
 from .actions import ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_LABEL, _eligible_breeding_pair
 from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
-from .reflection import reflect_on_history
+from .reflection import AWARD_CATEGORIES, reflect_on_history
 from .eras import ERAS, era_index, next_era, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
@@ -96,6 +96,10 @@ class Tribe:
         # See Simulation._check_for_celebration -- very negative so a tribe's very
         # first celebration isn't blocked by a cooldown it never actually used yet.
         self.last_celebration_cycle: int = -config.CELEBRATION_COOLDOWN_CYCLES
+        # STUB, earmarked -- see backend/reflection.py's AWARD_CATEGORIES docstring.
+        # Honors a chief has personally proposed via the night cycle; nothing yet
+        # checks a real counter and actually hands one out to anyone.
+        self.custom_awards: list[dict] = []
         # A fact for the next chief election to reason about, set when something more
         # specific than "just founded" is true (currently only a raid-conquest merge,
         # see Simulation._merge_tribes) -- consumed and cleared by _install_chief so an
@@ -142,6 +146,7 @@ class Tribe:
             "chief_decree": self.chief_decree,
             "trophies": self.trophies,
             "lineage": self.lineage,
+            "custom_awards": self.custom_awards,
             "next_era": next_era_info,
             "expeditions": [
                 {
@@ -280,13 +285,26 @@ class Simulation:
             self.client, config.NIGHT_CYCLE_REVIEWER_MODEL, tribe.name,
             tribe.chief_philosophy, recent_events,
         )
-        if not result.get("changed"):
-            return
-        old_philosophy = tribe.chief_philosophy
-        tribe.chief_philosophy = result.get("revised_philosophy", old_philosophy)
-        reasoning = result.get("reasoning", "")
-        entry = f"Reflecting on recent events, Chief {tribe.chief_name} reconsiders the tribe's philosophy: {tribe.chief_philosophy}"
-        tribe.history.append(f"{entry} ({reasoning})." if reasoning else f"{entry}.")
+        if result.get("changed"):
+            old_philosophy = tribe.chief_philosophy
+            tribe.chief_philosophy = result.get("revised_philosophy", old_philosophy)
+            reasoning = result.get("reasoning", "")
+            entry = f"Reflecting on recent events, Chief {tribe.chief_name} reconsiders the tribe's philosophy: {tribe.chief_philosophy}"
+            tribe.history.append(f"{entry} ({reasoning})." if reasoning else f"{entry}.")
+
+        # STUB, earmarked -- see backend/reflection.py's AWARD_CATEGORIES docstring.
+        # Captures the chief's own proposed honor; nothing yet checks a real counter
+        # and actually hands it out.
+        proposed = result.get("proposed_award")
+        if proposed and proposed.get("name") and proposed.get("category") in AWARD_CATEGORIES:
+            if not any(a["name"] == proposed["name"] for a in tribe.custom_awards):
+                tribe.custom_awards.append({
+                    "name": proposed["name"], "category": proposed["category"], "cycle": self.cycle,
+                })
+                tribe.history.append(
+                    f"Chief {tribe.chief_name} establishes a new honor, the '{proposed['name']}', "
+                    f"for excellence in {proposed['category']} -- not yet awarded to anyone."
+                )
 
     async def add_tribe(self, name: str, model: str, x: int | None = None, y: int | None = None) -> str | None:
         """Injects a new tribe into an already-running simulation. Returns an error

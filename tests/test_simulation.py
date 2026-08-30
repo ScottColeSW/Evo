@@ -865,6 +865,46 @@ async def test_night_cycle_passes_the_tribes_own_recent_history_and_philosophy()
     assert "starvation claimed lives" in captured["recent_events"]
 
 
+@run_async
+async def test_night_cycle_captures_a_valid_proposed_award():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events):
+        return {
+            "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
+            "proposed_award": {"name": "Keeper of the Trails", "category": "scouting"},
+        }
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert tribe.custom_awards == [{"name": "Keeper of the Trails", "category": "scouting", "cycle": sim.cycle}]
+    assert any("establishes a new honor" in entry and "Keeper of the Trails" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_night_cycle_ignores_a_proposed_award_outside_the_real_categories():
+    """STUB constraint: the chief can name anything, but the category has to be one
+    this simulation actually measures (see reflection.py's AWARD_CATEGORIES) -- an
+    invented category the simulation can't honestly judge is dropped, not stored."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events):
+        return {
+            "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
+            "proposed_award": {"name": "Master of Dreams", "category": "dreaming"},
+        }
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert tribe.custom_awards == []
+
+
 def test_well_fed_and_growing_legacy_trophies_have_their_own_thresholds():
     from backend import config
 
