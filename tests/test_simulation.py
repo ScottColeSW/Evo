@@ -938,7 +938,7 @@ async def test_install_chief_skips_water_fact_when_already_on_water():
     tribe.x, tribe.y = 40, 37  # on the river
     captured = {}
 
-    async def fake_elect(client, model, name, water_needed=False):
+    async def fake_elect(client, model, name, water_needed=False, context=""):
         captured["water_needed"] = water_needed
         return {"chief_name": "Ashgar", "guiding_philosophy": "x", "water_decision": {"decreed": False, "reason": ""}}
 
@@ -958,7 +958,7 @@ async def test_install_chief_does_not_treat_ocean_as_solving_the_water_need():
     tribe.x, tribe.y = 95, 50  # ocean, not river
     captured = {}
 
-    async def fake_elect(client, model, name, water_needed=False):
+    async def fake_elect(client, model, name, water_needed=False, context=""):
         captured["water_needed"] = water_needed
         return {"chief_name": "Ashgar", "guiding_philosophy": "x", "water_decision": {"decreed": False, "reason": ""}}
 

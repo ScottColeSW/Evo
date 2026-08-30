@@ -154,13 +154,19 @@ EXTINCTION_TRAUMA_RADIUS = 10
 # least as old as inter-tribal cooperation, not a later "advanced" capability.
 RAID_PROXIMITY_RADIUS = 3
 RAID_STEAL_FRACTION = 0.3
-RAID_DEFENDER_POPULATION_LOSS = 2
 RAID_ATTACKER_POPULATION_LOSS_ON_WIN = 1
 RAID_ATTACKER_POPULATION_LOSS_ON_LOSS = 2
 RAID_TRAUMA_MAGNITUDE = -0.5
 RAID_TRAUMA_RADIUS = 6
 RAID_PRIDE_MAGNITUDE = 0.4
 RAID_PRIDE_RADIUS = 5
+
+# Every raid win transfers a slice of the defender's current population to the
+# attacker (replacing the old flat, one-sided population loss) -- captured or
+# defecting survivors, not just casualties. Once enough raids have driven a defender's
+# population to zero this way, Simulation._merge_tribes turns the winner into a new,
+# more advanced entity instead of just leaving a hole where the loser was.
+RAID_POPULATION_ABSORB_FRACTION = 0.2
 
 # Trade (backend/actions.py._trade): the peaceful counterpart to RAID, and the
 # mechanical outlet for a cooperative/community-minded chief philosophy

@@ -17,12 +17,20 @@ confirmed nearby (water_needed=False) or not (water_needed=True); if not, the ne
 chief can decree that finding one is a priority, which still just means "the tribe should
 consider dispatching scouts" -- the tribe's own reasoning still picks SCOUT (or doesn't)
 each cycle.
+
+A leadership contest can also be told an optional `context` fact -- currently the only
+one is Simulation._merge_tribes setting it when a tribe was just formed by absorbing a
+raid-conquered rival, so the election isn't indistinguishable from an ordinary founding.
+The chief still decides for itself what that fact means (unify generously, rule the
+absorbed people harshly, something else); the simulation only states what happened.
 """
 
 from .ollama_client import OllamaClient
 
 
-async def elect_chief(client: OllamaClient, model: str, tribe_name: str, water_needed: bool = False) -> dict:
+async def elect_chief(
+    client: OllamaClient, model: str, tribe_name: str, water_needed: bool = False, context: str = "",
+) -> dict:
     water_context = ""
     if water_needed:
         water_context = (
@@ -35,8 +43,14 @@ async def elect_chief(client: OllamaClient, model: str, tribe_name: str, water_n
             "knows that yet."
         )
 
-    prompt = f"""You are narrating the founding leadership contest for the {tribe_name} \
-tribe, a small group of survivors at the dawn of their society.
+    situation = (
+        f"You are narrating a leadership contest for the {tribe_name} tribe. {context}"
+        if context
+        else f"You are narrating the founding leadership contest for the {tribe_name} "
+        "tribe, a small group of survivors at the dawn of their society."
+    )
+
+    prompt = f"""{situation}
 
 Imagine two or three individuals within this tribe competing for the role of chief through \
 whatever trial your culture would use -- a test of strength, wisdom, cunning, endurance, or \

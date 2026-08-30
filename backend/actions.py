@@ -231,11 +231,28 @@ def _raid(sim, tribe, biome, target):
             setattr(defender, resource, getattr(defender, resource) - stolen)
             setattr(tribe, resource, getattr(tribe, resource) + stolen)
         tribe.raids_won += 1
-        sim._lose_population(defender, config.RAID_DEFENDER_POPULATION_LOSS, cause="raided")
+
+        # Population moves rather than just vanishing -- captured or defecting
+        # survivors, not pointless casualties. Enough raids like this eventually
+        # absorb the defender entirely (see Simulation._merge_tribes) instead of a
+        # flat, repeatable loss with no benefit to the winner beyond stolen goods.
+        absorbed = min(defender.population, max(1, round(defender.population * config.RAID_POPULATION_ABSORB_FRACTION)))
+        defender.population -= absorbed
+        tribe.population += absorbed
+        tribe.max_population = max(tribe.max_population, tribe.population)
+
         sim._lose_population(tribe, config.RAID_ATTACKER_POPULATION_LOSS_ON_WIN, cause="raid_losses")
         sim.trauma.radiate_event_wave(defender.x, defender.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
         sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
-        return f"raided {defender.name} and seized supplies"
+
+        if defender.population <= 0:
+            old_name = tribe.name
+            defender_name = defender.name
+            new_name = sim._merge_tribes(tribe, defender)
+            return f"raided {defender_name}, fully absorbing its survivors -- {old_name} becomes {new_name}!"
+
+        defender.history.append(f"{tribe.name}'s raid carried off {absorbed} of {defender.name}'s people")
+        return f"raided {defender.name}, seized supplies, and absorbed {absorbed} survivors"
     else:
         tribe.raids_lost += 1
         defender.raids_defended += 1

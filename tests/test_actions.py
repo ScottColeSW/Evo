@@ -226,7 +226,9 @@ def test_raid_with_no_rival_nearby_does_nothing():
     assert tribe.population == 8
 
 
-def test_raid_win_steals_resources_and_costs_both_sides_population():
+def test_raid_win_steals_resources_and_absorbs_some_of_the_defenders_population():
+    """Population moves rather than just vanishing on a raid win -- captured or
+    defecting survivors, not a pointless flat loss with no benefit to the winner."""
     from unittest import mock
 
     sim = _bare_simulation()
@@ -241,8 +243,31 @@ def test_raid_win_steals_resources_and_costs_both_sides_population():
     assert "raided Mountain Tribe" in note
     assert attacker.wood == 56  # 50 starting + round(20 * 0.3) stolen
     assert defender.wood == 14  # 20 - 6
-    assert defender.population == 6  # 8 - RAID_DEFENDER_POPULATION_LOSS (2)
-    assert attacker.population == 7  # 8 - RAID_ATTACKER_POPULATION_LOSS_ON_WIN (1)
+    assert defender.population == 6  # 8 - round(8 * RAID_POPULATION_ABSORB_FRACTION (0.2)) = 8 - 2
+    assert attacker.population == 9  # 8 + 2 absorbed - 1 (RAID_ATTACKER_POPULATION_LOSS_ON_WIN)
+
+
+def test_raid_that_reduces_defender_to_zero_population_merges_into_the_attacker():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    sim.cycle = 5
+    attacker = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    defender.population = 1  # a single raid at 20% (rounded up to a minimum of 1) finishes them
+    defender.era = "bronze_age"
+    defender.wood, defender.stone, defender.food, defender.water = 5, 5, 5, 5
+    sim.tribes = {"tribe_0": attacker, "tribe_1": defender}
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        note = ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 51))
+
+    assert note == "raided Mountain Tribe, fully absorbing its survivors -- Forest Tribe becomes Forest Tribe (Advanced)!"
+    assert attacker.name == "Forest Tribe (Advanced)"
+    assert attacker.era == "bronze_age"  # inherits the higher of the two eras
+    assert attacker.chief_name == ""  # chief-less, awaiting the next cycle's succession
+    assert "tribe_1" not in sim.tribes
+    assert defender.extinct is True
 
 
 def test_raid_loss_costs_the_attacker_without_stealing_anything():

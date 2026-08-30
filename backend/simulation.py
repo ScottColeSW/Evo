@@ -5,7 +5,7 @@ import random
 from . import config, physics
 from .actions import ACTION_REGISTRY
 from .ancestral_matrix import AncestralTraumaMatrix
-from .eras import ERAS, next_era, unlocked_actions_through
+from .eras import ERAS, era_index, next_era, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
 from .instincts import survival_bias_string
@@ -78,6 +78,11 @@ class Tribe:
         # Credited to whichever chief is in power the moment each is first earned --
         # see Simulation._check_chief_trophies. [{"name", "chief", "cycle"}, ...]
         self.trophies: list[dict] = []
+        # A fact for the next chief election to reason about, set when something more
+        # specific than "just founded" is true (currently only a raid-conquest merge,
+        # see Simulation._merge_tribes) -- consumed and cleared by _install_chief so an
+        # election it's informing isn't indistinguishable from an ordinary founding.
+        self.pending_chief_context: str = ""
         # None when no expedition is out; otherwise {"pos", "origin", "target", "day",
         # "phase" ("outbound"/"returning"), "found", "terrain_report"} -- see
         # actions.py._scout and Simulation._advance_expeditions.
@@ -195,8 +200,10 @@ class Simulation:
         water, so ocean doesn't count as already solved. What else the ocean might be
         good for is left entirely open."""
         water_needed = self.world.biome(tribe.x, tribe.y) != "river"
+        context = tribe.pending_chief_context
+        tribe.pending_chief_context = ""  # consumed once, whether or not this election uses it
 
-        result = await elect_chief(self.client, tribe.model, tribe.name, water_needed)
+        result = await elect_chief(self.client, tribe.model, tribe.name, water_needed, context)
         tribe.chief_name = result.get("chief_name", "")
         tribe.chief_philosophy = result.get("guiding_philosophy", "")
         victory = result.get("victory_method", "")
@@ -650,3 +657,43 @@ class Simulation:
             self._award_trophy(tribe, "Well Fed")
         if tribe.population > 8:
             self._award_trophy(tribe, "Growing Legacy")
+
+    def _merge_tribes(self, attacker: Tribe, defender: Tribe) -> str:
+        """A defender's population has been driven to zero by accumulated raid
+        losses (actions.py._raid transfers population rather than just destroying
+        it) -- their survivors, resources, and remaining history become a new, more
+        advanced entity instead of simply disappearing into extinction. Mutates
+        `attacker` in place (rather than constructing a fresh Tribe and swapping it
+        into self.tribes) so every reference the calling turn already holds --
+        Simulation._apply_turn keeps mutating `tribe` after this action handler
+        returns -- keeps pointing at the right object. Chief-less on completion; the
+        same per-cycle succession check that already handles a fallen chief's
+        replacement (see step()) picks this up automatically next cycle, exactly like
+        a founding election -- no special-casing needed, and it still runs the
+        model's own reasoning about where reliable water actually is."""
+        old_name = attacker.name
+        attacker.name = f"{old_name} (Advanced)"
+        attacker.wood += defender.wood
+        attacker.stone += defender.stone
+        attacker.food += defender.food
+        attacker.water += defender.water
+        attacker.population += defender.population
+        defender.population = 0
+        attacker.max_population = max(attacker.max_population, attacker.population)
+        if era_index(defender.era) > era_index(attacker.era):
+            attacker.era = defender.era
+        attacker.chief_name = ""
+        attacker.chief_philosophy = ""
+        attacker.chief_decree = ""
+        attacker.pending_chief_context = (
+            f"This tribe was just formed when {old_name} triumphed in battle over {defender.name} "
+            f"and absorbed their surviving population. The new chief inherits a people freshly "
+            f"unified by conquest, not a tribe with a long shared history."
+        )
+        defender.extinct = True
+        record_tribe_result(defender, cause="absorbed", cycles_survived=self.cycle)
+        attacker.history.append(
+            f"{old_name} has fully absorbed {defender.name}'s survivors and become {attacker.name}!"
+        )
+        del self.tribes[defender.id]
+        return attacker.name
