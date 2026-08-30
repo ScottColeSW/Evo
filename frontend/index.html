@@ -573,36 +573,65 @@ function drawTribeIndividuals(tribeId, t) {
 // home and a small hollow marker at their current field position, distinct from the solid
 // filled dots of the main tribe, so their own progress/survival is something you can watch
 // too, not just an invisible timer.
+// Tracks how much of each tribe's expedition breadcrumb line has been "revealed" so
+// far, per tribe id -- the backend only appends a new path point once per simulation
+// cycle (every few seconds of real inference time), so drawing the full line the
+// instant a new point arrives made it pop into existence rather than draw itself in.
+// Also lets a brand-new expedition's first point snap in immediately instead of
+// playing a pointless reveal animation from nothing.
+const expeditionPathReveal = {};
+const PATH_REVEAL_FRAMES = 24;
+
 function drawExpedition(t, tribeId) {
   const fx = t.expedition.pos[0] * TILE + TILE / 2, fy = t.expedition.pos[1] * TILE + TILE / 2;
+  const path = t.expedition.path || [];
+
+  // Update the reveal tracker for this tribe's expedition before drawing.
+  let reveal = expeditionPathReveal[tribeId];
+  if (!reveal || path.length !== reveal.length) {
+    const grewByOne = reveal && path.length === reveal.length + 1;
+    reveal = { length: path.length, revealFrame: grewByOne ? animFrame : animFrame - PATH_REVEAL_FRAMES };
+    expeditionPathReveal[tribeId] = reveal;
+  }
 
   // The real walked route (backend/actions.py._scout's "path" list) -- the persistent
   // world-trail mechanic only lights up once a route gets reused, so a single fresh
   // journey barely showed anything even while actively happening. This is this one
-  // party's own breadcrumb line, always visible for as long as they're out.
-  const path = t.expedition.path || [];
+  // party's own breadcrumb line, always visible for as long as they're out. The final
+  // segment eases in toward the new point instead of snapping there instantly.
   if (path.length > 1) {
+    const revealFrac = Math.min(1, (animFrame - reveal.revealFrame) / PATH_REVEAL_FRAMES);
+    const fixedCount = path.length - 1; // all segments except the newest are drawn in full
     ctx.save();
     ctx.strokeStyle = t.color;
     ctx.globalAlpha = 0.6;
     ctx.setLineDash([3, 3]);
     ctx.lineWidth = Math.max(1, TILE * 0.12);
     ctx.beginPath();
-    path.forEach(([px, py], i) => {
+    for (let i = 0; i < fixedCount; i++) {
+      const [px, py] = path[i];
       const x = px * TILE + TILE / 2, y = py * TILE + TILE / 2;
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
+    }
+    const [lastX, lastY] = path[path.length - 2];
+    const [newX, newY] = path[path.length - 1];
+    const easedX = lastX + (newX - lastX) * revealFrac;
+    const easedY = lastY + (newY - lastY) * revealFrac;
+    ctx.lineTo(easedX * TILE + TILE / 2, easedY * TILE + TILE / 2);
     ctx.stroke();
     ctx.restore();
   }
 
   // A small wandering cluster at the party's current field position, same Lissajous
   // technique as the main tribe's own individuals (drawTribeIndividuals) -- a single
-  // static marker only ever jumped once per simulation cycle (every few seconds of
-  // real inference time), which read as absent rather than "out there moving."
+  // static marker only ever jumped once per simulation cycle, which read as absent
+  // rather than "out there moving." Drawn as hollow rings, not filled dots, so they
+  // read as a distinct away party rather than being mistaken for the main tribe's own
+  // (visually similar, same-colored) cluster back at camp.
   const scoutSeed = stringSeed(`${tribeId}:expedition:${t.expedition.lead_scout}`);
   const clusterRadius = Math.min(TILE * 1.1, 10);
-  ctx.fillStyle = t.color;
+  ctx.strokeStyle = t.color;
+  ctx.lineWidth = Math.max(1, TILE * 0.14);
   for (let i = 0; i < 3; i++) {
     const seed = hashUnit(scoutSeed + i * 61.7);
     const phaseA = seed * Math.PI * 2;
@@ -613,7 +642,7 @@ function drawExpedition(t, tribeId) {
     const dy = Math.sin(animFrame * speedB + phaseB) * clusterRadius;
     ctx.beginPath();
     ctx.arc(fx + dx, fy + dy, Math.max(1.2, TILE * 0.18), 0, Math.PI * 2);
-    ctx.fill();
+    ctx.stroke();
   }
   const r = clusterRadius;
 
