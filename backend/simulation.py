@@ -338,7 +338,14 @@ class Simulation:
                                  memories: list[dict], available_actions: list[str]) -> list[str]:
         visible_entities = [f"structure:{s['type']}@({s['x']},{s['y']})" for s in nearby]
         visible_entities += [f"memory(cycle {m['cycle']}): {m['text']}" for m in memories]
-        visible_entities += [f"taboo: {t}" for t in tribe.memory.taboos[:3]]
+        # taboos accumulates for a tribe's whole lifetime (see TribeMemory.consolidate,
+        # which can add up to 3 more every MEMORY_CONSOLIDATE_EVERY_N_CYCLES) -- slicing
+        # the first 3 meant that once any 3 existed, nothing learned later ever surfaced
+        # again, however important (e.g. a hard-won confirmed water location, discovered
+        # after an early wolf-attack warning already claimed those 3 slots). The most
+        # recently learned facts are shown instead, so new knowledge isn't permanently
+        # buried by old.
+        visible_entities += [f"taboo: {t}" for t in tribe.memory.taboos[-3:]]
         # Factual telemetry about this exact tile, not a suggestion to move -- what the
         # tribe does with the information is entirely its own reasoning.
         for resource in ("wood", "stone", "water", "game"):

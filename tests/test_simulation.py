@@ -101,6 +101,22 @@ def test_broadcast_not_overheard_beyond_hearing_radius():
     assert "overheard" not in request["prompt"]
 
 
+def test_visible_taboos_show_the_most_recent_not_the_oldest():
+    """Regression test: taboos accumulates for a tribe's whole lifetime, and slicing
+    the first 3 meant a fact learned later (e.g. a hard-won water location) could never
+    surface again once 3 earlier ones already existed."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.memory.taboos = ["oldest taboo", "second taboo", "third taboo", "newest taboo"]
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "taboo: newest taboo" in request["prompt"]
+    assert "taboo: third taboo" in request["prompt"]
+    assert "taboo: second taboo" in request["prompt"]
+    assert "taboo: oldest taboo" not in request["prompt"]
+
+
 def test_wildlife_sighting_appears_when_roll_succeeds_in_game_rich_terrain():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # default spawn is forest
     tribe = sim.tribes["tribe_0"]
