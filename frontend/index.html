@@ -497,6 +497,9 @@ const OCEAN_X_START = 90, MOUNTAIN_X_END = 30, MOUNTAIN_Y_END = 35, RIVER_SOURCE
 // A tributary forking off the river toward the lower-middle of the map, ending in a
 // lake -- mirrors world.py's LAKE_CENTER/_is_lake exactly.
 const LAKE_TRIBUTARY_BRANCH_X = 35, LAKE_CENTER = [25, 65], LAKE_RADIUS = 7, LAKE_TRIBUTARY_HALF_WIDTH = 2;
+// The coast is wavy, not a straight line -- mirrors world.py's _coast_boundary_x/
+// _coast_is_headland exactly.
+const COAST_BAND_WIDTH = 3;
 
 function riverCenterY(x) {
   const span = OCEAN_X_START - RIVER_SOURCE_X;
@@ -520,11 +523,23 @@ function isLake(x, y) {
   return Math.hypot(x - projX, y - projY) <= LAKE_TRIBUTARY_HALF_WIDTH;
 }
 
+function coastBoundaryX(y) {
+  return OCEAN_X_START + 5 * Math.sin(y * 0.08) + 2 * Math.sin(y * 0.23 + 1.7);
+}
+
+function coastIsHeadland(y) {
+  const step = 1.0;
+  const curvature = coastBoundaryX(y + step) - 2 * coastBoundaryX(y) + coastBoundaryX(y - step);
+  return curvature < 0;
+}
+
 // Mirrors backend/world.py's biome_at exactly -- one source of truth for both the
 // terrain color and which biome-relevant flora/fauna decoration a tile can show.
 function biomeNameAt(x, y) {
-  if (x >= OCEAN_X_START) return "ocean";
   if (isRiver(x, y)) return "river";
+  const boundary = coastBoundaryX(y);
+  if (x >= boundary) return "ocean";
+  if (boundary - x <= COAST_BAND_WIDTH) return coastIsHeadland(y) ? "cliffs" : "shoals";
   if (isLake(x, y)) return "lake";
   if (x < MOUNTAIN_X_END && y < MOUNTAIN_Y_END) return "mountains";
   if (y < 18 || x >= 70) return "forest";
@@ -536,6 +551,8 @@ function biomeColor(biome) {
     case "ocean": return "#0b3d5c";
     case "river": return "#1d4ed8";
     case "lake": return "#2563a8";
+    case "cliffs": return "#4a4038";
+    case "shoals": return "#c9b285";
     case "mountains": return "#3a3a42";
     case "forest": return "#14321e";
     default: return "#224d1a";

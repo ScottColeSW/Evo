@@ -79,7 +79,7 @@ def test_terrain_aware_step_deflects_around_the_ocean_on_a_diagonal():
     from backend.world import biome_at
 
     nx, ny = terrain_aware_step(85, 50, 99, 80, base_speed=8)
-    assert (nx, ny) == (85, 56)
+    assert (nx, ny) == (85, 58)
     assert biome_at(nx, ny) != "ocean"
 
 
@@ -92,12 +92,11 @@ def test_terrain_aware_step_makes_no_progress_when_the_only_path_is_straight_int
 
 def test_terrain_aware_step_falls_back_to_the_y_axis_when_x_is_blocked():
     """A target out to sea on a diagonal still finds a way to make progress along
-    whichever axis the ocean's straight coastline (x >= OCEAN_X_START) doesn't block --
-    this map's ocean is a simple vertical band, so a pure y-axis move never enters it
-    regardless of target. (The full "every axis blocked, stay put" fallback exists for
-    a differently-shaped coastline, not reachable with this map's geometry.)"""
+    whichever axis the coastline doesn't block at this exact latitude -- the coast is
+    wavy (see world.py's _coast_boundary_x), not a flat line, so which axis is blocked
+    depends on where you're standing, not just on OCEAN_X_START."""
     from backend.world import biome_at
 
-    nx, ny = terrain_aware_step(89, 50, 99, 99, base_speed=8)
+    nx, ny = terrain_aware_step(85, 50, 99, 99, base_speed=8)
     assert biome_at(nx, ny) != "ocean"
-    assert (nx, ny) == (89, 56)  # x held at the shoreline, y-axis progress instead
+    assert (nx, ny) == (85, 58)  # x held at the shoreline, y-axis progress instead

@@ -111,6 +111,38 @@ def test_ocean_occupies_the_entire_east_edge():
         assert biome_at(99, y) == "ocean"
 
 
+def test_coastline_is_wavy_not_a_straight_line():
+    """The whole point: OCEAN_X_START is a reference point, not literally where every
+    row's coastline sits anymore."""
+    from backend.world import _coast_boundary_x
+
+    boundaries = {round(_coast_boundary_x(y)) for y in range(20, 100)}
+    assert len(boundaries) > 1
+
+
+def test_coast_band_is_cliffs_on_a_headland_and_shoals_in_a_bay():
+    from backend.world import _coast_boundary_x, _coast_is_headland
+
+    # Scan for a real headland and a real bay rather than assuming specific
+    # coordinates -- the wave's exact shape is an implementation detail.
+    headland_y = next(y for y in range(20, 100) if _coast_is_headland(y))
+    bay_y = next(y for y in range(20, 100) if not _coast_is_headland(y))
+
+    headland_x = round(_coast_boundary_x(headland_y)) - 1  # just inland of the boundary
+    bay_x = round(_coast_boundary_x(bay_y)) - 1
+    assert biome_at(headland_x, headland_y) == "cliffs"
+    assert biome_at(bay_x, bay_y) == "shoals"
+
+
+def test_river_mouth_cuts_through_the_coast_band_to_reach_the_ocean():
+    """The river's own straight-line mouth (see _is_river, unaffected by the coast's
+    waviness) must still win over the cliff/shoal band where the two overlap."""
+    from backend.world import OCEAN_X_START, _river_center_y
+
+    mouth_y = round(_river_center_y(OCEAN_X_START - 1))
+    assert biome_at(OCEAN_X_START - 1, mouth_y) == "river"
+
+
 def test_river_originates_near_the_mountains():
     from backend.world import RIVER_SOURCE_X, _river_center_y
 

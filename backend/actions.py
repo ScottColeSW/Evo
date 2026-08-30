@@ -27,9 +27,12 @@ from .world import BIOME_LABELS, biome_at
 # actually around them. GATHER_WATER was already biome-aware (river vs. elsewhere);
 # this brings the other three in line with it.
 BIOME_YIELD_MULTIPLIER = {
-    "wood": {"forest": 1.0, "plains": 0.4, "river": 0.3, "lake": 0.3, "mountains": 0.15, "ocean": 0.0},
-    "stone": {"mountains": 1.0, "forest": 0.1, "plains": 0.1, "river": 0.1, "lake": 0.1, "ocean": 0.0},
-    "game": {"forest": 1.0, "plains": 0.6, "river": 0.3, "lake": 0.3, "mountains": 0.15, "ocean": 0.0},
+    "wood": {"forest": 1.0, "plains": 0.4, "river": 0.3, "lake": 0.3, "mountains": 0.15,
+             "cliffs": 0.0, "shoals": 0.05, "ocean": 0.0},
+    "stone": {"mountains": 1.0, "forest": 0.1, "plains": 0.1, "river": 0.1, "lake": 0.1,
+              "cliffs": 0.5, "shoals": 0.05, "ocean": 0.0},
+    "game": {"forest": 1.0, "plains": 0.6, "river": 0.3, "lake": 0.3, "mountains": 0.15,
+             "cliffs": 0.05, "shoals": 0.1, "ocean": 0.0},
 }
 
 # Which species word to use in a wildlife sighting (see Simulation._build_visible_entities)

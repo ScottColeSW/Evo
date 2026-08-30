@@ -7,6 +7,8 @@ BIOME_LABELS = {
     "lake": "Stillwater Mere",
     "plains": "Sunken Basin",
     "ocean": "The Boundless Deep",
+    "cliffs": "The Shattered Brink",
+    "shoals": "The Glass Shallows",
 }
 
 # Earth-like hydrology: the river originates in the mountains (west) and winds its way
@@ -17,6 +19,31 @@ MOUNTAIN_X_END = 30
 MOUNTAIN_Y_END = 35
 RIVER_SOURCE_X = 15
 RIVER_HALF_WIDTH = 3
+
+# The coast itself used to be a perfectly straight vertical line -- real coastlines
+# aren't. Two overlapping sine waves (different periods, so the shape doesn't just
+# repeat) push the ocean boundary in and out of OCEAN_X_START; the river's own mouth
+# stays anchored to the flat OCEAN_X_START (see _is_river) so it isn't dragged around by
+# the same waviness. A narrow band just inland of the wavy boundary gets real texture
+# instead of instantly becoming plains/forest: a headland (the coast bulging out into
+# the sea, convex) reads as rocky cliffs, a bay (the coast recessed inland, concave)
+# reads as sandy shoals -- the same geological logic real coastlines follow.
+COAST_BAND_WIDTH = 3
+
+
+def _coast_boundary_x(y: float) -> float:
+    return OCEAN_X_START + 5 * math.sin(y * 0.08) + 2 * math.sin(y * 0.23 + 1.7)
+
+
+def _coast_is_headland(y: float) -> bool:
+    """True where the coastline bulges out into the ocean (a local peak in
+    boundary_x -- land juts further east than its neighbors), false where it's
+    recessed into a bay (a local trough -- the sea intrudes further inland). A local
+    peak has negative second-derivative curvature, a trough positive -- crude
+    finite-difference check, but the sign is what matters here, not precision."""
+    step = 1.0
+    curvature = _coast_boundary_x(y + step) - 2 * _coast_boundary_x(y) + _coast_boundary_x(y - step)
+    return curvature < 0
 
 # A tributary forking off the main river toward the lower-middle of the map, ending in
 # a lake -- the only drinkable fresh water on the whole map used to be that single river
@@ -57,10 +84,17 @@ def _is_lake(x: int, y: int) -> bool:
 
 
 def biome_at(x: int, y: int) -> str:
-    if x >= OCEAN_X_START:
-        return "ocean"
+    # River is checked before the coast texture so its mouth cuts straight through to
+    # the sea rather than being interrupted by a cliff/shoal band -- real river mouths
+    # do exactly this. _is_river has its own flat OCEAN_X_START cutoff, unaffected by
+    # the coastline's waviness below.
     if _is_river(x, y):
         return "river"
+    boundary = _coast_boundary_x(y)
+    if x >= boundary:
+        return "ocean"
+    if boundary - x <= COAST_BAND_WIDTH:
+        return "cliffs" if _coast_is_headland(y) else "shoals"
     if _is_lake(x, y):
         return "lake"
     if x < MOUNTAIN_X_END and y < MOUNTAIN_Y_END:
