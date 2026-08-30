@@ -262,6 +262,48 @@ def _relocate(sim, tribe, biome, target):
     return None
 
 
+def _eligible_breeding_pair(tribe) -> tuple[str, str] | None:
+    """The named-individual pool this tribe can draw parents from: whoever is
+    currently chief, plus whoever currently holds a trophy (see Simulation.
+    _award_trophy's `individual` param) -- not the whole population, which stays an
+    anonymous count. Most-recently-earned trophy holders are preferred as the second
+    parent, so a fresh milestone is what actually gets acted on. Returns None if fewer
+    than two distinct named individuals exist yet."""
+    candidates = []
+    if tribe.chief_name:
+        candidates.append(tribe.chief_name)
+    for trophy in reversed(tribe.trophies):
+        name = trophy["chief"]
+        if name not in candidates:
+            candidates.append(name)
+    if len(candidates) < 2:
+        return None
+    return candidates[0], candidates[1]
+
+
+def _breed(sim, tribe, biome, target):
+    """Two named individuals from the tribe -- its chief and whoever holds a trophy,
+    see _eligible_breeding_pair -- start a family. A solo cost paid by this one tribe
+    (see config.BREED_FOOD_COST/WATER_COST), distinct from the shared/split cost a
+    future tribe-to-tribe merge would use. The actual outcome (the child's name, a
+    flavor note) isn't decided here -- this only sets tribe.pending_birth; Simulation.
+    step() resolves it with a real, non-scripted LLM call (backend/breeding.py) the
+    same cycle, the same pattern _install_chief already uses for pending_chief_context."""
+    if tribe.population >= config.POPULATION_GROWTH_CAP:
+        return "no room to raise a family right now -- the tribe is already at capacity"
+    pair = _eligible_breeding_pair(tribe)
+    if pair is None:
+        return "no one with enough standing in the tribe yet to start a family"
+    if tribe.food < config.BREED_FOOD_COST or tribe.water < config.BREED_WATER_COST:
+        return "too little food and water spared to support a new family right now"
+
+    tribe.food -= config.BREED_FOOD_COST
+    tribe.water -= config.BREED_WATER_COST
+    parent_a, parent_b = pair
+    tribe.pending_birth = {"parent_a": parent_a, "parent_b": parent_b}
+    return f"{parent_a} and {parent_b} decide to start a family together"
+
+
 def _idle(sim, tribe, biome, target):
     return None
 
@@ -374,6 +416,7 @@ ACTION_REGISTRY = {
     "SCOUT": _scout,
     "HUNTING_PARTY": _hunting_party,
     "RELOCATE": _relocate,
+    "BREED": _breed,
     "RAID": _raid,
     "TRADE": _trade,
     "IDLE": _idle,
@@ -396,6 +439,7 @@ ACTION_DESCRIPTIONS = {
     "SCOUT": "Dispatch an expedition toward target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home -- choosing SCOUT again while one is already out just checks on it, it doesn't send a second one.",
     "HUNTING_PARTY": "Send a hunting party toward target_vector -- shares the same expedition slot as SCOUT, so only one can be in the field at a time. They travel and hunt on their own supply for up to several days, facing the same wolf-pack risk as an instant hunt on every day out, until they catch something or give up. Any food caught only becomes real, usable food once they've walked all the way home -- a hunt still in the field does nothing for hunger right now, no matter how promising.",
     "RELOCATE": "Move your whole tribe several tiles toward target_vector this cycle, possibly over several cycles for a far destination. Produces no resources while traveling and costs extra food and water for the effort.",
+    "BREED": "Your chief and whoever currently holds a trophy start a family together, costing food and water and growing your population by one child if it succeeds. Does nothing if fewer than two named individuals (a chief plus at least one trophy-holder) exist yet, or if food/water can't cover the cost.",
     "RAID": "Attempt to raid a rival tribe if one is near target_vector. A win steals some of their stockpile but still costs you people; a loss costs you more. Does nothing if no rival is there.",
     "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. Does nothing if no rival is there.",
     "IDLE": "Do nothing this cycle.",

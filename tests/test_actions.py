@@ -394,6 +394,76 @@ def test_trade_ignores_extinct_tribes_and_self():
     assert "no rival" in note
 
 
+def test_breed_does_nothing_with_only_a_chief_and_no_trophy_holder():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+
+    note = ACTION_REGISTRY["BREED"](sim, tribe, "plains", (0, 0))
+
+    assert "no one with enough standing" in note
+    assert tribe.pending_birth is None
+    assert tribe.food == 40  # unchanged, nothing was spent
+
+
+def test_breed_pairs_the_chief_with_the_most_recent_trophy_holder():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+    tribe.trophies = [
+        {"name": "Water Bringer", "chief": "Ashgar", "cycle": 1},
+        {"name": "Master Pathfinder", "chief": "BriMir", "cycle": 10},
+    ]
+
+    note = ACTION_REGISTRY["BREED"](sim, tribe, "plains", (0, 0))
+
+    assert tribe.pending_birth == {"parent_a": "Ashgar", "parent_b": "BriMir"}
+    assert "Ashgar and BriMir decide to start a family" in note
+
+
+def test_breed_deducts_its_solo_cost():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+    tribe.trophies = [{"name": "Water Bringer", "chief": "BriMir", "cycle": 1}]
+
+    ACTION_REGISTRY["BREED"](sim, tribe, "plains", (0, 0))
+
+    assert tribe.food == 40 - config.BREED_FOOD_COST
+    assert tribe.water == config.STARTING_WATER - config.BREED_WATER_COST
+
+
+def test_breed_refuses_when_food_or_water_cant_cover_the_cost():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+    tribe.trophies = [{"name": "Water Bringer", "chief": "BriMir", "cycle": 1}]
+    tribe.food = 2
+
+    note = ACTION_REGISTRY["BREED"](sim, tribe, "plains", (0, 0))
+
+    assert "too little food and water" in note
+    assert tribe.pending_birth is None
+    assert tribe.food == 2  # unchanged
+
+
+def test_breed_refuses_at_the_population_cap():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+    tribe.trophies = [{"name": "Water Bringer", "chief": "BriMir", "cycle": 1}]
+    tribe.population = config.POPULATION_GROWTH_CAP
+
+    note = ACTION_REGISTRY["BREED"](sim, tribe, "plains", (0, 0))
+
+    assert "no room" in note
+    assert tribe.pending_birth is None
+
+
 def test_scout_launches_a_second_party_while_capacity_remains():
     """A tribe can run up to config.MAX_CONCURRENT_EXPEDITIONS parties at once -- a
     chief with people to spare shouldn't be capped at just one no matter what."""

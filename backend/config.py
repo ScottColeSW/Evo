@@ -135,9 +135,16 @@ FOOD_TROPHY_THRESHOLD = 60
 # Milestone trophies (backend/simulation.py._award_trophy's `individual` param): unlike
 # the chief-credited trophies above, these are earned by a specific named scout or
 # hunter and credit them by name, not the chief. Also the pool of "named individuals"
-# the breeding design (not yet built) will eventually draw from alongside the chief.
+# the breeding design draws from alongside the chief -- see BREED_FOOD_COST below.
 MILESTONE_SCOUT_SUCCESSES = 5
 MILESTONE_HUNT_SUCCESSES = 5
+
+# BREED (backend/actions.py._breed, backend/breeding.py): a solo cost paid by the one
+# tribe raising a child, distinct from the shared/split cost a future tribe-to-tribe
+# "party" merge would use. Real but not crushing -- comparable to a single expedition's
+# outbound daily draw, not a purchase that could bankrupt a tribe outright.
+BREED_FOOD_COST = 10
+BREED_WATER_COST = 8
 
 # Survival instinct thresholds (backend/instincts.py). "Critical" also raises inference
 # temperature, same as ancestral dread -- real panic, not just different wording.

@@ -5,6 +5,7 @@ import random
 from . import config, physics
 from .actions import ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_LABEL
 from .ancestral_matrix import AncestralTraumaMatrix
+from .breeding import breed_individuals
 from .eras import ERAS, era_index, next_era, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
@@ -84,6 +85,13 @@ class Tribe:
         # Credited to whichever chief is in power the moment each is first earned --
         # see Simulation._check_chief_trophies. [{"name", "chief", "cycle"}, ...]
         self.trophies: list[dict] = []
+        # Set by actions.py._breed, resolved (an async LLM call -- see backend/
+        # breeding.py) in the same Simulation.step() that set it, same pattern as
+        # pending_chief_context/_install_chief. {"parent_a", "parent_b"} or None.
+        self.pending_birth: dict | None = None
+        # A real parent record per child, not just an anonymous population+1 -- the
+        # "capture lineage" requirement. [{"child_name", "parents", "cycle", "note"}, ...]
+        self.lineage: list[dict] = []
         # A fact for the next chief election to reason about, set when something more
         # specific than "just founded" is true (currently only a raid-conquest merge,
         # see Simulation._merge_tribes) -- consumed and cleared by _install_chief so an
@@ -129,6 +137,7 @@ class Tribe:
             "chief_philosophy": self.chief_philosophy,
             "chief_decree": self.chief_decree,
             "trophies": self.trophies,
+            "lineage": self.lineage,
             "next_era": next_era_info,
             "expeditions": [
                 {
@@ -231,6 +240,28 @@ class Simulation:
             entry = f"Chief {tribe.chief_name} decrees: {tribe.chief_decree}"
             tribe.history.append(f"{entry} ({reason})." if reason else f"{entry}.")
 
+    async def _resolve_birth(self, tribe: "Tribe") -> None:
+        """Resolves a BREED action's pending_birth (see actions.py._breed) with a
+        real, non-scripted LLM call (backend/breeding.py) -- same pattern as
+        pending_chief_context/_install_chief: the mechanical decision (two named
+        people are starting a family) happens synchronously in the action handler,
+        the actual outcome is generated here, in the same cycle."""
+        parent_a = tribe.pending_birth["parent_a"]
+        parent_b = tribe.pending_birth["parent_b"]
+        tribe.pending_birth = None
+
+        result = await breed_individuals(self.client, tribe.model, tribe.name, parent_a, parent_b)
+        child_name = result.get("child_name") or f"child of {parent_a} and {parent_b}"
+        note = result.get("note", "")
+
+        tribe.population += 1
+        tribe.max_population = max(tribe.max_population, tribe.population)
+        tribe.lineage.append({
+            "child_name": child_name, "parents": [parent_a, parent_b], "cycle": self.cycle,
+        })
+        entry = f"{parent_a} and {parent_b} welcome a child, {child_name}"
+        tribe.history.append(f"{entry} -- {note}" if note else f"{entry}.")
+
     async def add_tribe(self, name: str, model: str, x: int | None = None, y: int | None = None) -> str | None:
         """Injects a new tribe into an already-running simulation. Returns an error
         message on failure (max tribes reached), or None on success. Runs the same
@@ -313,6 +344,10 @@ class Simulation:
         for tribe in self.tribes.values():
             if not tribe.extinct and tribe.expeditions:
                 self._advance_expeditions(tribe)
+
+        for tribe in self.tribes.values():
+            if not tribe.extinct and tribe.pending_birth:
+                await self._resolve_birth(tribe)
 
         for tribe in self.tribes.values():
             if not tribe.extinct and not tribe.chief_name:

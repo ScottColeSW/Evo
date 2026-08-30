@@ -724,6 +724,40 @@ def test_master_hunter_trophy_credited_to_the_specific_hunter_at_the_milestone()
     assert hunter_trophy[0]["chief"] == f"Hunter{config.MILESTONE_HUNT_SUCCESSES - 1}"
 
 
+@run_async
+async def test_resolve_birth_grows_population_and_records_lineage():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.population = 8
+    tribe.pending_birth = {"parent_a": "Ashgar", "parent_b": "BriMir"}
+
+    async def fake_breed(client, model, tribe_name, parent_a, parent_b):
+        return {"child_name": "Toka", "note": "born under a clear sky"}
+
+    with mock.patch("backend.simulation.breed_individuals", fake_breed):
+        await sim._resolve_birth(tribe)
+
+    assert tribe.population == 9
+    assert tribe.pending_birth is None
+    assert tribe.lineage == [{"child_name": "Toka", "parents": ["Ashgar", "BriMir"], "cycle": sim.cycle}]
+    assert any("Toka" in entry and "born under a clear sky" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_resolve_birth_falls_back_to_a_generic_name_if_the_llm_call_fails():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.pending_birth = {"parent_a": "Ashgar", "parent_b": "BriMir"}
+
+    async def fake_breed(client, model, tribe_name, parent_a, parent_b):
+        return {}
+
+    with mock.patch("backend.simulation.breed_individuals", fake_breed):
+        await sim._resolve_birth(tribe)
+
+    assert tribe.lineage[0]["child_name"] == "child of Ashgar and BriMir"
+
+
 def test_well_fed_and_growing_legacy_trophies_have_their_own_thresholds():
     from backend import config
 
