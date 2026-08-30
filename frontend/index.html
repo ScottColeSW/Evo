@@ -565,7 +565,7 @@ function drawTribeIndividuals(tribeId, t) {
     ctx.fillText(t.last_broadcast, centerX - w / 2, by);
   }
 
-  if (t.expedition) drawExpedition(t);
+  if (t.expedition) drawExpedition(t, tribeId);
 }
 
 // The scouting party (backend/actions.py._scout, backend/simulation.py._advance_expedition)
@@ -573,31 +573,49 @@ function drawTribeIndividuals(tribeId, t) {
 // home and a small hollow marker at their current field position, distinct from the solid
 // filled dots of the main tribe, so their own progress/survival is something you can watch
 // too, not just an invisible timer.
-function drawExpedition(t) {
-  const homeX = t.x * TILE + TILE / 2, homeY = t.y * TILE + TILE / 2;
+function drawExpedition(t, tribeId) {
   const fx = t.expedition.pos[0] * TILE + TILE / 2, fy = t.expedition.pos[1] * TILE + TILE / 2;
 
-  ctx.save();
-  ctx.strokeStyle = t.color;
-  ctx.globalAlpha = 0.5;
-  ctx.setLineDash([3, 4]);
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(homeX, homeY);
-  ctx.lineTo(fx, fy);
-  ctx.stroke();
-  ctx.restore();
+  // The real walked route (backend/actions.py._scout's "path" list) -- the persistent
+  // world-trail mechanic only lights up once a route gets reused, so a single fresh
+  // journey barely showed anything even while actively happening. This is this one
+  // party's own breadcrumb line, always visible for as long as they're out.
+  const path = t.expedition.path || [];
+  if (path.length > 1) {
+    ctx.save();
+    ctx.strokeStyle = t.color;
+    ctx.globalAlpha = 0.6;
+    ctx.setLineDash([3, 3]);
+    ctx.lineWidth = Math.max(1, TILE * 0.12);
+    ctx.beginPath();
+    path.forEach(([px, py], i) => {
+      const x = px * TILE + TILE / 2, y = py * TILE + TILE / 2;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.restore();
+  }
 
-  const r = Math.max(2.5, TILE * 0.3);
-  ctx.save();
-  ctx.strokeStyle = t.color;
-  ctx.fillStyle = "#0b0b0f";
-  ctx.lineWidth = Math.max(1.2, TILE * 0.15);
-  ctx.beginPath();
-  ctx.arc(fx, fy, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
+  // A small wandering cluster at the party's current field position, same Lissajous
+  // technique as the main tribe's own individuals (drawTribeIndividuals) -- a single
+  // static marker only ever jumped once per simulation cycle (every few seconds of
+  // real inference time), which read as absent rather than "out there moving."
+  const scoutSeed = stringSeed(`${tribeId}:expedition:${t.expedition.lead_scout}`);
+  const clusterRadius = Math.min(TILE * 1.1, 10);
+  ctx.fillStyle = t.color;
+  for (let i = 0; i < 3; i++) {
+    const seed = hashUnit(scoutSeed + i * 61.7);
+    const phaseA = seed * Math.PI * 2;
+    const phaseB = hashUnit(scoutSeed + i * 61.7 + 500) * Math.PI * 2;
+    const speedA = 0.02 + seed * 0.02;
+    const speedB = 0.016 + hashUnit(scoutSeed + i * 61.7 + 900) * 0.02;
+    const dx = Math.cos(animFrame * speedA + phaseA) * clusterRadius;
+    const dy = Math.sin(animFrame * speedB + phaseB) * clusterRadius;
+    ctx.beginPath();
+    ctx.arc(fx + dx, fy + dy, Math.max(1.2, TILE * 0.18), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const r = clusterRadius;
 
   const arrow = t.expedition.phase === "outbound" ? "→" : "←";
   const line1 = `${t.expedition.lead_scout} ${arrow} day ${t.expedition.day}/${t.expedition.max_days}`;

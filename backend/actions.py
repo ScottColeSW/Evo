@@ -172,6 +172,12 @@ def _scout(sim, tribe, biome, target):
         "lead_scout": scout["name"],
         "determination": scout["determination"],
         "max_days": scout["max_days"],
+        # Everywhere this expedition has actually walked this trip -- the persistent
+        # world-trail mechanic (Landscape.trails) only lights up once a route gets
+        # reused, so a single fresh journey barely shows anything even while it's
+        # actively happening. This is just this one party's breadcrumb line, cleared
+        # when they get home, not a permanent feature of the map.
+        "path": [[tribe.x, tribe.y]],
     }
     return f"scouts led by {scout['name']} depart camp to explore toward ({tx},{ty})"
 

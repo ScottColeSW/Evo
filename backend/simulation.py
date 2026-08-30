@@ -95,6 +95,7 @@ class Tribe:
                     "lead_scout": self.expedition["lead_scout"],
                     "food_gathered": self.expedition["food_gathered"],
                     "water_gathered": self.expedition["water_gathered"],
+                    "path": self.expedition["path"],
                 }
                 if self.expedition
                 else None
@@ -428,6 +429,7 @@ class Simulation:
             nx, ny = physics.calculate_next_step(px, py, tx, ty, speed=speed)
             self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS)
             exp["pos"] = [nx, ny]
+            exp["path"].append([nx, ny])
             exp["food_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_FOOD
             exp["water_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_WATER
             reached_biome = biome_at(nx, ny)
@@ -458,6 +460,7 @@ class Simulation:
             nx, ny = physics.calculate_next_step(px, py, ox, oy, speed=speed)
             self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS)
             exp["pos"] = [nx, ny]
+            exp["path"].append([nx, ny])
             exp["food_gathered"] += config.EXPEDITION_RETURN_DAILY_FOOD
             exp["water_gathered"] += config.EXPEDITION_RETURN_DAILY_WATER
             if [nx, ny] == [ox, oy]:
