@@ -244,7 +244,7 @@ def test_prepare_turn_mentions_an_expedition_already_in_the_field():
 def test_expedition_succeeds_immediately_on_reaching_real_river_water():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 40, 30, "#c084fc")
-    # From (40, 30) toward (40, 37), one EXPEDITION_SPEED (6) step lands at (40, 36),
+    # From (40, 30) toward (40, 37), one EXPEDITION_SPEED (10) step lands at (40, 37),
     # which world.py's river geography places on the river -- verified directly against
     # biome_at before trusting it, same discipline as world.py's nearest_water fix.
     tribe.expedition = {
@@ -257,7 +257,7 @@ def test_expedition_succeeds_immediately_on_reaching_real_river_water():
     sim._advance_expedition(tribe)
 
     assert tribe.expedition["phase"] == "returning"
-    assert tribe.expedition["found"] == [40, 36]
+    assert tribe.expedition["found"] == [40, 37]
     assert any("found fresh water" in entry for entry in tribe.history)
 
 

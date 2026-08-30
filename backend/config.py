@@ -115,10 +115,14 @@ UPKEEP_POPULATION_DIVISOR = 10  # cost per tick = max(1, population // this)
 # never got food above ~38 for either tribe, starting from 40. Reaching Bronze Age
 # needs population 20, which at the old cost was 12 growth events needing ~360+
 # cumulative food surplus above ordinary living costs -- not a difficulty tuning
-# choice, just unreachable under any plausible play. Lowered to a threshold/cost pair
-# actually inside the range tribes were shown to reach.
-POPULATION_GROWTH_FOOD_THRESHOLD = 50
-POPULATION_GROWTH_FOOD_COST = 15
+# choice, just unreachable under any plausible play. Lowered once already to 50/15;
+# this session's headless A/B testing (multiple real 100-cycle runs, see
+# logs/experiments.jsonl) showed most tribes still never sustaining food above the
+# high 30s/low 40s even once wildlife sighting and hunting-party fixes were added --
+# 50 was still frequently out of reach. Loosened further, still same shape (a real
+# food cost per growth tick, not free), just inside the range tribes actually reach.
+POPULATION_GROWTH_FOOD_THRESHOLD = 25
+POPULATION_GROWTH_FOOD_COST = 8
 POPULATION_GROWTH_CAP = 80
 
 # Chief trophies (backend/simulation.py._check_chief_trophies): a lightweight legacy
@@ -248,7 +252,7 @@ TERRAIN_MOVEMENT_MULTIPLIER = {
     "ocean": 0.0,
 }
 
-EXPEDITION_SPEED = 6
+EXPEDITION_SPEED = 10
 EXPEDITION_MAX_DAYS = 3
 
 # Every expedition's lead scout gets a procedurally-generated determination trait (see
