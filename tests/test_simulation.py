@@ -230,11 +230,17 @@ def test_expedition_succeeds_immediately_on_reaching_real_river_water():
     assert any("found fresh water" in entry for entry in tribe.history)
 
 
-def test_expedition_reaching_its_target_without_water_still_turns_back():
+def test_expedition_reaching_its_target_without_water_pushes_onward_if_days_remain():
+    """Regression test: a model's own target_vector is usually close (one
+    EXPEDITION_SPEED step away), so treating "arrived at the declared spot" as "search
+    over" meant max_days and the scout's determination trait almost never actually
+    mattered -- live runs showed parties turning back on day one nearly every time.
+    Reaching a non-water target with days left should extend the search outward along
+    the same heading, not end it."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.expedition = {
-        "pos": [50, 50], "origin": [50, 50], "target": [50, 50],  # already "there"
+        "pos": [50, 50], "origin": [50, 50], "target": [56, 50],  # one step away, not water
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
@@ -242,9 +248,26 @@ def test_expedition_reaching_its_target_without_water_still_turns_back():
 
     sim._advance_expedition(tribe)
 
-    assert tribe.expedition["phase"] == "returning"
-    assert tribe.expedition["terrain_report"] is not None
+    assert tribe.expedition["phase"] == "outbound"  # not turned back
+    assert tribe.expedition["terrain_report"] is not None  # still noted what's there
     assert tribe.expedition["found"] is None
+    assert tribe.expedition["target"] != [56, 50]  # extended past the original spot
+    assert any("pushes onward" in entry for entry in tribe.history)
+
+
+def test_expedition_gives_up_at_a_pushed_onward_target_once_days_run_out():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.expedition = {
+        "pos": [50, 50], "origin": [50, 50], "target": [56, 50],
+        "day": 3, "phase": "outbound", "found": None, "terrain_report": None,  # already at max_days
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }
+
+    sim._advance_expedition(tribe)
+
+    assert tribe.expedition["phase"] == "returning"
 
 
 def test_expedition_gives_up_after_max_days_without_success():

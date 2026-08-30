@@ -439,11 +439,20 @@ class Simulation:
                 exp["found"] = [nx, ny]
                 exp["phase"] = "returning"
                 tribe.history.append(f"{scout}'s party has found fresh water and is heading home to report it")
-            elif [nx, ny] == [tx, ty]:
+            elif [nx, ny] == [tx, ty] and exp["terrain_report"] is None and exp["day"] < exp["max_days"]:
+                # Reached wherever the tribe told them to look, but the model's own
+                # target_vector is usually close (a single EXPEDITION_SPEED step), so
+                # treating "arrived" as "search over" meant max_days and the scout's
+                # determination trait almost never actually mattered -- the party
+                # turned back on day 1 nearly every time. Note what's here (still
+                # useful information) but push onward along the same heading out to
+                # the edge of the known world instead, using whatever days remain
+                # rather than stopping the instant the declared spot is reached.
                 exp["terrain_report"] = reached_biome
-                exp["phase"] = "returning"
+                ex, ey = physics.extend_ray_to_grid_edge(exp["origin"][0], exp["origin"][1], tx, ty, self.world.grid_size)
+                exp["target"] = [ex, ey]
                 label = BIOME_LABELS.get(reached_biome, reached_biome)
-                tribe.history.append(f"{scout}'s party reached ({nx},{ny}), {label}, and is heading home to report")
+                tribe.history.append(f"{scout}'s party passed through ({nx},{ny}), {label}, and pushes onward")
             elif exp["day"] >= exp["max_days"]:
                 exp["phase"] = "returning"
                 # The party's own survival comes before the search -- a scout's own
