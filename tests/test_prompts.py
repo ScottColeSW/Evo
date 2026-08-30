@@ -47,6 +47,13 @@ def test_system_prompt_includes_tribe_name_and_model():
     assert "gemma2:2b" in prompt
 
 
+def test_system_prompt_states_food_and_water_are_lethal_but_wood_and_stone_are_not():
+    prompt = get_prime_consciousness_prompt("Forest Tribe", "gemma2:2b")
+    assert "SURVIVAL PHYSIOLOGY" in prompt
+    assert "prolonged shortage of either is lethal" in prompt
+    assert "does not kill anyone" in prompt
+
+
 def test_system_prompt_omits_leadership_block_without_a_chief():
     prompt = get_prime_consciousness_prompt("Forest Tribe", "gemma2:2b")
     assert "LEADERSHIP" not in prompt
