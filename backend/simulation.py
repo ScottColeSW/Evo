@@ -16,7 +16,7 @@ from .eras import ERAS, era_index, next_era, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
 from .instincts import survival_bias_string
-from .leadership import elect_chief
+from .leadership import elect_chief, name_settlement
 from .memory import TribeMemory
 from .ollama_client import OllamaClient
 from .prompts import compile_live_state_prompt, get_prime_consciousness_prompt
@@ -191,6 +191,17 @@ class Tribe:
         self.flock = 0
         self.flock_lineage: list[dict] = []
         self.pending_hatch: dict | None = None
+        # Set the first time this tribe genuinely settles next to real water (see
+        # Simulation._is_settled_near_water) -- the chief names the place via a real
+        # LLM call (backend/leadership.py's name_settlement), the same pending_X/
+        # resolve shape as pending_birth/pending_hatch above.
+        self.settlement_name = ""
+        self.pending_settlement_naming = False
+        # Set once, the first time _is_settled_near_water is ever true, and never
+        # cleared again even if the tribe later relocates away -- see config.
+        # PRE_SETTLEMENT_ACTIONS. Distinct from currently-settled (which can toggle)
+        # because the point is to have proven the tribe CAN settle, once.
+        self.has_ever_settled = False
 
     def to_dict(self) -> dict:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
@@ -232,6 +243,8 @@ class Tribe:
             "last_harvest_cycle": self.last_harvest_cycle,
             "flock": self.flock,
             "flock_lineage": self.flock_lineage,
+            "settlement_name": self.settlement_name,
+            "has_ever_settled": self.has_ever_settled,
             "survival_warning": survival_warning,
             "extinct": self.extinct,
             "chief_name": self.chief_name,
@@ -439,6 +452,20 @@ class Simulation:
         })
         entry = "an egg hatches -- the flock grows"
         tribe.history.append(f"{entry} ({note})." if note else f"{entry}.")
+        self._award_trophy(tribe, "Flock Keeper")
+
+    async def _resolve_settlement_naming(self, tribe: "Tribe") -> None:
+        """Resolves pending_settlement_naming (set in _check_for_celebration, once
+        the tribe has genuinely settled next to real water) with a real, non-scripted
+        LLM call (backend/leadership.py's name_settlement) -- same pattern as
+        _resolve_birth/_resolve_hatch."""
+        tribe.pending_settlement_naming = False
+        biome = self.world.biome(tribe.x, tribe.y)
+        result = await name_settlement(self.client, tribe.model, tribe.name, tribe.chief_name, biome)
+        tribe.settlement_name = result.get("settlement_name") or f"{tribe.name}'s Settlement"
+        note = result.get("note", "")
+        entry = f"Chief {tribe.chief_name} names the settlement {tribe.settlement_name}" if tribe.chief_name else f"the settlement is named {tribe.settlement_name}"
+        tribe.history.append(f"{entry} -- {note}" if note else f"{entry}.")
 
     def _hold_tribal_gathering(self, tribe: "Tribe") -> None:
         """An innate tradition, not a chief's choice: every tribe, whatever its
@@ -644,6 +671,8 @@ class Simulation:
             self._apply_upkeep(tribe)
             self._grow_population(tribe)
             self._advance_era_if_ready(tribe)
+            if not tribe.settlement_name and not tribe.pending_settlement_naming and self._is_settled_near_water(tribe):
+                self._celebrate_settling(tribe)
             self._advance_farming(tribe)
             self._advance_flock(tribe)
             self._advance_city_growth(tribe)
@@ -665,6 +694,10 @@ class Simulation:
         for tribe in self.tribes.values():
             if not tribe.extinct and tribe.pending_hatch:
                 await self._resolve_hatch(tribe)
+
+        for tribe in self.tribes.values():
+            if not tribe.extinct and tribe.pending_settlement_naming:
+                await self._resolve_settlement_naming(tribe)
 
         for tribe in self.tribes.values():
             if not tribe.extinct and not tribe.chief_name:
@@ -882,33 +915,90 @@ class Simulation:
         nearby = self.world.nearby_structures(tribe.x, tribe.y)
         ghost_bias = self.trauma.bias_string(tribe.x, tribe.y)
         survival_bias, survival_critical = survival_bias_string(tribe.food, tribe.water, tribe.population)
+        # NUDGE (2026-08-31, explicit request: "the warnings do not mention settling
+        # as an alternative to low water"). A tribe already sitting on a chronic water
+        # shortage may well already know exactly where real water is (a confirmed
+        # site) without ever having relocated there -- the survival warning itself
+        # used to only ever say "gather more here" or "scout for more," never that
+        # settling at an already-known site would actually fix this for good.
+        # Appended directly onto the same warning line the model already reads
+        # closely, not left as a separate, easier-to-miss fact.
+        if survival_bias and "water" in survival_bias.lower() and tribe.confirmed_water_sites and not self._is_settled_near_water(tribe):
+            wx, wy = tribe.confirmed_water_sites[-1]
+            survival_bias += f" Settling at the confirmed water source ({wx},{wy}) would fix this for good, not just this cycle."
         memories = tribe.memory.recall(f"{biome} at {tribe.x},{tribe.y}")
-        available_actions = sorted(unlocked_actions_through(tribe.era))
         settled = self._is_settled(tribe)
+        settled_near_water = self._is_settled_near_water(tribe)
+        if settled_near_water:
+            tribe.has_ever_settled = True
+
+        if not tribe.has_ever_settled:
+            # Explicit request: narrow the choice set before a tribe has ever proven
+            # it can settle properly -- see config.PRE_SETTLEMENT_ACTIONS. A one-way
+            # unlock (has_ever_settled never clears again) once it does.
+            available_actions = sorted(set(unlocked_actions_through(tribe.era)) & set(config.PRE_SETTLEMENT_ACTIONS))
+        else:
+            available_actions = sorted(unlocked_actions_through(tribe.era))
         if not settled:
             available_actions = [a for a in available_actions if a not in ("GATHER_WOOD", "GATHER_STONE")]
-        else:
-            # A tribe that has genuinely put down roots -- farmable ground, invested in
-            # long enough to be gathering wood and stone here -- shouldn't be one bad
-            # turn away from uprooting the whole settlement on a whim. Symmetric with
-            # the not-settled case above: a real constraint on the choice set, not a
-            # scripted override of whatever the tribe would otherwise decide.
+        # Regression: RELOCATE used to lock out on the same looser `settled` check
+        # GATHER_WOOD uses (any farmable ground, long enough) -- but farming/eggs need
+        # the *stricter* settled_near_water condition, and a tribe that settles on
+        # merely-farmable, non-water ground (plains) would hit the general threshold
+        # first, lose RELOCATE forever, and be permanently unable to ever reach real
+        # water and actually farm. RELOCATE only locks in once a tribe has settled
+        # somewhere that's actually good enough for that -- next to real water.
+        if settled_near_water:
+            # A tribe that has genuinely put down roots next to real water --
+            # invested in long enough to be gathering wood and stone and farming here
+            # -- shouldn't be one bad turn away from uprooting the whole settlement on
+            # a whim. A real constraint on the choice set, not a scripted override of
+            # whatever the tribe would otherwise decide.
             available_actions = [a for a in available_actions if a != "RELOCATE"]
 
-        settled_near_water = self._is_settled_near_water(tribe)
         if not settled_near_water:
             available_actions = [a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS")]
 
         visible_entities = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
+        if not tribe.has_ever_settled:
+            visible_entities.append(
+                "The tribe has not yet settled anywhere for good, so only survival and exploration "
+                "actions are available right now. Settling properly, next to real water, will open up "
+                "building, hunting parties, trade, raiding, and starting families."
+            )
         if not settled:
             visible_entities.append(
                 "Wood and stone are not yet being gathered here -- the tribe hasn't settled anywhere "
                 f"farmable long enough yet ({tribe.cycles_since_relocate}/{config.SETTLEMENT_STABILITY_CYCLES} "
                 "cycles without relocating, on farmable ground)."
             )
-        else:
+        if settled_near_water:
             visible_entities.append(
-                "The tribe has settled here and is no longer considering relocating."
+                "The tribe has settled here, next to real water, and is no longer considering relocating."
+            )
+        elif settled:
+            # A real, non-final state: good enough ground to gather wood/stone on, but
+            # not good enough for farming/eggs -- RELOCATE stays on the table
+            # specifically so the tribe can still choose to move on toward real water.
+            visible_entities.append(
+                "This ground supports gathering wood and stone, but has no real water access for "
+                "farming or a flock -- relocating toward confirmed water is still an option."
+            )
+
+        if not settled_near_water and tribe.confirmed_water_sites:
+            # NUDGE (2026-08-30, explicit request: "the Water Bringer must lead the
+            # whole tribe to the settlement location"). Scouts confirming water used
+            # to only ever surface as a coordinate in the landmark list -- live runs
+            # showed a confirmed water site sitting unused for hundreds of cycles
+            # while the tribe kept scouting or gathering elsewhere instead of actually
+            # relocating there. Names the real target directly rather than leaving
+            # the connection to "confirmed water source at (x,y)" implicit; RELOCATE
+            # is still the tribe's own choice to make, this just states plainly what
+            # settling there would unlock.
+            wx, wy = tribe.confirmed_water_sites[-1]
+            visible_entities.append(
+                f"Confirmed water at ({wx},{wy}) -- relocating the whole tribe there would let it "
+                "finally settle and begin farming and raising a flock."
             )
 
         if "PLANT_CROP" in unlocked_actions_through(tribe.era) or "GATHER_EGGS" in unlocked_actions_through(tribe.era):
@@ -1214,12 +1304,15 @@ class Simulation:
                         self._award_trophy(tribe, "Master Pathfinder", individual=scout)
                     self._check_custom_awards(tribe, "scouting", individual=scout)
                     tribe.memory.remember(f"Scouts confirmed fresh water at ({fx},{fy}).", self.cycle, weight=0.9)
-                    if (fx, fy) not in tribe.confirmed_water_sites:
+                    is_new_site = (fx, fy) not in tribe.confirmed_water_sites
+                    if is_new_site:
                         tribe.confirmed_water_sites.append((fx, fy))
                     tribe.history.append(
                         f"{scout} is home and gives {recipient} a full report: "
                         f"fresh water confirmed at ({fx},{fy}), {forage_note}"
                     )
+                    if is_new_site and not self._is_settled_near_water(tribe):
+                        self._celebrate_water_discovery(tribe, fx, fy)
                 elif exp["terrain_report"]:
                     label = BIOME_LABELS.get(exp["terrain_report"], exp["terrain_report"])
                     tx, ty = exp["target"]
@@ -1496,6 +1589,14 @@ class Simulation:
             tribe.food += harvested
             tribe.last_harvest_cycle = self.cycle
             tribe.history.append(f"the farm plots yield a harvest -- {harvested} food gathered in")
+            self._award_trophy(tribe, "Harvester")
+            # Explicit request: "a grand harvest is a real celebration." Cooldown-
+            # gated (unlike _celebrate_water_discovery/_celebrate_settling, which are
+            # each essentially one-time) since a harvest recurs every ~10 cycles per
+            # plot -- an uncapped feast on every single one would drain food faster
+            # than farming produces it.
+            if self.cycle - tribe.last_celebration_cycle >= config.CELEBRATION_COOLDOWN_CYCLES:
+                self._celebrate_harvest(tribe)
 
     def _advance_flock(self, tribe: Tribe) -> None:
         """A flock isn't a one-way counter -- it eats, and once established it can
@@ -1572,6 +1673,30 @@ class Simulation:
         if tribe.population > 8:
             self._award_trophy(tribe, "Growing Legacy")
 
+    def _celebrate_water_discovery(self, tribe: Tribe, fx: int, fy: int) -> None:
+        """Explicit request: a scout confirming fresh water for the first time (not
+        just re-confirming an already-known site, and only while the tribe hasn't
+        settled somewhere with real water access yet) should read as its own event --
+        "you found water! now we party!" -- not wait on the unrelated food-surplus/
+        discovery-weight gate _check_for_celebration normally requires. Shares that
+        method's cooldown bookkeeping and breeding side-effect (the same "lots of time
+        for breeding and mating" a party creates) so the two don't both fire the same
+        cycle, but this one always fires on a genuine new find."""
+        tribe.last_celebration_cycle = self.cycle
+        spent = round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION)
+        tribe.food -= spent
+        self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.history.append(
+            f"\U0001f389 {tribe.name} celebrates the discovery of water at ({fx},{fy}), spending {spent} "
+            "food on a feast -- the tribe will move to settle there soon"
+        )
+        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+            pair = _eligible_breeding_pair(tribe)
+            if pair is not None:
+                parent_a, parent_b = pair
+                tribe.pending_birth = {"parent_a": parent_a, "parent_b": parent_b}
+                tribe.history.append(f"amid the celebration, {parent_a} and {parent_b} decide to start a family together")
+
     def _check_for_celebration(self, tribe: Tribe) -> None:
         """Automatic and threshold-based, same pattern as era advancement/trophies/
         population growth -- not a discrete action the model has to remember to pick.
@@ -1608,6 +1733,48 @@ class Simulation:
         reason = "a fresh discovery" if discovery else "a season of plenty"
         tribe.history.append(f"\U0001f389 {tribe.name} holds a celebration for {reason}, spending {spent} food on a feast")
 
+        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+            pair = _eligible_breeding_pair(tribe)
+            if pair is not None:
+                parent_a, parent_b = pair
+                tribe.pending_birth = {"parent_a": parent_a, "parent_b": parent_b}
+                tribe.history.append(f"amid the celebration, {parent_a} and {parent_b} decide to start a family together")
+
+    def _celebrate_settling(self, tribe: Tribe) -> None:
+        """Explicit request: settling somewhere for good is worth its own celebration,
+        not just whatever unrelated surplus/discovery celebration happens to fire
+        next. Fires once, the first time _is_settled_near_water becomes true (guarded
+        by tribe.settlement_name being unset) -- names the settlement "during a party"
+        (backend/leadership.py's name_settlement, resolved in Simulation.step()), same
+        pattern as _celebrate_water_discovery."""
+        tribe.last_celebration_cycle = self.cycle
+        spent = round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION)
+        tribe.food -= spent
+        self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.history.append(
+            f"\U0001f389 {tribe.name} celebrates settling here for good, spending {spent} food on a feast"
+        )
+        tribe.pending_settlement_naming = True
+        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+            pair = _eligible_breeding_pair(tribe)
+            if pair is not None:
+                parent_a, parent_b = pair
+                tribe.pending_birth = {"parent_a": parent_a, "parent_b": parent_b}
+                tribe.history.append(f"amid the celebration, {parent_a} and {parent_b} decide to start a family together")
+
+    def _celebrate_harvest(self, tribe: Tribe) -> None:
+        """Explicit request: "a grand harvest is a real celebration." Caller
+        (_advance_farming) already checked the cooldown before calling this, since a
+        harvest recurs every ~10 cycles per plot -- unlike _celebrate_water_discovery/
+        _celebrate_settling (each essentially one-time), this one is cooldown-gated
+        the same way the generic _check_for_celebration is."""
+        tribe.last_celebration_cycle = self.cycle
+        spent = round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION)
+        tribe.food -= spent
+        self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.history.append(
+            f"\U0001f389 {tribe.name} holds a harvest festival, spending {spent} food on a feast"
+        )
         if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
             pair = _eligible_breeding_pair(tribe)
             if pair is not None:

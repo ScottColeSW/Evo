@@ -62,7 +62,7 @@ Reply with ONLY JSON:
 {{
   "revised_philosophy": "the guiding philosophy going forward, whether changed or the same",
   "changed": true or false,
-  "reasoning": "one sentence explaining your decision",
+  "reasoning": "your decision in ONE short sentence, 20 words or fewer -- this is a private thought, not an essay",
   "proposed_award": {{"name": "a short title of your own invention", "category": "one of: {categories_list}"}} or null
 }}"""
     result = await client.generate_json(reviewer_model, prompt, temperature=0.7, num_ctx=8192)

@@ -45,6 +45,7 @@
   #era-banner.show { opacity: 1; }
   #era-banner.danger { background: rgba(127,29,29,0.95); }
   #era-banner.chief { background: rgba(180,131,10,0.95); }
+  #era-banner.party { background: linear-gradient(90deg, rgba(219,39,119,0.95), rgba(217,70,239,0.95), rgba(234,88,12,0.95)); }
   canvas { background: #111; border: 2px solid #2a2a3a; border-radius: 4px; display: block; }
 
   #spawn-splash { position: absolute; inset: 0; background: rgba(11,11,15,0.94); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 20; border-radius: 4px; transition: opacity 0.4s ease; }
@@ -264,6 +265,7 @@ document.getElementById("btn-start").addEventListener("click", () => {
     checkEraTransitions(latestState);
     checkExtinctions(latestState);
     checkChiefElections(latestState);
+    checkCelebrations(latestState);
     updateSidebar(latestState);
   };
 });
@@ -457,6 +459,7 @@ function showEraBanner(text, danger, variant) {
   banner.classList.add("show");
   banner.classList.toggle("danger", !!danger);
   banner.classList.toggle("chief", variant === "chief");
+  banner.classList.toggle("party", variant === "party");
   clearTimeout(eraBannerTimeout);
   const duration = danger ? 6000 : 4000;
   eraBannerTimeout = setTimeout(() => banner.classList.remove("show"), duration);
@@ -484,6 +487,27 @@ function advanceBannerQueue() {
   showEraBanner(text, danger, variant);
   const duration = (danger ? 6000 : 4000) + 300;
   setTimeout(advanceBannerQueue, duration);
+}
+
+/* ---------- Celebrations ---------- */
+
+// A literal on-screen tag for a party, per explicit request -- reuses the same
+// queueBanner mechanism as era transitions/chief elections rather than inventing a
+// second banner element, distinguished by the "party" variant's own gradient style.
+let lastCelebrationCycleByTribe = {};
+
+function checkCelebrations(state) {
+  Object.entries(state.tribes || {}).forEach(([id, t]) => {
+    const cycle = t.last_celebration_cycle;
+    if (lastCelebrationCycleByTribe[id] === undefined) {
+      lastCelebrationCycleByTribe[id] = cycle;  // first sighting -- don't fire on page load
+      return;
+    }
+    if (cycle !== lastCelebrationCycleByTribe[id]) {
+      queueBanner(`🎉 ${t.name} is celebrating!`, false, "party");
+      lastCelebrationCycleByTribe[id] = cycle;
+    }
+  });
 }
 
 /* ---------- Extinction ---------- */
@@ -802,25 +826,63 @@ function drawThoughtBubble(t, centerX, bubbleBottomY) {
 // on screen a little past the instant it happened.
 const CELEBRATION_VISUAL_CYCLES = 2;
 
+// Real launch-then-explode fireworks, per explicit request (the previous version was
+// a ring of sparks rotating in place, not actually fireworks). Purely a function of
+// animFrame -- no stored particle state -- so several staggered shells can loop
+// continuously for as long as the celebration stays visible, the same "compute
+// position analytically" approach as the population cluster's own orbiting dots.
 function drawCelebrationFireworks(centerX, centerY) {
-  const sparkCount = 8;
-  const baseRadius = 12;
-  for (let i = 0; i < sparkCount; i++) {
-    const angle = (i / sparkCount) * Math.PI * 2 + animFrame * 0.05;
-    const pulse = (Math.sin(animFrame * 0.15 + i) + 1) / 2; // 0..1, staggered per spark
-    const dist = baseRadius + pulse * 10;
-    const sx = centerX + Math.cos(angle) * dist;
-    const sy = centerY - 14 + Math.sin(angle) * dist * 0.5; // flattened arc above the camp
-    const hue = (i * 45 + animFrame * 2) % 360;
-    ctx.fillStyle = `hsl(${hue}, 90%, 65%)`;
-    ctx.beginPath();
-    ctx.arc(sx, sy, 1.6, 0, Math.PI * 2);
-    ctx.fill();
+  const shellCount = 3;
+  const period = 60;
+  const launchFrames = 18;
+  const peakHeight = 34;
+
+  for (let s = 0; s < shellCount; s++) {
+    const cycleStart = Math.floor((animFrame + s * (period / shellCount)) / period);
+    const phase = (animFrame + s * (period / shellCount)) % period;
+    const hueBase = (s * 130 + cycleStart * 47) % 360; // a fresh color each time this shell repeats
+    const launchX = centerX + (s - (shellCount - 1) / 2) * 10; // spread shells out horizontally
+
+    if (phase < launchFrames) {
+      // Ascending rocket, with a short fading trail behind it.
+      const t = phase / launchFrames;
+      const y = centerY - t * peakHeight;
+      const trailY = centerY - Math.max(0, t - 0.15) * peakHeight;
+      ctx.strokeStyle = `hsla(${hueBase}, 90%, 70%, 0.8)`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(launchX, trailY);
+      ctx.lineTo(launchX, y);
+      ctx.stroke();
+      ctx.fillStyle = `hsl(${hueBase}, 95%, 75%)`;
+      ctx.beginPath();
+      ctx.arc(launchX, y, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Burst: particles radiate outward from the peak and fade, with a slight
+      // downward droop (gravity) as they age.
+      const et = (phase - launchFrames) / (period - launchFrames); // 0..1
+      const burstY = centerY - peakHeight;
+      const particleCount = 10;
+      const spread = 14 + et * 10;
+      const fade = Math.max(0, 1 - et);
+      for (let p = 0; p < particleCount; p++) {
+        const angle = (p / particleCount) * Math.PI * 2;
+        const dist = spread * et;
+        const px = launchX + Math.cos(angle) * dist;
+        const py = burstY + Math.sin(angle) * dist * 0.7 + et * et * 10;
+        const hue = (hueBase + p * 12) % 360;
+        ctx.fillStyle = `hsla(${hue}, 95%, 65%, ${fade})`;
+        ctx.beginPath();
+        ctx.arc(px, py, 1.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
   ctx.font = "13px sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("🎉", centerX, centerY - 26);
+  ctx.fillText("🎉", centerX, centerY - peakHeight - 10);
 }
 
 function drawTribeIndividuals(tribeId, t) {

@@ -72,3 +72,23 @@ Reply with ONLY JSON:
             "water_decision": {"decreed": False, "reason": ""},
         }
     return result
+
+
+async def name_settlement(client: OllamaClient, model: str, tribe_name: str, chief_name: str, biome: str) -> dict:
+    """Called once, the first time a tribe genuinely settles somewhere with real water
+    access (see Simulation._is_settled_near_water) -- same in-fiction-decision pattern
+    as elect_chief above. The tribe's own reasoning already decided to settle here
+    (RELOCATE, then simply staying); this just lets the fiction catch up with what
+    already happened, rather than the settlement staying an anonymous coordinate."""
+    prompt = f"""You are narrating a moment for the {tribe_name} tribe: their chief, {chief_name}, has \
+decided this {biome} beside reliable water is where the tribe will settle for good.
+
+Invent a short name the chief gives this new settlement -- fitting this tribe's own culture and \
+this place, not a generic label.
+
+Reply with ONLY JSON:
+{{"settlement_name": "a short, evocative name", "note": "one sentence about why this name was chosen"}}"""
+    result = await client.generate_json(model, prompt, temperature=0.9)
+    if not result or not result.get("settlement_name"):
+        return {"settlement_name": f"{tribe_name}'s Settlement", "note": ""}
+    return result

@@ -16,6 +16,17 @@ MAX_TRIBES = 4
 SETTLEMENT_STABILITY_CYCLES = 10
 FARMABLE_BIOMES = ("plains", "river", "lake")
 
+# Explicit request: a weak model faced with the full ~13-action Stone Age list from
+# cycle one has no structural push toward the single most important early decision --
+# settling somewhere real. Before a tribe has EVER settled next to real water (see
+# Simulation.Tribe.has_ever_settled/Simulation._is_settled_near_water), its choices are
+# narrowed to just enough to survive and actually go find a home; everything else
+# (building, hunting parties, raiding, trading, breeding) unlocks permanently the first
+# time it genuinely settles, not re-locked if it later relocates again. Still the
+# model's own choice among what's offered, same gating principle as GATHER_WOOD/STONE
+# being locked pre-settlement -- just applied to the whole early action set at once.
+PRE_SETTLEMENT_ACTIONS = ("GATHER_WATER", "GATHER_FOOD", "SCOUT", "RELOCATE", "IDLE")
+
 # Tiles moved per axis per cycle toward target_vector. At 1 (the original value), crossing
 # the 100-tile grid takes 100+ cycles minimum -- at roughly 2 seconds of real inference
 # time per cycle, a "good" decision to travel far was still visually imperceptible for

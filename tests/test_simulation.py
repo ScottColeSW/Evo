@@ -217,6 +217,46 @@ def test_material_surplus_is_surfaced_alongside_a_real_food_or_water_warning():
     assert "20 stone" not in request["prompt"]
 
 
+def test_water_warning_mentions_settling_at_a_confirmed_site_as_the_real_fix():
+    """Regression: a live-run complaint -- "the warnings do not mention settling as
+    an alternative to low water." A tribe already chronically short on water may
+    already know exactly where real water is (a confirmed site) without ever having
+    relocated there; the warning used to only ever say "gather more" or "scout for
+    more," never that settling at an already-known site would fix this for good."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # forest, not water
+    tribe = sim.tribes["tribe_0"]
+    tribe.water = 0  # triggers the thirst warning
+    tribe.confirmed_water_sites = [(40, 37)]
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Settling at the confirmed water source (40,37) would fix this for good" in request["prompt"]
+
+
+def test_water_warning_says_nothing_extra_without_a_confirmed_site():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.water = 0  # triggers the thirst warning, but no confirmed site exists yet
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "would fix this for good" not in request["prompt"]
+
+
+def test_water_warning_omits_the_settling_suggestion_once_already_settled_there():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.water = 0
+    tribe.confirmed_water_sites = [(40, 37)]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES  # already settled here
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "would fix this for good" not in request["prompt"]
+
+
 def test_material_surplus_is_not_surfaced_without_a_real_survival_warning():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
@@ -338,6 +378,7 @@ def test_visible_entities_ignores_a_distant_lightning_strike():
 def test_wildlife_sighting_appears_when_roll_succeeds_in_game_rich_terrain():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # default spawn is forest
     tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True  # HUNT_DEER isn't in the pre-settlement action set
 
     with mock.patch("backend.simulation.random.random", return_value=0.0):
         request, _ctx = sim._prepare_turn(tribe)
@@ -376,6 +417,7 @@ def test_wildlife_sighting_names_a_species_from_the_richest_nearby_biomes_pool()
     should now reflect the biome that actually produced the sighting."""
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])
     tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True  # HUNT_DEER isn't in the pre-settlement action set
 
     with mock.patch("backend.simulation.random.random", return_value=0.0):
         request, _ctx = sim._prepare_turn(tribe)
@@ -403,6 +445,7 @@ def test_settled_tribe_on_farmable_ground_can_gather_wood_and_stone():
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains
     tribe = sim.tribes["tribe_0"]
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.has_ever_settled = True  # isolate this test from the pre-settlement gate
 
     _request, ctx = sim._prepare_turn(tribe)
 
@@ -433,6 +476,7 @@ def test_farming_and_eggs_need_real_water_access_not_just_any_farmable_ground():
     tribe = sim.tribes["tribe_0"]
     tribe.era = "bronze_age"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.has_ever_settled = True  # isolate this test from the pre-settlement gate
 
     _request, ctx = sim._prepare_turn(tribe)
 
@@ -475,6 +519,53 @@ def test_no_farming_nudge_once_a_plot_and_flock_already_exist():
     assert "A flock of 3 is being kept" in request["prompt"]
 
 
+def test_fresh_tribe_has_only_pre_settlement_actions_available():
+    """Explicit request: a weak model faced with the full Stone Age action list from
+    cycle one has no structural push toward the single most important early decision
+    -- settling somewhere real. Before it's ever settled next to real water, its
+    choices are narrowed to just enough to survive and go find a home."""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    assert tribe.has_ever_settled is False
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert set(ctx["available_actions"]) == set(config.PRE_SETTLEMENT_ACTIONS)
+    assert "HUNT_DEER" not in ctx["available_actions"]
+    assert "BREED" not in ctx["available_actions"]
+    assert "only survival and exploration actions are available" in request["prompt"]
+
+
+def test_settling_near_water_permanently_unlocks_the_full_action_set():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert tribe.has_ever_settled is True
+    assert "HUNT_DEER" in ctx["available_actions"]
+    assert "BREED" in ctx["available_actions"]
+
+
+def test_has_ever_settled_does_not_relock_after_relocating_away_again():
+    """A one-way unlock -- proving the tribe CAN settle properly shouldn't be undone
+    by later choosing to move on again."""
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = 0  # just relocated away, no longer currently settled
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert tribe.has_ever_settled is True
+    assert "HUNT_DEER" in ctx["available_actions"]
+
+
 def test_unsettled_tribe_can_still_relocate():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
@@ -486,12 +577,14 @@ def test_unsettled_tribe_can_still_relocate():
 
 
 def test_settled_tribe_can_no_longer_relocate():
-    """A tribe that has genuinely settled -- farmable ground, stable long enough to be
-    gathering wood and stone -- shouldn't be one whim away from uprooting the whole
-    settlement. Symmetric with the not-settled GATHER_WOOD/STONE gate above."""
+    """A tribe that has genuinely settled next to real water -- stable long enough to
+    be gathering wood/stone and farming -- shouldn't be one whim away from uprooting
+    the whole settlement. Uses the stricter settled_near_water condition, not the
+    looser GATHER_WOOD gate -- see test_settled_but_not_near_water_can_still_relocate
+    for why the looser one would trap a tribe permanently."""
     from backend import config
 
-    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
     tribe = sim.tribes["tribe_0"]
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
 
@@ -499,6 +592,27 @@ def test_settled_tribe_can_no_longer_relocate():
 
     assert "RELOCATE" not in ctx["available_actions"]
     assert "no longer considering relocating" in _request["prompt"]
+
+
+def test_settled_but_not_near_water_can_still_relocate():
+    """Regression: RELOCATE used to lock out on the same looser check GATHER_WOOD
+    uses (any farmable ground, long enough) -- a live run caught a tribe that settled
+    on plains (farmable, but not river/lake) getting permanently stuck there once
+    RELOCATE disappeared, unable to ever reach real water and actually farm. A tribe
+    settled on merely-farmable, non-water ground must keep RELOCATE available so it
+    can still choose to move on."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.has_ever_settled = True  # isolate this test from the pre-settlement gate
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "RELOCATE" in ctx["available_actions"]
+    assert "GATHER_WOOD" in ctx["available_actions"]  # still generally settled
+    assert "relocating toward confirmed water is still an option" in request["prompt"]
 
 
 def test_choosing_relocate_resets_settlement_progress():
@@ -946,10 +1060,16 @@ def test_expedition_arrival_delivers_foraged_food_and_water_to_the_tribe():
 
     sim._advance_expeditions(tribe)
 
-    expected_food = 10 + 7 + config.EXPEDITION_RETURN_DAILY_FOOD
+    # Confirming water for the first time now throws a celebration (explicit request)
+    # -- a real food cost on top of the delivered/foraged amounts, not a separate
+    # confound to work around.
+    delivered_food = 10 + 7 + config.EXPEDITION_RETURN_DAILY_FOOD
+    spent_on_celebration = round(delivered_food * config.CELEBRATION_RESOURCE_COST_FRACTION)
+    expected_food = delivered_food - spent_on_celebration
     expected_water = 10 + 5 + config.EXPEDITION_RETURN_DAILY_WATER
     assert tribe.food == expected_food
     assert tribe.water == expected_water
+    assert any("celebrates the discovery of water" in entry for entry in tribe.history)
 
 
 def test_expedition_report_is_attributed_to_the_chief_when_one_exists():
@@ -2036,10 +2156,36 @@ def test_advance_farming_harvests_food_once_growth_matures_and_resets():
 
     sim._advance_farming(tribe)
 
+    harvested = config.CROP_HARVEST_YIELD * 2
+    # A harvest now also throws a celebration (explicit request: "a grand harvest is
+    # a real celebration"), spending a fraction of the freshly-harvested food.
+    spent_on_celebration = round(harvested * config.CELEBRATION_RESOURCE_COST_FRACTION)
     assert tribe.crop_growth == 0
-    assert tribe.food == config.CROP_HARVEST_YIELD * 2
+    assert tribe.food == harvested - spent_on_celebration
     assert tribe.last_harvest_cycle == sim.cycle
     assert any("harvest" in entry for entry in tribe.history)
+    assert any(t["name"] == "Harvester" for t in tribe.trophies)
+    assert any("harvest festival" in entry for entry in tribe.history)
+
+
+def test_advance_farming_harvest_celebration_respects_the_cooldown():
+    """Unlike the water-discovery/settling celebrations (each essentially one-time),
+    a harvest recurs every ~10 cycles per plot -- an uncapped feast on every single
+    one would drain food faster than farming produces it."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.farm_plots = 1
+    tribe.crop_growth = 100 - config.CROP_GROWTH_PER_CYCLE
+    tribe.water = 100
+    tribe.food = 0
+    tribe.last_celebration_cycle = sim.cycle  # just celebrated this exact cycle
+
+    sim._advance_farming(tribe)
+
+    assert tribe.food == config.CROP_HARVEST_YIELD  # no celebration cost taken
+    assert not any("harvest festival" in entry for entry in tribe.history)
 
 
 def test_advance_farming_withers_a_plot_without_enough_water():
@@ -2156,6 +2302,57 @@ def test_advance_city_growth_caps_at_max_buildings():
     assert tribe.city_buildings == config.MAX_CITY_BUILDINGS
 
 
+def test_celebrate_settling_fires_once_a_tribe_settles_near_real_water():
+    """Explicit request: settling somewhere for good deserves its own celebration,
+    not just whatever unrelated surplus/discovery celebration happens to fire next."""
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.food = 100
+
+    if not tribe.settlement_name and not tribe.pending_settlement_naming and sim._is_settled_near_water(tribe):
+        sim._celebrate_settling(tribe)
+
+    assert tribe.pending_settlement_naming is True
+    assert any("celebrates settling here for good" in entry for entry in tribe.history)
+    assert tribe.food < 100  # a real food cost, not a free flourish
+
+
+@run_async
+async def test_resolve_settlement_naming_names_the_place_via_a_real_llm_call():
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.pending_settlement_naming = True
+
+    async def fake_name_settlement(client, model, tribe_name, chief_name, biome):
+        return {"settlement_name": "Rivergate", "note": "named for the river's mouth"}
+
+    with mock.patch("backend.simulation.name_settlement", fake_name_settlement):
+        await sim._resolve_settlement_naming(tribe)
+
+    assert tribe.settlement_name == "Rivergate"
+    assert tribe.pending_settlement_naming is False
+    assert any("Rivergate" in entry and "named for the river's mouth" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_resolve_settlement_naming_falls_back_gracefully_if_the_llm_call_fails():
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.pending_settlement_naming = True
+
+    async def fake_name_settlement(client, model, tribe_name, chief_name, biome):
+        return {}
+
+    with mock.patch("backend.simulation.name_settlement", fake_name_settlement):
+        await sim._resolve_settlement_naming(tribe)
+
+    assert tribe.settlement_name == "River Tribe's Settlement"
+
+
 @run_async
 async def test_resolve_hatch_founding_egg_hatches_without_crossing():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
@@ -2168,6 +2365,7 @@ async def test_resolve_hatch_founding_egg_hatches_without_crossing():
     assert tribe.pending_hatch is None
     assert tribe.flock_lineage[0]["parents"] == []
     assert any("hatches" in entry for entry in tribe.history)
+    assert any(t["name"] == "Flock Keeper" for t in tribe.trophies)
 
 
 @run_async
