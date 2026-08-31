@@ -204,6 +204,17 @@ FLOCK_UPKEEP_FOOD_PER_MEMBER = 1
 FLOCK_MIN_SIZE_TO_BREED = 2
 FLOCK_NATURAL_HATCH_CHANCE = 0.15
 
+# Fishing (backend/actions.py GATHER_FISH, Simulation._advance_fish_supply): gated the
+# same as farming/eggs (settled + real water access). "Learning to fish" isn't a
+# separate knowledge/skill system -- it's the same "an action unlocks a passive
+# system" shape crops and water already use. The first successful catch flips
+# Tribe.fishing_learned, which is all _advance_fish_supply checks; every GATHER_FISH
+# after that (including the first) still pays out its own immediate catch too.
+GATHER_FISH_SUCCESS_CHANCE = 0.5
+FISHING_CATCH_FOOD_MIN = 8
+FISHING_CATCH_FOOD_MAX = 16
+FISHING_SUPPLY_PER_CYCLE = 8
+
 # Chief trophies (backend/simulation.py._check_chief_trophies): a lightweight legacy
 # system credited to whichever chief is in power the moment each is first earned, once
 # per tribe's lifetime. "Water Bringer" is deliberately the standout -- reliable water

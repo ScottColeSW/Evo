@@ -1600,7 +1600,7 @@ function landmarkCounts(t) {
 // from the general intel-line so plot growth and flock lineage read as their own
 // distinct system on the map, not another buried stat.
 function farmingPanel(t) {
-  if (!t.farm_plots && !t.flock) return "";
+  if (!t.farm_plots && !t.flock && !t.fishing_learned) return "";
   const parts = [];
   if (t.farm_plots > 0) {
     const stage = t.crop_growth < 33 ? "🌱 sprouting" : t.crop_growth < 66 ? "🌿 growing" : "🌾 ready to harvest";
@@ -1610,6 +1610,9 @@ function farmingPanel(t) {
     const lineage = t.flock_lineage || [];
     const lastTrait = lineage.length ? lineage[lineage.length - 1].trait : "";
     parts.push(`🐔 flock of ${t.flock}${lastTrait ? ` — latest: ${escapeHtml(lastTrait)}` : ""}`);
+  }
+  if (t.fishing_learned) {
+    parts.push("🎣 fishing mastered — food flows in daily");
   }
   return `<div class="farming-panel"><span class="farming-title">🌾 Farm</span><br>${parts.join("<br>")}</div>`;
 }

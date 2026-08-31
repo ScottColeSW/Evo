@@ -203,6 +203,67 @@ def test_gather_eggs_crosses_the_two_most_recent_flock_members_once_available():
     assert [p["trait"] for p in tribe.pending_hatch["parents"]] == ["second", "third"]
 
 
+def test_gather_fish_catches_food_on_a_successful_roll():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        ACTION_REGISTRY["GATHER_FISH"](sim, tribe, "river", _NO_TARGET)
+
+    assert tribe.food > 0
+
+
+def test_gather_fish_does_nothing_on_a_failed_roll():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 0
+
+    with mock.patch("backend.actions.random.random", return_value=0.999):
+        ACTION_REGISTRY["GATHER_FISH"](sim, tribe, "river", _NO_TARGET)
+
+    assert tribe.food == 0
+    assert tribe.fishing_learned is False
+
+
+def test_first_successful_catch_learns_fishing_and_celebrates():
+    """Explicit request: "learning to fish" isn't a separate knowledge system --
+    the first catch just flips fishing_learned, awards a trophy, and throws the same
+    kind of party water discovery/settling/game discovery already get."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 100
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        result = ACTION_REGISTRY["GATHER_FISH"](sim, tribe, "river", _NO_TARGET)
+
+    assert tribe.fishing_learned is True
+    assert any(t["name"] == "Angler" for t in tribe.trophies)
+    assert any("celebrates learning to fish" in entry for entry in tribe.history)
+    assert "first catch" in result
+
+
+def test_later_catches_do_not_re_learn_or_re_celebrate():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.fishing_learned = True
+    tribe.food = 100
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        result = ACTION_REGISTRY["GATHER_FISH"](sim, tribe, "river", _NO_TARGET)
+
+    assert len(tribe.trophies) == 0
+    assert not any("celebrates learning to fish" in entry for entry in tribe.history)
+    assert "first catch" not in result
+
+
 def test_hunting_success_also_depletes_local_game():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Plains Tribe", "gemma2:2b", 65, 85, "#34d399")

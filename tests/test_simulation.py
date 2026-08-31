@@ -2375,6 +2375,86 @@ def test_advance_water_supply_does_nothing_before_settling():
     assert tribe.water == 10
 
 
+def test_advance_fish_supply_flows_in_once_fishing_is_learned_and_settled():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.fishing_learned = True
+    tribe.food = 10
+
+    sim._advance_fish_supply(tribe)
+
+    assert tribe.food == 10 + config.FISHING_SUPPLY_PER_CYCLE
+
+
+def test_advance_fish_supply_does_nothing_until_fishing_is_learned():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.food = 10
+
+    sim._advance_fish_supply(tribe)
+
+    assert tribe.food == 10
+
+
+def test_advance_fish_supply_does_nothing_before_settling_even_if_learned():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # forest, not settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.fishing_learned = True
+    tribe.food = 10
+
+    sim._advance_fish_supply(tribe)
+
+    assert tribe.food == 10
+
+
+def test_gather_fish_gated_the_same_as_farming_and_eggs():
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "bronze_age"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_FISH" not in ctx["available_actions"]
+
+
+def test_gather_fish_available_once_settled_next_to_real_water():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "bronze_age"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_FISH" in ctx["available_actions"]
+    assert "a single successful catch would make fishing a permanent" in request["prompt"]
+
+
+def test_no_fishing_nudge_once_already_learned():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "bronze_age"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.fishing_learned = True
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "a single successful catch would make fishing a permanent" not in request["prompt"]
+    assert "Fishing has been mastered here" in request["prompt"]
+
+
 def test_settled_near_water_fact_mentions_passive_water_supply():
     from backend import config
 

@@ -203,6 +203,26 @@ def _gather_eggs(sim, tribe, biome, target):
     return "an egg is found and set aside to hatch"
 
 
+def _gather_fish(sim, tribe, biome, target):
+    """Only reachable once Simulation._prepare_turn's settled-near-water gate allows
+    it, same as PLANT_CROP/GATHER_EGGS. "Learning to fish" isn't a separate knowledge
+    system -- the first successful catch just flips tribe.fishing_learned, which is
+    all Simulation._advance_fish_supply checks to start a passive daily food supply
+    from then on, the same "action unlocks a passive system" shape crops and water
+    already use. Every catch (including the first) still pays out its own food too."""
+    if random.random() >= config.GATHER_FISH_SUCCESS_CHANCE:
+        return "no fish caught this time"
+    caught = random.randint(config.FISHING_CATCH_FOOD_MIN, config.FISHING_CATCH_FOOD_MAX)
+    tribe.food += caught
+    if not tribe.fishing_learned:
+        tribe.fishing_learned = True
+        sim._award_trophy(tribe, "Angler")
+        if tribe.last_celebration_cycle != sim.cycle:
+            sim._celebrate_fishing_learned(tribe)
+        return f"the first catch! {caught} food landed, and fishing is now second nature to the tribe"
+    return f"{caught} food caught fishing"
+
+
 # A small, cheap flavor name for whoever is leading an expedition -- not a second LLM
 # agent (that would double Ollama calls per tribe per cycle for a party that doesn't
 # make its own strategic decisions anyway; the tribe already decided to send them).
@@ -508,6 +528,7 @@ ACTION_REGISTRY = {
     "CONSTRUCT_WALL": _construct_wall,
     "PLANT_CROP": _plant_crop,
     "GATHER_EGGS": _gather_eggs,
+    "GATHER_FISH": _gather_fish,
     "SCOUT": _scout,
     "HUNTING_PARTY": _hunting_party,
     "RELOCATE": _relocate,
@@ -534,6 +555,7 @@ ACTION_DESCRIPTIONS = {
     "CONSTRUCT_WALL": "Build a wall at your current tile using stored wood and stone. Does nothing if one is already built here.",
     "PLANT_CROP": "Plant a farm plot at your current tile using stored wood -- only possible once the tribe has settled somewhere with real water access. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
     "GATHER_EGGS": "Search for wild fowl nests near your current tile -- only possible on the same settled ground with reliable water access that farming needs (fowl nest near water, not in it). A found egg is set aside and hatches on its own, growing the tribe's flock by one.",
+    "GATHER_FISH": "Fish the water at your current tile -- only possible on the same settled ground with reliable water access that farming needs. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",
     "SCOUT": "Dispatch an expedition toward target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home. Your tribe can have a couple of parties out at once (scouting or hunting, any mix) -- choosing SCOUT again sends another one if there's room, or just reports on whoever's already out once you're at capacity.",
     "HUNTING_PARTY": "Send a hunting party toward target_vector -- shares the same expedition capacity as SCOUT (a couple of parties, scouting or hunting in any mix, can be out at once). They travel and hunt on their own supply for up to several days, facing the same wolf-pack risk as an instant hunt on every day out, until they catch something or give up. Any food caught only becomes real, usable food once they've walked all the way home -- a hunt still in the field does nothing for hunger right now, no matter how promising.",
     "RELOCATE": "Move your whole tribe several tiles toward target_vector this cycle, possibly over several cycles for a far destination. Produces no resources while traveling and costs extra food and water for the effort.",

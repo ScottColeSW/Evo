@@ -180,6 +180,12 @@ class Tribe:
         self.farm_plots = 0
         self.crop_growth = 0
         self.last_harvest_cycle = 0
+        # Fishing (backend/actions.py GATHER_FISH, Simulation._advance_fish_supply):
+        # not a separate knowledge/skill system -- the first successful catch just
+        # flips this, and _advance_fish_supply checks nothing else to start a passive
+        # daily food supply, the same "action unlocks a passive system" shape farming
+        # and water already use.
+        self.fishing_learned = False
         # City growth (Simulation._advance_city_growth): founded_city stays the
         # one-time era-advancement flag it always was; this is the separate, growing
         # count of buildings that appear afterward as population climbs.
@@ -240,6 +246,7 @@ class Tribe:
             "city_buildings": self.city_buildings,
             "farm_plots": self.farm_plots,
             "crop_growth": self.crop_growth,
+            "fishing_learned": self.fishing_learned,
             "last_harvest_cycle": self.last_harvest_cycle,
             "flock": self.flock,
             "flock_lineage": self.flock_lineage,
@@ -674,6 +681,7 @@ class Simulation:
             if not tribe.settlement_name and not tribe.pending_settlement_naming and self._is_settled_near_water(tribe):
                 self._celebrate_settling(tribe)
             self._advance_water_supply(tribe)
+            self._advance_fish_supply(tribe)
             self._advance_farming(tribe)
             self._advance_flock(tribe)
             self._advance_city_growth(tribe)
@@ -958,7 +966,7 @@ class Simulation:
             available_actions = [a for a in available_actions if a != "RELOCATE"]
 
         if not settled_near_water:
-            available_actions = [a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS")]
+            available_actions = [a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS", "GATHER_FISH")]
 
         visible_entities = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         if not tribe.has_ever_settled:
@@ -1018,18 +1026,20 @@ class Simulation:
                 "likely fare better than hunting blind."
             )
 
-        if "PLANT_CROP" in unlocked_actions_through(tribe.era) or "GATHER_EGGS" in unlocked_actions_through(tribe.era):
+        settlement_actions = ("PLANT_CROP", "GATHER_EGGS", "GATHER_FISH")
+        if any(a in unlocked_actions_through(tribe.era) for a in settlement_actions):
             if not settled_near_water:
                 visible_entities.append(
-                    "Crops and eggs need somewhere with real water access to work -- the tribe hasn't "
-                    "settled on ground like that yet (a river or lake tile, not just any farmable ground)."
+                    "Crops, eggs, and fishing all need somewhere with real water access to work -- the "
+                    "tribe hasn't settled on ground like that yet (a river or lake tile, not just any "
+                    "farmable ground)."
                 )
             else:
-                # NUDGE (2026-08-30, explicit "nudge harder" request): a plain, concrete
-                # suggestion once the gate is actually met, not just silent availability
-                # -- same category as the survival-critical nudge in instincts.py.
-                # PLANT_CROP/GATHER_EGGS are still ordinary entries in available_actions
-                # the model chooses or ignores; this doesn't force either one.
+                # NUDGE (2026-08-30/31, explicit "nudge harder" request): a plain,
+                # concrete suggestion once the gate is actually met, not just silent
+                # availability -- same category as the survival-critical nudge in
+                # instincts.py. These are still ordinary entries in available_actions
+                # the model chooses or ignores; this doesn't force any of them.
                 if tribe.farm_plots == 0:
                     visible_entities.append(
                         "The tribe has settled near reliable water -- this ground could support a farm plot."
@@ -1039,6 +1049,17 @@ class Simulation:
                         "No flock has been started yet -- wild fowl nest near settlements with reliable "
                         "water like this, so gathering their eggs here could begin one."
                     )
+                if not tribe.fishing_learned:
+                    visible_entities.append(
+                        "No one has fished here yet -- a single successful catch would make fishing a "
+                        "permanent, daily source of food from then on."
+                    )
+
+        if tribe.fishing_learned:
+            visible_entities.append(
+                "Fishing has been mastered here -- food now flows in on its own each cycle, on top of "
+                "anything caught by hand."
+            )
 
         if tribe.farm_plots > 0:
             visible_entities.append(
@@ -1644,6 +1665,15 @@ class Simulation:
         if self._is_settled_near_water(tribe):
             tribe.water += config.SETTLED_WATER_SUPPLY_PER_CYCLE
 
+    def _advance_fish_supply(self, tribe: Tribe) -> None:
+        """Once fishing is learned (the first successful GATHER_FISH), food flows in
+        daily the same way water already does once settled -- not a second knowledge
+        subsystem, just the same "action unlocks a passive system" shape applied to a
+        different resource. GATHER_FISH still works and still pays out its own catch
+        on top of this."""
+        if tribe.fishing_learned and self._is_settled_near_water(tribe):
+            tribe.food += config.FISHING_SUPPLY_PER_CYCLE
+
     def _advance_farming(self, tribe: Tribe) -> None:
         """A planted crop plot (actions.py._plant_crop) grows on its own every cycle,
         the same "passive consequence, not a discrete action" category as upkeep and
@@ -1877,6 +1907,24 @@ class Simulation:
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
             f"\U0001f389 {tribe.name} holds a harvest festival, spending {spent} food on a feast"
+        )
+        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+            pair = _eligible_breeding_pair(tribe)
+            if pair is not None:
+                parent_a, parent_b = pair
+                tribe.pending_birth = {"parent_a": parent_a, "parent_b": parent_b}
+                tribe.history.append(f"amid the celebration, {parent_a} and {parent_b} decide to start a family together")
+
+    def _celebrate_fishing_learned(self, tribe: Tribe) -> None:
+        """The first successful GATHER_FISH is its own real milestone -- same "you
+        learned something! now we party!" treatment as _celebrate_water_discovery/
+        _celebrate_game_discovery, just for fishing instead of a scouted site."""
+        tribe.last_celebration_cycle = self.cycle
+        spent = round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION)
+        tribe.food -= spent
+        self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.history.append(
+            f"\U0001f389 {tribe.name} celebrates learning to fish, spending {spent} food on a feast"
         )
         if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
             pair = _eligible_breeding_pair(tribe)
