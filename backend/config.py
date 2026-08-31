@@ -250,9 +250,21 @@ FOOD_TROPHY_THRESHOLD = 60
 # them together, without needing the model to separately choose BREED.
 CELEBRATION_DISCOVERY_WEIGHT = 0.75
 CELEBRATION_RESOURCE_COST_FRACTION = 0.3
+# Explicit finding: at 30% of *current* food with no ceiling, a thriving tribe's
+# celebrations get more expensive in absolute terms the wealthier it gets --
+# "we spend a lot of time on Parties." Capped so a rich tribe doesn't bleed
+# proportionally more just for being rich.
+CELEBRATION_MAX_COST = 60
 CELEBRATION_PRIDE_MAGNITUDE = 0.5
 CELEBRATION_PRIDE_RADIUS = 6
 CELEBRATION_COOLDOWN_CYCLES = 20
+# _check_for_celebration's surplus-only branch (no real discovery, just "food is
+# comfortably above FOOD_TROPHY_THRESHOLD") can otherwise fire every single cooldown
+# window forever -- real, but not a fresh reason to spend food indefinitely once a
+# tribe has proven it can reliably sustain a surplus. Retires after this many, the
+# same "generalist narrows to specialist" shape GATHER_FOOD's own retirement uses --
+# the discovery branch (always a genuinely new, distinct thing) never retires.
+CELEBRATION_SURPLUS_RETIREMENT_COUNT = 3
 
 # Milestone trophies (backend/simulation.py._award_trophy's `individual` param): unlike
 # the chief-credited trophies above, these are earned by a specific named scout or

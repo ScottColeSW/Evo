@@ -2488,6 +2488,60 @@ def test_celebration_respects_its_own_cooldown():
     assert second_count == 1  # unchanged -- still inside the cooldown window
 
 
+def test_celebration_cost_is_capped_regardless_of_wealth():
+    """Explicit finding: 30% of current food with no ceiling gets more expensive in
+    absolute terms the wealthier a tribe gets -- "we spend a lot of time on
+    Parties." """
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 10_000
+
+    sim._check_for_celebration(tribe)
+
+    assert tribe.food == 10_000 - config.CELEBRATION_MAX_COST
+
+
+def test_surplus_only_celebration_retires_after_the_configured_count():
+    """A tribe that has already celebrated mere plenty a few times shouldn't keep
+    paying for it forever -- the same 'generalist narrows to specialist' shape
+    GATHER_FOOD's own retirement uses. Discovery-based celebrations never retire."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    for i in range(config.CELEBRATION_SURPLUS_RETIREMENT_COUNT):
+        tribe.food = config.FOOD_TROPHY_THRESHOLD * 2
+        sim.cycle += config.CELEBRATION_COOLDOWN_CYCLES
+        sim._check_for_celebration(tribe)
+
+    assert tribe.surplus_celebrations == config.CELEBRATION_SURPLUS_RETIREMENT_COUNT
+    assert any("no longer celebrates mere plenty" in e for e in tribe.history)
+    count_before = sum("holds a celebration" in e for e in tribe.history)
+
+    tribe.food = config.FOOD_TROPHY_THRESHOLD * 2
+    sim.cycle += config.CELEBRATION_COOLDOWN_CYCLES
+    sim._check_for_celebration(tribe)
+
+    assert sum("holds a celebration" in e for e in tribe.history) == count_before  # did not fire again
+
+
+def test_discovery_celebration_never_retires():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.surplus_celebrations = config.CELEBRATION_SURPLUS_RETIREMENT_COUNT  # already retired
+    tribe.food = 10  # no surplus at all
+    tribe.memory.remember("Scouts confirmed fresh water at (40,37).", sim.cycle, weight=0.9)
+
+    sim._check_for_celebration(tribe)
+
+    assert any("fresh discovery" in e for e in tribe.history)
+
+
 def test_celebration_triggers_breeding_when_two_named_individuals_are_eligible():
     from backend import config
 

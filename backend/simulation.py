@@ -115,6 +115,13 @@ def _celebration_shout(tribe: "Tribe") -> str:
     return f' -- "{tribe.last_broadcast}!"' if tribe.last_broadcast else ""
 
 
+# Explicit finding: a flat 30%-of-current-food cost gets more expensive in absolute
+# terms the wealthier a tribe gets, with no ceiling -- "we spend a lot of time on
+# Parties." Shared by every _celebrate_* method so the cap applies uniformly.
+def _celebration_cost(tribe: "Tribe") -> int:
+    return min(round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION), config.CELEBRATION_MAX_COST)
+
+
 class Tribe:
     def __init__(
         self, tribe_id: str, name: str, model: str, x: int, y: int, color: str,
@@ -179,6 +186,10 @@ class Tribe:
         # See Simulation._check_for_celebration -- very negative so a tribe's very
         # first celebration isn't blocked by a cooldown it never actually used yet.
         self.last_celebration_cycle: int = -config.CELEBRATION_COOLDOWN_CYCLES
+        # Counts only the surplus-only celebration branch (not discovery-based ones)
+        # -- see _check_for_celebration's retirement once this reaches
+        # CELEBRATION_SURPLUS_RETIREMENT_COUNT.
+        self.surplus_celebrations = 0
         # See Simulation._check_raider_attack -- very negative so a tribe's first
         # possible raid isn't blocked by a cooldown it never actually used yet.
         self.last_raider_attack_cycle: int = -config.RAIDER_HAZARD_COOLDOWN_CYCLES
@@ -2052,7 +2063,7 @@ class Simulation:
         for breeding and mating" a party creates) so the two don't both fire the same
         cycle, but this one always fires on a genuine new find."""
         tribe.last_celebration_cycle = self.cycle
-        spent = round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION)
+        spent = _celebration_cost(tribe)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
@@ -2073,7 +2084,7 @@ class Simulation:
         ever carry memory weight 0.6, below CELEBRATION_DISCOVERY_WEIGHT, so this would
         otherwise never trigger the generic _check_for_celebration path at all."""
         tribe.last_celebration_cycle = self.cycle
-        spent = round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION)
+        spent = _celebration_cost(tribe)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
@@ -2108,7 +2119,17 @@ class Simulation:
         if self.cycle - tribe.last_celebration_cycle < config.CELEBRATION_COOLDOWN_CYCLES:
             return
 
-        surplus = tribe.food >= config.FOOD_TROPHY_THRESHOLD
+        # Explicit finding: this used to fire on surplus alone every single cooldown
+        # window forever -- real the first few times, but not a fresh reason to spend
+        # food indefinitely once a tribe has proven it can reliably sustain a
+        # surplus. Retires after CELEBRATION_SURPLUS_RETIREMENT_COUNT, the same
+        # "generalist narrows to specialist" shape GATHER_FOOD's own retirement uses.
+        # The discovery branch below never retires -- each one is a genuinely new,
+        # distinct thing, not a repeat of the same "yay, food" flavor.
+        surplus = (
+            tribe.food >= config.FOOD_TROPHY_THRESHOLD
+            and tribe.surplus_celebrations < config.CELEBRATION_SURPLUS_RETIREMENT_COUNT
+        )
         # Explicit request: "they celebrated a 'fresh discovery' but they need to
         # name it" -- this used to only check WHETHER a qualifying memory existed,
         # never which one, so the chronicle line could never say what was actually
@@ -2122,10 +2143,17 @@ class Simulation:
             return
 
         tribe.last_celebration_cycle = self.cycle
-        spent = round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION)
+        spent = _celebration_cost(tribe)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         reason = f"a fresh discovery: {discovery_entries[-1]['text']}" if discovery_entries else "a season of plenty"
+        if not discovery_entries:
+            tribe.surplus_celebrations += 1
+            if tribe.surplus_celebrations == config.CELEBRATION_SURPLUS_RETIREMENT_COUNT:
+                tribe.history.append(
+                    f"\U0001f4dc {tribe.name} no longer celebrates mere plenty -- a comfortable "
+                    "surplus has become the norm, not a special occasion"
+                )
         tribe.history.append(
             f"\U0001f389 {tribe.name} holds a celebration for {reason}, spending {spent} food on a feast{_celebration_shout(tribe)}"
         )
@@ -2145,7 +2173,7 @@ class Simulation:
         (backend/leadership.py's name_settlement, resolved in Simulation.step()), same
         pattern as _celebrate_water_discovery."""
         tribe.last_celebration_cycle = self.cycle
-        spent = round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION)
+        spent = _celebration_cost(tribe)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
@@ -2166,7 +2194,7 @@ class Simulation:
         _celebrate_settling (each essentially one-time), this one is cooldown-gated
         the same way the generic _check_for_celebration is."""
         tribe.last_celebration_cycle = self.cycle
-        spent = round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION)
+        spent = _celebration_cost(tribe)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
@@ -2184,7 +2212,7 @@ class Simulation:
         learned something! now we party!" treatment as _celebrate_water_discovery/
         _celebrate_game_discovery, just for fishing instead of a scouted site."""
         tribe.last_celebration_cycle = self.cycle
-        spent = round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION)
+        spent = _celebration_cost(tribe)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
