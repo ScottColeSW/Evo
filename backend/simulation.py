@@ -1299,7 +1299,16 @@ class Simulation:
                     fx, fy = exp["found"]
                     tribe.expeditions_succeeded += 1
                     tribe.scout_successes += 1
-                    self._award_trophy(tribe, "Water Bringer")
+                    # Explicit request: credit the scout who actually found the water,
+                    # not the chief -- _check_chief_trophies' river/lake-standing case
+                    # still credits the chief (a real, different circumstance: the
+                    # chief personally leading the tribe onto water with no scout
+                    # involved), but this is the path that fires in practice, and
+                    # crediting only ever the chief meant a young tribe could go a very
+                    # long time with just one named individual (the chief), leaving
+                    # _eligible_breeding_pair permanently empty until a much
+                    # higher-threshold trophy (Master Pathfinder/Master Hunter) came in.
+                    self._award_trophy(tribe, "Water Bringer", individual=scout)
                     if tribe.scout_successes == config.MILESTONE_SCOUT_SUCCESSES:
                         self._award_trophy(tribe, "Master Pathfinder", individual=scout)
                     self._check_custom_awards(tribe, "scouting", individual=scout)

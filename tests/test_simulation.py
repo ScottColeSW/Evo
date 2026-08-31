@@ -1042,6 +1042,28 @@ def test_expedition_arrival_home_delivers_water_finding_to_memory_and_clears_sta
     assert any("fresh water at (40,37)" in m["text"] for m in tribe.memory.entries)
 
 
+def test_water_bringer_trophy_credits_the_scout_who_confirmed_it_not_the_chief():
+    """Explicit request: crediting Water Bringer only ever to the chief (the original
+    design) meant a young tribe could go a long time with just one named individual,
+    leaving _eligible_breeding_pair permanently empty until a much higher-threshold
+    trophy (Master Pathfinder/Master Hunter) came in. The scout who actually found the
+    water is the one credited here -- _check_chief_trophies' separate river/lake-
+    standing case still credits the chief, a genuinely different circumstance."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+    tribe.expeditions = [{
+        "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
+        "day": 2, "phase": "returning", "found": [40, 37], "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+
+    sim._advance_expeditions(tribe)
+
+    assert any(t["name"] == "Water Bringer" and t["chief"] == "Test Scout" for t in tribe.trophies)
+
+
 def test_expedition_arrival_delivers_foraged_food_and_water_to_the_tribe():
     """The trip isn't a pure resource black hole -- a traveling party forages and
     hunts along the way, more on the outbound leg than the hurried trip home, and
