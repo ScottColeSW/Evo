@@ -226,27 +226,49 @@ Then open `http://localhost:8765` in a browser, pick a model for each tribe, and
 
 ## Known limitations / next steps
 
+A few items that used to live in this section are now fixed, worth naming so the fix
+doesn't get re-litigated later: **persistence** (every run now writes its chronicle to
+`logs/run_*.jsonl` via `backend/event_log.py`'s `RunEventLog`, and final outcomes to
+`logs/scoreboard.jsonl` via `backend/scoreboard.py` -- both survive a server restart);
+**`HUNT_DEER` "succeeding" in the ocean** (`BIOME_YIELD_MULTIPLIER["game"]["ocean"]` is
+`0.0`, so it yields nothing there now); and one item from leadership's "none started"
+list below, which is now started.
+
 - Memory recall uses a deterministic hash-based pseudo-embedding, not real semantics. Swap
   `TribeMemory._embed` in `backend/memory.py` for a call to Ollama's `/api/embeddings` (e.g.
-  with `nomic-embed-text`) for genuine similarity search.
-- `genetics.breed()` is wired but not yet triggered automatically — now that era transitions
-  exist as a concrete event (`Simulation._advance_era_if_ready`), that's the natural place
-  to call it, e.g. on reaching Bronze Age.
+  with `nomic-embed-text`) for genuine similarity search. The same idea -- semantic
+  retrieval instead of exact-match or character-diffing -- would also help the action-text
+  interpreter below if the current cheap tiers turn out not to be enough.
+- `genetics.breed()` (tribe-level ideology/lexicon crossover, triggered by the `BREED`
+  action) is wired but still never actually called from `simulation.py` -- confirmed by
+  grep, not just memory. Its sibling, `genetics.hatch()` (same LLM-crossover shape, applied
+  to a tribe's flock instead), *is* wired now: a successful `GATHER_EGGS` sets
+  `tribe.pending_hatch`, resolved the same cycle into a real `flock_lineage` entry. So the
+  crossover mechanism itself is proven out in practice; the original tribe-culture version
+  of it just still isn't reachable through play.
 - Ancestral trauma currently only comes from individual mishaps (wolf attack, drowning,
   starvation, dehydration) or an individual tribe's own milestones (building a fire,
-  advancing an era) — nothing yet comes from inter-tribe conflict or environmental events
-  (a harsh winter, a plague). Same mechanism either way: call
+  advancing an era, settling, a harvest, a birth) — nothing yet comes from inter-tribe
+  conflict (confirmed: `RAID`'s handler doesn't call `radiate_event_wave` at all, win or
+  lose) or environmental events (a harsh winter, a plague). Same mechanism either way: call
   `self.trauma.radiate_event_wave(x, y, magnitude, radius)` from `simulation.py`.
-- No persistence: closing the server drops the run. Add a snapshot dump if you want to
-  resume or analyze runs later.
-- Models defaulting to `GATHER_WOOD` regardless of what's actually needed (confirmed live,
-  including 2,000+ wood stockpiled at population 1 with zero food) is a real, unaddressed
-  bias. A directive fix that named the correct action explicitly measurably worked but was
-  reverted on principle (see `backend/instincts.py`) in favor of the leadership system,
-  which as of this writing has not yet been observed to fix it in practice -- the two live
-  runs since adding chiefs still showed heavy wood accumulation. Whether an emergent,
-  in-fiction chief philosophy can actually out-compete this bias, versus a hard-coded
-  directive being the only thing that reliably does, is an open, unresolved question.
+- Models gravitating to one action regardless of what's actually optimal is real and now
+  has much better data behind it than the original wood-hoarding observation. Across ~140
+  logged headless runs, `GATHER_FOOD` was chosen 1,604 times vs. 5 for `GATHER_EGGS`, 13 for
+  `PLANT_CROP`, and 15 for `GATHER_FISH` -- even after `GATHER_FISH` was rebalanced to have
+  a strictly better expected value than both `GATHER_FOOD` and `HUNT_DEER`, with zero hazard
+  and zero cost, it was *still* picked only once more. That rules out "delayed vs. immediate
+  reward" and "the payoff isn't good enough" as explanations; the leading hypothesis is
+  lexical mirroring -- the model reaches for whichever enum token most directly echoes the
+  survival fact it just read, rather than comparing options. Two things are being tested
+  against this, both in `scripts/`: `ab_test_leader_framing.py` (prose "leader's daily
+  options" framing instead of a bare enum list -- the only setup, across either A/B test,
+  where a tribe both settled and used `PLANT_CROP`/`GATHER_EGGS` at all) and
+  `ab_test_action_labels.py` (answering in a plain-language label like "Catch fish to bring
+  home" instead of the enum token itself, via a static exact-match label table so
+  reliability doesn't depend on a second LLM call). Whether either actually moves the
+  needle at more than n=4-run scale is still an open, unresolved question as of this
+  writing.
 - The era ladder only has 3 rungs and no branching — a linear Stone → Bronze → Classical
   path. Seasons/weather, an "inspiration" mechanic, and inter-tribe interaction (trade,
   conflict, travel) are all planned to hang off it next (see `backend/eras.py`'s docstring),
@@ -255,10 +277,12 @@ Then open `http://localhost:8765` in a browser, pick a model for each tribe, and
   movement — a tribe can path directly across a river tile with no risk as long as it
   doesn't choose to gather there. Full "crossing dangerous terrain" risk is a natural fit
   for whenever travel/movement gets built out more deliberately (inter-tribe interaction).
-- Leadership (`backend/leadership.py`) is a one-time election at tribe creation with a
-  static standing philosophy, not an ongoing role. Several natural extensions, none started:
-  - A chief that periodically re-issues a fresh directive reflecting current tribe state
-    (a second, less-frequent LLM call, to avoid doubling inference cost every tick).
+- Leadership (`backend/leadership.py`) is a one-time election at tribe creation, but the
+  resulting philosophy is no longer static for the tribe's whole life -- `reflection.py`'s
+  `reflect_on_history` now periodically re-examines recent events and can revise
+  `tribe.chief_philosophy` on its own (confirmed live: "Chief Kani reconsiders the tribe's
+  philosophy... the tribe's focus on food gathering alone has not been sufficient"). Several
+  other natural extensions from this list are still genuinely unstarted:
   - The election deciding on an initial relocation, not just a philosophy -- e.g. "the
     newly elected chief decides the tribe should migrate toward reliable water." The
     *fact* of where the nearest water is would be legitimate map knowledge for the
@@ -269,34 +293,39 @@ Then open `http://localhost:8765` in a browser, pick a model for each tribe, and
     proximity only means their people can overhear each other via the broadcast
     mechanism; nothing about chiefs specifically triggers a summit, alliance, or rivalry.
   - An "education" system unlocked once a tribe is established enough (a
-    Classical-Age-or-later structure), which could be what finally triggers
-    `genetics.py`'s still-unwired crossover -- a real generational knowledge-transfer
-    event rather than just prompt splicing.
+    Classical-Age-or-later structure). `genetics.hatch()` (see above) is a real, working
+    generational-knowledge-transfer event now, just not gated behind education specifically
+    -- `genetics.breed()`'s tribe-culture crossover remains the one still fully dormant.
 - Multiple individuals per tribe are a rendering layer only (deterministic wander animation
   keyed off population count) — there's still one authoritative (x, y) and one LLM call per
   tribe per tick, not per individual. Simulating individual members with their own
   micro-behavior would multiply inference cost by population size and isn't planned.
-- Resource depletion only applies to the four harvest actions (wood/stone/water/game) --
-  `BUILD_FIRE`/`CONSTRUCT_WALL` consume resources but don't deplete anything themselves
-  (the fix there was the already-built no-op guard, a different mechanism). It also doesn't
-  yet appear to be strong enough, on its own, to force relocation within the timeframe of a
-  short observed run -- whether it does over a genuinely long run is untested.
+- Resource depletion only applies to the four original harvest actions (wood/stone/water/
+  game) -- `BUILD_FIRE`/`CONSTRUCT_WALL` consume resources but don't deplete anything
+  themselves (the fix there was the already-built no-op guard, a different mechanism), and
+  the same gap now extends to every food-producing action added since: `PLANT_CROP`,
+  `GATHER_EGGS`, and `GATHER_FISH` all pay out without touching any scarcity tracking.
+  Whether depletion is strong enough on its own to force relocation within a short run also
+  remains untested over a genuinely long one.
 - There's no sense of what a tribe's invented tokens actually *mean*, even to itself.
   `translation_matrix.py` tracks whether two tribes converge on the *same* token for the
   same action, but nothing tallies a single tribe's own token-to-action history to infer
   "this word is used with GATHER_WOOD 80% of the time." Would reuse the same co-occurrence
   idea already proven out in that module.
-- `RELOCATE` currently moves at a flat `config.MOVEMENT_SPEED` regardless of context.
-  Raised in conversation but not built: some notion of velocity/momentum (sustained travel
-  in one direction building up speed, matching how a model committing to a multi-cycle
-  RELOCATE run was the actual fix for the oscillation bug above) and of exposure while away
-  from an established camp (a temporary camp mid-journey being more vulnerable than a
-  built fire/wall) -- a real hazard-rate difference, not a scripted warning.
-- No biome-specific fauna beyond forest deer -- rivers, oceans, and other biomes have no
-  wildlife of their own yet, and `HUNT_DEER` succeeds the same way regardless of biome
-  (including, oddly, in the ocean). Also unbuilt: a driftwood/raft mechanic -- floating
-  material spotted along the river inspiring a boat, which would give the large wood
-  stockpiles tribes tend to accumulate an actual use, and would be a concrete first
-  instance of the "inspiration" mechanic that's existed only as a concept so far
+- `RELOCATE` and `SCOUT` move at `config.MOVEMENT_SPEED`/`EXPEDITION_SPEED`, no longer
+  purely flat: a worn trail now grants real bonus speed (`config.TRAIL_WEAR_PER_PASS`,
+  `MAX_TRAIL_BONUS_SPEED`, `Landscape.trail_speed_bonus`) -- repeatedly traveling the same
+  route earns up to +3 tiles/cycle, a live version of "sustained travel building up speed,"
+  though it's tied to a specific worn path rather than pure directional momentum. Still
+  unbuilt: exposure while away from an established camp (a temporary camp mid-journey being
+  more vulnerable than a built fire/wall) -- a real hazard-rate difference, not a scripted
+  warning.
+- No biome-specific *fauna* beyond forest deer -- rivers, oceans, and other biomes still
+  have no wildlife of their own. `GATHER_FISH` (new this session) is the first real
+  biome-specific food source tied to water tiles, but it's a flat catch mechanic, not a
+  fish population with its own behavior the way deer are. Also unbuilt: a driftwood/raft
+  mechanic -- floating material spotted along the river inspiring a boat, which would give
+  the large wood stockpiles tribes tend to accumulate an actual use, and would be a concrete
+  first instance of the "inspiration" mechanic that's existed only as a concept so far
   (observing something ordinary from a new angle and building something nobody
   specifically asked for).
