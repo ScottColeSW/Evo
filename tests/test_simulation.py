@@ -2,7 +2,7 @@ from unittest import mock
 
 from backend.actions import GAME_SPECIES_BY_BIOME
 from backend.ancestral_matrix import AncestralTraumaMatrix
-from backend.simulation import SPAWN_POINTS, Simulation, Tribe, _guess_intended_action, _resolve_action
+from backend.simulation import SPAWN_POINTS, Simulation, Tribe, _celebration_shout, _guess_intended_action, _resolve_action
 from backend.world import Landscape
 from tests.conftest import run_async
 
@@ -1696,6 +1696,31 @@ def test_forest_terrain_report_confirms_both_a_lumber_and_a_wildlife_site():
     assert tribe.quarry_sites == []
 
 
+def test_celebration_shout_reuses_the_tribes_own_last_broadcast():
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.last_broadcast = "KRA-ZUL"
+
+    assert _celebration_shout(tribe) == ' -- "KRA-ZUL!"'
+
+
+def test_celebration_shout_is_silent_with_no_prior_broadcast():
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.last_broadcast = ""
+
+    assert _celebration_shout(tribe) == ""
+
+
+def test_harvest_celebration_includes_the_tribes_own_shout():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 100
+    tribe.last_broadcast = "VASH-TA"
+
+    sim._celebrate_harvest(tribe)
+
+    assert any('holds a harvest festival' in e and '"VASH-TA!"' in e for e in tribe.history)
+
+
 def test_new_wildlife_site_throws_a_game_discovery_celebration():
     """Explicit request: "the celebration label should say celebrating... the
     discovery of a small-game site." Terrain reports only ever carry memory weight
@@ -2766,6 +2791,68 @@ def test_no_fishing_nudge_once_already_learned():
 
     assert "a single successful catch would make fishing a permanent" not in request["prompt"]
     assert "Fishing has been mastered here" in request["prompt"]
+
+
+def test_gather_food_stays_available_before_any_real_food_experience():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True  # bypass the pre-settlement narrowing, unrelated gate
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_FOOD" in ctx["available_actions"]
+    assert tribe.foraging_retired is False
+
+
+def test_gather_food_retires_once_fishing_is_learned():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.fishing_learned = True
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_FOOD" not in ctx["available_actions"]
+    assert tribe.foraging_retired is True
+    assert any("GATHER_FOOD is retired" in e and "fishing" in e for e in tribe.history)
+
+
+def test_gather_food_retires_once_a_harvest_completes():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.last_harvest_cycle = 5  # a real harvest already landed
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_FOOD" not in ctx["available_actions"]
+    assert any("GATHER_FOOD is retired" in e and "farming" in e for e in tribe.history)
+
+
+def test_gather_food_retirement_is_not_re_archived_every_cycle():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.fishing_learned = True
+
+    sim._prepare_turn(tribe)
+    sim._prepare_turn(tribe)
+
+    assert sum("GATHER_FOOD is retired" in e for e in tribe.history) == 1
+
+
+def test_gather_food_retirement_survives_fishing_being_learned_later_checked():
+    """A tribe that already planted a farm plot before ever fishing shouldn't need to
+    wait on fishing specifically -- either real experience retires it."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.farm_plots = 1
+    tribe.last_harvest_cycle = 0  # planted, but nothing has actually been harvested yet
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_FOOD" in ctx["available_actions"]  # not retired on planting alone
 
 
 def test_settled_near_water_fact_mentions_passive_water_supply():

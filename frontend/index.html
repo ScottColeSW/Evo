@@ -529,7 +529,12 @@ function checkCelebrations(state) {
     }
     if (cycle !== lastCelebrationCycleByTribe[id]) {
       const reason = celebrationReason(t);
-      queueBanner(`🎉 ${t.name} is celebrating${reason ? ` -- ${reason}!` : "!"}`, false, "party");
+      // Explicit request: the celebration should shout in the tribe's own invented
+      // language, not just plain English -- reuses whatever they most recently
+      // actually broadcast (same field translation_matrix.py already tracks),
+      // rather than inventing a fresh word just for the banner.
+      const shout = t.last_broadcast ? ` "${t.last_broadcast}!"` : "";
+      queueBanner(`🎉 ${t.name} is celebrating${reason ? ` -- ${reason}!` : "!"}${shout}`, false, "party");
       lastCelebrationCycleByTribe[id] = cycle;
     }
   });

@@ -104,6 +104,17 @@ def _guess_intended_action(raw: str, available_actions: list[str]) -> str | None
     return close[0] if close else None
 
 
+# Explicit request: a celebration should shout in the tribe's own invented language,
+# not just plain English chronicle prose. Reuses whatever the tribe most recently
+# actually broadcast (tribe.last_broadcast, see prompts.py's LINGUISTIC SYNTHESIS
+# PROTOCOL) rather than inventing a fresh word for the occasion, which would have no
+# real grounding -- this is the one place that private field actually gets heard,
+# not just tracked by translation_matrix.py. A tribe that hasn't broadcast anything
+# yet stays silent, not filled in with a placeholder.
+def _celebration_shout(tribe: "Tribe") -> str:
+    return f' -- "{tribe.last_broadcast}!"' if tribe.last_broadcast else ""
+
+
 class Tribe:
     def __init__(
         self, tribe_id: str, name: str, model: str, x: int, y: int, color: str,
@@ -239,6 +250,9 @@ class Tribe:
         # daily food supply, the same "action unlocks a passive system" shape farming
         # and water already use.
         self.fishing_learned = False
+        # See Simulation._prepare_turn's GATHER_FOOD retirement -- one-way, like
+        # has_ever_settled, once a genuinely proven passive food source exists.
+        self.foraging_retired = False
         # City growth (Simulation._advance_city_growth): founded_city stays the
         # one-time era-advancement flag it always was; this is the separate, growing
         # count of buildings that appear afterward as population climbs.
@@ -300,6 +314,7 @@ class Tribe:
             "farm_plots": self.farm_plots,
             "crop_growth": self.crop_growth,
             "fishing_learned": self.fishing_learned,
+            "foraging_retired": self.foraging_retired,
             "last_harvest_cycle": self.last_harvest_cycle,
             "flock": self.flock,
             "flock_lineage": self.flock_lineage,
@@ -1048,6 +1063,26 @@ class Simulation:
 
         if not settled_near_water:
             available_actions = [a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS", "GATHER_FISH")]
+
+        # Explicit request: GATHER_FOOD is too generic once a tribe has real
+        # experience -- it kept acting as a catch-all "satisfy hunger" default even
+        # after fishing was rebalanced to strictly outperform it (confirmed live:
+        # GATHER_FISH chosen once across 6 tribe-runs despite that). A generalist
+        # narrows into a specialist once it has a genuinely proven, passive
+        # replacement -- fishing_learned or a farm that has actually completed a
+        # harvest (not just been planted -- crop_growth isn't food yet). One-way,
+        # like has_ever_settled, and archived as a real chronicle event rather than
+        # silently vanishing from the list -- old capability becomes tribal history,
+        # not an unexplained gap.
+        if not tribe.foraging_retired and (tribe.fishing_learned or tribe.last_harvest_cycle > 0):
+            tribe.foraging_retired = True
+            reason = "fishing" if tribe.fishing_learned else "farming"
+            tribe.history.append(
+                f"\U0001f4dc {tribe.name} has grown beyond simple foraging -- GATHER_FOOD is retired "
+                f"now that {reason} reliably sustains them"
+            )
+        if tribe.foraging_retired:
+            available_actions = [a for a in available_actions if a != "GATHER_FOOD"]
 
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         # NUDGE (2026-08-31, explicit request: an "Instant Enlightenment" for a chief
@@ -2014,7 +2049,7 @@ class Simulation:
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
             f"\U0001f389 {tribe.name} celebrates the discovery of water at ({fx},{fy}), spending {spent} "
-            "food on a feast -- the tribe will move to settle there soon"
+            f"food on a feast -- the tribe will move to settle there soon{_celebration_shout(tribe)}"
         )
         if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
             pair = _eligible_breeding_pair(tribe)
@@ -2035,7 +2070,7 @@ class Simulation:
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
             f"\U0001f389 {tribe.name} celebrates the discovery of a game-rich site at ({tx},{ty}), "
-            f"spending {spent} food on a feast"
+            f"spending {spent} food on a feast{_celebration_shout(tribe)}"
         )
         if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
             pair = _eligible_breeding_pair(tribe)
@@ -2078,7 +2113,9 @@ class Simulation:
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         reason = "a fresh discovery" if discovery else "a season of plenty"
-        tribe.history.append(f"\U0001f389 {tribe.name} holds a celebration for {reason}, spending {spent} food on a feast")
+        tribe.history.append(
+            f"\U0001f389 {tribe.name} holds a celebration for {reason}, spending {spent} food on a feast{_celebration_shout(tribe)}"
+        )
 
         if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
             pair = _eligible_breeding_pair(tribe)
@@ -2099,7 +2136,7 @@ class Simulation:
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
-            f"\U0001f389 {tribe.name} celebrates settling here for good, spending {spent} food on a feast"
+            f"\U0001f389 {tribe.name} celebrates settling here for good, spending {spent} food on a feast{_celebration_shout(tribe)}"
         )
         tribe.pending_settlement_naming = True
         if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
@@ -2120,7 +2157,7 @@ class Simulation:
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
-            f"\U0001f389 {tribe.name} holds a harvest festival, spending {spent} food on a feast"
+            f"\U0001f389 {tribe.name} holds a harvest festival, spending {spent} food on a feast{_celebration_shout(tribe)}"
         )
         if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
             pair = _eligible_breeding_pair(tribe)
@@ -2138,7 +2175,7 @@ class Simulation:
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
-            f"\U0001f389 {tribe.name} celebrates learning to fish, spending {spent} food on a feast"
+            f"\U0001f389 {tribe.name} celebrates learning to fish, spending {spent} food on a feast{_celebration_shout(tribe)}"
         )
         if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
             pair = _eligible_breeding_pair(tribe)
