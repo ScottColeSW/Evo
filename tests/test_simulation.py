@@ -1,5 +1,6 @@
 from unittest import mock
 
+from backend.actions import GAME_SPECIES_BY_BIOME
 from backend.ancestral_matrix import AncestralTraumaMatrix
 from backend.simulation import SPAWN_POINTS, Simulation, Tribe
 from backend.world import Landscape
@@ -12,6 +13,9 @@ def _bare_simulation():
     sim.world = Landscape(100)
     sim.trauma = AncestralTraumaMatrix(100)
     sim.cycle = 1
+    sim.immortality_cycles = 0
+    sim.storm_cloud = None
+    sim.lightning_strike = None
     return sim
 
 
@@ -101,6 +105,85 @@ def test_broadcast_not_overheard_beyond_hearing_radius():
     assert "overheard" not in request["prompt"]
 
 
+def test_compass_direction_matches_the_map_convention():
+    from backend.simulation import _compass_direction
+
+    assert _compass_direction(10, 0) == "east"
+    assert _compass_direction(-10, 0) == "west"
+    assert _compass_direction(0, 10) == "south"  # y increases southward on this map
+    assert _compass_direction(0, -10) == "north"
+
+
+def test_precise_rival_awareness_within_radius_gives_exact_coordinates():
+    """Regression test: real data this session showed 25/25 tribe-reports with zero
+    trades and zero raids, ever -- the default ~62-tile spawn distance meant tribes had
+    no way to notice each other at all, broadcast or not."""
+    sim = Simulation(
+        [
+            {"name": "Forest Tribe", "model": "gemma2:2b"},
+            {"name": "Mountain Tribe", "model": "qwen2.5:3b"},
+        ]
+    )
+    forest = sim.tribes["tribe_0"]
+    mountain = sim.tribes["tribe_1"]
+    mountain.x, mountain.y = forest.x - 10, forest.y  # within RIVAL_PRECISE_AWARENESS_RADIUS
+
+    request, _ctx = sim._prepare_turn(forest)
+
+    assert f"Mountain Tribe is nearby at ({mountain.x},{mountain.y})" in request["prompt"]
+
+
+def test_distant_rival_sighting_gives_a_direction_not_coordinates():
+    sim = Simulation(
+        [
+            {"name": "Forest Tribe", "model": "gemma2:2b"},
+            {"name": "Mountain Tribe", "model": "qwen2.5:3b"},
+        ]
+    )
+    forest = sim.tribes["tribe_0"]
+    mountain = sim.tribes["tribe_1"]
+    mountain.x, mountain.y = forest.x - 40, forest.y  # beyond precise, within distant sighting
+
+    request, _ctx = sim._prepare_turn(forest)
+
+    assert "distant signs of Mountain Tribe somewhere to the west" in request["prompt"]
+    assert f"({mountain.x},{mountain.y})" not in request["prompt"]  # no exact coordinates from this far
+
+
+def test_no_rival_awareness_beyond_the_distant_sighting_radius():
+    sim = Simulation(
+        [
+            {"name": "Forest Tribe", "model": "gemma2:2b"},
+            {"name": "Mountain Tribe", "model": "qwen2.5:3b"},
+        ]
+    )
+    forest = sim.tribes["tribe_0"]
+    forest.x, forest.y = 0, 0
+    mountain = sim.tribes["tribe_1"]
+    mountain.x, mountain.y = 99, 99  # far beyond RIVAL_DISTANT_SIGHTING_RADIUS
+
+    request, _ctx = sim._prepare_turn(forest)
+
+    assert "Mountain Tribe" not in request["prompt"]
+
+
+def test_extinct_rival_produces_no_awareness_fact():
+    sim = Simulation(
+        [
+            {"name": "Forest Tribe", "model": "gemma2:2b"},
+            {"name": "Mountain Tribe", "model": "qwen2.5:3b"},
+        ]
+    )
+    forest = sim.tribes["tribe_0"]
+    mountain = sim.tribes["tribe_1"]
+    mountain.x, mountain.y = forest.x - 10, forest.y
+    mountain.extinct = True
+
+    request, _ctx = sim._prepare_turn(forest)
+
+    assert "Mountain Tribe" not in request["prompt"]
+
+
 def test_visible_taboos_show_the_most_recent_not_the_oldest():
     """Regression test: taboos accumulates for a tribe's whole lifetime, and slicing
     the first 3 meant a fact learned later (e.g. a hard-won water location) could never
@@ -117,6 +200,141 @@ def test_visible_taboos_show_the_most_recent_not_the_oldest():
     assert "taboo: oldest taboo" not in request["prompt"]
 
 
+def test_material_surplus_is_surfaced_alongside_a_real_food_or_water_warning():
+    """Regression test: real runs showed tribes starving/dehydrating while sitting on
+    100+ wood or stone -- gathering more of a resource that was never the bottleneck,
+    with no fact anywhere telling them the stockpile was already well past any
+    near-term use."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.food = 0  # triggers the starvation warning
+    tribe.wood = 132
+    tribe.stone = 20  # below MATERIAL_SURPLUS_THRESHOLD -- should not be mentioned
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "132 wood" in request["prompt"]
+    assert "20 stone" not in request["prompt"]
+
+
+def test_material_surplus_is_not_surfaced_without_a_real_survival_warning():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.wood = 132  # plenty of food/water by default -- no warning should fire
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "well beyond any near-term building need" not in request["prompt"]
+
+
+def test_storm_spawns_when_the_rare_roll_succeeds():
+    sim = _bare_simulation()
+    sim.tribes = {}
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_weather()
+
+    assert sim.storm_cloud is not None
+
+
+def test_storm_does_not_spawn_when_the_roll_fails():
+    sim = _bare_simulation()
+    sim.tribes = {}
+
+    with mock.patch("backend.simulation.random.random", return_value=0.99):
+        sim._advance_weather()
+
+    assert sim.storm_cloud is None
+
+
+def test_storm_expires_after_its_lifespan():
+    sim = _bare_simulation()
+    sim.tribes = {}
+    sim.storm_cloud = {"x": 50, "y": 50, "heading": 0.0, "cycles_left": 1}
+
+    with mock.patch("backend.simulation.random.uniform", return_value=0.0), \
+         mock.patch("backend.simulation.random.random", return_value=0.99):  # no strike this cycle
+        sim._advance_weather()
+
+    assert sim.storm_cloud is None
+
+
+def test_lightning_strike_is_cleared_every_cycle():
+    sim = _bare_simulation()
+    sim.tribes = {}
+    sim.lightning_strike = (10, 10)  # leftover from a previous cycle
+    sim.storm_cloud = None
+
+    with mock.patch("backend.simulation.random.random", return_value=0.99):  # no new spawn either
+        sim._advance_weather()
+
+    assert sim.lightning_strike is None
+
+
+def test_lightning_strike_directly_on_a_tribe_causes_population_loss():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 53, 50, "#c084fc")
+    tribe.population = 8
+    sim.tribes = {"tribe_0": tribe}
+    sim.storm_cloud = {"x": 50, "y": 50, "heading": 0.0, "cycles_left": 5}
+
+    with mock.patch("backend.simulation.random.uniform", return_value=0.0), \
+         mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_weather()
+
+    assert sim.lightning_strike == (53, 50)  # heading 0 + STORM_SPEED moves it exactly onto the tribe
+    assert tribe.population == 7
+    assert any("lightning struck the heart of camp" in e for e in tribe.history)
+
+
+def test_lightning_strike_respects_immortality():
+    sim = _bare_simulation()
+    sim.immortality_cycles = 200
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 53, 50, "#c084fc")
+    tribe.population = 8
+    sim.tribes = {"tribe_0": tribe}
+    sim.storm_cloud = {"x": 50, "y": 50, "heading": 0.0, "cycles_left": 5}
+
+    with mock.patch("backend.simulation.random.uniform", return_value=0.0), \
+         mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_weather()
+
+    assert tribe.population == 8  # protected, same channel as every other hazard
+
+
+def test_visible_entities_reports_a_direct_lightning_hit():
+    sim = _bare_simulation()
+    sim.tribes = {}
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.lightning_strike = (50, 50)
+
+    entities = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert "lightning just struck directly at your camp" in entities
+
+
+def test_visible_entities_reports_a_nearby_forest_lightning_strike():
+    sim = _bare_simulation()
+    sim.tribes = {}
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 80, 10, "#c084fc")  # deep in the forest band
+    sim.lightning_strike = (82, 10)  # 2 tiles away -- nearby, not a direct hit
+
+    entities = sim._build_visible_entities(tribe, "forest", [], [], [])
+
+    assert "lightning struck a tree near (82,10) -- it looks like it's burning" in entities
+
+
+def test_visible_entities_ignores_a_distant_lightning_strike():
+    sim = _bare_simulation()
+    sim.tribes = {}
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.lightning_strike = (90, 90)
+
+    entities = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert not any("lightning" in e for e in entities)
+
+
 def test_wildlife_sighting_appears_when_roll_succeeds_in_game_rich_terrain():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # default spawn is forest
     tribe = sim.tribes["tribe_0"]
@@ -124,7 +342,11 @@ def test_wildlife_sighting_appears_when_roll_succeeds_in_game_rich_terrain():
     with mock.patch("backend.simulation.random.random", return_value=0.0):
         request, _ctx = sim._prepare_turn(tribe)
 
-    assert "wildlife sighting: signs of deer nearby" in request["prompt"]
+    # The species named is picked by random.choice (a separate roll from the sighting
+    # chance above, and not controlled by the mocked random.random) from whichever
+    # biome actually produced the sighting -- forest's own pool, here.
+    assert any(f"wildlife sighting: signs of {species} nearby" in request["prompt"]
+               for species in GAME_SPECIES_BY_BIOME["forest"])
 
 
 def test_wildlife_sighting_absent_when_roll_fails():
@@ -146,6 +368,21 @@ def test_wildlife_sighting_never_appears_where_no_game_is_within_range():
         request, _ctx = sim._prepare_turn(tribe)
 
     assert "wildlife sighting" not in request["prompt"]
+
+
+def test_wildlife_sighting_names_a_species_from_the_richest_nearby_biomes_pool():
+    """Regression guard: the sighting used to always say 'deer' regardless of where the
+    tribe actually stood, keyed only off whichever hunting action was unlocked. It
+    should now reflect the biome that actually produced the sighting."""
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])
+    tribe = sim.tribes["tribe_0"]
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        request, _ctx = sim._prepare_turn(tribe)
+
+    assert any(f"wildlife sighting: signs of {species} nearby" in request["prompt"]
+               for species in GAME_SPECIES_BY_BIOME["plains"])
+    assert "signs of deer nearby" not in request["prompt"]
 
 
 def test_translation_matrix_is_updated_on_apply_turn():
@@ -747,6 +984,183 @@ def test_master_pathfinder_trophy_credited_to_the_specific_scout_at_the_mileston
     assert pathfinder[0]["chief"] == f"Scout{config.MILESTONE_SCOUT_SUCCESSES - 1}"
 
 
+def test_confirmed_water_site_persists_after_a_successful_scout():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    exp = {
+        "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
+        "day": 2, "phase": "returning", "found": [40, 37], "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Ashgar", "determination": 0.5, "max_days": 3, "path": [],
+    }
+    tribe.expeditions = [exp]
+
+    sim._advance_one_expedition(tribe, exp)
+
+    assert tribe.confirmed_water_sites == [(40, 37)]
+
+
+def test_confirmed_water_sites_are_deduplicated():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    for _ in range(2):
+        exp = {
+            "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
+            "day": 2, "phase": "returning", "found": [40, 37], "terrain_report": None,
+            "food_gathered": 0, "water_gathered": 0,
+            "lead_scout": "Ashgar", "determination": 0.5, "max_days": 3, "path": [],
+        }
+        tribe.expeditions = [exp]
+        sim._advance_one_expedition(tribe, exp)
+
+    assert tribe.confirmed_water_sites == [(40, 37)]
+
+
+def test_confirmed_water_sites_are_surfaced_as_a_durable_fact():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.confirmed_water_sites = [(12, 34), (40, 37)]
+
+    entities = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert "confirmed water source at (12,34)" in entities
+    assert "confirmed water source at (40,37)" in entities
+
+
+def test_confirmed_water_sites_are_exposed_to_the_frontend_as_landmarks():
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.confirmed_water_sites = [(12, 34)]
+
+    assert tribe.to_dict()["confirmed_water_sites"] == [(12, 34)]
+
+
+def _returning_scout_exp(target, terrain_report, lead_scout="Ashgar"):
+    return {
+        "pos": [50, 50], "origin": [50, 50], "target": list(target),
+        "day": 2, "phase": "returning", "found": None, "terrain_report": terrain_report,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": lead_scout, "determination": 0.5, "max_days": 3, "path": [],
+    }
+
+
+def test_forest_terrain_report_confirms_both_a_lumber_and_a_wildlife_site():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    exp = _returning_scout_exp((60, 60), "forest")
+    tribe.expeditions = [exp]
+
+    sim._advance_one_expedition(tribe, exp)
+
+    assert tribe.lumber_sites == [(60, 60)]
+    assert tribe.wildlife_sites == [(60, 60)]
+    assert tribe.quarry_sites == []
+
+
+def test_mountains_terrain_report_confirms_a_quarry_site():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Mountain Tribe", "qwen2.5:3b", 50, 50, "#fb923c")
+    exp = _returning_scout_exp((15, 20), "mountains")
+    tribe.expeditions = [exp]
+
+    sim._advance_one_expedition(tribe, exp)
+
+    assert tribe.quarry_sites == [(15, 20)]
+    assert tribe.lumber_sites == []
+    assert tribe.wildlife_sites == []
+
+
+def test_plains_terrain_report_confirms_no_resource_landmark():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    exp = _returning_scout_exp((60, 60), "plains")
+    tribe.expeditions = [exp]
+
+    sim._advance_one_expedition(tribe, exp)
+
+    assert tribe.lumber_sites == tribe.wildlife_sites == tribe.quarry_sites == []
+
+
+def test_resource_landmarks_are_surfaced_as_durable_facts_and_exposed_to_the_frontend():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.lumber_sites = [(60, 60)]
+    tribe.wildlife_sites = [(60, 60)]
+    tribe.quarry_sites = [(15, 20)]
+
+    entities = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert "confirmed lumber-rich area at (60,60)" in entities
+    assert "confirmed wildlife-rich area at (60,60)" in entities
+    assert "confirmed stone-rich area at (15,20)" in entities
+    d = tribe.to_dict()
+    assert d["lumber_sites"] == [(60, 60)]
+    assert d["wildlife_sites"] == [(60, 60)]
+    assert d["quarry_sites"] == [(15, 20)]
+
+
+def test_scouting_custom_award_goes_to_the_scout_who_first_confirms_water():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.custom_awards = [{"name": "Keeper of the Trails", "category": "scouting", "cycle": 1}]
+    exp = {
+        "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
+        "day": 2, "phase": "returning", "found": [40, 37], "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Ashgar", "determination": 0.5, "max_days": 3, "path": [],
+    }
+    tribe.expeditions = [exp]
+
+    sim._advance_one_expedition(tribe, exp)
+
+    award = [t for t in tribe.trophies if t["name"] == "Keeper of the Trails"]
+    assert len(award) == 1
+    assert award[0]["chief"] == "Ashgar"
+
+
+def test_hunting_custom_award_goes_to_the_hunter_who_first_makes_a_catch():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.custom_awards = [{"name": "Wolf's Bane", "category": "hunting", "cycle": 1}]
+    exp = {
+        "kind": "hunt", "pos": [50, 50], "origin": [50, 50], "target": [50, 50],
+        "day": 2, "phase": "returning", "food_caught": 20,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "BriMir", "determination": 0.5, "max_days": 4, "path": [],
+    }
+    tribe.expeditions = [exp]
+
+    sim._advance_one_expedition(tribe, exp)
+
+    award = [t for t in tribe.trophies if t["name"] == "Wolf's Bane"]
+    assert len(award) == 1
+    assert award[0]["chief"] == "BriMir"
+
+
+def test_check_custom_awards_only_matches_its_own_category():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.custom_awards = [{"name": "Keeper of the Trails", "category": "scouting", "cycle": 1}]
+
+    sim._check_custom_awards(tribe, "hunting", individual="BriMir")
+
+    assert tribe.trophies == []
+
+
+def test_check_custom_awards_only_grants_each_award_once():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.custom_awards = [{"name": "Keeper of the Trails", "category": "scouting", "cycle": 1}]
+
+    sim._check_custom_awards(tribe, "scouting", individual="Ashgar")
+    sim._check_custom_awards(tribe, "scouting", individual="Someone Later")
+
+    matches = [t for t in tribe.trophies if t["name"] == "Keeper of the Trails"]
+    assert len(matches) == 1
+    assert matches[0]["chief"] == "Ashgar"
+
+
 def test_master_hunter_trophy_credited_to_the_specific_hunter_at_the_milestone():
     from backend import config
 
@@ -801,6 +1215,101 @@ async def test_resolve_birth_falls_back_to_a_generic_name_if_the_llm_call_fails(
         await sim._resolve_birth(tribe)
 
     assert tribe.lineage[0]["child_name"] == "child of Ashgar and BriMir"
+
+
+def test_tribal_gathering_reports_new_trophies_unclaimed_awards_and_population_change():
+    sim = _bare_simulation()
+    sim.cycle = 20
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+    tribe.chief_philosophy = "strength through unity"
+    tribe.population_at_last_gathering = 8
+    tribe.population = 10
+    tribe.trophies = [{"name": "Water Bringer", "chief": "Ashgar", "cycle": 5}]
+    tribe.custom_awards = [{"name": "Keeper of the Trails", "category": "scouting", "cycle": 5}]
+
+    sim._hold_tribal_gathering(tribe)
+
+    assert "Ashgar earned the 'Water Bringer' honor" in tribe.gathering_brief
+    assert "unclaimed: the 'Keeper of the Trails'" in tribe.gathering_brief
+    assert "grown by 2" in tribe.gathering_brief
+    assert "strength through unity" in tribe.gathering_brief
+    assert tribe.history[-1].startswith("The tribe gathers as the sun rises.")
+    assert tribe.last_gathering_cycle == 20
+    assert tribe.population_at_last_gathering == 10
+
+
+def test_tribal_gathering_omits_a_trophy_already_reported_at_a_prior_gathering():
+    sim = _bare_simulation()
+    sim.cycle = 40
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.last_gathering_cycle = 20
+    tribe.trophies = [{"name": "Water Bringer", "chief": "Ashgar", "cycle": 5}]
+
+    sim._hold_tribal_gathering(tribe)
+
+    assert "Water Bringer" not in tribe.gathering_brief
+
+
+def test_tribal_gathering_does_not_report_an_already_claimed_custom_award():
+    sim = _bare_simulation()
+    sim.cycle = 20
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.custom_awards = [{"name": "Keeper of the Trails", "category": "scouting", "cycle": 5}]
+    tribe.trophies = [{"name": "Keeper of the Trails", "chief": "Ashgar", "cycle": 6}]
+
+    sim._hold_tribal_gathering(tribe)
+
+    assert "unclaimed" not in tribe.gathering_brief
+
+
+def test_tribal_gathering_says_something_even_with_nothing_new():
+    sim = _bare_simulation()
+    sim.cycle = 20
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    sim._hold_tribal_gathering(tribe)
+
+    assert tribe.gathering_brief == "a quiet gathering -- nothing new to report"
+
+
+def test_gathering_brief_is_surfaced_into_the_next_turns_visible_entities():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.gathering_brief = "the tribe has grown by 2 since the last gathering"
+
+    entities = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert any("this morning's gathering: the tribe has grown by 2" in e for e in entities)
+
+
+@run_async
+async def test_step_holds_the_tribal_gathering_only_on_its_own_interval():
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    sim.cycle = config.DAY_LENGTH_CYCLES - 1  # step() increments before checking
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
+        await sim.step()
+
+    assert tribe.last_gathering_cycle == config.DAY_LENGTH_CYCLES
+
+
+@run_async
+async def test_step_does_not_hold_the_tribal_gathering_off_its_interval():
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    sim.cycle = config.DAY_LENGTH_CYCLES - 2
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
+        await sim.step()
+
+    assert tribe.last_gathering_cycle == 0
 
 
 @run_async
@@ -882,6 +1391,27 @@ async def test_night_cycle_captures_a_valid_proposed_award():
 
     assert tribe.custom_awards == [{"name": "Keeper of the Trails", "category": "scouting", "cycle": sim.cycle}]
     assert any("establishes a new honor" in entry and "Keeper of the Trails" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_night_cycle_survives_a_non_dict_proposed_award():
+    """Regression test, same failure class as test_install_chief_survives_a_non_dict_
+    water_decision: a weak model can put a bare string/bool where proposed_award's
+    nested object was asked for."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events):
+        return {
+            "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
+            "proposed_award": "Keeper of the Trails",
+        }
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert tribe.custom_awards == []
 
 
 @run_async
@@ -1154,6 +1684,71 @@ def test_starvation_can_cause_real_extinction():
     assert "DREAD" in sim.trauma.bias_string(50, 50)
 
 
+def test_immortality_suppresses_extinction_within_the_window():
+    sim = _bare_simulation()
+    sim.cycle = 50
+    sim.immortality_cycles = 200
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 1
+    tribe.food = 0
+    tribe.water = 40
+
+    sim._apply_upkeep(tribe)
+
+    assert tribe.population == 1  # unchanged -- the hazard is suppressed, not the tribe's state
+    assert tribe.extinct is False
+    assert any("starvation claimed lives" in entry for entry in tribe.history)  # the event still happened
+
+
+def test_immortality_stops_protecting_once_the_window_passes():
+    sim = _bare_simulation()
+    sim.cycle = 201
+    sim.immortality_cycles = 200
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 1
+    tribe.food = 0
+    tribe.water = 40
+
+    sim._apply_upkeep(tribe)
+
+    assert tribe.population == 0
+    assert tribe.extinct is True
+
+
+def test_immortality_does_not_apply_when_disabled():
+    sim = _bare_simulation()
+    sim.cycle = 5
+    assert sim.immortality_cycles == 0  # disabled by default
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 1
+    tribe.food = 0
+    tribe.water = 40
+
+    sim._apply_upkeep(tribe)
+
+    assert tribe.extinct is True
+
+
+def test_immortality_still_allows_chief_succession():
+    sim = _bare_simulation()
+    sim.cycle = 5
+    sim.immortality_cycles = 200
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 8
+    tribe.chief_name = "Ashgar"
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._lose_population(tribe, 3)
+
+    assert tribe.population == 8  # protected
+    assert tribe.chief_name == ""  # but succession still plays out
+
+
+def test_simulation_create_defaults_immortality_to_disabled():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    assert sim.immortality_cycles == 0
+
+
 def test_extinct_tribe_loses_no_further_population():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
@@ -1367,7 +1962,7 @@ def test_drowning_hazard_never_fires_off_river():
 
     assert note is None
     assert tribe.population == 10
-    assert tribe.water == 33
+    assert tribe.water == 34  # 30 + round(3 * 1.25 labor multiplier at population 10)
 
 
 def test_reaching_classical_age_marks_founded_city():
@@ -1458,6 +2053,25 @@ async def test_install_chief_records_decree_when_decreed_and_not_on_water():
 
     assert "dispatching scouts" in tribe.chief_decree
     assert any("decrees" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_install_chief_survives_a_non_dict_water_decision():
+    """Regression test: a real live run against llama3.2:1b crashed the whole
+    simulation with 'bool' object has no attribute 'get' -- the model returned
+    {"water_decision": true} instead of a nested object. Valid JSON, wrong shape;
+    a weak model doing this to a nested field is a different failure mode than
+    returning a non-dict top-level response (see test_ollama_client.py)."""
+    sim = Simulation([{"name": "A", "model": "llama3.2:1b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.x, tribe.y = 10, 10  # mountains spawn, not on water
+    fake_result = {"chief_name": "Ashgar", "guiding_philosophy": "expansion", "water_decision": True}
+
+    with mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=fake_result)):
+        await sim._install_chief(tribe)
+
+    assert tribe.chief_name == "Ashgar"
+    assert tribe.chief_decree == ""  # a bare `true` isn't a real decree to honor
 
 
 @run_async

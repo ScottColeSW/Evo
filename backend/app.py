@@ -78,7 +78,10 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
             if command == "START":
                 tribe_configs = data.get("tribes", [])
                 if tribe_configs:
-                    session["sim"] = await Simulation.create(tribe_configs, config.OLLAMA_URL)
+                    immortality_cycles = int(data.get("immortality_cycles") or 0)
+                    session["sim"] = await Simulation.create(
+                        tribe_configs, config.OLLAMA_URL, immortality_cycles
+                    )
             elif command == "TOGGLE_PAUSE" and session["sim"] is not None:
                 session["sim"].toggle_pause()
             elif command == "ADD_TRIBE" and session["sim"] is not None:

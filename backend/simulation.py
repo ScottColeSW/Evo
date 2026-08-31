@@ -1,9 +1,13 @@
 import asyncio
 import importlib
+import math
 import random
 
 from . import config, physics
-from .actions import ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_LABEL, _eligible_breeding_pair
+from .actions import (
+    ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
+    _eligible_breeding_pair, expedition_capacity,
+)
 from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
 from .reflection import AWARD_CATEGORIES, reflect_on_history
@@ -34,8 +38,26 @@ from .world import BIOME_LABELS, Landscape, biome_at
 # reach (see config.EXPEDITION_MAX_DAYS/EXPEDITION_SPEED). No amount of good in-fiction
 # reasoning could have found water from there; real settlements cluster near water for
 # the same reason, so this is a world-geography fix, not a difficulty adjustment.
-SPAWN_POINTS = [(80, 38), (25, 34), (50, 55), (40, 37)]
+#
+# The Mountain Tribe point moved a second time: (25, 34) sat one tile from the river
+# where it cuts through the range's original northern corner, so "confirmed nearby" was
+# never a real test of scouting. Now that the range runs much further south (see
+# world.MOUNTAIN_Y_END), (18, 43) sits along its eastern/grassy edge, ~12 tiles from the
+# river by nearest_water -- back in the same 11-13 tile band the other spawns already
+# use, but now an actual discovery instead of a freebie.
+SPAWN_POINTS = [(80, 38), (18, 43), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
+
+
+def _compass_direction(dx: float, dy: float) -> str:
+    """An 8-point compass label for a (dx, dy) offset -- used for a distant rival
+    sighting (see config.RIVAL_DISTANT_SIGHTING_RADIUS), where only a rough heading is
+    plausible, not exact coordinates. y increases southward on this map (matching
+    world.py's own north/south framing -- the mountain and forest bands sit at low y),
+    so dy > 0 is south, dy < 0 is north."""
+    angle = math.degrees(math.atan2(dy, dx)) % 360
+    directions = ("east", "southeast", "south", "southwest", "west", "northwest", "north", "northeast")
+    return directions[round(angle / 45) % 8]
 
 
 class Tribe:
@@ -96,10 +118,39 @@ class Tribe:
         # See Simulation._check_for_celebration -- very negative so a tribe's very
         # first celebration isn't blocked by a cooldown it never actually used yet.
         self.last_celebration_cycle: int = -config.CELEBRATION_COOLDOWN_CYCLES
-        # STUB, earmarked -- see backend/reflection.py's AWARD_CATEGORIES docstring.
-        # Honors a chief has personally proposed via the night cycle; nothing yet
-        # checks a real counter and actually hands one out to anyone.
+        # Honors a chief has personally proposed via the night cycle (see
+        # reflection.py's AWARD_CATEGORIES). Simulation._check_custom_awards hands one
+        # out to whoever first earns it after it's proposed.
         self.custom_awards: list[dict] = []
+        # Innate daily tribal gathering (see Simulation._hold_tribal_gathering) -- state
+        # for what's changed since the last one. gathering_brief is re-surfaced into the
+        # tribe's own live turn context every cycle until the next gathering overwrites
+        # it (see Simulation._build_visible_entities), not just narrated into the
+        # chronicle and forgotten.
+        self.last_gathering_cycle = 0
+        self.population_at_last_gathering = self.population
+        self.gathering_brief = ""
+        # A confirmed water discovery used to only ever reach the tribe's own live
+        # reasoning via tribe.memory.recall(f"{biome} at {x},{y}") -- a query about the
+        # tribe's *current* location, which essentially never overlaps in vocabulary
+        # with "Scouts confirmed fresh water at (fx,fy)" unless the tribe happens to
+        # already be standing on those exact coordinates. In practice that meant a
+        # hard-won discovery vanished from the model's own context the moment the
+        # one-time chronicle line scrolled by, leaving RELOCATE's target_vector an
+        # ungrounded guess even right after a successful scout. This persists real
+        # confirmed sites (deduped, most recent last) so _build_visible_entities can
+        # keep surfacing them the same durable way it does taboos -- and the frontend
+        # can mark them permanently on the map (see index.html's drawLandmarks).
+        #
+        # lumber_sites/wildlife_sites/quarry_sites are the same idea for a scout's
+        # terrain_report: set only when the reported biome is one BIOME_YIELD_MULTIPLIER
+        # already marks as maxed out (1.0) for a resource -- forest for both wood and
+        # game, mountains for stone -- a real, already-measured "considerable cluster",
+        # not an arbitrary new threshold invented just for this.
+        self.confirmed_water_sites: list[tuple[int, int]] = []
+        self.lumber_sites: list[tuple[int, int]] = []
+        self.wildlife_sites: list[tuple[int, int]] = []
+        self.quarry_sites: list[tuple[int, int]] = []
         # A fact for the next chief election to reason about, set when something more
         # specific than "just founded" is true (currently only a raid-conquest merge,
         # see Simulation._merge_tribes) -- consumed and cleared by _install_chief so an
@@ -147,6 +198,10 @@ class Tribe:
             "trophies": self.trophies,
             "lineage": self.lineage,
             "custom_awards": self.custom_awards,
+            "confirmed_water_sites": self.confirmed_water_sites,
+            "lumber_sites": self.lumber_sites,
+            "wildlife_sites": self.wildlife_sites,
+            "quarry_sites": self.quarry_sites,
             "next_era": next_era_info,
             "expeditions": [
                 {
@@ -166,9 +221,23 @@ class Tribe:
 
 
 class Simulation:
-    def __init__(self, tribe_configs: list[dict], ollama_url: str = config.OLLAMA_URL):
+    def __init__(
+        self, tribe_configs: list[dict], ollama_url: str = config.OLLAMA_URL,
+        immortality_cycles: int = 0,
+    ):
         if not tribe_configs:
             raise ValueError("Simulation needs at least one tribe")
+        # Opt-in, off (0) by default -- a spectator-facing mode for watching what
+        # happens *after* the survival crisis (scouting maturing, trade, breeding, era
+        # advancement) instead of every run getting cut off by extinction at 30-60
+        # cycles before any of that plays out. See Simulation._lose_population: this
+        # suppresses the actual population-loss consequence only, while self.cycle <=
+        # immortality_cycles -- it never touches what a tribe's own live prompt is
+        # told. The same "Your people are starving" facts, the same crisis framing,
+        # the same reasoning test -- a tribe that would have gone extinct just keeps
+        # facing the same real pressure with the stakes quietly held back, not a tribe
+        # that's been let off the hook and knows it.
+        self.immortality_cycles = immortality_cycles
         self.client = OllamaClient(ollama_url)
         self.scheduler = ModelBatchScheduler(self.client)
         self.world = Landscape(config.GRID_SIZE)
@@ -194,6 +263,14 @@ class Simulation:
         self.paused = False
         self.status = "OPERATIONAL"
         self.game_over = False
+        # A wandering storm cloud (see Simulation._advance_weather) -- world weather,
+        # independent of any tribe. None when no storm is active; otherwise
+        # {"x", "y", "heading", "cycles_left"}. lightning_strike is only ever set for
+        # the exact cycle a strike happens (None otherwise), read by both
+        # _build_visible_entities (a nearby tribe's live fact) and snapshot() (the
+        # frontend's one-cycle flash).
+        self.storm_cloud: dict | None = None
+        self.lightning_strike: tuple[int, int] | None = None
         self.self_mod = (
             SelfModEngine(self.client, tribe_configs[0]["model"], config.SELF_MOD_COOLDOWN_CYCLES)
             if config.ENABLE_SELF_MODIFICATION
@@ -201,7 +278,10 @@ class Simulation:
         )
 
     @classmethod
-    async def create(cls, tribe_configs: list[dict], ollama_url: str = config.OLLAMA_URL) -> "Simulation":
+    async def create(
+        cls, tribe_configs: list[dict], ollama_url: str = config.OLLAMA_URL,
+        immortality_cycles: int = 0,
+    ) -> "Simulation":
         """Preferred constructor: runs a one-time VRAM sanity check per model before
         building the simulation, and drops a warning into a tribe's chronicle (rather
         than blocking it) if its model looks too large for the configured budget."""
@@ -212,7 +292,7 @@ class Simulation:
             if not ok:
                 warnings[cfg["name"]] = warning
 
-        sim = cls(tribe_configs, ollama_url)
+        sim = cls(tribe_configs, ollama_url, immortality_cycles)
         for tribe in sim.tribes.values():
             if tribe.name in warnings:
                 tribe.history.append(f"VRAM WARNING: {warnings[tribe.name]}")
@@ -242,7 +322,13 @@ class Simulation:
             note = f"{tribe.chief_name} has become chief"
             tribe.history.append(f"{note} ({victory})." if victory else f"{note}.")
 
-        water_decision = result.get("water_decision") or {}
+        # A weak/small model can put a bare bool or string where a nested object was
+        # asked for (seen live: {"water_decision": true} from llama3.2:1b) -- valid
+        # JSON, wrong shape. `... or {}` alone doesn't catch a truthy non-dict (True or
+        # {} is still True), so the isinstance check is load-bearing, not decorative.
+        water_decision = result.get("water_decision")
+        if not isinstance(water_decision, dict):
+            water_decision = {}
         if water_needed and water_decision.get("decreed"):
             tribe.chief_decree = "prioritize dispatching scouts to find reliable water"
             reason = water_decision.get("reason", "")
@@ -271,6 +357,47 @@ class Simulation:
         entry = f"{parent_a} and {parent_b} welcome a child, {child_name}"
         tribe.history.append(f"{entry} -- {note}" if note else f"{entry}.")
 
+    def _hold_tribal_gathering(self, tribe: "Tribe") -> None:
+        """An innate tradition, not a chief's choice: every tribe, whatever its
+        philosophy or model, gathers once per in-game day (config.DAY_LENGTH_CYCLES,
+        mirroring frontend/index.html's own sun/moon cycle -- this really does land at
+        the in-game dawn a spectator sees onscreen) to take stock together. Unlike the
+        night cycle (backend/reflection.py -- an occasional, chief-specific
+        reconsideration of philosophy that costs a real LLM call), this is a cheap,
+        deterministic recap of real facts: nothing here is interpreted, so it fires
+        reliably for every tribe regardless of model quality.
+
+        Named individuals' recent achievements and any standing unclaimed honor are
+        real facts Tribe.to_dict already exposes to the UI, but that the live turn
+        prompt never carried back into the tribe's own reasoning -- gathering_brief,
+        read by _build_visible_entities the same way a taboo is, is what closes that
+        gap."""
+        new_trophies = [t for t in tribe.trophies if t["cycle"] > tribe.last_gathering_cycle]
+        unclaimed = [
+            a for a in tribe.custom_awards
+            if not any(t["name"] == a["name"] for t in tribe.trophies)
+        ]
+        pop_delta = tribe.population - tribe.population_at_last_gathering
+
+        parts = []
+        if new_trophies:
+            parts.append("since the last gathering, " + "; ".join(
+                f"{t['chief']} earned the '{t['name']}' honor" for t in new_trophies
+            ))
+        if unclaimed:
+            parts.append("still unclaimed: " + ", ".join(f"the '{a['name']}' ({a['category']})" for a in unclaimed))
+        if pop_delta > 0:
+            parts.append(f"the tribe has grown by {pop_delta} since the last gathering")
+        elif pop_delta < 0:
+            parts.append(f"the tribe has lost {-pop_delta} since the last gathering")
+        if tribe.chief_name:
+            parts.append(f"Chief {tribe.chief_name}'s guiding philosophy still stands: {tribe.chief_philosophy}")
+
+        tribe.gathering_brief = "; ".join(parts) if parts else "a quiet gathering -- nothing new to report"
+        tribe.history.append(f"The tribe gathers as the sun rises. {tribe.gathering_brief}.")
+        tribe.last_gathering_cycle = self.cycle
+        tribe.population_at_last_gathering = tribe.population
+
     async def _run_night_cycle(self, tribe: "Tribe") -> None:
         """The "night cycle" (backend/reflection.py): a larger reviewing model looks
         back at this tribe's own recent history and decides for itself whether its
@@ -292,11 +419,11 @@ class Simulation:
             entry = f"Reflecting on recent events, Chief {tribe.chief_name} reconsiders the tribe's philosophy: {tribe.chief_philosophy}"
             tribe.history.append(f"{entry} ({reasoning})." if reasoning else f"{entry}.")
 
-        # STUB, earmarked -- see backend/reflection.py's AWARD_CATEGORIES docstring.
-        # Captures the chief's own proposed honor; nothing yet checks a real counter
-        # and actually hands it out.
+        # Captures the chief's own proposed honor; Simulation._check_custom_awards is
+        # what actually hands it out once someone earns it (see reflection.py's
+        # AWARD_CATEGORIES docstring).
         proposed = result.get("proposed_award")
-        if proposed and proposed.get("name") and proposed.get("category") in AWARD_CATEGORIES:
+        if isinstance(proposed, dict) and proposed.get("name") and proposed.get("category") in AWARD_CATEGORIES:
             if not any(a["name"] == proposed["name"] for a in tribe.custom_awards):
                 tribe.custom_awards.append({
                     "name": proposed["name"], "category": proposed["category"], "cycle": self.cycle,
@@ -346,6 +473,9 @@ class Simulation:
         return {
             "cycle": self.cycle,
             "status": self.status,
+            "immortality_cycles": self.immortality_cycles,
+            "storm_cloud": {"x": self.storm_cloud["x"], "y": self.storm_cloud["y"]} if self.storm_cloud else None,
+            "lightning_strike": list(self.lightning_strike) if self.lightning_strike else None,
             "tribes": {tid: t.to_dict() for tid, t in self.tribes.items()},
             "structures": [{"x": x, "y": y, **info} for (x, y), info in self.world.constructions.items()],
             "trails": [{"x": x, "y": y, "wear": wear} for (x, y), wear in self.world.trails.items()],
@@ -363,6 +493,7 @@ class Simulation:
         self.translation.decay()
         self.world.regenerate(config.DEPLETION_REGEN_PER_CYCLE)
         self.world.decay_trails(config.TRAIL_DECAY_PER_CYCLE)
+        self._advance_weather()
 
         requests = []
         contexts = {}
@@ -398,6 +529,11 @@ class Simulation:
             if not tribe.extinct and not tribe.chief_name:
                 await self._install_chief(tribe)
 
+        if self.cycle % config.DAY_LENGTH_CYCLES == 0:
+            for tribe in self.tribes.values():
+                if not tribe.extinct:
+                    self._hold_tribal_gathering(tribe)
+
         if self.cycle % config.NIGHT_CYCLE_EVERY_N_CYCLES == 0:
             for tribe in self.tribes.values():
                 if not tribe.extinct and tribe.chief_name:
@@ -419,10 +555,71 @@ class Simulation:
             for tribe in self.tribes.values():
                 tribe.memory.consolidate()
 
+    def _advance_weather(self) -> None:
+        """A wandering storm cloud, entirely independent of any tribe's actions -- the
+        world has weather whether or not anyone's watching. Spawns rarely (only
+        checked while no storm is already active), wanders with a heading that jitters
+        a little each cycle rather than flying a dead-straight line, and expires after
+        STORM_LIFESPAN_CYCLES either way. A strike is rolled once per cycle while a
+        storm is active; self.lightning_strike is set only for that one cycle (cleared
+        at the top of every call) so it reads as a flash, not a standing hazard.
+
+        A tribe caught directly under a strike takes a real, small hit through the same
+        _lose_population channel every other hazard uses -- immortality (see
+        Simulation.__init__) protects it exactly the same way. A tribe merely within
+        LIGHTNING_STRIKE_RADIUS doesn't get hurt, just a fact about what happened (see
+        _build_visible_entities) -- on a forest tile, that fact echoes the same "how
+        did anyone first learn fire" question raised this session. Nothing here awards
+        fire automatically; it's a real, unscripted event a tribe's own reasoning could
+        in principle notice and act on, the same honest test as any other fact."""
+        self.lightning_strike = None
+
+        if self.storm_cloud is None:
+            if random.random() < config.STORM_SPAWN_CHANCE:
+                self.storm_cloud = {
+                    "x": random.randint(0, self.world.grid_size - 1),
+                    "y": random.randint(0, self.world.grid_size - 1),
+                    "heading": random.uniform(0, 2 * math.pi),
+                    "cycles_left": config.STORM_LIFESPAN_CYCLES,
+                }
+            return
+
+        cloud = self.storm_cloud
+        cloud["heading"] += random.uniform(-config.STORM_HEADING_JITTER, config.STORM_HEADING_JITTER)
+        cloud["x"] = max(0, min(self.world.grid_size - 1, round(cloud["x"] + math.cos(cloud["heading"]) * config.STORM_SPEED)))
+        cloud["y"] = max(0, min(self.world.grid_size - 1, round(cloud["y"] + math.sin(cloud["heading"]) * config.STORM_SPEED)))
+        cloud["cycles_left"] -= 1
+
+        if random.random() < config.LIGHTNING_STRIKE_CHANCE:
+            sx, sy = cloud["x"], cloud["y"]
+            self.lightning_strike = (sx, sy)
+            for tribe in self.tribes.values():
+                if tribe.extinct or (tribe.x, tribe.y) != (sx, sy):
+                    continue
+                self.trauma.radiate_event_wave(sx, sy, config.LIGHTNING_TRAUMA_MAGNITUDE, config.LIGHTNING_TRAUMA_RADIUS)
+                self._lose_population(tribe, config.LIGHTNING_HAZARD_POPULATION_LOSS, cause="lightning")
+                tribe.history.append("lightning struck the heart of camp")
+
+        if cloud["cycles_left"] <= 0:
+            self.storm_cloud = None
+
     def _build_visible_entities(self, tribe: Tribe, biome: str, nearby: list[dict],
                                  memories: list[dict], available_actions: list[str]) -> list[str]:
         visible_entities = [f"structure:{s['type']}@({s['x']},{s['y']})" for s in nearby]
         visible_entities += [f"memory(cycle {m['cycle']}): {m['text']}" for m in memories]
+
+        # A lightning strike only lasts one cycle (see _advance_weather) -- a real,
+        # unscripted event, not a directive about what it means or what to do next.
+        if self.lightning_strike:
+            lx, ly = self.lightning_strike
+            distance = ((tribe.x - lx) ** 2 + (tribe.y - ly) ** 2) ** 0.5
+            if distance < 1.5:
+                visible_entities.append("lightning just struck directly at your camp")
+            elif distance <= config.LIGHTNING_STRIKE_RADIUS:
+                if self.world.biome(lx, ly) == "forest":
+                    visible_entities.append(f"lightning struck a tree near ({lx},{ly}) -- it looks like it's burning")
+                else:
+                    visible_entities.append(f"lightning struck nearby, at ({lx},{ly})")
         # taboos accumulates for a tribe's whole lifetime (see TribeMemory.consolidate,
         # which can add up to 3 more every MEMORY_CONSOLIDATE_EVERY_N_CYCLES) -- slicing
         # the first 3 meant that once any 3 existed, nothing learned later ever surfaced
@@ -431,9 +628,15 @@ class Simulation:
         # recently learned facts are shown instead, so new knowledge isn't permanently
         # buried by old.
         visible_entities += [f"taboo: {t}" for t in tribe.memory.taboos[-3:]]
+        visible_entities += [f"confirmed water source at ({x},{y})" for x, y in tribe.confirmed_water_sites[-3:]]
+        visible_entities += [f"confirmed lumber-rich area at ({x},{y})" for x, y in tribe.lumber_sites[-3:]]
+        visible_entities += [f"confirmed wildlife-rich area at ({x},{y})" for x, y in tribe.wildlife_sites[-3:]]
+        visible_entities += [f"confirmed stone-rich area at ({x},{y})" for x, y in tribe.quarry_sites[-3:]]
+        if tribe.gathering_brief:
+            visible_entities.append(f"this morning's gathering: {tribe.gathering_brief}")
         # Factual telemetry about this exact tile, not a suggestion to move -- what the
         # tribe does with the information is entirely its own reasoning.
-        for resource in ("wood", "stone", "water", "game"):
+        for resource in ("wood", "stone", "water", "game", "forage"):
             level = self.world.scarcity(resource, tribe.x, tribe.y)
             if level > 0:
                 visible_entities.append(f"local {resource} scarcity here: {level:.0%}")
@@ -444,18 +647,41 @@ class Simulation:
         # (game can be heard/spotted nearby, not just underfoot) and roll a chance scaled
         # by the richest nearby tile's own game yield -- a mountain or ocean tile is
         # essentially silent, a forest is the likeliest place to hear something. Named for
-        # whichever hunting action is actually unlocked (GAME_SPECIES_LABEL), so the fact
-        # and the action always agree on what's actually out there.
+        # whichever hunting action is actually unlocked (GAME_SPECIES_LABEL) as a
+        # fallback, but GAME_SPECIES_BY_BIOME gives the richest nearby tile's own biome
+        # the final say when it has an entry -- deer in a forest, rabbits on the plains,
+        # not the same species word regardless of where the sighting actually is.
         hunting_action = next((a for a in available_actions if a in GAME_SPECIES_LABEL), None)
         if hunting_action:
             best_multiplier = 0.0
+            best_biome = None
             for dx in range(-config.GAME_SIGHTING_RADIUS, config.GAME_SIGHTING_RADIUS + 1):
                 for dy in range(-config.GAME_SIGHTING_RADIUS, config.GAME_SIGHTING_RADIUS + 1):
                     nearby_biome = self.world.biome(tribe.x + dx, tribe.y + dy)
-                    best_multiplier = max(best_multiplier, BIOME_YIELD_MULTIPLIER["game"].get(nearby_biome, 0.0))
+                    multiplier = BIOME_YIELD_MULTIPLIER["game"].get(nearby_biome, 0.0)
+                    if multiplier > best_multiplier:
+                        best_multiplier, best_biome = multiplier, nearby_biome
             if best_multiplier > 0 and random.random() < config.GAME_SIGHTING_CHANCE_BASE * best_multiplier:
-                species = GAME_SPECIES_LABEL[hunting_action]
+                pool = GAME_SPECIES_BY_BIOME.get(best_biome, (GAME_SPECIES_LABEL[hunting_action],))
+                species = random.choice(pool)
                 visible_entities.append(f"wildlife sighting: signs of {species} nearby")
+
+        # Cross-tribe proximity awareness, independent of whether the other tribe has
+        # ever broadcast anything (see config.RIVAL_PRECISE_AWARENESS_RADIUS/
+        # RIVAL_DISTANT_SIGHTING_RADIUS) -- without this, the default ~62-tile spawn
+        # distance meant tribes had no way to ever notice each other at all, which is
+        # the real reason TRADE/RAID never fired in a single run this session.
+        for other in self.tribes.values():
+            if other.id == tribe.id or other.extinct:
+                continue
+            dx, dy = other.x - tribe.x, other.y - tribe.y
+            distance = math.hypot(dx, dy)
+            if distance <= config.RIVAL_PRECISE_AWARENESS_RADIUS:
+                visible_entities.append(
+                    f"{other.name} is nearby at ({other.x},{other.y}), about {distance:.0f} tiles away"
+                )
+            elif distance <= config.RIVAL_DISTANT_SIGHTING_RADIUS:
+                visible_entities.append(f"distant signs of {other.name} somewhere to the {_compass_direction(dx, dy)}")
 
         # A broadcast is only overheard within BROADCAST_HEARING_RADIUS -- previously
         # audible map-wide regardless of distance, which gave away free information and
@@ -483,6 +709,22 @@ class Simulation:
 
         visible_entities = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
 
+        # A tribe starving/dehydrating while sitting on 100+ wood or stone had a real
+        # information gap: the stockpile itself never said "this is already more than
+        # enough." Only surfaced alongside an actual food/water warning (survival_bias
+        # non-empty) -- a fact about the mismatch, not a standing nudge to stop
+        # gathering wood every other cycle too.
+        if survival_bias:
+            surplus = []
+            if tribe.wood >= config.MATERIAL_SURPLUS_THRESHOLD:
+                surplus.append(f"{tribe.wood} wood")
+            if tribe.stone >= config.MATERIAL_SURPLUS_THRESHOLD:
+                surplus.append(f"{tribe.stone} stone")
+            if surplus:
+                visible_entities.append(
+                    f"Already stockpiled well beyond any near-term building need: {', '.join(surplus)}."
+                )
+
         # Stated as fact (what you previously chose), not as an instruction to continue --
         # whether to keep going or change course is left entirely to the model.
         journey_note = ""
@@ -498,7 +740,7 @@ class Simulation:
                 f"(day {exp['day']}/{exp['max_days']}, {exp['phase']})"
                 for exp in tribe.expeditions
             )
-            slots_left = config.MAX_CONCURRENT_EXPEDITIONS - len(tribe.expeditions)
+            slots_left = expedition_capacity(tribe) - len(tribe.expeditions)
             capacity_note = (
                 " No one left to send out until one returns."
                 if slots_left <= 0
@@ -584,9 +826,9 @@ class Simulation:
 
     def _advance_expeditions(self, tribe: Tribe) -> None:
         """Advances every one of a tribe's in-field parties by one day (see
-        actions.py._scout/_hunting_party) -- a tribe can have up to config.
-        MAX_CONCURRENT_EXPEDITIONS out at once. Iterates a snapshot of the list since
-        a party can complete (and remove itself) mid-loop."""
+        actions.py._scout/_hunting_party) -- a tribe can have up to
+        actions.expedition_capacity(tribe) out at once. Iterates a snapshot of the list
+        since a party can complete (and remove itself) mid-loop."""
         for exp in list(tribe.expeditions):
             if self._advance_one_expedition(tribe, exp):
                 tribe.expeditions.remove(exp)
@@ -687,7 +929,10 @@ class Simulation:
                     self._award_trophy(tribe, "Water Bringer")
                     if tribe.scout_successes == config.MILESTONE_SCOUT_SUCCESSES:
                         self._award_trophy(tribe, "Master Pathfinder", individual=scout)
+                    self._check_custom_awards(tribe, "scouting", individual=scout)
                     tribe.memory.remember(f"Scouts confirmed fresh water at ({fx},{fy}).", self.cycle, weight=0.9)
+                    if (fx, fy) not in tribe.confirmed_water_sites:
+                        tribe.confirmed_water_sites.append((fx, fy))
                     tribe.history.append(
                         f"{scout} is home and gives {recipient} a full report: "
                         f"fresh water confirmed at ({fx},{fy}), {forage_note}"
@@ -696,6 +941,14 @@ class Simulation:
                     label = BIOME_LABELS.get(exp["terrain_report"], exp["terrain_report"])
                     tx, ty = exp["target"]
                     tribe.memory.remember(f"Scouts explored toward ({tx},{ty}) and found {label} terrain.", self.cycle, weight=0.6)
+                    if exp["terrain_report"] == "forest":
+                        if (tx, ty) not in tribe.lumber_sites:
+                            tribe.lumber_sites.append((tx, ty))
+                        if (tx, ty) not in tribe.wildlife_sites:
+                            tribe.wildlife_sites.append((tx, ty))
+                    elif exp["terrain_report"] == "mountains":
+                        if (tx, ty) not in tribe.quarry_sites:
+                            tribe.quarry_sites.append((tx, ty))
                     tribe.history.append(
                         f"{scout} is home and gives {recipient} a full report: "
                         f"{label} terrain at ({tx},{ty}), {forage_note}"
@@ -770,6 +1023,7 @@ class Simulation:
             tribe.hunt_successes += 1
             if tribe.hunt_successes == config.MILESTONE_HUNT_SUCCESSES:
                 self._award_trophy(tribe, "Master Hunter", individual=scout)
+            self._check_custom_awards(tribe, "hunting", individual=scout)
             tribe.history.append(
                 f"{scout}'s hunting party is home and gives {recipient} a full report: "
                 f"{caught} food caught, {forage_note}"
@@ -811,18 +1065,29 @@ class Simulation:
         tribe survives it -- a chief was previously permanent flavor text no matter
         what happened to the people underneath them. A tribe that survives a chief's
         death gets a genuine leadership vacuum until Simulation.step() runs a fresh
-        succession contest, not a name that just silently stays put forever."""
+        succession contest, not a name that just silently stays put forever.
+
+        While self.cycle <= self.immortality_cycles (see Simulation.__init__), the
+        actual population change and extinction are suppressed -- the hazard/
+        starvation/raid event that called this still happened (its history line,
+        trauma wave, and chief-death roll below all still fire normally), only the
+        body count is held back. Chief succession keeps happening during immunity on
+        purpose: that's real texture (lineage, trophies, a fresh philosophy), not the
+        extinction this mode exists to defer."""
         if tribe.extinct:
             return
-        tribe.population = max(0, tribe.population - amount)
-        if tribe.population == 0:
-            tribe.extinct = True
-            tribe.history.append(f"{tribe.name} has gone extinct.")
-            self.trauma.radiate_event_wave(
-                tribe.x, tribe.y, config.EXTINCTION_TRAUMA_MAGNITUDE, config.EXTINCTION_TRAUMA_RADIUS
-            )
-            record_tribe_result(tribe, cause=cause, cycles_survived=self.cycle)
-        elif tribe.chief_name and random.random() < config.CHIEF_DEATH_CHANCE_ON_LOSS:
+        immune = self.cycle <= self.immortality_cycles
+        if not immune:
+            tribe.population = max(0, tribe.population - amount)
+            if tribe.population == 0:
+                tribe.extinct = True
+                tribe.history.append(f"{tribe.name} has gone extinct.")
+                self.trauma.radiate_event_wave(
+                    tribe.x, tribe.y, config.EXTINCTION_TRAUMA_MAGNITUDE, config.EXTINCTION_TRAUMA_RADIUS
+                )
+                record_tribe_result(tribe, cause=cause, cycles_survived=self.cycle)
+                return
+        if tribe.chief_name and random.random() < config.CHIEF_DEATH_CHANCE_ON_LOSS:
             fallen = tribe.chief_name
             tribe.chief_deaths += 1
             tribe.chief_name = ""
@@ -880,6 +1145,21 @@ class Simulation:
         credited = individual or tribe.chief_name or "an unknown chief"
         tribe.trophies.append({"name": name, "chief": credited, "cycle": self.cycle})
         tribe.history.append(f"\U0001f3c6 {credited} earns the '{name}' trophy for {tribe.name}!")
+
+    def _check_custom_awards(self, tribe: Tribe, category: str, individual: str | None = None) -> None:
+        """The other half of the night-cycle award stub (see reflection.py's
+        AWARD_CATEGORIES docstring): a chief can propose an honor of their own during
+        the night cycle, but until now nothing checked a real counter and actually
+        handed it out. Called from the same real-event sites that already check the
+        built-in milestone trophies (a scout's confirmed water, a hunting party's
+        catch, a completed trade, a won raid) -- the first genuine act of excellence
+        in the proposed category after the chief establishes it becomes its first (and,
+        since _award_trophy pays out once per tribe lifetime, only) recipient. An
+        honest milestone tied to a specific real achievement, not an arbitrary round
+        number invented just for this."""
+        for award in tribe.custom_awards:
+            if award["category"] == category:
+                self._award_trophy(tribe, award["name"], individual=individual)
 
     def _check_chief_trophies(self, tribe: Tribe) -> None:
         """A lightweight legacy system credited to whichever chief is in power the

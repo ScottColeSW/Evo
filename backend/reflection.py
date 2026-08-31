@@ -16,16 +16,15 @@ event pattern to any specific philosophy change.
 from .ollama_client import OllamaClient
 
 
-# STUB, earmarked 2026-08-30: the chief can *propose* a custom award name/category here
-# (captured on Tribe.custom_awards, see Simulation._run_night_cycle), but nothing yet
-# checks whether anyone has actually met it and hands it out -- that mechanical trigger
-# is NOT built. Deliberately constrained to AWARD_CATEGORIES (real, already-tracked
-# stats) rather than freeform criteria: the chief invents the name and what it means to
-# them, the simulation can only ever honestly judge a category it already measures,
-# same split already used for scout/hunt milestone trophies. TODO before this is real:
-# a periodic check (same cadence as _check_for_celebration) that looks at each
-# category's real counter, detects a new personal-best or milestone within it, and
-# calls _award_trophy with the chief's own proposed name instead of a hardcoded one.
+# The chief can *propose* a custom award name/category here (captured on
+# Tribe.custom_awards, see Simulation._run_night_cycle); Simulation._check_custom_awards
+# is the mechanical half, called from the same real-event sites as the built-in
+# milestone trophies (a confirmed water scout, a hunting party's catch, a completed
+# trade, a won raid) to actually hand it out. Deliberately constrained to
+# AWARD_CATEGORIES (real, already-tracked stats) rather than freeform criteria: the
+# chief invents the name and what it means to them, the simulation can only ever
+# honestly judge a category it already measures, same split already used for scout/hunt
+# milestone trophies.
 AWARD_CATEGORIES = ("scouting", "hunting", "trading", "raiding")
 
 

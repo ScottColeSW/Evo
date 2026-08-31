@@ -13,6 +13,7 @@ def _bare_simulation():
     sim.world = Landscape(100)
     sim.trauma = AncestralTraumaMatrix(100)
     sim.cycle = 1
+    sim.immortality_cycles = 0
     return sim
 
 
@@ -120,6 +121,106 @@ def test_hunting_success_also_depletes_local_game():
 
     assert tribe.food == 9  # round(15 * 0.6 plains game multiplier)
     assert sim.world.scarcity("game", 65, 85) > 0
+
+
+def test_forage_yields_the_most_on_plains():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Plains Tribe", "gemma2:2b", 65, 85, "#34d399")
+    tribe.food = 0
+
+    ACTION_REGISTRY["GATHER_FOOD"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.food == 10  # round(10 * 1.0 plains forage multiplier)
+
+
+def test_forage_yield_is_lower_in_forest_than_plains():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 0
+
+    ACTION_REGISTRY["GATHER_FOOD"](sim, tribe, "forest", _NO_TARGET)
+
+    assert tribe.food == 6  # round(10 * 0.6 forest forage multiplier)
+
+
+def test_forage_carries_no_hazard_unlike_hunting():
+    import random
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 0
+    tribe.population = 10
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # would trigger a wolf hazard if this were HUNT_DEER
+        ACTION_REGISTRY["GATHER_FOOD"](sim, tribe, "forest", _NO_TARGET)
+
+    assert tribe.population == 10  # no population lost
+    assert tribe.food > 0
+
+
+def test_foraging_also_depletes_the_local_forage_scarcity():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Plains Tribe", "gemma2:2b", 65, 85, "#34d399")
+    tribe.food = 0
+
+    ACTION_REGISTRY["GATHER_FOOD"](sim, tribe, "plains", _NO_TARGET)
+
+    assert sim.world.scarcity("forage", 65, 85) > 0
+
+
+def test_harvest_yield_is_unchanged_at_or_below_starting_population():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 0
+    tribe.population = 4  # below the 8-person baseline
+
+    ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "forest", _NO_TARGET)
+
+    assert tribe.wood == 10  # no penalty for a smaller-than-baseline tribe
+
+
+def test_harvest_yield_scales_up_for_a_larger_tribe():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 0
+    tribe.population = 16  # double the 8-person baseline
+
+    ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "forest", _NO_TARGET)
+
+    assert tribe.wood == 20  # round(10 * (16/8) labor multiplier)
+
+
+def test_expedition_capacity_matches_the_floor_at_baseline_population():
+    from backend.actions import expedition_capacity
+    from backend import config
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    assert expedition_capacity(tribe) == config.MAX_CONCURRENT_EXPEDITIONS
+
+
+def test_expedition_capacity_grows_with_population():
+    from backend.actions import expedition_capacity
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 25
+
+    assert expedition_capacity(tribe) == 5  # 25 // EXPEDITION_SLOT_POPULATION_DIVISOR (5)
+
+
+def test_a_third_scout_succeeds_once_population_growth_raises_capacity():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 25  # capacity 5, well past the old fixed cap of 2
+    tribe.expeditions = [
+        {"lead_scout": "A", "day": 1, "max_days": 3, "phase": "outbound"},
+        {"lead_scout": "B", "day": 1, "max_days": 3, "phase": "outbound"},
+    ]
+
+    note = ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (60, 60))
+
+    assert "no one left to send" not in note
+    assert len(tribe.expeditions) == 3
 
 
 def test_relocate_moves_the_tribe_toward_target():
@@ -264,6 +365,22 @@ def test_raid_win_awards_first_conquest_trophy_only_on_the_first_win():
     assert len([t for t in attacker.trophies if t["name"] == "First Conquest"]) == 1
 
 
+def test_raid_win_grants_a_chief_proposed_raiding_award():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    defender.population = 20  # plenty of survivors, won't trigger a merge
+    attacker.custom_awards = [{"name": "Blooded Spear", "category": "raiding", "cycle": 1}]
+    sim.tribes = {"tribe_0": attacker, "tribe_1": defender}
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 51))
+
+    assert any(t["name"] == "Blooded Spear" for t in attacker.trophies)
+
+
 def test_raid_that_reduces_defender_to_zero_population_merges_into_the_attacker():
     from unittest import mock
 
@@ -380,6 +497,32 @@ def test_trade_does_not_re_award_first_contact_on_a_later_trade():
     ACTION_REGISTRY["TRADE"](sim, a, "plains", (51, 51))
 
     assert len([t for t in a.trophies if t["name"] == "First Contact"]) == 1
+
+
+def test_trade_grants_a_chief_proposed_trading_award_to_both_sides():
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.custom_awards = [{"name": "Merchant's Mark", "category": "trading", "cycle": 1}]
+    b.custom_awards = [{"name": "Silver Tongue", "category": "trading", "cycle": 1}]
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    ACTION_REGISTRY["TRADE"](sim, a, "plains", (51, 51))
+
+    assert any(t["name"] == "Merchant's Mark" for t in a.trophies)
+    assert any(t["name"] == "Silver Tongue" for t in b.trophies)
+
+
+def test_trade_does_not_grant_a_proposed_award_from_a_different_category():
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.custom_awards = [{"name": "Keeper of the Trails", "category": "scouting", "cycle": 1}]
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    ACTION_REGISTRY["TRADE"](sim, a, "plains", (51, 51))
+
+    assert not any(t["name"] == "Keeper of the Trails" for t in a.trophies)
 
 
 def test_trade_ignores_extinct_tribes_and_self():

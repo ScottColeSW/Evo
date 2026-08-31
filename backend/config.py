@@ -46,6 +46,13 @@ NIGHT_CYCLE_EVERY_N_CYCLES = 30
 NIGHT_CYCLE_REVIEWER_MODEL = "mistral:7b"
 NIGHT_CYCLE_HISTORY_WINDOW = 20
 
+# An innate tradition, not a chief's choice (see Simulation._hold_tribal_gathering):
+# every tribe gathers once per in-game day to take stock, whatever its philosophy or
+# model. Mirrors frontend/index.html's own DAY_LENGTH_CYCLES for the sun/moon arc --
+# kept as two separately-defined constants (JS can't import this module) but they must
+# stay equal, or the gathering stops landing at the in-game dawn it's meant to mark.
+DAY_LENGTH_CYCLES = 20
+
 # Rough pre-flight sanity check against a model's on-disk size (backend/vram_guard.py).
 # Not a live enforcement layer -- see that module's docstring for why.
 VRAM_LIMIT_GB = 14.0
@@ -192,6 +199,16 @@ HUNGER_CRITICAL_CYCLES_LEFT = 1
 THIRST_WARNING_CYCLES_LEFT = 4
 THIRST_CRITICAL_CYCLES_LEFT = 1
 
+# Real runs showed tribes starving/dehydrating while sitting on 100+ wood or stone --
+# gathering more of a resource that was never the bottleneck, apparently without
+# realizing the stockpile was already well past any near-term building need. Set above
+# every currently-real wood/stone cost (BUILD_FIRE=10, CONSTRUCT_WALL=15/15, the
+# priciest era-advancement cost so far is 40) so crossing it genuinely means "more than
+# any real use," not an arbitrary number. Only surfaced alongside an actual food/water
+# warning (see Simulation._prepare_turn) -- a fact about the mismatch, not a standing
+# nudge to stop gathering.
+MATERIAL_SURPLUS_THRESHOLD = 50
+
 # What happens when upkeep can't be paid -- someone dies, and the ground remembers it.
 # Magnitude matches the other hazard deaths (wolf attack, drowning) so any death reliably
 # clears the -0.35 dread threshold in ancestral_matrix.py, not just repeated ones.
@@ -209,6 +226,24 @@ DROWNING_HAZARD_CHANCE = 0.08
 DROWNING_HAZARD_POPULATION_LOSS = 1
 DROWNING_TRAUMA_MAGNITUDE = -0.4
 DROWNING_TRAUMA_RADIUS = 6
+
+# A wandering storm cloud (Simulation._advance_weather) -- weather that exists whether
+# or not any tribe is watching, not triggered by or aimed at anyone. Rare to spawn
+# (checked once per cycle only while no storm is active), rare to strike once present,
+# gone after STORM_LIFESPAN_CYCLES either way. A tribe standing exactly where it
+# strikes takes a real, small hazard (same _lose_population channel as every other
+# hazard, so immortality still protects it); a tribe merely nearby just gets a fact
+# about it (see Simulation._build_visible_entities) -- the same "real event, no
+# scripted reaction" pattern as a wildlife sighting.
+STORM_SPAWN_CHANCE = 0.02
+STORM_LIFESPAN_CYCLES = 20
+STORM_SPEED = 3
+STORM_HEADING_JITTER = 0.4  # radians/cycle -- wanders, doesn't fly a dead-straight line
+LIGHTNING_STRIKE_CHANCE = 0.15
+LIGHTNING_STRIKE_RADIUS = 3  # a tribe within this many tiles notices the strike as a fact
+LIGHTNING_HAZARD_POPULATION_LOSS = 1
+LIGHTNING_TRAUMA_MAGNITUDE = -0.5
+LIGHTNING_TRAUMA_RADIUS = 6
 
 # Chief mortality (backend/simulation.py._lose_population). Previously a chief, once
 # elected, was permanent flavor text -- it never mattered who was actually still alive.
@@ -265,6 +300,20 @@ TRADE_PRIDE_RADIUS = 4
 # removed any incentive to actually travel toward another tribe.
 BROADCAST_HEARING_RADIUS = 15
 
+# Cross-tribe proximity awareness, independent of whether the other tribe has ever
+# broadcast anything -- real data this session showed every single run (25/25 tribe-
+# reports) ending with zero trades and zero raids. The default two-tribe spawn distance
+# is ~62 tiles, well beyond BROADCAST_HEARING_RADIUS, so tribes essentially never had
+# any way to become aware of each other's existence at all, let alone converge on the
+# same ground. Two tiers, mirroring how you'd actually notice a distant camp: exact
+# coordinates only once close (RIVAL_PRECISE_AWARENESS_RADIUS), just a rough compass
+# direction -- no coordinates, since you can't see exact GPS from that far -- out to
+# RIVAL_DISTANT_SIGHTING_RADIUS, set above the real default spawn distance so a fresh
+# two-tribe game is aware of the other from cycle one instead of remaining permanently
+# blind to a rival that's simply never going to wander within 15 tiles by chance.
+RIVAL_PRECISE_AWARENESS_RADIUS = 20
+RIVAL_DISTANT_SIGHTING_RADIUS = 70
+
 # Worn trails (backend/world.py, backend/actions.py, backend/simulation.py's
 # _advance_expedition): the inverse of resource depletion. Repeatedly relocating or
 # scouting through the same tile wears a trail there, which speeds up both RELOCATE and
@@ -314,6 +363,22 @@ EXPEDITION_MAX_DAYS = 3
 # currently deducts population to launch a party, so an uncapped tribe could spam
 # expeditions for free.
 MAX_CONCURRENT_EXPEDITIONS = 2
+
+# actions.expedition_capacity() lets a larger tribe spare more search parties at once --
+# MAX_CONCURRENT_EXPEDITIONS above is only ever the floor now, not a hard ceiling. A
+# tribe of 8 (the starting population) still gets exactly 2; a tribe of 20+ can spare
+# more. Real per-capita capacity, the same way upkeep already scales with population
+# (see Simulation._apply_upkeep) -- population growth used to buy a tribe nothing on
+# the scouting/hunting side no matter how large it got.
+EXPEDITION_SLOT_POPULATION_DIVISOR = 5
+
+# actions._labor_multiplier() lets a larger tribe gather/hunt/forage more per action --
+# upkeep (_apply_upkeep) already scales with population, but yield from GATHER_WOOD/
+# STONE/WATER/FOOD and HUNT_DEER never did, so a bigger tribe was strictly worse off
+# per-capita: identical output, more mouths to feed. POPULATION_YIELD_BASELINE matches
+# Tribe.__init__'s own starting population, so a tribe at or below starting size sees no
+# change at all -- this only ever rewards growth past it, never penalizes a small tribe.
+POPULATION_YIELD_BASELINE = 8
 
 # Every expedition's lead scout gets a procedurally-generated determination trait (see
 # actions.py._generate_scout) that shifts their own personal give-up point by up to

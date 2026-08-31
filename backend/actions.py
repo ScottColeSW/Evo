@@ -33,13 +33,45 @@ BIOME_YIELD_MULTIPLIER = {
               "cliffs": 0.5, "shoals": 0.05, "ocean": 0.0},
     "game": {"forest": 1.0, "plains": 0.6, "river": 0.3, "lake": 0.3, "mountains": 0.15,
              "cliffs": 0.05, "shoals": 0.1, "ocean": 0.0},
+    # Foraging (berries, fruit, wild plants) used to not exist at all -- food only ever
+    # came from HUNT_DEER/HUNTING_PARTY, both carrying the same wolf-pack risk, so there
+    # was no low-risk food option the way GATHER_WATER is a low-risk (if lower-yield)
+    # alternative to a river tile. Deliberately profiled opposite to "game": plains is
+    # the best foraging ground (open land, berries, roots), forest is only secondary --
+    # real tension between forest's higher-risk/higher-yield hunting and plains' safe,
+    # steady foraging, rather than one biome just being strictly best at everything.
+    "forage": {"plains": 1.0, "forest": 0.6, "river": 0.4, "lake": 0.4, "mountains": 0.1,
+               "cliffs": 0.0, "shoals": 0.1, "ocean": 0.0},
 }
 
 # Which species word to use in a wildlife sighting (see Simulation._build_visible_entities)
-# for whichever hunting action is currently unlocked -- keyed by action name so a future
-# reframing (e.g. a small-game action alongside or instead of HUNT_DEER) only needs an
-# entry here, not a change to the sighting logic itself.
+# for whichever hunting action is currently unlocked -- keyed by action name, used as the
+# fallback for any biome GAME_SPECIES_BY_BIOME doesn't cover.
 GAME_SPECIES_LABEL = {"HUNT_DEER": "deer"}
+
+# Species flavor by biome, keyed for the sighting's *actual* location -- deer only in a
+# forest, small game the plains are really home to, wildfowl by water. Purely narrative
+# (the sighting fact and the hunt yield are unaffected by which name gets used), but it
+# stops every wildlife sighting reading identically ("signs of deer nearby") regardless
+# of where a tribe actually stands.
+GAME_SPECIES_BY_BIOME = {
+    "forest": ("deer", "wild boar"),
+    "plains": ("rabbits", "groundbirds"),
+    "river": ("waterfowl",),
+    "lake": ("waterfowl",),
+    "mountains": ("mountain goats",),
+}
+
+
+def _labor_multiplier(population: int) -> float:
+    """More hands means more gathered per action -- upkeep (Simulation._apply_upkeep)
+    already scales with population, but yield never did, so a bigger tribe was strictly
+    worse off per-capita: identical output from one GATHER_WOOD regardless of whether 3
+    or 30 people stood behind it, against a food/water cost that only ever grew.
+    POPULATION_YIELD_BASELINE matches Tribe.__init__'s own starting population, so this
+    never scales a tribe at or below starting size down -- only ever rewards growth
+    past it."""
+    return max(1.0, population / config.POPULATION_YIELD_BASELINE)
 
 
 def _harvest(sim, tribe, resource_key, base_yield, biome):
@@ -47,12 +79,23 @@ def _harvest(sim, tribe, resource_key, base_yield, biome):
     recently, and harvesting here raises that further. Capped below total depletion
     (config.MAX_SCARCITY) so staying put is costly, not a guaranteed dead end. Also
     scales by how much this biome actually supports the resource in the first place --
-    see BIOME_YIELD_MULTIPLIER."""
+    see BIOME_YIELD_MULTIPLIER -- and by how many people this tribe actually has to put
+    to work -- see _labor_multiplier."""
     biome_factor = BIOME_YIELD_MULTIPLIER.get(resource_key, {}).get(biome, 1.0)
     scarcity = sim.world.scarcity(resource_key, tribe.x, tribe.y)
-    yield_amount = round(base_yield * biome_factor * (1 - scarcity))
+    labor_factor = _labor_multiplier(tribe.population)
+    yield_amount = round(base_yield * biome_factor * labor_factor * (1 - scarcity))
     sim.world.deplete(resource_key, tribe.x, tribe.y, config.DEPLETION_PER_HARVEST, config.MAX_SCARCITY)
     return yield_amount
+
+
+def expedition_capacity(tribe) -> int:
+    """How many expedition parties (scouting or hunting, any mix) this tribe can have
+    out at once. config.MAX_CONCURRENT_EXPEDITIONS is only ever the floor now, not a
+    hard ceiling -- a tribe of 8 (starting population) still gets exactly that many, but
+    a larger tribe can spare more search bandwidth, the same way its upkeep cost already
+    scales with population (see Simulation._apply_upkeep)."""
+    return max(config.MAX_CONCURRENT_EXPEDITIONS, tribe.population // config.EXPEDITION_SLOT_POPULATION_DIVISOR)
 
 
 def _gather_wood(sim, tribe, biome, target):
@@ -88,6 +131,15 @@ def _hunt_deer(sim, tribe, biome, target):
         sim._lose_population(tribe, config.HUNT_HAZARD_POPULATION_LOSS, cause="wolf_attack")
         return "a wolf pack struck the hunting party"
     tribe.food += _harvest(sim, tribe, "game", 15, biome)
+    return None
+
+
+def _forage(sim, tribe, biome, target):
+    """Berries, fruit, and wild plants -- a real low-risk food option, unlike
+    HUNT_DEER/HUNTING_PARTY which both carry wolf-pack risk. Lower base yield than
+    hunting (10 vs. 15) since safety is the whole point: foraging trades hunting's
+    higher ceiling for a guaranteed, no-hazard return."""
+    tribe.food += _harvest(sim, tribe, "forage", 10, biome)
     return None
 
 
@@ -167,10 +219,11 @@ def _scout(sim, tribe, biome, target):
     leadership.py) -- water and distant terrain should be things a tribe discovers by
     actually sending people to go look, not facts the simulation gifts for free.
 
-    A tribe can have up to config.MAX_CONCURRENT_EXPEDITIONS parties out at once, any
+    A tribe can have up to expedition_capacity(tribe) parties out at once (scaling with
+    population past config.MAX_CONCURRENT_EXPEDITIONS' floor -- see that function), any
     mix of scouting and hunting -- capped rather than unlimited since nothing currently
     deducts population to launch one."""
-    if len(tribe.expeditions) >= config.MAX_CONCURRENT_EXPEDITIONS:
+    if len(tribe.expeditions) >= expedition_capacity(tribe):
         fields = ", ".join(
             f"{e['lead_scout']} (day {e['day']}/{e['max_days']}, {e['phase']})" for e in tribe.expeditions
         )
@@ -220,7 +273,7 @@ def _hunting_party(sim, tribe, biome, target):
     testable tension: a tribe that's starving *right now* gets no relief from a hunt
     that's still out in the field, no matter how promising, and every extra day spent
     searching is another chance at a hazard, not a free wait."""
-    if len(tribe.expeditions) >= config.MAX_CONCURRENT_EXPEDITIONS:
+    if len(tribe.expeditions) >= expedition_capacity(tribe):
         fields = ", ".join(
             f"{e['lead_scout']} (day {e['day']}/{e['max_days']}, {e['phase']})" for e in tribe.expeditions
         )
@@ -341,6 +394,7 @@ def _raid(sim, tribe, biome, target):
         tribe.raids_won += 1
         if tribe.raids_won == 1:
             sim._award_trophy(tribe, "First Conquest")
+        sim._check_custom_awards(tribe, "raiding")
 
         # Population moves rather than just vanishing -- captured or defecting
         # survivors, not pointless casualties. Enough raids like this eventually
@@ -406,6 +460,8 @@ def _trade(sim, tribe, biome, target):
         sim._award_trophy(tribe, "First Contact")
     if partner.trades_completed == 1:
         sim._award_trophy(partner, "First Contact")
+    sim._check_custom_awards(tribe, "trading")
+    sim._check_custom_awards(partner, "trading")
     sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.TRADE_PRIDE_MAGNITUDE, config.TRADE_PRIDE_RADIUS)
     sim.trauma.radiate_event_wave(partner.x, partner.y, config.TRADE_PRIDE_MAGNITUDE, config.TRADE_PRIDE_RADIUS)
     return f"opened trade with {partner.name} -- goods exchanged both ways"
@@ -415,6 +471,7 @@ ACTION_REGISTRY = {
     "GATHER_WOOD": _gather_wood,
     "GATHER_STONE": _gather_stone,
     "GATHER_WATER": _gather_water,
+    "GATHER_FOOD": _forage,
     "HUNT_DEER": _hunt_deer,
     "BUILD_FIRE": _build_fire,
     "CONSTRUCT_WALL": _construct_wall,
@@ -438,6 +495,7 @@ ACTION_DESCRIPTIONS = {
     "GATHER_WOOD": "Harvest wood at your current tile -- forest yields the most, plains and river tiles some, mountains and ocean almost none. Yield also drops the more this exact spot has been harvested recently.",
     "GATHER_STONE": "Harvest stone at your current tile -- mountains yield the most by far, every other biome almost none. Yield also drops the more this exact spot has been harvested recently.",
     "GATHER_WATER": "Harvest water at your current tile -- works in any biome, though a river tile yields more than elsewhere. Small drowning risk if you're on a river.",
+    "GATHER_FOOD": "Forage for berries, fruit, and wild plants at your current tile -- plains yields the most, forest some, mountains and ocean almost none. No hazard, unlike hunting, but a lower yield ceiling. Yield also drops the more this exact spot has been foraged recently.",
     "HUNT_DEER": "Attempt to harvest food at your current tile -- forest has the most game, plains and river tiles some, mountains and ocean almost none. Small risk of losing a hunter to a wolf pack, most likely in forest.",
     "BUILD_FIRE": "Build a fire at your current tile using stored wood. Does nothing if one is already built here.",
     "CONSTRUCT_WALL": "Build a wall at your current tile using stored wood and stone. Does nothing if one is already built here.",

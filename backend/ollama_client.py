@@ -35,9 +35,17 @@ class OllamaClient:
             r.raise_for_status()
             raw = r.json().get("response", "{}")
             try:
-                return json.loads(raw)
+                parsed = json.loads(raw)
             except json.JSONDecodeError:
                 return {}
+            # `format: "json"` guarantees valid JSON, not a JSON *object* -- a weak or
+            # very small model (seen live with llama3.2:1b) can emit a bare string,
+            # number, or list that parses without error but isn't a dict. Every caller
+            # does result.get(...) assuming a dict; returning {} here (the same
+            # fallback as an outright parse failure) is what makes that safe regardless
+            # of how capable the model actually is, rather than crashing the whole
+            # simulation on one degenerate response.
+            return parsed if isinstance(parsed, dict) else {}
 
     async def generate_text(self, model: str, prompt: str, temperature: float = 0.5, keep_alive: str = "5m") -> str:
         payload = {
