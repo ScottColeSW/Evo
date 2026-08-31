@@ -16,6 +16,7 @@ def _bare_simulation():
     sim.immortality_cycles = 0
     sim.storm_cloud = None
     sim.lightning_strike = None
+    sim.recent_encounters = []
     return sim
 
 
@@ -1771,6 +1772,230 @@ def test_resource_landmarks_are_surfaced_as_durable_facts_and_exposed_to_the_fro
     assert d["lumber_sites"] == [(60, 60)]
     assert d["wildlife_sites"] == [(60, 60)]
     assert d["quarry_sites"] == [(15, 20)]
+
+
+def test_raider_sighting_is_recorded_and_radiates_dread_at_the_sighting_not_the_camp():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    exp = _returning_scout_exp((60, 60), "plains")
+    tribe.expeditions = [exp]
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_one_expedition(tribe, exp)
+
+    assert tribe.raider_sightings == [(60, 60)]
+    assert "DREAD" in sim.trauma.bias_string(60, 60)
+    assert "DREAD" not in sim.trauma.bias_string(50, 50)  # not at the tribe's own camp
+    assert any("signs of raiders near (60,60)" in entry for entry in tribe.history)
+
+
+def test_revisiting_a_known_raider_sighting_does_not_duplicate_the_list():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.raider_sightings = [(60, 60)]
+    exp = _returning_scout_exp((60, 60), "plains")
+    tribe.expeditions = [exp]
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_one_expedition(tribe, exp)
+
+    assert tribe.raider_sightings == [(60, 60)]
+
+
+def test_hunting_party_never_rolls_a_raider_sighting():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 10
+    tribe.expeditions = [{
+        "kind": "hunt", "pos": [50, 50], "origin": [50, 50], "target": [50, 50],
+        "day": 2, "phase": "returning", "food_caught": 0,
+        "food_gathered": 7, "water_gathered": 5,
+        "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
+    }]
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_expeditions(tribe)
+
+    assert tribe.raider_sightings == []
+
+
+def test_raider_sightings_are_surfaced_as_a_durable_fact():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.raider_sightings = [(60, 60)]
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert "raiders reported near (60,60)" in entities
+    assert tribe.to_dict()["raider_sightings"] == [(60, 60)]
+
+
+def test_raider_attack_never_fires_before_a_tribe_has_ever_settled():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = False
+    tribe.population = 100  # would otherwise guarantee the max attack chance
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._check_raider_attack(tribe)
+
+    assert tribe.last_raider_attack_cycle < 0
+    assert sim.recent_encounters == []
+
+
+def test_raider_attack_respects_cooldown():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.population = 100
+    tribe.last_raider_attack_cycle = sim.cycle  # just attacked this exact cycle
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._check_raider_attack(tribe)
+
+    assert sim.recent_encounters == []
+
+
+def test_raider_attack_chance_scales_with_population():
+    from backend import config
+
+    sim = _bare_simulation()
+    low = Tribe("tribe_0", "Small Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    low.has_ever_settled = True
+    low.population = 5
+    high = Tribe("tribe_1", "Big Tribe", "gemma2:2b", 60, 60, "#f97316")
+    high.has_ever_settled = True
+    high.population = config.RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE
+
+    # A roll that clears the max chance but not a small tribe's much lower chance.
+    roll = config.RAIDER_HAZARD_MAX_CHANCE * (low.population / config.RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE) + 0.001
+    with mock.patch("backend.simulation.random.random", return_value=roll):
+        sim._check_raider_attack(low)
+        sim._check_raider_attack(high)
+
+    assert low.last_raider_attack_cycle < 0  # never triggered
+    assert high.last_raider_attack_cycle == sim.cycle  # triggered
+
+
+def test_raider_attack_failed_defense_steals_resources_and_costs_population():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.population = 10
+    tribe.food = tribe.water = tribe.wood = tribe.stone = 100
+
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, 0.99]):  # attack hits, defense fails
+        sim._check_raider_attack(tribe)
+
+    assert tribe.food < 100
+    assert tribe.population < 10
+    assert "DREAD" in sim.trauma.bias_string(50, 50)
+    assert any("raiders struck the camp" in entry for entry in tribe.history)
+    assert sim.recent_encounters and sim.recent_encounters[0]["outcome"] == "struck"
+
+
+def test_raider_attack_successful_defense_radiates_pride_and_increments_raids_defended():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.population = 10
+    tribe.food = tribe.water = tribe.wood = tribe.stone = 100
+
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, 0.0]):  # attack hits, defense holds
+        sim._check_raider_attack(tribe)
+
+    assert tribe.food == 100
+    assert tribe.population == 10
+    assert tribe.raids_defended == 1
+    assert "PRIDE" in sim.trauma.bias_string(50, 50)
+    assert any("repelled" in entry for entry in tribe.history)
+    assert sim.recent_encounters and sim.recent_encounters[0]["outcome"] == "repelled"
+
+
+def test_partial_wall_gives_partial_defense_bonus_not_full_or_zero():
+    from backend import config
+
+    no_wall = Tribe("tribe_0", "A", "gemma2:2b", 50, 50, "#c084fc")
+    no_wall.population = 10
+
+    no_wall_defense = (
+        config.RAIDER_DEFENSE_BASE_CHANCE + (no_wall.population // 10) * config.RAIDER_DEFENSE_POPULATION_BONUS_PER_10
+    )
+    half_wall_defense = no_wall_defense + config.RAIDER_DEFENSE_WALL_BONUS_AT_FULL_PROGRESS * 0.5
+    full_wall_defense = no_wall_defense + config.RAIDER_DEFENSE_WALL_BONUS_AT_FULL_PROGRESS * 1.0
+
+    assert no_wall_defense < half_wall_defense < full_wall_defense
+
+
+def test_full_wall_reduces_population_loss_more_than_a_partial_wall():
+    sim_partial = _bare_simulation()
+    partial = Tribe("tribe_0", "A", "gemma2:2b", 50, 50, "#c084fc")
+    partial.has_ever_settled = True
+    partial.population = 10
+    partial.food = partial.water = partial.wood = partial.stone = 100
+    sim_partial.world.constructions[(50, 50)] = {"type": "wall", "cycle": 0, "progress": 30}
+
+    sim_full = _bare_simulation()
+    full = Tribe("tribe_1", "B", "gemma2:2b", 50, 50, "#c084fc")
+    full.has_ever_settled = True
+    full.population = 10
+    full.food = full.water = full.wood = full.stone = 100
+    sim_full.world.constructions[(50, 50)] = {"type": "wall", "cycle": 0, "progress": 100}
+
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, 0.99]):
+        sim_partial._check_raider_attack(partial)
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, 0.99]):
+        sim_full._check_raider_attack(full)
+
+    assert (10 - full.population) < (10 - partial.population)
+
+
+def test_failed_wall_defense_destroys_the_wall_forcing_a_rebuild():
+    """Explicit request: a wall that fails to stop a raid doesn't stay standing --
+    the tribe has to rebuild it, the same as any real defensive structure that gets
+    breached."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.population = 10
+    tribe.food = tribe.water = tribe.wood = tribe.stone = 100
+    sim.world.constructions[(50, 50)] = {"type": "wall", "cycle": 0, "progress": 80}
+
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, 0.99]):  # attack hits, defense fails
+        sim._check_raider_attack(tribe)
+
+    assert (50, 50) not in sim.world.constructions
+
+
+def test_successful_wall_defense_leaves_the_wall_standing():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.population = 10
+    tribe.food = tribe.water = tribe.wood = tribe.stone = 100
+    sim.world.constructions[(50, 50)] = {"type": "wall", "cycle": 0, "progress": 80}
+
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, 0.0]):  # attack hits, defense holds
+        sim._check_raider_attack(tribe)
+
+    assert sim.world.constructions[(50, 50)] == {"type": "wall", "cycle": 0, "progress": 80}
+
+
+def test_recent_encounters_cleared_each_cycle_and_populated_on_a_raider_attack():
+    sim = _bare_simulation()
+    sim.recent_encounters = [{"x": 1, "y": 1, "kind": "raider_attack", "label": "stale", "outcome": "struck"}]
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.population = 10
+    tribe.food = tribe.water = tribe.wood = tribe.stone = 100
+
+    sim.recent_encounters = []  # mirrors step()'s per-cycle reset before _check_raider_attack runs
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, 0.99]):
+        sim._check_raider_attack(tribe)
+
+    assert len(sim.recent_encounters) == 1
+    assert sim.recent_encounters[0]["x"] == 50 and sim.recent_encounters[0]["y"] == 50
 
 
 def test_scouting_custom_award_goes_to_the_scout_who_first_confirms_water():

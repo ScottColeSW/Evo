@@ -252,6 +252,7 @@ document.getElementById("btn-start").addEventListener("click", () => {
 
   lastExtinctByTribe = {};
   lastChiefByTribe = {};
+  lastRaiderAttackCycleByTribe = {};
   firstStateReceived = false;
   showSpawnSplash();
 
@@ -270,6 +271,7 @@ document.getElementById("btn-start").addEventListener("click", () => {
     checkExtinctions(latestState);
     checkChiefElections(latestState);
     checkCelebrations(latestState);
+    checkRaids(latestState);
     updateSidebar(latestState);
   };
 });
@@ -547,6 +549,38 @@ function checkExtinctions(state) {
       queueBanner(`💀 ${t.name} has gone extinct`, true);
     }
     lastExtinctByTribe[id] = t.extinct;
+  });
+}
+
+/* ---------- Raider attacks ---------- */
+
+let lastRaiderAttackCycleByTribe = {};
+
+function raidOutcomeText(t) {
+  const recent = (t.history || []).slice(-4);
+  if (recent.some(e => e.includes("raiders struck the camp"))) {
+    return { text: "raiders struck the camp!", danger: true };
+  }
+  if (recent.some(e => e.includes("raiders were spotted approaching camp and repelled"))) {
+    return { text: "raiders were spotted and repelled", danger: false };
+  }
+  return null;
+}
+
+function checkRaids(state) {
+  Object.entries(state.tribes || {}).forEach(([id, t]) => {
+    const cycle = t.last_raider_attack_cycle;
+    if (lastRaiderAttackCycleByTribe[id] === undefined) {
+      lastRaiderAttackCycleByTribe[id] = cycle;  // first sighting -- don't fire on page load
+      return;
+    }
+    if (cycle !== lastRaiderAttackCycleByTribe[id]) {
+      const outcome = raidOutcomeText(t);
+      if (outcome) {
+        queueBanner(`${outcome.danger ? "⚔️" : "🛡️"} ${t.name}: ${outcome.text}`, outcome.danger);
+      }
+      lastRaiderAttackCycleByTribe[id] = cycle;
+    }
   });
 }
 
@@ -1209,6 +1243,7 @@ const LANDMARK_TYPES = [
   ["lumber_sites", "\u{1F332}", [-0.55, -0.4]],          // evergreen, upper-left
   ["wildlife_sites", "\u{1F43E}", [0.55, -0.4]],         // paw prints, upper-right
   ["quarry_sites", "⛏️", [0, 0.55]],           // pick, lower-center
+  ["raider_sightings", "\u{2694}\u{FE0F}", [-0.55, 0.55]], // crossed swords, lower-left
 ];
 
 function drawLandmarks() {
@@ -1253,6 +1288,28 @@ function drawSettlementMarker(t) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(t.founded_city ? "🏛️" : "🛖", cx, cy + 1);
+}
+
+// A rectangle around the settlement marker, not a separate world-tile square -- walls
+// are a settlement feature, not generic terrain. Stroke opacity/dash reflects real
+// construction progress (Simulation._construct_wall) so a half-built wall visibly
+// reads as half-built, not invisible until 100%.
+function drawSettlementWall(t) {
+  const wall = (latestState.structures || []).find(s => s.x === t.x && s.y === t.y && s.type === "wall");
+  if (!wall) return;
+  const [landX, landY] = landAnchor(t.x, t.y);
+  const cx = landX * TILE + TILE / 2;
+  const cy = landY * TILE + TILE / 2;
+  const r = Math.max(6, (TILE * MOON_CORE_RADIUS_TILES) / 3);
+  const half = r * 1.6;
+  const progress = Math.max(0, Math.min(100, wall.progress ?? 100));
+  ctx.save();
+  ctx.strokeStyle = "#a8a29e";
+  ctx.lineWidth = Math.max(1.5, TILE * 0.12);
+  ctx.globalAlpha = 0.35 + 0.65 * (progress / 100);
+  if (progress < 100) ctx.setLineDash([4, 3]);
+  ctx.strokeRect(cx - half, cy - half, half * 2, half * 2);
+  ctx.restore();
 }
 
 // One plot icon per tribe (not one per t.farm_plots -- identical repeated icons would
@@ -1495,15 +1552,29 @@ function drawFrame() {
         ctx.beginPath(); ctx.arc(px + TILE / 2, py + TILE / 2, r + 2, 0, 2 * Math.PI); ctx.fill();
         ctx.fillStyle = "#ef4444";
         ctx.beginPath(); ctx.arc(px + TILE / 2, py + TILE / 2, r, 0, 2 * Math.PI); ctx.fill();
-      } else {
+      } else if (s.type !== "wall") {
+        // Walls get their own settlement-anchored rectangle (drawSettlementWall)
+        // instead of a flat world-tile square -- a wall is a settlement feature, not
+        // generic terrain, and needs to visibly reflect real construction progress.
         ctx.fillStyle = "#78350f";
         ctx.fillRect(px, py, TILE, TILE);
       }
     });
 
     drawLandmarks();
+    (latestState.recent_encounters || []).forEach(e => {
+      const cx = e.x * TILE + TILE / 2;
+      const cy = e.y * TILE + TILE / 2 - TILE * 1.2;
+      ctx.font = `${Math.max(10, TILE * 0.9)}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.fillText(e.kind === "raider_attack" ? "⚔️" : "\u{1F3F4}", cx, cy);
+      ctx.font = `bold ${Math.max(8, TILE * 0.35)}px sans-serif`;
+      ctx.fillStyle = "#fecaca";
+      ctx.fillText(e.label, cx, cy + TILE * 0.6);
+    });
     Object.values(latestState.tribes || {}).forEach(t => {
       drawSettlementMarker(t);
+      drawSettlementWall(t);
       drawCityBuildings(t);
       drawFarmPlot(t);
     });
@@ -1592,6 +1663,7 @@ function landmarkCounts(t) {
     ["🌲", (t.lumber_sites || []).length],
     ["🐾", (t.wildlife_sites || []).length],
     ["⛏️", (t.quarry_sites || []).length],
+    ["\u{2694}\u{FE0F}", (t.raider_sightings || []).length],
   ].filter(([, n]) => n > 0).map(([icon, n]) => `${icon}${n}`);
   return counts.length ? " · " + counts.join(" ") : "";
 }

@@ -14,6 +14,7 @@ def _bare_simulation():
     sim.trauma = AncestralTraumaMatrix(100)
     sim.cycle = 1
     sim.immortality_cycles = 0
+    sim.recent_encounters = []
     return sim
 
 
@@ -98,18 +99,65 @@ def test_second_fire_at_the_same_tile_costs_nothing_and_gains_no_pride():
     assert float(sim.trauma.ghost_tensor[50, 50]) == pride_after_first  # no extra pride
 
 
-def test_second_wall_at_the_same_tile_costs_nothing():
+def test_construct_wall_adds_progress_and_costs_proportional_resources():
+    """Explicit request: a wall is built in stages, like a crop, not finished in one
+    action -- one CONSTRUCT_WALL call should leave a real, partial construction, not
+    an instantly-complete wall or nothing at all."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.wood = 50
     tribe.stone = 50
 
     ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
-    wood_after_first, stone_after_first = tribe.wood, tribe.stone
+
+    wall = sim.world.constructions[(50, 50)]
+    assert wall["type"] == "wall"
+    assert 0 < wall["progress"] < 100
+    assert tribe.wood < 50
+    assert tribe.stone < 50
+
+
+def test_construct_wall_no_op_when_cannot_afford_the_proportional_cost():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 0
+    tribe.stone = 0
 
     ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
 
-    assert (tribe.wood, tribe.stone) == (wood_after_first, stone_after_first)
+    assert (50, 50) not in sim.world.constructions
+
+
+def test_construct_wall_is_a_no_op_once_complete():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 100
+    tribe.stone = 100
+
+    for _ in range(6):  # comfortably more than enough calls to reach 100%
+        ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
+
+    assert sim.world.constructions[(50, 50)]["progress"] == 100
+    wood_at_completion, stone_at_completion = tribe.wood, tribe.stone
+
+    ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
+
+    assert (tribe.wood, tribe.stone) == (wood_at_completion, stone_at_completion)
+
+
+def test_larger_population_builds_wall_progress_faster():
+    """Reuses _labor_multiplier -- the same 'more hands get more done' concept
+    _harvest already uses -- rather than a separate team-size notion."""
+    sim = _bare_simulation()
+    small = Tribe("tribe_0", "Small Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    small.wood, small.stone, small.population = 100, 100, 8
+    big = Tribe("tribe_1", "Big Tribe", "gemma2:2b", 60, 60, "#f97316")
+    big.wood, big.stone, big.population = 100, 100, 40
+
+    ACTION_REGISTRY["CONSTRUCT_WALL"](sim, small, "plains", _NO_TARGET)
+    ACTION_REGISTRY["CONSTRUCT_WALL"](sim, big, "plains", _NO_TARGET)
+
+    assert sim.world.constructions[(60, 60)]["progress"] > sim.world.constructions[(50, 50)]["progress"]
 
 
 def test_plant_crop_spends_wood_and_adds_a_plot():
@@ -572,6 +620,80 @@ def test_raid_loss_costs_the_attacker_without_stealing_anything():
     assert defender.wood == 20  # untouched
     assert attacker.population == 6  # 8 - RAID_ATTACKER_POPULATION_LOSS_ON_LOSS (2)
     assert defender.population == 8  # untouched
+
+
+def test_strike_raider_camp_fails_with_no_known_sighting_at_that_location():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.raider_sightings = []
+
+    note = ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](sim, tribe, "plains", (60, 60))
+
+    assert "no known raider camp" in note
+
+
+def test_strike_raider_camp_success_removes_the_sighting_and_loots_food():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.raider_sightings = [(60, 60)]
+    tribe.food = 100
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # forces a win
+        note = ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](sim, tribe, "plains", (60, 60))
+
+    assert "destroyed" in note
+    assert tribe.raider_sightings == []
+    assert tribe.food > 100
+    assert "PRIDE" in sim.trauma.bias_string(60, 60)
+
+
+def test_strike_raider_camp_failure_costs_population_and_leaves_sighting_intact():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.raider_sightings = [(60, 60)]
+    tribe.population = 10
+
+    with mock.patch("backend.actions.random.random", return_value=0.999):  # forces a loss
+        note = ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](sim, tribe, "plains", (60, 60))
+
+    assert "escaped" in note
+    assert tribe.raider_sightings == [(60, 60)]
+    assert tribe.population < 10
+    assert "DREAD" in sim.trauma.bias_string(50, 50)
+
+
+def test_strike_raider_camp_win_chance_scales_with_population():
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    low = Tribe("tribe_0", "Small Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    low.raider_sightings = [(60, 60)]
+    low.population = 1
+    high = Tribe("tribe_1", "Big Tribe", "gemma2:2b", 50, 50, "#f97316")
+    high.raider_sightings = [(60, 60)]
+    high.population = 200  # capped at STRIKE_RAIDER_CAMP_MAX_WIN_CHANCE
+
+    # A roll that clears the capped high-population chance but not the low one.
+    roll = config.STRIKE_RAIDER_CAMP_BASE_WIN_CHANCE + 0.001
+    with mock.patch("backend.actions.random.random", return_value=roll):
+        low_note = ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](sim, low, "plains", (60, 60))
+        high_note = ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](sim, high, "plains", (60, 60))
+
+    assert "escaped" in low_note
+    assert "destroyed" in high_note
+
+
+def test_strike_raider_camp_unlocked_only_from_bronze_age():
+    from backend.eras import unlocked_actions_through
+
+    assert "STRIKE_RAIDER_CAMP" not in unlocked_actions_through("stone_age")
+    assert "STRIKE_RAIDER_CAMP" in unlocked_actions_through("bronze_age")
 
 
 def test_raid_ignores_extinct_tribes_and_self():

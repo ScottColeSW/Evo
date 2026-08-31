@@ -168,6 +168,9 @@ class Tribe:
         # See Simulation._check_for_celebration -- very negative so a tribe's very
         # first celebration isn't blocked by a cooldown it never actually used yet.
         self.last_celebration_cycle: int = -config.CELEBRATION_COOLDOWN_CYCLES
+        # See Simulation._check_raider_attack -- very negative so a tribe's first
+        # possible raid isn't blocked by a cooldown it never actually used yet.
+        self.last_raider_attack_cycle: int = -config.RAIDER_HAZARD_COOLDOWN_CYCLES
         # Honors a chief has personally proposed via the night cycle (see
         # reflection.py's AWARD_CATEGORIES). Simulation._check_custom_awards hands one
         # out to whoever first earns it after it's proposed.
@@ -212,6 +215,7 @@ class Tribe:
         self.lumber_sites: list[tuple[int, int]] = []
         self.wildlife_sites: list[tuple[int, int]] = []
         self.quarry_sites: list[tuple[int, int]] = []
+        self.raider_sightings: list[tuple[int, int]] = []
         # A fact for the next chief election to reason about, set when something more
         # specific than "just founded" is true (currently only a raid-conquest merge,
         # see Simulation._merge_tribes) -- consumed and cleared by _install_chief so an
@@ -314,6 +318,8 @@ class Tribe:
             "lumber_sites": self.lumber_sites,
             "wildlife_sites": self.wildlife_sites,
             "quarry_sites": self.quarry_sites,
+            "raider_sightings": self.raider_sightings,
+            "last_raider_attack_cycle": self.last_raider_attack_cycle,
             "next_era": next_era_info,
             "expeditions": [
                 {
@@ -383,6 +389,12 @@ class Simulation:
         # frontend's one-cycle flash).
         self.storm_cloud: dict | None = None
         self.lightning_strike: tuple[int, int] | None = None
+        # A raider attack or tribe-vs-tribe RAID/STRIKE_RAIDER_CAMP resolution this
+        # cycle -- list-shaped (unlike lightning_strike) since more than one could
+        # resolve in the same cycle across different tribes. Cleared at the start of
+        # every step() and repopulated fresh, the same one-cycle-lifetime pattern as
+        # lightning_strike, so the frontend naturally sees each entry as a brief flash.
+        self.recent_encounters: list[dict] = []
         self.self_mod = (
             SelfModEngine(self.client, tribe_configs[0]["model"], config.SELF_MOD_COOLDOWN_CYCLES)
             if config.ENABLE_SELF_MODIFICATION
@@ -688,6 +700,7 @@ class Simulation:
             "immortality_cycles": self.immortality_cycles,
             "storm_cloud": {"x": self.storm_cloud["x"], "y": self.storm_cloud["y"]} if self.storm_cloud else None,
             "lightning_strike": list(self.lightning_strike) if self.lightning_strike else None,
+            "recent_encounters": self.recent_encounters,
             "tribes": {tid: t.to_dict() for tid, t in self.tribes.items()},
             "structures": [{"x": x, "y": y, **info} for (x, y), info in self.world.constructions.items()],
             "trails": [
@@ -709,6 +722,9 @@ class Simulation:
         self.world.regenerate(config.DEPLETION_REGEN_PER_CYCLE)
         self.world.decay_trails(config.TRAIL_DECAY_PER_CYCLE)
         self._advance_weather()
+        # One-cycle-lifetime, same as lightning_strike -- repopulated fresh below by
+        # _check_raider_attack/_raid/_strike_raider_camp, whichever fire this cycle.
+        self.recent_encounters = []
 
         requests = []
         contexts = {}
@@ -727,6 +743,7 @@ class Simulation:
             outcome = results.get(tid, {"intent": {}, "latency_ms": 0.0})
             self._apply_turn(tribe, outcome["intent"], outcome["latency_ms"], contexts[tid])
             self._apply_upkeep(tribe)
+            self._check_raider_attack(tribe)
             self._grow_population(tribe)
             self._advance_era_if_ready(tribe)
             if not tribe.settlement_name and not tribe.pending_settlement_naming and self._is_settled_near_water(tribe):
@@ -866,6 +883,7 @@ class Simulation:
         visible_entities += [f"confirmed lumber-rich area at ({x},{y})" for x, y in tribe.lumber_sites[-3:]]
         visible_entities += [f"confirmed wildlife-rich area at ({x},{y})" for x, y in tribe.wildlife_sites[-3:]]
         visible_entities += [f"confirmed stone-rich area at ({x},{y})" for x, y in tribe.quarry_sites[-3:]]
+        visible_entities += [f"raiders reported near ({x},{y})" for x, y in tribe.raider_sightings[-3:]]
         if tribe.gathering_brief:
             visible_entities.append(f"this morning's gathering: {tribe.gathering_brief}")
         # Factual telemetry about this exact tile, not a suggestion to move -- what the
@@ -1466,6 +1484,23 @@ class Simulation:
                     self._report_hunting_party_home(tribe, exp, scout, forage_note, recipient)
                     return True
 
+                # Independent of whatever terrain/water was found this trip -- a
+                # scout could plausibly spot both a resource site and raider sign on
+                # the same journey (see config.RAIDER_SIGHTING_CHANCE's own comment
+                # for why this isn't a biome-matched roll like the terrain_report
+                # branches below). Radiates dread AT THE SIGHTING COORDINATE, not the
+                # tribe's own camp -- a place now known to be dangerous, not
+                # something that happened at home.
+                if random.random() < config.RAIDER_SIGHTING_CHANCE:
+                    rx, ry = exp["target"]
+                    if (rx, ry) not in tribe.raider_sightings:
+                        tribe.raider_sightings.append((rx, ry))
+                    self.trauma.radiate_event_wave(
+                        rx, ry, config.RAIDER_SIGHTING_TRAUMA_MAGNITUDE, config.RAIDER_SIGHTING_TRAUMA_RADIUS
+                    )
+                    tribe.memory.remember(f"Scouts spotted signs of raiders near ({rx},{ry}).", self.cycle, weight=0.7)
+                    tribe.history.append(f"{scout} reports signs of raiders near ({rx},{ry}) on the way home -- best be cautious")
+
                 if exp["found"]:
                     fx, fy = exp["found"]
                     tribe.expeditions_succeeded += 1
@@ -1653,6 +1688,80 @@ class Simulation:
         if tribe.water < 0:
             tribe.water = 0
             self._dehydrate(tribe)
+
+    def _check_raider_attack(self, tribe: Tribe) -> None:
+        """A real, population-scaled hazard -- see config.RAIDER_HAZARD_* for the full
+        rationale (deliberately not a scripted "your people are not safe" fact with
+        nothing behind it -- a hardcoded HUNT_DEER directive was already reverted once
+        on that exact principle). Gated behind tribe.has_ever_settled (a nomadic band
+        has nothing worth raiding) and a cooldown (mirrors CELEBRATION_COOLDOWN_CYCLES)
+        so this reads as discrete events, not background noise. Runs once per tribe
+        per cycle regardless of the tribe's own chosen action -- a system-level event,
+        the same category as _apply_upkeep.
+
+        Defense is additive, not binary: population alone gives some chance to fight
+        back (the same "more hands" logic actions.py._raid's own population-ratio win
+        chance already uses), and a wall at the tribe's own tile adds more on top,
+        scaled continuously by its own construction progress (actions.py._construct_
+        wall) -- a half-built wall gives roughly half the bonus, not zero and not
+        full. No wall never means automatic loss; a wall never means automatic safety."""
+        if not tribe.has_ever_settled or tribe.extinct:
+            return
+        if self.cycle - tribe.last_raider_attack_cycle < config.RAIDER_HAZARD_COOLDOWN_CYCLES:
+            return
+
+        attack_chance = min(
+            config.RAIDER_HAZARD_MAX_CHANCE,
+            config.RAIDER_HAZARD_MAX_CHANCE * tribe.population / config.RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE,
+        )
+        if random.random() >= attack_chance:
+            return
+
+        tribe.last_raider_attack_cycle = self.cycle
+        existing = self.world.constructions.get((tribe.x, tribe.y))
+        wall_fraction = (existing["progress"] / 100) if existing and existing["type"] == "wall" else 0.0
+
+        defense_chance = min(
+            config.RAIDER_DEFENSE_MAX_CHANCE,
+            config.RAIDER_DEFENSE_BASE_CHANCE
+            + (tribe.population // 10) * config.RAIDER_DEFENSE_POPULATION_BONUS_PER_10
+            + config.RAIDER_DEFENSE_WALL_BONUS_AT_FULL_PROGRESS * wall_fraction,
+        )
+        if random.random() < defense_chance:
+            tribe.raids_defended += 1
+            self.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
+            note = "raiders were spotted approaching camp and repelled"
+            tribe.history.append(f"{note} -- the walls held" if wall_fraction > 0 else note)
+            self.recent_encounters.append({
+                "x": tribe.x, "y": tribe.y, "kind": "raider_attack",
+                "label": "Raiders repelled", "outcome": "repelled",
+            })
+            return
+
+        loss = round(
+            config.RAIDER_ATTACK_POPULATION_LOSS_UNDEFENDED
+            - (config.RAIDER_ATTACK_POPULATION_LOSS_UNDEFENDED - config.RAIDER_ATTACK_POPULATION_LOSS_AT_FULL_WALL) * wall_fraction
+        )
+        for resource in ("wood", "stone", "food", "water"):
+            stolen = round(getattr(tribe, resource) * config.RAIDER_STEAL_FRACTION)
+            setattr(tribe, resource, getattr(tribe, resource) - stolen)
+        self.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
+        self._lose_population(tribe, loss, cause="raider_attack")
+        # Explicit request: a wall that fails to stop a raid doesn't stay standing at
+        # whatever progress it had -- the tribe has to rebuild it, the same as any
+        # other real defensive structure that gets breached. Only removed on an
+        # actual failed defense, not on a successful repel (wall_fraction > 0 branch
+        # above returns before reaching here).
+        if wall_fraction > 0:
+            del self.world.constructions[(tribe.x, tribe.y)]
+        tribe.history.append(
+            "raiders struck the camp -- the wall blunted the worst of it, but was breached and must be rebuilt" if wall_fraction > 0.3 else
+            "raiders struck the camp -- defenses failed, supplies stolen"
+        )
+        self.recent_encounters.append({
+            "x": tribe.x, "y": tribe.y, "kind": "raider_attack",
+            "label": "Raiders struck", "outcome": "struck",
+        })
 
     def _lose_population(self, tribe: Tribe, amount: int, cause: str = "unknown") -> None:
         """The single place population ever decreases. A tribe can now actually go

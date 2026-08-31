@@ -173,8 +173,11 @@ class Landscape:
                 out.append({"x": sx, "y": sy, **info})
         return out
 
-    def add_construction(self, x: int, y: int, kind: str, cycle: int) -> None:
-        self.constructions[(x, y)] = {"type": kind, "cycle": cycle}
+    def add_construction(self, x: int, y: int, kind: str, cycle: int, progress: int = 100) -> None:
+        # progress < 100 means "under construction" -- only CONSTRUCT_WALL builds in
+        # stages (actions.py._construct_wall); BUILD_FIRE stays instant via the
+        # default, no call-site changes needed anywhere else.
+        self.constructions[(x, y)] = {"type": kind, "cycle": cycle, "progress": progress}
 
     def scarcity(self, resource: str, x: int, y: int) -> float:
         return self.depletion.get((resource, x, y), 0.0)

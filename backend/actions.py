@@ -145,7 +145,7 @@ def _forage(sim, tribe, biome, target):
 
 def _already_built(sim, tribe, kind):
     existing = sim.world.constructions.get((tribe.x, tribe.y))
-    return existing is not None and existing["type"] == kind
+    return existing is not None and existing["type"] == kind and existing.get("progress", 100) >= 100
 
 
 def _build_fire(sim, tribe, biome, target):
@@ -164,12 +164,33 @@ def _build_fire(sim, tribe, biome, target):
 
 
 def _construct_wall(sim, tribe, biome, target):
-    if _already_built(sim, tribe, "wall") or tribe.wood < 15 or tribe.stone < 15:
+    """Explicit request: a wall is built in stages, like a crop, not finished in one
+    action -- "30% of a wall can be built through a day with a team of 3." Reuses
+    _labor_multiplier (the same "more hands get more done" concept _harvest already
+    uses) instead of a separate team-size notion: at Tribe.__init__'s starting
+    population (labor multiplier 1.0), one action adds ~30% progress, reaching
+    completion in ~4 actions; a larger tribe builds faster. Total cost is unchanged
+    from the old instant version (15 wood, 15 stone), just paid proportionally to
+    the progress each action actually adds, so a tribe can start without the full
+    amount banked yet."""
+    if _already_built(sim, tribe, "wall"):
         return None
-    tribe.wood -= 15
-    tribe.stone -= 15
-    sim.world.add_construction(tribe.x, tribe.y, "wall", sim.cycle)
-    return None
+    existing = sim.world.constructions.get((tribe.x, tribe.y))
+    current_progress = existing["progress"] if existing and existing["type"] == "wall" else 0
+
+    added = min(100 - current_progress, round(config.WALL_PROGRESS_PER_ACTION_BASE * _labor_multiplier(tribe.population)))
+    wood_cost = round(config.WALL_WOOD_COST_TOTAL * added / 100)
+    stone_cost = round(config.WALL_STONE_COST_TOTAL * added / 100)
+    if tribe.wood < wood_cost or tribe.stone < stone_cost:
+        return None
+
+    tribe.wood -= wood_cost
+    tribe.stone -= stone_cost
+    new_progress = current_progress + added
+    sim.world.add_construction(tribe.x, tribe.y, "wall", sim.cycle, progress=new_progress)
+    if new_progress >= 100:
+        return "the wall is complete -- the camp is properly defended now"
+    return f"wall construction continues -- {new_progress}% complete"
 
 
 def _plant_crop(sim, tribe, biome, target):
@@ -466,6 +487,10 @@ def _raid(sim, tribe, biome, target):
         sim._lose_population(tribe, config.RAID_ATTACKER_POPULATION_LOSS_ON_WIN, cause="raid_losses")
         sim.trauma.radiate_event_wave(defender.x, defender.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
         sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
+        sim.recent_encounters.append({
+            "x": defender.x, "y": defender.y, "kind": "tribe_raid",
+            "label": f"{tribe.name} raids {defender.name}", "outcome": "won",
+        })
 
         if defender.population <= 0:
             old_name = tribe.name
@@ -480,7 +505,47 @@ def _raid(sim, tribe, biome, target):
         defender.raids_defended += 1
         sim._lose_population(tribe, config.RAID_ATTACKER_POPULATION_LOSS_ON_LOSS, cause="failed_raid")
         sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
+        sim.recent_encounters.append({
+            "x": defender.x, "y": defender.y, "kind": "tribe_raid",
+            "label": f"{tribe.name} repelled by {defender.name}", "outcome": "lost",
+        })
         return f"attempted to raid {defender.name} and was repelled"
+
+
+def _strike_raider_camp(sim, tribe, biome, target):
+    """A tribe that has scouted a raider camp (Simulation._advance_one_expedition's
+    raider-sighting roll, tribe.raider_sightings) can strike it directly once
+    organized enough (Bronze Age) -- turning a known threat into an actionable target
+    instead of only ever defending against it. Instant, like RAID, not a multi-day
+    expedition. Win chance is population-scaled since the camp itself has no
+    simulated population to compare against, unlike RAID's ratio-based chance."""
+    camp = tuple(target)
+    if camp not in tribe.raider_sightings:
+        return "no known raider camp at that location"
+
+    win_chance = min(
+        config.STRIKE_RAIDER_CAMP_MAX_WIN_CHANCE,
+        config.STRIKE_RAIDER_CAMP_BASE_WIN_CHANCE
+        + (tribe.population // 10) * config.STRIKE_RAIDER_CAMP_POPULATION_BONUS_PER_10,
+    )
+    if random.random() < win_chance:
+        tribe.raider_sightings.remove(camp)
+        looted = round(tribe.food * config.STRIKE_RAIDER_CAMP_LOOT_FRACTION)
+        tribe.food += looted
+        sim.trauma.radiate_event_wave(camp[0], camp[1], config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
+        sim.recent_encounters.append({
+            "x": camp[0], "y": camp[1], "kind": "raider_camp_strike",
+            "label": "Raider camp destroyed", "outcome": "won",
+        })
+        return f"the raider camp at {camp} is destroyed -- {looted} food recovered"
+
+    sim._lose_population(tribe, config.STRIKE_RAIDER_CAMP_POPULATION_LOSS_ON_FAILURE, cause="failed_raider_strike")
+    sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
+    sim.recent_encounters.append({
+        "x": camp[0], "y": camp[1], "kind": "raider_camp_strike",
+        "label": "Strike failed", "outcome": "lost",
+    })
+    return f"the strike on the raider camp at {camp} failed -- they escaped into the wilds"
 
 
 def _trade(sim, tribe, biome, target):
@@ -541,6 +606,7 @@ ACTION_REGISTRY = {
     "RELOCATE": _relocate,
     "BREED": _breed,
     "RAID": _raid,
+    "STRIKE_RAIDER_CAMP": _strike_raider_camp,
     "TRADE": _trade,
     "IDLE": _idle,
 }
@@ -559,7 +625,7 @@ ACTION_DESCRIPTIONS = {
     "GATHER_FOOD": "Forage for berries, fruit, and wild plants at your current tile -- plains yields the most, forest some, mountains and ocean almost none. No hazard, unlike hunting, but a lower yield ceiling. Yield also drops the more this exact spot has been foraged recently.",
     "HUNT_DEER": "Attempt to harvest food at your current tile -- forest has the most game, plains and river tiles some, mountains and ocean almost none. Small risk of losing a hunter to a wolf pack, most likely in forest.",
     "BUILD_FIRE": "Build a fire at your current tile using stored wood. Does nothing if one is already built here.",
-    "CONSTRUCT_WALL": "Build a wall at your current tile using stored wood and stone. Does nothing if one is already built here.",
+    "CONSTRUCT_WALL": "Work on a wall at your current tile using stored wood and stone -- a real defensive structure built up over several turns, not finished in one. Each turn spent on it adds real progress (more so with more people to put to the work), and a more complete wall meaningfully improves your odds of defending against a raider attack. Does nothing further once complete.",
     "PLANT_CROP": "Plant a farm plot at your current tile using stored wood -- only possible once the tribe has settled somewhere with real water access. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
     "GATHER_EGGS": "Search for wild fowl nests near your current tile -- only possible on the same settled ground with reliable water access that farming needs (fowl nest near water, not in it). A found egg is set aside and hatches on its own, growing the tribe's flock by one.",
     "GATHER_FISH": "Fish the water at your current tile -- only possible on the same settled ground with reliable water access that farming needs. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",
@@ -568,6 +634,7 @@ ACTION_DESCRIPTIONS = {
     "RELOCATE": "Move your whole tribe several tiles toward target_vector this cycle, possibly over several cycles for a far destination. Produces no resources while traveling and costs extra food and water for the effort.",
     "BREED": "Your chief and whoever currently holds a trophy start a family together, costing food and water and growing your population by one child if it succeeds. Does nothing if fewer than two named individuals (a chief plus at least one trophy-holder) exist yet, or if food/water can't cover the cost.",
     "RAID": "Attempt to raid a rival tribe if one is near target_vector. A win steals some of their stockpile but still costs you people; a loss costs you more. Does nothing if no rival is there.",
+    "STRIKE_RAIDER_CAMP": "Attack a raider camp your scouts have already found (see your raider sighting reports) -- only possible once you know where one is. Success destroys it and recovers some food; failure costs a life and leaves the camp standing.",
     "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. Does nothing if no rival is there.",
     # IDLE deliberately has no entry here -- it's never offered as a real choice (see
     # backend/actions.py._idle), so it has no description to show the model.

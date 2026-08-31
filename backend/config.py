@@ -384,6 +384,72 @@ TRADE_GIFT_FRACTION = 0.15
 TRADE_PRIDE_MAGNITUDE = 0.3
 TRADE_PRIDE_RADIUS = 4
 
+# Raider hazard (backend/simulation.py._check_raider_attack): a real, population-
+# scaled mechanic, not a scripted "your people are not safe" directive (a hardcoded
+# HUNT_DEER nudge was already reverted once on this exact principle). Gated behind
+# tribe.has_ever_settled -- a nomadic band with nothing built and nothing stockpiled
+# has nothing worth raiding yet. Chance scales with population up to a cap rather than
+# applying full force the moment a tribe settles; a cooldown (mirrors
+# CELEBRATION_COOLDOWN_CYCLES) keeps this reading as discrete events, not noise.
+RAIDER_HAZARD_MAX_CHANCE = 0.12
+RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE = 60
+RAIDER_HAZARD_COOLDOWN_CYCLES = 25
+
+# Defense resolution once an attack triggers. Population alone gives some defensive
+# chance (more hands to fight back -- same shape as RAID's own population-ratio win
+# chance); a wall at the tribe's own tile adds more, scaled continuously by its own
+# construction progress (see WALL_PROGRESS_* below) -- a half-built wall gives roughly
+# half this bonus, not zero and not full. Capped below 1.0: even a maximally-defended
+# tribe isn't literally immune.
+RAIDER_DEFENSE_BASE_CHANCE = 0.25
+RAIDER_DEFENSE_POPULATION_BONUS_PER_10 = 0.05
+RAIDER_DEFENSE_WALL_BONUS_AT_FULL_PROGRESS = 0.35
+RAIDER_DEFENSE_MAX_CHANCE = 0.85
+
+# A failed defense costs population and stockpile -- mitigated continuously by wall
+# progress, never fully negated. Reuses RAID_TRAUMA_MAGNITUDE/RADIUS and
+# RAID_PRIDE_MAGNITUDE/RADIUS (above) rather than new ones: mechanically the same kind
+# of violence event as a tribe-vs-tribe raid, not a new trauma category.
+RAIDER_ATTACK_POPULATION_LOSS_UNDEFENDED = 2
+RAIDER_ATTACK_POPULATION_LOSS_AT_FULL_WALL = 1
+RAIDER_STEAL_FRACTION = 0.25
+
+# Scout early-warning (Simulation._advance_one_expedition's arrival-home branch): an
+# independent roll, NOT tied to the biome of whatever terrain_report was rolled --
+# unlike lumber/wildlife/quarry sites, raiders aren't a biome feature, so a party can
+# plausibly spot both a resource site and raider sign on the same trip. Radiates a
+# small dread event AT THE SIGHTING COORDINATE, not the tribe's camp -- a genuinely
+# new pattern: this is about a place now known to be dangerous, not something that
+# happened at home.
+RAIDER_SIGHTING_CHANCE = 0.1
+RAIDER_SIGHTING_TRAUMA_MAGNITUDE = -0.4
+RAIDER_SIGHTING_TRAUMA_RADIUS = 4
+
+# Staged wall construction (backend/actions.py._construct_wall): reuses
+# _labor_multiplier(population) -- the same "more hands get more done per action"
+# concept _harvest already uses -- rather than inventing a separate team-size notion.
+# At Tribe.__init__'s starting population (POPULATION_YIELD_BASELINE=8, multiplier
+# 1.0), one action adds ~30% progress ("a team of 3... 30% of a wall... through a
+# day" from design conversation), reaching completion in ~4 actions; a larger tribe
+# builds faster. Total cost (15 wood, 15 stone -- unchanged from the old instant
+# version) is paid proportionally to the progress each action actually adds, not up
+# front, so a tribe can start a wall without having the full amount banked yet.
+WALL_PROGRESS_PER_ACTION_BASE = 30
+WALL_WOOD_COST_TOTAL = 15
+WALL_STONE_COST_TOTAL = 15
+
+# Bronze Age counter-offensive (backend/actions.py._strike_raider_camp): a tribe that
+# has scouted a raider camp (raider_sightings) can strike it directly once organized
+# enough -- turning a warning into an actionable target instead of only ever
+# defending. Instant, like RAID, not a multi-day expedition. Win chance is
+# population-scaled since the camp itself has no simulated population to compare
+# against, unlike tribe-vs-tribe RAID's ratio-based chance.
+STRIKE_RAIDER_CAMP_BASE_WIN_CHANCE = 0.5
+STRIKE_RAIDER_CAMP_POPULATION_BONUS_PER_10 = 0.03
+STRIKE_RAIDER_CAMP_MAX_WIN_CHANCE = 0.85
+STRIKE_RAIDER_CAMP_POPULATION_LOSS_ON_FAILURE = 1
+STRIKE_RAIDER_CAMP_LOOT_FRACTION = 0.15  # of the tribe's own food, representing recovered supplies
+
 # A tribe can only overhear another tribe's broadcast (and therefore only converge on
 # shared vocabulary with them) within this Euclidean distance -- previously broadcasts
 # were audible map-wide regardless of distance, which gave away free information and
