@@ -385,6 +385,106 @@ def test_wildlife_sighting_names_a_species_from_the_richest_nearby_biomes_pool()
     assert "signs of deer nearby" not in request["prompt"]
 
 
+def test_unsettled_tribe_cannot_gather_wood_or_stone():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    assert tribe.cycles_since_relocate == 0  # freshly founded, hasn't settled anywhere
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_WOOD" not in ctx["available_actions"]
+    assert "GATHER_STONE" not in ctx["available_actions"]
+    assert "GATHER_WATER" in ctx["available_actions"]  # survival actions untouched
+
+
+def test_settled_tribe_on_farmable_ground_can_gather_wood_and_stone():
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_WOOD" in ctx["available_actions"]
+    assert "GATHER_STONE" in ctx["available_actions"]
+
+
+def test_settled_long_enough_but_on_unfarmable_ground_still_cannot_gather():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # forest, not farmable
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES + 50
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_WOOD" not in ctx["available_actions"]
+
+
+def test_choosing_relocate_resets_settlement_progress():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = 8
+
+    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [60, 50]}, 100.0,
+                     {"biome": "plains", "available_actions": ["RELOCATE"]})
+
+    assert tribe.cycles_since_relocate == 0
+
+
+def test_choosing_a_non_relocate_action_advances_settlement_progress():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = 3
+
+    sim._apply_turn(tribe, {"visual_action": "IDLE"}, 100.0, {"biome": "plains", "available_actions": ["IDLE"]})
+
+    assert tribe.cycles_since_relocate == 4
+
+
+def test_unsettled_fact_reports_real_progress():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = 4
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert f"4/{config.SETTLEMENT_STABILITY_CYCLES}" in request["prompt"]
+
+
+def test_era_progress_fact_names_the_specific_shortfalls():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.population = 15
+    tribe.water = 10
+    tribe.stone = 50  # already meets the bronze_age stone requirement
+    tribe.wood = 5
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "To reach Bronze Age, still short on:" in request["prompt"]
+    assert "population 15/20" in request["prompt"]
+    assert "water 10/40" in request["prompt"]
+    assert "wood 5/40" in request["prompt"]
+    assert "stone" not in request["prompt"].split("To reach Bronze Age, still short on:")[1].split(".")[0]
+
+
+def test_era_progress_fact_absent_once_the_next_era_is_fully_met():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.population = 20
+    tribe.water = 40
+    tribe.stone = 40
+    tribe.wood = 40
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "To reach Bronze Age" not in request["prompt"]
+
+
 def test_translation_matrix_is_updated_on_apply_turn():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
     tribe_a = sim.tribes["tribe_0"]
@@ -507,7 +607,7 @@ def test_prepare_turn_mentions_an_expedition_already_in_the_field():
     assert "Still in the field" in request["prompt"]
     assert "Test Scout" in request["prompt"]
     assert "You could send out 1 more at once" in request["prompt"]
-    assert "day 1/" in request["prompt"]
+    assert "day 1" in request["prompt"]
 
 
 def test_expedition_succeeds_immediately_on_reaching_real_river_water():
@@ -549,6 +649,33 @@ def test_expedition_succeeds_on_reaching_the_lake_same_as_the_river():
     assert any("found fresh water" in entry for entry in tribe.history)
 
 
+def test_expedition_senses_nearby_water_without_stepping_onto_it():
+    """Regression: a scout used to have to land on the exact water tile to report
+    anything, so a party could pass within a tile or two of a lake and come home
+    empty-handed -- unrealistic (running water carries; a lake is visible from its
+    shore) and the source of a live-run complaint ('missed water by a hair'). A step
+    that lands within WATER_SENSING_RADIUS of water, but not on it, should now count
+    as a find -- and, since the party never actually touched the water, it should
+    carry none of the on-tile drowning risk."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 25, 44, "#c084fc")
+    tribe.expeditions = [{
+        "pos": [25, 44], "origin": [25, 44], "target": [25, 65],  # the lake, far off yet
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):  # would drown if on-tile
+        sim._advance_expeditions(tribe)
+
+    assert tribe.expeditions[0]["pos"] == [25, 54]  # landed short of the lake itself
+    assert tribe.expeditions[0]["phase"] == "returning"
+    assert tribe.expeditions[0]["found"] == [27, 54]  # the actual water tile it sensed, not its own position
+    assert tribe.population == 8  # no drowning -- never touched the water
+    assert any("hears water nearby" in entry for entry in tribe.history)
+
+
 def test_expedition_can_drown_reaching_river_water_but_still_reports_the_find():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 40, 30, "#c084fc")
@@ -577,9 +704,11 @@ def test_expedition_reaching_its_target_without_water_pushes_onward_if_days_rema
     Reaching a non-water target with days left should extend the search outward along
     the same heading, not end it."""
     sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 60, 10, "#c084fc")
     tribe.expeditions = [{
-        "pos": [50, 50], "origin": [50, 50], "target": [56, 50],  # one step away, not water
+        # (60,10) is well clear of the river/lake -- WATER_SENSING_RADIUS must not
+        # fire here, or this would test the wrong mechanic.
+        "pos": [60, 10], "origin": [60, 10], "target": [66, 10],  # one step away, not water
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
@@ -590,43 +719,78 @@ def test_expedition_reaching_its_target_without_water_pushes_onward_if_days_rema
     assert tribe.expeditions[0]["phase"] == "outbound"  # not turned back
     assert tribe.expeditions[0]["terrain_report"] is not None  # still noted what's there
     assert tribe.expeditions[0]["found"] is None
-    assert tribe.expeditions[0]["target"] != [56, 50]  # extended past the original spot
+    assert tribe.expeditions[0]["target"] != [66, 10]  # extended past the original spot
     assert any("pushes onward" in entry for entry in tribe.history)
 
 
-def test_expedition_gives_up_at_a_pushed_onward_target_once_days_run_out():
+def test_expedition_does_not_give_up_from_day_count_alone():
+    """Regression test: an arbitrary day-count cutoff used to end a search regardless
+    of whether the party still had somewhere left to look. Elapsed days, alone,
+    should never end an outbound search anymore -- only running out of world to
+    search does."""
     sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 60, 10, "#c084fc")
     tribe.expeditions = [{
-        "pos": [50, 50], "origin": [50, 50], "target": [56, 50],
-        "day": 3, "phase": "outbound", "found": None, "terrain_report": None,  # already at max_days
+        # Already pushed onward once (terrain_report set) and nowhere near the
+        # (extended) target yet -- a huge day count should still change nothing.
+        # (60,10) is well clear of the river/lake -- WATER_SENSING_RADIUS must not
+        # fire here, or this would test the wrong mechanic.
+        "pos": [60, 10], "origin": [60, 10], "target": [99, 10],
+        "day": 50, "phase": "outbound", "found": None, "terrain_report": "plains",
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
     }]
 
-    sim._advance_expeditions(tribe)
+    sim._advance_one_expedition(tribe, tribe.expeditions[0])
+
+    assert tribe.expeditions[0]["phase"] == "outbound"
+
+
+def test_expedition_gives_up_when_physically_boxed_in_by_ocean():
+    """Regression: a live run caught a scouting party stuck at the same tile for 400+
+    days. physics.terrain_aware_step falls back to "stay put" when every candidate step
+    toward the target is ocean (boxed in on every axis) -- a pushed-onward target
+    (extend_ray_to_grid_edge) can land past the actual coastline in open water, and the
+    old logic only ever gave up on reaching the target exactly, which an unreachable
+    target never does. Being physically unable to advance at all must count as
+    "nowhere left to search," same as reaching the grid's literal edge."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 90, 84, "#c084fc")
+    tribe.expeditions = [{
+        # (90, 84) is coastal; every candidate step toward (99, 84) is ocean, verified
+        # directly against physics.terrain_aware_step first.
+        "pos": [90, 84], "origin": [50, 84], "target": [99, 84],
+        "day": 5, "phase": "outbound", "found": None, "terrain_report": "forest",
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+
+    sim._advance_one_expedition(tribe, tribe.expeditions[0])
 
     assert tribe.expeditions[0]["phase"] == "returning"
+    assert tribe.expeditions[0]["pos"] == [90, 84]  # didn't silently teleport anywhere
+    assert any("can go no further" in entry for entry in tribe.history)
 
 
-def test_expedition_gives_up_after_max_days_without_success():
+def test_expedition_gives_up_upon_reaching_the_edge_of_the_world():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    # Far enough away that EXPEDITION_MAX_DAYS worth of travel never arrives or finds water.
     tribe.expeditions = [{
-        "pos": [50, 50], "origin": [50, 50], "target": [99, 99],
-        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        # Already pushed onward once (terrain_report set); one EXPEDITION_SPEED (10)
+        # step from here lands exactly on the extended target -- the edge itself.
+        # South (increasing y) rather than east: x=99 is past OCEAN_X_START and would
+        # be deflected by the impassable-ocean physics, never actually arriving.
+        "pos": [50, 89], "origin": [50, 50], "target": [50, 99],
+        "day": 4, "phase": "outbound", "found": None, "terrain_report": "plains",
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
     }]
 
-    from backend import config
-    for _ in range(config.EXPEDITION_MAX_DAYS):
-        sim._advance_expeditions(tribe)
+    sim._advance_one_expedition(tribe, tribe.expeditions[0])
 
     assert tribe.expeditions[0]["phase"] == "returning"
     assert tribe.expeditions[0]["found"] is None
-    assert any("calls off the search after" in entry for entry in tribe.history)
+    assert any("reaches the edge of explored land" in entry for entry in tribe.history)
 
 
 def test_expedition_arrival_home_delivers_water_finding_to_memory_and_clears_state():
@@ -774,12 +938,36 @@ def test_hunting_party_drowns_if_its_daily_step_lands_on_a_river_tile():
     assert any("pulled someone under" in entry for entry in tribe.history)
 
 
-def test_hunting_party_gives_up_after_max_days_without_success():
+def test_hunting_party_does_not_give_up_from_day_count_alone():
+    """Regression test: an arbitrary day-count cutoff used to end a hunt regardless of
+    whether there was still ground worth covering. Elapsed days, alone, should never
+    end an outbound hunt anymore -- only running out of world to search does."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 80, 38, "#c084fc")
     tribe.expeditions = [{
-        "kind": "hunt", "pos": [80, 38], "origin": [80, 38], "target": [80, 38],
-        "day": 4, "phase": "outbound", "food_caught": 0,  # already at max_days
+        # Already pushed onward once and nowhere near the (extended) target yet -- a
+        # huge day count should still change nothing.
+        "kind": "hunt", "pos": [80, 38], "origin": [80, 38], "target": [99, 38],
+        "day": 50, "phase": "outbound", "food_caught": 0, "pushed_onward": True,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
+    }]
+
+    with mock.patch("backend.simulation.random.random", return_value=0.99):  # no hazard, no catch
+        sim._advance_expeditions(tribe)
+
+    assert tribe.expeditions[0]["phase"] == "outbound"
+
+
+def test_hunting_party_gives_up_upon_reaching_the_edge_of_the_hunting_grounds():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 80, 38, "#c084fc")
+    tribe.expeditions = [{
+        # Already pushed onward once; one day's step (forest's 0.8x terrain multiplier
+        # applies to EXPEDITION_SPEED here, so 8 tiles not 10) lands exactly on the
+        # extended target -- the edge itself.
+        "kind": "hunt", "pos": [80, 38], "origin": [80, 38], "target": [88, 38],
+        "day": 5, "phase": "outbound", "food_caught": 0, "pushed_onward": True,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
     }]
@@ -789,7 +977,7 @@ def test_hunting_party_gives_up_after_max_days_without_success():
 
     assert tribe.expeditions[0]["phase"] == "returning"
     assert tribe.expeditions[0]["food_caught"] == 0
-    assert any("calls off the hunt" in entry for entry in tribe.history)
+    assert any("reaches the edge of the hunting grounds" in entry for entry in tribe.history)
 
 
 def test_hunting_party_arrival_home_delivers_caught_food_and_clears_state():
@@ -866,7 +1054,8 @@ def test_expedition_wears_a_trail_on_the_tile_it_moves_into():
 
     from backend import config
     landed = tuple(tribe.expeditions[0]["pos"])
-    assert sim.world.trails.get(landed) == config.TRAIL_WEAR_PER_PASS
+    assert sim.world.trails.get(landed)["wear"] == config.TRAIL_WEAR_PER_PASS
+    assert sim.world.trails.get(landed)["color"] == tribe.color
 
 
 def test_expedition_travels_farther_along_an_already_worn_trail():
@@ -1349,6 +1538,26 @@ async def test_night_cycle_leaves_philosophy_and_history_untouched_when_nothing_
 
 
 @run_async
+async def test_night_cycle_records_the_reasoning_even_when_nothing_changed():
+    """The frontend's night-time thought bubble needs something real to show even on
+    an unremarkable review -- reasoning is captured regardless of whether the
+    philosophy itself changed."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    sim.cycle = 30
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events):
+        return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": "still working"}
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert tribe.last_reflection == "still working"
+    assert tribe.last_reflection_cycle == 30
+
+
+@run_async
 async def test_night_cycle_passes_the_tribes_own_recent_history_and_philosophy():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
@@ -1569,13 +1778,13 @@ def test_era_does_not_advance_without_meeting_resource_requirements():
 
 def test_snapshot_includes_worn_trails_for_the_frontend_to_render():
     sim = _bare_simulation()
-    sim.world.wear_trail(12, 34, 0.5)
+    sim.world.wear_trail(12, 34, 0.5, color="#c084fc")
     sim.tribes = {}
     sim.status = "OPERATIONAL"
 
     trails = sim.snapshot()["trails"]
 
-    assert {"x": 12, "y": 34, "wear": 0.5} in trails
+    assert {"x": 12, "y": 34, "wear": 0.5, "color": "#c084fc"} in trails
 
 
 def test_population_grows_once_food_clears_the_threshold():
@@ -1907,6 +2116,21 @@ async def test_step_triggers_game_over_and_unloads_models_when_all_tribes_die():
 
 
 @run_async
+async def test_shutdown_unloads_every_model_in_play():
+    """Regression test: PAUSE (Simulation.toggle_pause) only ever stopped stepping --
+    a browser tab closing or reloading mid-game (not every tribe reaching extinction)
+    left that session's models resident in Ollama's VRAM until their keep_alive
+    window expired on its own. shutdown() is the explicit cleanup path for that,
+    called from both an explicit STOP command and app.py's disconnect handler."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+
+    with mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
+        await sim.shutdown()
+
+    assert {c.args[0] for c in mock_unload.call_args_list} == {"gemma2:2b", "qwen2.5:3b"}
+
+
+@run_async
 async def test_step_does_nothing_once_game_over():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     sim.tribes["tribe_0"].extinct = True
@@ -1972,7 +2196,7 @@ def test_reaching_classical_age_marks_founded_city():
     tribe.population = 40
     tribe.water = 60
     tribe.stone = 40
-    tribe.wood = 40
+    tribe.wood = 50
 
     sim._advance_era_if_ready(tribe)
 
@@ -2053,6 +2277,43 @@ async def test_install_chief_records_decree_when_decreed_and_not_on_water():
 
     assert "dispatching scouts" in tribe.chief_decree
     assert any("decrees" in entry for entry in tribe.history)
+
+
+def test_water_decree_clears_once_water_is_actually_confirmed():
+    """Regression test: real live runs showed tribes repeatedly scouting for water
+    they'd already found -- the hardcoded water decree, once set, never expired on
+    its own, so it kept getting fed into every future turn's prompt regardless of
+    whether water had since been confirmed."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_decree = "prioritize dispatching scouts to find reliable water"
+    tribe.confirmed_water_sites = [(52, 50)]
+
+    sim._clear_resolved_water_decree(tribe)
+
+    assert tribe.chief_decree == ""
+
+
+def test_water_decree_persists_while_water_is_still_unconfirmed():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_decree = "prioritize dispatching scouts to find reliable water"
+    tribe.confirmed_water_sites = []
+
+    sim._clear_resolved_water_decree(tribe)
+
+    assert tribe.chief_decree == "prioritize dispatching scouts to find reliable water"
+
+
+def test_clearing_resolved_decree_does_not_touch_an_unrelated_decree():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_decree = "expand our territory aggressively"
+    tribe.confirmed_water_sites = [(52, 50)]
+
+    sim._clear_resolved_water_decree(tribe)
+
+    assert tribe.chief_decree == "expand our territory aggressively"
 
 
 @run_async

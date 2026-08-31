@@ -5,6 +5,17 @@ TICK_SECONDS = 0.5
 GRID_SIZE = 100
 MAX_TRIBES = 4
 
+# GATHER_WOOD/GATHER_STONE used to be available from the moment a tribe existed, before
+# it had even decided where to actually live -- a nomadic band stockpiling timber and
+# quarried stone before choosing a home. Simulation._is_settled gates both behind
+# actually staying put somewhere farmable first: SETTLEMENT_STABILITY_CYCLES consecutive
+# cycles without choosing RELOCATE, standing on one of FARMABLE_BIOMES (open land with
+# real water access). A tribe's starting stockpile (Tribe.__init__) still covers early
+# BUILD_FIRE/CONSTRUCT_WALL needs before that -- this gates *replenishing* the economy,
+# not survival itself (GATHER_WATER/GATHER_FOOD/HUNT_DEER are never touched).
+SETTLEMENT_STABILITY_CYCLES = 10
+FARMABLE_BIOMES = ("plains", "river", "lake")
+
 # Tiles moved per axis per cycle toward target_vector. At 1 (the original value), crossing
 # the 100-tile grid takes 100+ cycles minimum -- at roughly 2 seconds of real inference
 # time per cycle, a "good" decision to travel far was still visually imperceptible for
@@ -226,6 +237,13 @@ DROWNING_HAZARD_CHANCE = 0.08
 DROWNING_HAZARD_POPULATION_LOSS = 1
 DROWNING_TRAUMA_MAGNITUDE = -0.4
 DROWNING_TRAUMA_RADIUS = 6
+
+# A scout doesn't need to physically step into a river or lake to know it's there --
+# running water carries, and a lake is visible well before its shore. Without this, a
+# scout could pass within a tile or two of a lake and report nothing, which read as a
+# missing "proximity" sense rather than a close call. Only the exact-tile case still
+# carries DROWNING_HAZARD_CHANCE -- hearing water from a safe distance carries no risk.
+WATER_SENSING_RADIUS = 6
 
 # A wandering storm cloud (Simulation._advance_weather) -- weather that exists whether
 # or not any tribe is watching, not triggered by or aimed at anyone. Rare to spawn

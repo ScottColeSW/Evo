@@ -47,7 +47,12 @@ ERAS: tuple[Era, ...] = (
         key="bronze_age",
         label="Bronze Age",
         requires_population=20,
-        requires_resources={"water": 40, "stone": 40},
+        # Wood used to be spent on advancing (advancement_cost below) without ever
+        # being required beforehand -- a tribe with 0 wood could still advance, it
+        # just floored at 0 instead of actually paying the cost. Real requirement now,
+        # with the same buffer-above-cost pattern stone/water already use (40
+        # required vs. 30 spent -- advancing doesn't zero the tribe out).
+        requires_resources={"water": 40, "stone": 40, "wood": 40},
         advancement_cost={"wood": 30, "stone": 30, "water": 20},
         unlocks_actions=("CONSTRUCT_WALL",),
         announcement="{tribe} has forged its way into the Bronze Age!",
@@ -56,7 +61,7 @@ ERAS: tuple[Era, ...] = (
         key="classical_age",
         label="Classical Age",
         requires_population=40,
-        requires_resources={"water": 60, "stone": 30},
+        requires_resources={"water": 60, "stone": 30, "wood": 50},
         advancement_cost={"wood": 40, "stone": 40, "water": 40},
         unlocks_actions=(),  # reserved for trade/diplomacy actions in a later phase
         announcement="{tribe} has founded a lasting city and entered the Classical Age!",

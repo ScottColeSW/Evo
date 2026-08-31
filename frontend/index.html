@@ -36,6 +36,7 @@
   #immortal-banner { padding: 6px 14px; background: #3730a3; color: #c7d2fe; font-weight: bold; border-radius: 4px; font-size: 11px; font-family: monospace; }
   #immortal-banner.hidden { display: none; }
   #btn-pause { background: #4338ca; color: white; padding: 8px 16px; font-size: 12px; margin-left: auto; }
+  #btn-quit { background: #7f1d1d; color: #fecaca; padding: 8px 16px; font-size: 12px; }
 
   #theater-body { flex: 1; display: flex; min-height: 0; }
   #canvas-container { flex: 1; display: flex; justify-content: center; align-items: center; background: #0b0b0f; position: relative; padding: 12px; min-width: 0; }
@@ -69,6 +70,7 @@
   .stat-card .era-pill { font-size: 10px; background: #2a2a3a; color: #a5b4fc; padding: 2px 6px; border-radius: 10px; white-space: nowrap; }
   .stat-card .resources { color: #c7c7d1; margin-top: 6px; }
   .chief-line { color: #fbbf24; font-size: 11px; }
+  .intel-line { color: #93c5fd; font-size: 11px; }
   .stat-card.extinct { opacity: 0.55; filter: grayscale(0.6); }
   .speech { font-style: italic; color: #fbbf24; display: block; margin-top: 4px; }
   .survival-warning { color: #f87171; font-size: 11px; margin-top: 4px; }
@@ -121,6 +123,7 @@
     <div id="status-banner">OPERATIONAL</div>
     <div id="immortal-banner" class="hidden"></div>
     <button id="btn-pause">PAUSE</button>
+    <button id="btn-quit">QUIT</button>
   </div>
   <div id="theater-body">
     <div id="canvas-container">
@@ -300,6 +303,18 @@ document.getElementById("btn-pause").addEventListener("click", () => {
   socket.send(JSON.stringify({ command: "TOGGLE_PAUSE" }));
   const btn = document.getElementById("btn-pause");
   btn.textContent = btn.textContent === "PAUSE" ? "RESUME" : "PAUSE";
+});
+
+// PAUSE only stops stepping -- it never released the models a run had loaded. QUIT
+// ends the session for real: tells the backend to unload them (Simulation.shutdown,
+// see app.py's STOP command) before dropping the connection, then reloads to a clean
+// picker screen rather than trying to hand-reset every piece of theater state.
+document.getElementById("btn-quit").addEventListener("click", () => {
+  if (socket) {
+    try { socket.send(JSON.stringify({ command: "STOP" })); } catch (e) { /* already closing */ }
+    socket.close();
+  }
+  location.reload();
 });
 
 document.querySelectorAll(".tab-btn").forEach(btn => {
@@ -520,7 +535,7 @@ function checkChiefElections(state) {
 
 // Mirrors backend/world.py's biome_at exactly -- the river winds from the mountains
 // (west) to the coast (east) rather than being an arbitrary diagonal band.
-const OCEAN_X_START = 90, MOUNTAIN_X_END = 30, MOUNTAIN_Y_END = 35, RIVER_SOURCE_X = 15, RIVER_HALF_WIDTH = 3;
+const OCEAN_X_START = 90, MOUNTAIN_X_END = 24, MOUNTAIN_Y_END = 55, RIVER_SOURCE_X = 15, RIVER_HALF_WIDTH = 3;
 // A tributary forking off the river toward the lower-middle of the map, ending in a
 // lake -- mirrors world.py's LAKE_CENTER/_is_lake exactly.
 const LAKE_TRIBUTARY_BRANCH_X = 35, LAKE_CENTER = [25, 65], LAKE_RADIUS = 7, LAKE_TRIBUTARY_HALF_WIDTH = 2;
@@ -535,7 +550,11 @@ function riverCenterY(x) {
 }
 
 function isRiver(x, y) {
-  if (x < RIVER_SOURCE_X || x >= OCEAN_X_START) return false;
+  // Clipped to whichever is closer, the flat cutoff or the real (wavy) coastline --
+  // otherwise the river's mouth kept extending to the old fixed line even where the
+  // coast recedes into a bay, sticking out several tiles into open ocean. Mirrors
+  // backend/world.py's _is_river exactly.
+  if (x < RIVER_SOURCE_X || x >= Math.min(OCEAN_X_START, coastBoundaryX(y))) return false;
   return Math.abs(y - riverCenterY(x)) <= RIVER_HALF_WIDTH;
 }
 
@@ -560,6 +579,26 @@ function coastIsHeadland(y) {
   return curvature < 0;
 }
 
+// Mountain/forest/plains boundaries wobble with the same two-frequency sine technique
+// as the coastline above, instead of meeting along perfectly straight lines -- mirrors
+// backend/world.py's _mountain_x_boundary/_mountain_y_boundary/_forest_north_boundary/
+// _forest_east_boundary exactly.
+function mountainXBoundary(y) {
+  return MOUNTAIN_X_END + 4 * Math.sin(y * 0.1) + 2 * Math.sin(y * 0.27 + 0.9);
+}
+
+function mountainYBoundary(x) {
+  return MOUNTAIN_Y_END + 4 * Math.sin(x * 0.09 + 2.1) + 2 * Math.sin(x * 0.22);
+}
+
+function forestNorthBoundary(x) {
+  return 18 + 3 * Math.sin(x * 0.08) + 1.5 * Math.sin(x * 0.19 + 1.3);
+}
+
+function forestEastBoundary(y) {
+  return 70 + 4 * Math.sin(y * 0.07 + 0.5) + 2 * Math.sin(y * 0.21);
+}
+
 // Mirrors backend/world.py's biome_at exactly -- one source of truth for both the
 // terrain color and which biome-relevant flora/fauna decoration a tile can show.
 function biomeNameAt(x, y) {
@@ -568,9 +607,29 @@ function biomeNameAt(x, y) {
   if (x >= boundary) return "ocean";
   if (boundary - x <= COAST_BAND_WIDTH) return coastIsHeadland(y) ? "cliffs" : "shoals";
   if (isLake(x, y)) return "lake";
-  if (x < MOUNTAIN_X_END && y < MOUNTAIN_Y_END) return "mountains";
-  if (y < 18 || x >= 70) return "forest";
+  if (x < mountainXBoundary(y) && y < mountainYBoundary(x)) return "mountains";
+  if (y < forestNorthBoundary(x) || x >= forestEastBoundary(y)) return "forest";
   return "plains";
+}
+
+// A settled tribe's own tile can legitimately be river/lake (see FARMABLE_BIOMES in
+// backend/config.py -- that's what water access for farming means to the sim), but
+// drawing the population dot cluster and the settlement marker centered exactly there
+// made a whole village look like it was standing in the water. This only affects where
+// things are drawn -- the tribe's real (x, y) and everything derived from it elsewhere
+// (sidebar coordinates, era-progress checks) is untouched.
+function landAnchor(x, y) {
+  if (!["river", "lake", "ocean"].includes(biomeNameAt(x, y))) return [x, y];
+  for (let radius = 1; radius <= 6; radius++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue; // ring only
+        const nx = x + dx, ny = y + dy;
+        if (!["river", "lake", "ocean"].includes(biomeNameAt(nx, ny))) return [nx, ny];
+      }
+    }
+  }
+  return [x, y]; // surrounded by water on all sides within range -- nothing better to do
 }
 
 function biomeColor(biome) {
@@ -655,12 +714,115 @@ function hashUnit(seed) {
   return x - Math.floor(x);
 }
 
+// The chief's own reasoning from the most recent night cycle (backend/simulation.py's
+// Simulation._run_night_cycle), rendered as a cloud-shaped thought bubble -- a rounded
+// panel with two trailing circles instead of a speech bubble's pointed tail, colored
+// in the moon's own cool palette (night belongs to reflection, day to speech). Wraps
+// onto a few lines since reasoning is a real sentence, not a short broadcast token, and
+// caps how many lines it can grow to so it can't dominate the screen.
+function drawThoughtBubble(t, centerX, bubbleBottomY) {
+  // Regression: this used to hard-wrap at 150px and cap at 4 lines, which sliced off
+  // the actual point of a chief's reflection (usually 200-300+ chars) right around
+  // where the reasoning would land on its conclusion -- the one thing this bubble
+  // exists to surface. Widened and given real headroom; the ellipsis is now a rare
+  // last resort instead of the common case.
+  const maxWidth = 260;
+  const maxLines = 10;
+  ctx.font = "10px monospace";
+  const words = t.last_reflection.split(" ");
+  const lines = [];
+  let current = "";
+  for (const w of words) {
+    const test = current ? current + " " + w : w;
+    if (ctx.measureText(test).width > maxWidth && current) {
+      lines.push(current);
+      current = w;
+    } else {
+      current = test;
+    }
+  }
+  if (current) lines.push(current);
+  if (lines.length > maxLines) {
+    lines.length = maxLines;
+    lines[maxLines - 1] = lines[maxLines - 1].replace(/\s*\S*$/, "") + "…";
+  }
+
+  const lineHeight = 12;
+  const padX = 8, padY = 7;
+  const bw = maxWidth + padX * 2;
+  const bh = lines.length * lineHeight + padY * 2;
+  // Clamp horizontal position so a tribe camped near the map edge doesn't push most of
+  // this much wider bubble off-canvas.
+  const bx = Math.max(4, Math.min(canvas.width - bw - 4, centerX - bw / 2));
+  const by = Math.max(4, bubbleBottomY - bh);
+  const r = 9;
+
+  ctx.beginPath();
+  ctx.moveTo(bx + r, by);
+  ctx.lineTo(bx + bw - r, by);
+  ctx.arcTo(bx + bw, by, bx + bw, by + r, r);
+  ctx.lineTo(bx + bw, by + bh - r);
+  ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r);
+  ctx.lineTo(bx + r, by + bh);
+  ctx.arcTo(bx, by + bh, bx, by + bh - r, r);
+  ctx.lineTo(bx, by + r);
+  ctx.arcTo(bx, by, bx + r, by, r);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(18,22,42,0.9)";
+  ctx.fill();
+  ctx.strokeStyle = `rgba(${MOON_COLOR},0.9)`;
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(18,22,42,0.9)";
+  [[7, by + bh + 7], [4, by + bh + 15]].forEach(([cr, cy]) => {
+    ctx.beginPath();
+    ctx.arc(centerX, cy, cr, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+  });
+
+  ctx.fillStyle = `rgb(${MOON_COLOR})`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  lines.forEach((line, i) => {
+    ctx.fillText(line, bx + padX, by + padY + (i + 1) * lineHeight - 2);
+  });
+}
+
 // A tribe is many individuals wandering near its actual grid position, not one dot --
 // each gets a deterministic Lissajous-style orbit so the cluster reads as alive (ant
 // colony foraging near the nest) without any extra backend state or per-frame randomness.
+// How many simulation cycles a celebration's fireworks stay visible after the fact --
+// a celebration itself is a one-cycle event, but that's easy to miss if it isn't held
+// on screen a little past the instant it happened.
+const CELEBRATION_VISUAL_CYCLES = 2;
+
+function drawCelebrationFireworks(centerX, centerY) {
+  const sparkCount = 8;
+  const baseRadius = 12;
+  for (let i = 0; i < sparkCount; i++) {
+    const angle = (i / sparkCount) * Math.PI * 2 + animFrame * 0.05;
+    const pulse = (Math.sin(animFrame * 0.15 + i) + 1) / 2; // 0..1, staggered per spark
+    const dist = baseRadius + pulse * 10;
+    const sx = centerX + Math.cos(angle) * dist;
+    const sy = centerY - 14 + Math.sin(angle) * dist * 0.5; // flattened arc above the camp
+    const hue = (i * 45 + animFrame * 2) % 360;
+    ctx.fillStyle = `hsl(${hue}, 90%, 65%)`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.font = "13px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("🎉", centerX, centerY - 26);
+}
+
 function drawTribeIndividuals(tribeId, t) {
-  const centerX = t.x * TILE + TILE / 2;
-  const centerY = t.y * TILE + TILE / 2;
+  const [landX, landY] = landAnchor(t.x, t.y);
+  const centerX = landX * TILE + TILE / 2;
+  const centerY = landY * TILE + TILE / 2;
 
   if (t.extinct) {
     // A grave marker at the last known position, not a fading cluster -- extinction is
@@ -694,7 +856,25 @@ function drawTribeIndividuals(tribeId, t) {
     ctx.fill();
   }
 
-  if (t.last_broadcast) {
+  // A celebration (Simulation._check_for_celebration) used to only ever show up as a
+  // chronicle line -- a viewer watching the map itself had no way to notice one
+  // happened at all. Fireworks over the camp for a couple of cycles after the fact.
+  if (t.last_celebration_cycle != null) {
+    const age = latestState.cycle - t.last_celebration_cycle;
+    if (age >= 0 && age <= CELEBRATION_VISUAL_CYCLES) drawCelebrationFireworks(centerX, centerY);
+  }
+
+  // Day: a tribe's spoken broadcast. Night: the chief's own private reflection (see
+  // backend/simulation.py's Simulation._run_night_cycle) as a thought bubble instead --
+  // the two never compete for the same space above the camp, and "what are they
+  // thinking" finally has a real answer on screen instead of only ever living in the
+  // chronicle log.
+  const dayProgress = ((latestState.cycle % DAY_LENGTH_CYCLES) + DAY_LENGTH_CYCLES) % DAY_LENGTH_CYCLES / DAY_LENGTH_CYCLES;
+  const isNight = dayProgress >= 0.5;
+
+  if (isNight && t.last_reflection) {
+    drawThoughtBubble(t, centerX, centerY - clusterRadius - 14);
+  } else if (!isNight && t.last_broadcast) {
     // A tribe's own invented language (see prompts.py's LINGUISTIC SYNTHESIS PROTOCOL)
     // deserves to read as speech, not a flat label -- a rounded bubble with a small
     // tail pointing down at the tribe it came from, bordered in that tribe's own color
@@ -817,7 +997,7 @@ function drawExpedition(t, tribeId, exp, expIndex) {
 
   const arrow = exp.phase === "outbound" ? "→" : "←";
   const kindIcon = exp.kind === "hunt" ? "🏹" : "🧭";
-  const line1 = `${kindIcon} ${exp.lead_scout} ${arrow} day ${exp.day}/${exp.max_days}`;
+  const line1 = `${kindIcon} ${exp.lead_scout} ${arrow} day ${exp.day}`;
   const line2 = `🍖${exp.food_gathered} 💧${exp.water_gathered}`;
   ctx.font = "9px monospace";
   const w = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width);
@@ -830,16 +1010,20 @@ function drawExpedition(t, tribeId, exp, expIndex) {
 
 // Worn trails (backend/world.py's Landscape.trails) -- the inverse of depletion, so a
 // well-used route actually looks different from untouched ground instead of being an
-// invisible number only the backend knows about. A tan tint scaled to the tile's exact
-// footprint was too subtle to spot next to the bolder tribe dots/speech bubbles at
-// typical canvas sizes, so this draws bright yellow and oversized (min ~7px, well
-// past a single tile at small zoom) with a visible dark outline, scaled by wear.
-// A trail's actual color shifts as it wears, not just its transparency -- a freshly
-// trodden path reads as dull, packed dirt; a heavily-used road reads as a bright worn
-// track. Alpha alone (the previous approach) only varied within a narrow 0.35-0.85
-// band, too subtle to read as real growth over time.
-const TRAIL_COLOR_LOW = [107, 91, 68];   // dull packed dirt, barely trodden
-const TRAIL_COLOR_HIGH = [250, 204, 21]; // bright, well-worn gold track
+// invisible number only the backend knows about. A trail's actual color shifts as it
+// wears, not just its transparency -- a freshly trodden path reads as dull, packed
+// dirt (the same neutral for everyone, since a brand-new path doesn't yet belong to
+// anyone in particular); a heavily-used one takes on the color of whichever tribe
+// wore it most recently (backend/world.py's Landscape.trails now tracks that), so two
+// tribes' separate paths stay visually distinct instead of both climbing toward the
+// same shared gold.
+const TRAIL_COLOR_LOW = [107, 91, 68]; // dull packed dirt, barely trodden -- same for every tribe
+const TRAIL_COLOR_FALLBACK_HIGH = [250, 204, 21]; // used only if a trail tile somehow has no owning color yet
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
 
 // Landmarks: fixed points a tribe's own scouts have earned real knowledge of, marked
 // permanently on the map rather than left to scroll away in the chronicle. The same fix
@@ -878,20 +1062,43 @@ function drawLandmarks() {
   });
 }
 
+function drawSettlementMarker(t) {
+  if (!isSettled(t)) return;
+  const [landX, landY] = landAnchor(t.x, t.y);
+  const cx = landX * TILE + TILE / 2;
+  const cy = landY * TILE + TILE / 2;
+  // Sized at 1/3 of the moon's own disc (MOON_CORE_RADIUS_TILES, see
+  // drawCelestialLighting) per explicit request.
+  const r = Math.max(6, (TILE * MOON_CORE_RADIUS_TILES) / 3);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+  ctx.fillStyle = "rgba(15,23,42,0.8)";
+  ctx.fill();
+  ctx.strokeStyle = t.color;
+  ctx.lineWidth = Math.max(1.5, TILE * 0.15);
+  ctx.stroke();
+  ctx.font = `${Math.max(9, r * 1.5)}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(t.founded_city ? "🏛️" : "🛖", cx, cy + 1);
+}
+
 function drawTrails() {
+  // Regression fix: each trail tile used to draw at 1.6x the actual tile size with a
+  // heavy dark border -- neighboring trail tiles (very common; that's what a worn
+  // route looks like) overlapped and bled into each other into a smudgy blob instead
+  // of reading as a path. Sized to fit its own tile now, no border.
   (latestState.trails || []).forEach(tr => {
     const cx = tr.x * TILE + TILE / 2;
     const cy = tr.y * TILE + TILE / 2;
-    const size = Math.max(7, TILE * 1.6);
+    const size = TILE * 0.85;
     const w = Math.max(0, Math.min(1, tr.wear));
-    const r = Math.round(TRAIL_COLOR_LOW[0] + (TRAIL_COLOR_HIGH[0] - TRAIL_COLOR_LOW[0]) * w);
-    const g = Math.round(TRAIL_COLOR_LOW[1] + (TRAIL_COLOR_HIGH[1] - TRAIL_COLOR_LOW[1]) * w);
-    const b = Math.round(TRAIL_COLOR_LOW[2] + (TRAIL_COLOR_HIGH[2] - TRAIL_COLOR_LOW[2]) * w);
-    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${Math.min(0.9, 0.45 + w * 0.45)})`;
-    ctx.strokeStyle = "rgba(80, 65, 30, 0.7)";
-    ctx.lineWidth = 1;
+    const high = tr.color ? hexToRgb(tr.color) : TRAIL_COLOR_FALLBACK_HIGH;
+    const r = Math.round(TRAIL_COLOR_LOW[0] + (high[0] - TRAIL_COLOR_LOW[0]) * w);
+    const g = Math.round(TRAIL_COLOR_LOW[1] + (high[1] - TRAIL_COLOR_LOW[1]) * w);
+    const b = Math.round(TRAIL_COLOR_LOW[2] + (high[2] - TRAIL_COLOR_LOW[2]) * w);
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${Math.min(0.75, 0.3 + w * 0.35)})`;
     ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
-    ctx.strokeRect(cx - size / 2, cy - size / 2, size, size);
   });
 }
 
@@ -905,6 +1112,11 @@ function drawTrails() {
 const DAY_LENGTH_CYCLES = 20; // must match backend/config.py's DAY_LENGTH_CYCLES -- that's what the innate daily tribal gathering uses to land at this same in-game dawn
 const SUN_COLOR = "255,158,109"; // warm coral, as an r,g,b triplet for template reuse
 const MOON_COLOR = "180,200,255"; // cool pale blue-silver -- the sun's opposite
+// The moon's solid-disc radius as a multiple of TILE. Doubled from its original 1.6 --
+// it read as a barely-there dot rather than something a viewer would call "the moon."
+// A shared constant so the settlement marker (sized as a fraction of the moon, per
+// explicit request) stays in sync with however big the moon itself actually is.
+const MOON_CORE_RADIUS_TILES = 3.2;
 
 function drawCelestialLighting(cycle) {
   const progress = ((cycle % DAY_LENGTH_CYCLES) + DAY_LENGTH_CYCLES) % DAY_LENGTH_CYCLES / DAY_LENGTH_CYCLES;
@@ -946,14 +1158,14 @@ function drawCelestialLighting(cycle) {
     const nightFrac = (progress - 0.5) / 0.5; // 0 = dusk, 0.5 = midnight, 1 = dawn
     const moonX = nightFrac * width;
     const moonY = height * 0.16 - Math.sin(nightFrac * Math.PI) * height * 0.14;
-    const glowRadius = TILE * 6.5;
+    const moonCoreRadius = TILE * MOON_CORE_RADIUS_TILES;
+    const glowRadius = moonCoreRadius * 4.06; // same core-to-glow ratio as before scaling up
 
     const glow = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, glowRadius);
     glow.addColorStop(0, `rgba(${MOON_COLOR},0.35)`);
     glow.addColorStop(1, `rgba(${MOON_COLOR},0)`);
     ctx.fillStyle = glow;
     ctx.beginPath(); ctx.arc(moonX, moonY, glowRadius, 0, 2 * Math.PI); ctx.fill();
-    const moonCoreRadius = TILE * 1.6;
     ctx.fillStyle = `rgb(${MOON_COLOR})`;
     ctx.beginPath(); ctx.arc(moonX, moonY, moonCoreRadius, 0, 2 * Math.PI); ctx.fill();
     // A handful of fixed darker craters (fixed relative to the moon's own center, not
@@ -1054,6 +1266,7 @@ function drawFrame() {
     });
 
     drawLandmarks();
+    Object.values(latestState.tribes || {}).forEach(t => drawSettlementMarker(t));
     Object.entries(latestState.tribes || {}).forEach(([id, t]) => drawTribeIndividuals(id, t));
     // Drawn last, on top of everything -- a trail at a tribe's own home tile (very
     // common, since journeys start and end there) was getting completely hidden under
@@ -1109,6 +1322,48 @@ function chronicleEntryIcon(entry) {
 }
 
 /* ---------- Sidebar ---------- */
+
+// Mirrors backend/config.py's SETTLEMENT_STABILITY_CYCLES -- how many consecutive
+// cycles without RELOCATE (see Simulation._is_settled) counts as settled.
+const SETTLEMENT_STABILITY_CYCLES = 10;
+// Mirrors backend/config.py's FARMABLE_BIOMES -- Simulation._is_settled also requires
+// standing on ground a farm could actually work, not just having stayed put.
+const FARMABLE_BIOMES = ["plains", "river", "lake"];
+
+function isSettled(t) {
+  const n = t.cycles_since_relocate || 0;
+  return n >= SETTLEMENT_STABILITY_CYCLES && FARMABLE_BIOMES.includes(biomeNameAt(t.x, t.y));
+}
+
+function settlementLine(t) {
+  // Regression: this used to call a tribe "settled" purely on cycles_since_relocate,
+  // ignoring ground -- a tribe that stayed put on mountains for 10 cycles read as
+  // "settled" even though Simulation._is_settled (which actually gates farming) also
+  // requires standing on FARMABLE_BIOMES, so GATHER_WOOD/STONE stayed locked the whole
+  // time. Reuse isSettled() so the label can't lie about that.
+  const n = t.cycles_since_relocate || 0;
+  if (n < SETTLEMENT_STABILITY_CYCLES) return `🚶 nomadic (${n}/${SETTLEMENT_STABILITY_CYCLES})`;
+  return isSettled(t) ? "🏕️ settled" : "🚶 nomadic (unfarmable ground)";
+}
+
+function landmarkCounts(t) {
+  const counts = [
+    ["💧", (t.confirmed_water_sites || []).length],
+    ["🌲", (t.lumber_sites || []).length],
+    ["🐾", (t.wildlife_sites || []).length],
+    ["⛏️", (t.quarry_sites || []).length],
+  ].filter(([, n]) => n > 0).map(([icon, n]) => `${icon}${n}`);
+  return counts.length ? " · " + counts.join(" ") : "";
+}
+
+// The chronicle/rationale text is model-generated plain text, not markup, but it's
+// inserted raw into innerHTML below -- escape it so a stray "<" or "&" in a model's
+// own output can't break the layout.
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
 
 function updateSidebar(state) {
   const banner = document.getElementById("status-banner");
@@ -1168,8 +1423,10 @@ function updateSidebar(state) {
             🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${t.food} &nbsp;💧 ${t.water}
             ${t.chief_name ? `<br><span class="chief-line">👑 ${t.chief_name} — ${t.chief_philosophy}</span>` : ""}
             ${t.chief_decree ? `<br><span class="chief-line">📜 decreed: ${t.chief_decree}</span>` : ""}
-            ${(t.expeditions || []).map(exp => `<br><span class="chief-line">${exp.kind === "hunt" ? "🏹" : "🧭"} ${exp.lead_scout}'s ${exp.kind === "hunt" ? "hunting party" : "party"} ${exp.phase}, day ${exp.day}/${exp.max_days} at (${exp.pos[0]},${exp.pos[1]}) · 🍖${exp.food_gathered} 💧${exp.water_gathered} foraged</span>`).join("")}
+            ${(t.expeditions || []).map(exp => `<br><span class="chief-line">${exp.kind === "hunt" ? "🏹" : "🧭"} ${exp.lead_scout}'s ${exp.kind === "hunt" ? "hunting party" : "party"} ${exp.phase}, day ${exp.day} at (${exp.pos[0]},${exp.pos[1]}) · 🍖${exp.food_gathered} 💧${exp.water_gathered} foraged</span>`).join("")}
             ${(t.trophies && t.trophies.length) ? `<br><span class="chief-line">🏆 ${t.trophies.map(tr => tr.name).join(", ")}</span>` : ""}
+            <br><span class="intel-line">${settlementLine(t)}${landmarkCounts(t)}</span>
+            ${t.history && t.history.length ? `<br><span class="intel-line">🧠 ${escapeHtml(t.history[t.history.length - 1])}</span>` : ""}
           </div>
           <span class="speech">"${t.last_broadcast || "..."}"</span>
           ${t.survival_warning ? `<div class="survival-warning">⚠️ ${t.survival_warning.replace("[SURVIVAL INSTINCT]: ", "")}</div>` : ""}

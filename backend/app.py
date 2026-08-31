@@ -89,8 +89,21 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                 model = data.get("model")
                 if model:
                     await session["sim"].add_tribe(name, model, data.get("x"), data.get("y"))
+            elif command == "STOP" and session["sim"] is not None:
+                # Explicit end of this run -- PAUSE only stops stepping, it never
+                # released the models a run had loaded. Distinct from just closing
+                # the tab (see the finally block below, which catches that case too).
+                await session["sim"].shutdown()
+                session["sim"] = None
     finally:
-        request.app["sessions"].pop(ws, None)
+        # A tab closing or reloading mid-game used to leave that session's models
+        # resident in Ollama's VRAM until their keep_alive window expired on its own
+        # -- only reaching the all-extinct GAME OVER state ever unloaded them. This
+        # is the same cleanup an explicit STOP does, just triggered by disconnection
+        # instead of a command.
+        ended_session = request.app["sessions"].pop(ws, None)
+        if ended_session is not None and ended_session.get("sim") is not None:
+            await ended_session["sim"].shutdown()
     return ws
 
 

@@ -5,10 +5,29 @@ def test_wear_trail_accumulates_and_caps_at_full_wear():
     land = Landscape(100)
     land.wear_trail(10, 10, 0.3)
     land.wear_trail(10, 10, 0.3)
-    assert land.trails[(10, 10)] == 0.6
+    assert land.trails[(10, 10)]["wear"] == 0.6
 
     land.wear_trail(10, 10, 0.9)
-    assert land.trails[(10, 10)] == 1.0  # capped, never exceeds full wear
+    assert land.trails[(10, 10)]["wear"] == 1.0  # capped, never exceeds full wear
+
+
+def test_wear_trail_records_the_most_recent_walkers_color():
+    """Regression: a trail used to have no notion of who wore it, so every tribe's
+    path rendered in the same shared amber-to-gold gradient regardless of whose it
+    was. The most recent walker's color wins on a shared tile."""
+    land = Landscape(100)
+    land.wear_trail(10, 10, 0.3, color="#c084fc")
+    assert land.trails[(10, 10)]["color"] == "#c084fc"
+
+    land.wear_trail(10, 10, 0.3, color="#fb923c")
+    assert land.trails[(10, 10)]["color"] == "#fb923c"  # overwritten by the latest walker
+
+
+def test_wear_trail_keeps_the_existing_color_when_none_given():
+    land = Landscape(100)
+    land.wear_trail(10, 10, 0.3, color="#c084fc")
+    land.wear_trail(10, 10, 0.3)  # no color passed this time
+    assert land.trails[(10, 10)]["color"] == "#c084fc"
 
 
 def test_wear_trail_affects_only_that_tile():
@@ -28,7 +47,7 @@ def test_decay_trails_reduces_wear_but_not_below_zero():
     land = Landscape(100)
     land.wear_trail(10, 10, 0.05)
     land.decay_trails(0.03)
-    assert round(land.trails[(10, 10)], 6) == 0.02
+    assert round(land.trails[(10, 10)]["wear"], 6) == 0.02
 
     land.decay_trails(0.03)
     assert (10, 10) not in land.trails  # fully decayed, removed rather than negative
@@ -134,13 +153,26 @@ def test_coast_band_is_cliffs_on_a_headland_and_shoals_in_a_bay():
     assert biome_at(bay_x, bay_y) == "shoals"
 
 
-def test_river_mouth_cuts_through_the_coast_band_to_reach_the_ocean():
-    """The river's own straight-line mouth (see _is_river, unaffected by the coast's
-    waviness) must still win over the cliff/shoal band where the two overlap."""
-    from backend.world import OCEAN_X_START, _river_center_y
+def test_river_mouth_does_not_extend_past_a_receded_coastline():
+    """Regression test: _is_river's mouth used to always cut off at the flat
+    OCEAN_X_START regardless of the wavy coast -- wherever the coast recedes into a
+    bay (its own boundary_x drops below OCEAN_X_START), the river kept extending to
+    the old fixed line anyway, sticking several tiles out into open ocean. The
+    river's own course does pass through exactly such a bay near its mouth (the
+    coastline's and river's sine waves aren't related), which is what originally
+    surfaced this."""
+    from backend.world import OCEAN_X_START, _coast_boundary_x, _river_center_y
 
-    mouth_y = round(_river_center_y(OCEAN_X_START - 1))
-    assert biome_at(OCEAN_X_START - 1, mouth_y) == "river"
+    found_a_receded_stretch = False
+    for x in range(OCEAN_X_START - 15, OCEAN_X_START):
+        y = round(_river_center_y(x))
+        boundary = _coast_boundary_x(y)
+        if boundary >= OCEAN_X_START:
+            continue  # not a receded stretch at this point on the river's path
+        found_a_receded_stretch = True
+        if x >= boundary:
+            assert biome_at(x, y) == "ocean"
+    assert found_a_receded_stretch  # confirms this test actually exercised the bug
 
 
 def test_river_originates_near_the_mountains():
@@ -151,12 +183,19 @@ def test_river_originates_near_the_mountains():
 
 def test_river_reaches_the_coast():
     """The river must actually connect to the ocean, not fade out into forest or
-    plains before reaching it -- an Earth-like river runs from source to sea."""
-    from backend.world import OCEAN_X_START, _river_center_y
+    plains before reaching it -- an Earth-like river runs from source to sea. Scans
+    the river's own course for its last river tile and checks the very next step is
+    ocean (not forest/plains) -- robust to exactly where the wavy coastline sits,
+    unlike asserting a single hardcoded coordinate."""
+    from backend.world import RIVER_SOURCE_X, OCEAN_X_START, _river_center_y
 
-    mouth_y = round(_river_center_y(OCEAN_X_START - 1))
-    assert biome_at(OCEAN_X_START - 1, mouth_y) == "river"
-    assert biome_at(OCEAN_X_START, mouth_y) == "ocean"
+    last_river_x = None
+    for x in range(RIVER_SOURCE_X, OCEAN_X_START):
+        if biome_at(x, round(_river_center_y(x))) == "river":
+            last_river_x = x
+    assert last_river_x is not None
+    y = round(_river_center_y(last_river_x))
+    assert biome_at(last_river_x + 1, y) == "ocean"
 
 
 def test_river_crosses_more_than_one_biome_on_its_way_to_the_sea():

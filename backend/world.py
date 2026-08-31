@@ -71,7 +71,14 @@ def _river_center_y(x: int) -> float:
 
 
 def _is_river(x: int, y: int) -> bool:
-    if x < RIVER_SOURCE_X or x >= OCEAN_X_START:
+    # The river's mouth used to always cut off at the flat OCEAN_X_START regardless of
+    # the wavy coastline -- wherever the coast recedes into a bay (its own boundary_x
+    # drops below OCEAN_X_START), the river kept extending to the old fixed line
+    # anyway, sticking out several tiles past the real coast into open ocean. Clipping
+    # to whichever is closer keeps the strip river/highland stretch (mouth nowhere
+    # near the coast, boundary_x always >= OCEAN_X_START there) exactly as before, and
+    # only pulls the mouth itself in to match the real shoreline.
+    if x < RIVER_SOURCE_X or x >= min(OCEAN_X_START, _coast_boundary_x(y)):
         return False
     return abs(y - _river_center_y(x)) <= RIVER_HALF_WIDTH
 
@@ -145,10 +152,16 @@ class Landscape:
         # harvesting the same resource at the same spot drives this up, which scales
         # down yield there -- a real, mechanical reason to move on, not a scripted one.
         self.depletion: dict[tuple[str, int, int], float] = {}
-        # (x, y) -> trail wear in [0, 1]. The inverse of depletion: repeatedly relocating
-        # through a tile wears a path that speeds up later travel through it, fading if
-        # it falls out of use. See config.TRAIL_WEAR_PER_PASS.
-        self.trails: dict[tuple[int, int], float] = {}
+        # (x, y) -> {"wear": float in [0, 1], "color": str | None}. The inverse of
+        # depletion: repeatedly relocating through a tile wears a path that speeds up
+        # later travel through it, fading if it falls out of use. See config.
+        # TRAIL_WEAR_PER_PASS. `color` is whichever tribe most recently wore this
+        # exact tile (any tribe passing through benefits from the speed bonus, not
+        # just whoever wore it first -- a trail is a feature of the ground, not a
+        # private memory -- but the frontend renders it in that tribe's own color so
+        # multiple tribes' paths stay visually distinct instead of blending into one
+        # shared amber-to-gold gradient).
+        self.trails: dict[tuple[int, int], dict] = {}
 
     def biome(self, x: int, y: int) -> str:
         return biome_at(x, y)
@@ -180,26 +193,32 @@ class Landscape:
             else:
                 self.depletion[key] = remaining
 
-    def wear_trail(self, x: int, y: int, amount: float) -> None:
+    def wear_trail(self, x: int, y: int, amount: float, color: str | None = None) -> None:
         """A tribe just relocated through (x, y) -- wear the path a little more. Any
         tribe passing through benefits, not just whoever wore it first: a trail is a
-        feature of the ground, not a private memory."""
+        feature of the ground, not a private memory. `color` (whichever tribe wore it
+        just now) overwrites the tile's displayed color -- the most recent walker's
+        color wins on a shared tile, rather than trying to blend multiple tribes'
+        colors together."""
         key = (x, y)
-        self.trails[key] = min(1.0, self.trails.get(key, 0.0) + amount)
+        existing = self.trails.get(key, {"wear": 0.0, "color": None})
+        wear = min(1.0, existing["wear"] + amount)
+        self.trails[key] = {"wear": wear, "color": color if color is not None else existing["color"]}
 
     def trail_speed_bonus(self, x: int, y: int, max_bonus: float) -> float:
         """Extra movement speed from standing on a worn trail, scaled linearly by wear."""
-        return self.trails.get((x, y), 0.0) * max_bonus
+        entry = self.trails.get((x, y))
+        return (entry["wear"] if entry else 0.0) * max_bonus
 
     def decay_trails(self, rate: float) -> None:
         """Called once per tick alongside regenerate() -- an unused trail fades back
         into open ground rather than staying fast forever once worn."""
         for key in list(self.trails):
-            remaining = self.trails[key] - rate
+            remaining = self.trails[key]["wear"] - rate
             if remaining <= 0:
                 del self.trails[key]
             else:
-                self.trails[key] = remaining
+                self.trails[key]["wear"] = remaining
 
     def nearest_water(
         self, x: int, y: int, kinds: tuple[str, ...] = ("river", "ocean")

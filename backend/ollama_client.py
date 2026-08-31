@@ -6,7 +6,15 @@ import httpx
 class OllamaClient:
     """Thin async wrapper around a local Ollama server."""
 
-    def __init__(self, base_url: str = "http://localhost:11434", timeout: float = 30.0):
+    def __init__(self, base_url: str = "http://localhost:11434", timeout: float = 120.0):
+        # 30s used to be the default and was too tight even under normal load -- a cold
+        # multi-GB model (mistral:7b, qwen2.5-coder:7b) can genuinely take over a
+        # minute to load into VRAM and return its first response, especially with
+        # another simulation already running. A real ReadTimeout here doesn't fail
+        # gracefully: it propagates out of _install_chief and leaves that tribe's
+        # Simulation.create() (and therefore the whole websocket session) permanently
+        # stuck -- confirmed live when this hit both a headless run and the actual
+        # server mid-session.
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
@@ -62,13 +70,21 @@ class OllamaClient:
 
     async def unload_model(self, model: str) -> None:
         """Tells Ollama to evict this model from memory/VRAM right now instead of
-        waiting out its keep_alive window. Called once a simulation's tribes are all
-        extinct -- there will be no more turns for this model, no reason to keep it
-        loaded. Best-effort: a failure here just means the model stays loaded a bit
-        longer, not worth surfacing as an error to a game that's already over."""
+        waiting out its keep_alive window. Called on game-over and on Simulation.
+        shutdown() (an explicit STOP, or a browser tab closing/reloading mid-game --
+        see app.py's ws_handler). Best-effort: a failure here just means the model
+        stays loaded a bit longer, not worth surfacing as an error to a game that's
+        already ending.
+
+        Confirmed live: a 5s timeout here was too tight once shutdown() started
+        unloading two 7B-class models concurrently (Simulation.shutdown does exactly
+        this via asyncio.gather) -- Ollama appears to serialize the actual VRAM
+        eviction, so the second request can genuinely take longer than 5s to get a
+        response even though nothing is actually wrong. Matches the main client's own
+        120s default rather than a separate, tighter number."""
         payload = {"model": model, "keep_alive": 0}
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
                 await client.post(f"{self.base_url}/api/generate", json=payload)
         except Exception:
             pass

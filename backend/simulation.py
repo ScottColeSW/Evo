@@ -148,6 +148,17 @@ class Tribe:
         # game, mountains for stone -- a real, already-measured "considerable cluster",
         # not an arbitrary new threshold invented just for this.
         self.confirmed_water_sites: list[tuple[int, int]] = []
+        # Counts consecutive cycles without choosing RELOCATE -- see
+        # Simulation._is_settled/config.SETTLEMENT_STABILITY_CYCLES. Reset to 0 the
+        # instant RELOCATE is chosen again, so "settled" means genuinely staying put,
+        # not just having once paused for ten cycles somewhere.
+        self.cycles_since_relocate = 0
+        # The chief's own reasoning from the most recent night cycle (see
+        # Simulation._run_night_cycle) -- kept even when the philosophy didn't
+        # change, purely so the spectator UI has something real to show as a
+        # night-time thought bubble.
+        self.last_reflection = ""
+        self.last_reflection_cycle = 0
         self.lumber_sites: list[tuple[int, int]] = []
         self.wildlife_sites: list[tuple[int, int]] = []
         self.quarry_sites: list[tuple[int, int]] = []
@@ -188,7 +199,14 @@ class Tribe:
             "era": self.era,
             "era_label": era_label,
             "last_broadcast": self.last_broadcast,
+            "last_action": self.last_action,
             "history": self.history[-6:],
+            "cycles_since_relocate": self.cycles_since_relocate,
+            "last_reflection": self.last_reflection,
+            "last_reflection_cycle": self.last_reflection_cycle,
+            "last_celebration_cycle": self.last_celebration_cycle,
+            "scout_successes": self.scout_successes,
+            "hunt_successes": self.hunt_successes,
             "founded_city": self.founded_city,
             "survival_warning": survival_warning,
             "extinct": self.extinct,
@@ -330,10 +348,24 @@ class Simulation:
         if not isinstance(water_decision, dict):
             water_decision = {}
         if water_needed and water_decision.get("decreed"):
-            tribe.chief_decree = "prioritize dispatching scouts to find reliable water"
+            tribe.chief_decree = self._WATER_DECREE_TEXT
             reason = water_decision.get("reason", "")
             entry = f"Chief {tribe.chief_name} decrees: {tribe.chief_decree}"
             tribe.history.append(f"{entry} ({reason})." if reason else f"{entry}.")
+
+    _WATER_DECREE_TEXT = "prioritize dispatching scouts to find reliable water"
+
+    def _clear_resolved_water_decree(self, tribe: "Tribe") -> None:
+        """The water-finding decree above used to never expire on its own -- even long
+        after a scout actually confirmed water, the exact same decree kept getting fed
+        into every future turn's prompt, continuously pointing every cycle's reasoning
+        back at scouting for water specifically regardless of what the tribe actually
+        needed by then. Real data confirmed this: tribes kept scouting for water they
+        already had. Cleared the instant its own stated condition (confirmed_water_
+        sites is non-empty) is objectively met -- a resolved fact, not a fresh
+        decision to declare it done."""
+        if tribe.chief_decree == self._WATER_DECREE_TEXT and tribe.confirmed_water_sites:
+            tribe.chief_decree = ""
 
     async def _resolve_birth(self, tribe: "Tribe") -> None:
         """Resolves a BREED action's pending_birth (see actions.py._breed) with a
@@ -412,6 +444,13 @@ class Simulation:
             self.client, config.NIGHT_CYCLE_REVIEWER_MODEL, tribe.name,
             tribe.chief_philosophy, recent_events,
         )
+        # The chief's own reasoning for this reflection -- kept even when the
+        # philosophy didn't change, so the frontend has something real to show as a
+        # night-time thought bubble (see index.html's drawThoughtBubble) beyond just
+        # "nothing changed."
+        if result.get("reasoning"):
+            tribe.last_reflection = result["reasoning"]
+            tribe.last_reflection_cycle = self.cycle
         if result.get("changed"):
             old_philosophy = tribe.chief_philosophy
             tribe.chief_philosophy = result.get("revised_philosophy", old_philosophy)
@@ -478,7 +517,10 @@ class Simulation:
             "lightning_strike": list(self.lightning_strike) if self.lightning_strike else None,
             "tribes": {tid: t.to_dict() for tid, t in self.tribes.items()},
             "structures": [{"x": x, "y": y, **info} for (x, y), info in self.world.constructions.items()],
-            "trails": [{"x": x, "y": y, "wear": wear} for (x, y), wear in self.world.trails.items()],
+            "trails": [
+                {"x": x, "y": y, "wear": t["wear"], "color": t["color"]}
+                for (x, y), t in self.world.trails.items()
+            ],
             "linguistic_consensus": consensus,
         }
 
@@ -520,6 +562,10 @@ class Simulation:
         for tribe in self.tribes.values():
             if not tribe.extinct and tribe.expeditions:
                 self._advance_expeditions(tribe)
+
+        for tribe in self.tribes.values():
+            if not tribe.extinct:
+                self._clear_resolved_water_decree(tribe)
 
         for tribe in self.tribes.values():
             if not tribe.extinct and tribe.pending_birth:
@@ -694,9 +740,36 @@ class Simulation:
                 visible_entities.append(
                     f"overheard: {other.name} broadcasted '{other.last_broadcast}' while performing {other.last_action}"
                 )
+        # The spectator UI's own "Path to the Next Era" panel already computes exactly
+        # this (Tribe.to_dict's next_era block) -- it just never made it back into the
+        # tribe's own reasoning. Naming the *specific* still-short resource(s) is the
+        # fact; which one (if any) to prioritize is still the tribe's own call.
+        nxt = next_era(tribe.era)
+        if nxt is not None:
+            gaps = []
+            if tribe.population < nxt.requires_population:
+                gaps.append(f"population {tribe.population}/{nxt.requires_population}")
+            for resource, minimum in nxt.requires_resources.items():
+                have = getattr(tribe, resource, 0)
+                if have < minimum:
+                    gaps.append(f"{resource} {have}/{minimum}")
+            if gaps:
+                visible_entities.append(f"To reach {nxt.label}, still short on: {', '.join(gaps)}.")
+
         if not visible_entities:
             visible_entities = ["none"]
         return visible_entities
+
+    def _is_settled(self, tribe: Tribe) -> bool:
+        """Whether this tribe has actually put down roots -- see config.
+        SETTLEMENT_STABILITY_CYCLES/FARMABLE_BIOMES. GATHER_WOOD/GATHER_STONE are
+        gated on this: a nomadic band stockpiling timber and quarried stone before
+        it's even chosen a home never made sense, but it took no real fact to notice
+        that until now."""
+        return (
+            tribe.cycles_since_relocate >= config.SETTLEMENT_STABILITY_CYCLES
+            and self.world.biome(tribe.x, tribe.y) in config.FARMABLE_BIOMES
+        )
 
     def _prepare_turn(self, tribe: Tribe) -> tuple[dict, dict]:
         """Builds this tribe's prompt with no network calls; returns (request, context)."""
@@ -706,8 +779,17 @@ class Simulation:
         survival_bias, survival_critical = survival_bias_string(tribe.food, tribe.water, tribe.population)
         memories = tribe.memory.recall(f"{biome} at {tribe.x},{tribe.y}")
         available_actions = sorted(unlocked_actions_through(tribe.era))
+        settled = self._is_settled(tribe)
+        if not settled:
+            available_actions = [a for a in available_actions if a not in ("GATHER_WOOD", "GATHER_STONE")]
 
         visible_entities = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
+        if not settled:
+            visible_entities.append(
+                "Wood and stone are not yet being gathered here -- the tribe hasn't settled anywhere "
+                f"farmable long enough yet ({tribe.cycles_since_relocate}/{config.SETTLEMENT_STABILITY_CYCLES} "
+                "cycles without relocating, on farmable ground)."
+            )
 
         # A tribe starving/dehydrating while sitting on 100+ wood or stone had a real
         # information gap: the stockpile itself never said "this is already more than
@@ -737,7 +819,7 @@ class Simulation:
             party_word = {"scout": "scouts", "hunt": "a hunting party"}
             reports = "; ".join(
                 f"{party_word.get(exp.get('kind'), 'a party')} led by {exp['lead_scout']} "
-                f"(day {exp['day']}/{exp['max_days']}, {exp['phase']})"
+                f"(day {exp['day']}, {exp['phase']})"
                 for exp in tribe.expeditions
             )
             slots_left = expedition_capacity(tribe) - len(tribe.expeditions)
@@ -794,6 +876,9 @@ class Simulation:
         # turn happened to carry.
         if action == "RELOCATE":
             tribe.last_target = [target[0], target[1]]
+            tribe.cycles_since_relocate = 0
+        else:
+            tribe.cycles_since_relocate += 1
 
         hazard_note = self._apply_action(tribe, action, ctx["biome"], target)
         tribe.last_broadcast = broadcast
@@ -821,6 +906,18 @@ class Simulation:
         ADD_TRIBE clears this back to normal (see add_tribe)."""
         self.game_over = True
         self.status = "GAME OVER"
+        await self.shutdown()
+
+    async def shutdown(self) -> None:
+        """Best-effort cleanup when this session ends for any reason -- an explicit
+        STOP, or a browser tab just closing/reloading mid-game (see app.py's
+        ws_handler, which calls this in its finally block). PAUSE only stops
+        stepping; nothing before this ever actually released the models a run had
+        loaded unless every tribe happened to go fully extinct first, so closing or
+        reloading the tab mid-game left them resident in Ollama's VRAM until their
+        keep_alive window expired on its own -- real contention on repeated
+        restarts. Safe to call even if _trigger_game_over already did this
+        (unloading an already-unloaded model is a no-op)."""
         models = {tribe.model for tribe in self.tribes.values()}
         await asyncio.gather(*(self.client.unload_model(model) for model in models), return_exceptions=True)
 
@@ -856,7 +953,7 @@ class Simulation:
             bonus = self.world.trail_speed_bonus(px, py, config.MAX_TRAIL_BONUS_SPEED)
             base_speed = config.EXPEDITION_SPEED + bonus
             nx, ny = physics.terrain_aware_step(px, py, tx, ty, base_speed=base_speed)
-            self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS)
+            self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color)
             exp["pos"] = [nx, ny]
             exp["path"].append([nx, ny])
             exp["food_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_FOOD
@@ -867,33 +964,52 @@ class Simulation:
             if exp.get("kind") == "hunt":
                 self._advance_hunting_party_outbound(tribe, exp, reached_biome, scout)
                 return False
-            if reached_biome in ("river", "lake"):
-                self._expedition_river_hazard(tribe, nx, ny)  # a no-op on a lake tile -- no current to drown in
-                exp["found"] = [nx, ny]
+            sensed = self._sense_nearby_water(nx, ny, config.WATER_SENSING_RADIUS)
+            if sensed:
+                wx, wy = sensed
+                on_water_now = (wx, wy) == (nx, ny)
+                if on_water_now:
+                    self._expedition_river_hazard(tribe, nx, ny)  # a no-op on a lake tile -- no current to drown in
+                exp["found"] = [wx, wy]
                 exp["phase"] = "returning"
-                tribe.history.append(f"{scout}'s party has found fresh water and is heading home to report it")
-            elif [nx, ny] == [tx, ty] and exp["terrain_report"] is None and exp["day"] < exp["max_days"]:
+                if on_water_now:
+                    tribe.history.append(f"{scout}'s party has found fresh water and is heading home to report it")
+                else:
+                    tribe.history.append(f"{scout}'s party hears water nearby and marks ({wx},{wy}) before heading home to report it")
+            elif [nx, ny] == [px, py]:
+                # Regression: physics.terrain_aware_step falls back to "stay put" when
+                # every candidate step toward the target is ocean (boxed in on every
+                # axis -- see its own docstring). A pushed-onward target
+                # (extend_ray_to_grid_edge) can land past the actual coastline into
+                # open water, which made this fallback fire every single day forever --
+                # a live run caught a party stuck at the same tile for 400+ days,
+                # hoarding phantom food/water in its own counters the whole time.
+                # Physically unable to advance at all is just as much "nowhere left to
+                # search" as reaching the grid's literal edge -- give up the same way.
+                exp["phase"] = "returning"
+                tribe.history.append(f"{scout}'s party can go no further this way and turns back after {exp['day']} days")
+            elif [nx, ny] == [tx, ty] and exp["terrain_report"] is None:
                 # Reached wherever the tribe told them to look, but the model's own
                 # target_vector is usually close (a single EXPEDITION_SPEED step), so
-                # treating "arrived" as "search over" meant max_days and the scout's
-                # determination trait almost never actually mattered -- the party
-                # turned back on day 1 nearly every time. Note what's here (still
-                # useful information) but push onward along the same heading out to
-                # the edge of the known world instead, using whatever days remain
-                # rather than stopping the instant the declared spot is reached.
+                # treating "arrived" as "search over" meant a day-count cutoff and the
+                # scout's determination trait almost never actually mattered -- the
+                # party turned back on day 1 nearly every time. Note what's here
+                # (still useful information) and push onward along the same heading
+                # to the edge of the known world instead -- an arbitrary day limit was
+                # the wrong reason to call off a search; running out of world to
+                # search is a real one.
                 exp["terrain_report"] = reached_biome
                 ex, ey = physics.extend_ray_to_grid_edge(exp["origin"][0], exp["origin"][1], tx, ty, self.world.grid_size)
                 exp["target"] = [ex, ey]
                 label = BIOME_LABELS.get(reached_biome, reached_biome)
                 tribe.history.append(f"{scout}'s party passed through ({nx},{ny}), {label}, and pushes onward")
-            elif exp["day"] >= exp["max_days"]:
+            elif [nx, ny] == [tx, ty]:
+                # Reached the edge of the grid itself with nothing found -- genuinely
+                # nowhere left in this direction to search, not a countdown running
+                # out. This is the only unconditional turn-back left in an outbound
+                # search.
                 exp["phase"] = "returning"
-                # The party's own survival comes before the search -- a scout's own
-                # max_days (varied by their determination trait, see actions.py
-                # ._generate_scout) is the mechanical expression of that: give up and
-                # come home safely rather than push on indefinitely chasing a find
-                # that isn't there.
-                tribe.history.append(f"{scout} calls off the search after {exp['max_days']} days -- the party's safety comes first, and they turn back")
+                tribe.history.append(f"{scout}'s party reaches the edge of explored land after {exp['day']} days with nothing found -- they turn back")
             return False
         else:  # returning
             px, py = exp["pos"]
@@ -901,7 +1017,7 @@ class Simulation:
             bonus = self.world.trail_speed_bonus(px, py, config.MAX_TRAIL_BONUS_SPEED)
             base_speed = config.EXPEDITION_SPEED + bonus
             nx, ny = physics.terrain_aware_step(px, py, ox, oy, base_speed=base_speed)
-            self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS)
+            self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color)
             exp["pos"] = [nx, ny]
             exp["path"].append([nx, ny])
             exp["food_gathered"] += config.EXPEDITION_RETURN_DAILY_FOOD
@@ -961,6 +1077,28 @@ class Simulation:
                 return True
             return False
 
+    def _sense_nearby_water(self, x: int, y: int, radius: int) -> tuple[int, int] | None:
+        """Scans a radius around (x, y) for the nearest river or lake tile. A scout
+        doesn't need to physically wade in to know water is close -- running water
+        carries, and a lake is visible well before its shore. Ocean is deliberately
+        excluded; that's the map's edge, not a "water source" worth reporting home
+        about. Returns the closest qualifying tile, or None if the radius is dry."""
+        best: tuple[int, int] | None = None
+        best_dist = None
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                dist = dx * dx + dy * dy
+                if dist > radius * radius:
+                    continue
+                wx, wy = x + dx, y + dy
+                if not (0 <= wx < self.world.grid_size and 0 <= wy < self.world.grid_size):
+                    continue
+                if biome_at(wx, wy) not in ("river", "lake"):
+                    continue
+                if best_dist is None or dist < best_dist:
+                    best, best_dist = (wx, wy), dist
+        return best
+
     def _expedition_river_hazard(self, tribe: Tribe, x: int, y: int) -> bool:
         """The same drowning risk GATHER_WATER already carries on a river tile
         (config.DROWNING_HAZARD_CHANCE) -- a traveling party crossing or camped on a
@@ -1009,11 +1147,25 @@ class Simulation:
             tribe.history.append(f"{scout}'s hunting party made a catch and is heading home")
             return
 
-        if exp["day"] >= exp["max_days"]:
-            exp["phase"] = "returning"
-            tribe.history.append(
-                f"{scout} calls off the hunt after {exp['max_days']} days with nothing caught -- the party turns back"
-            )
+        # An arbitrary day-count cutoff used to end an unsuccessful hunt regardless of
+        # whether there was still ground worth covering. Same fix as SCOUT: push
+        # onward toward the edge of the grid the first time the party reaches its
+        # declared spot with nothing caught, and only give up once it's actually run
+        # out of world in that direction -- a real stopping point, not a countdown.
+        px, py = exp["pos"]
+        tx, ty = exp["target"]
+        if [px, py] == [tx, ty]:
+            if not exp.get("pushed_onward"):
+                exp["pushed_onward"] = True
+                ex, ey = physics.extend_ray_to_grid_edge(exp["origin"][0], exp["origin"][1], tx, ty, self.world.grid_size)
+                exp["target"] = [ex, ey]
+                tribe.history.append(f"{scout}'s hunting party found nothing at ({px},{py}) and pushes onward")
+            else:
+                exp["phase"] = "returning"
+                tribe.history.append(
+                    f"{scout}'s hunting party reaches the edge of the hunting grounds after {exp['day']} days "
+                    "with nothing caught -- they turn back"
+                )
 
     def _report_hunting_party_home(self, tribe: Tribe, exp: dict, scout: str, forage_note: str, recipient: str) -> None:
         caught = exp.get("food_caught", 0)
