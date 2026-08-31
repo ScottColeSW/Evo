@@ -115,11 +115,20 @@ def _celebration_shout(tribe: "Tribe") -> str:
     return f' -- "{tribe.last_broadcast}!"' if tribe.last_broadcast else ""
 
 
+def _feast_word(tribe: "Tribe") -> str:
+    return "potluck feast" if tribe.cooking_learned else "feast"
+
+
 # Explicit finding: a flat 30%-of-current-food cost gets more expensive in absolute
 # terms the wealthier a tribe gets, with no ceiling -- "we spend a lot of time on
 # Parties." Shared by every _celebrate_* method so the cap applies uniformly.
+# Explicit request: once cooking is learned (actions.py._cook_food), a feast costs
+# less -- real food contributed and prepared efficiently, not just handed over.
 def _celebration_cost(tribe: "Tribe") -> int:
-    return min(round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION), config.CELEBRATION_MAX_COST)
+    cost = min(round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION), config.CELEBRATION_MAX_COST)
+    if tribe.cooking_learned:
+        cost = round(cost * config.CELEBRATION_COOKING_COST_MULTIPLIER)
+    return cost
 
 
 class Tribe:
@@ -265,6 +274,10 @@ class Tribe:
         # daily food supply, the same "action unlocks a passive system" shape farming
         # and water already use.
         self.fishing_learned = False
+        # See actions.py._cook_food -- one-way, like fishing_learned. Once true,
+        # _celebration_cost charges less: real food contributed and prepared, not
+        # just handed over from the stockpile.
+        self.cooking_learned = False
         # See Simulation._prepare_turn's GATHER_FOOD retirement -- one-way, like
         # has_ever_settled, once a genuinely proven passive food source exists.
         self.foraging_retired = False
@@ -329,6 +342,7 @@ class Tribe:
             "farm_plots": self.farm_plots,
             "crop_growth": self.crop_growth,
             "fishing_learned": self.fishing_learned,
+            "cooking_learned": self.cooking_learned,
             "foraging_retired": self.foraging_retired,
             "last_harvest_cycle": self.last_harvest_cycle,
             "flock": self.flock,
@@ -2210,7 +2224,7 @@ class Simulation:
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
             f"\U0001f389 {tribe.name} celebrates the discovery of water at ({fx},{fy}), spending {spent} "
-            f"food on a feast -- the tribe will move to settle there soon{_celebration_shout(tribe)}"
+            f"food on a {_feast_word(tribe)} -- the tribe will move to settle there soon{_celebration_shout(tribe)}"
         )
         if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
             pair = _eligible_breeding_pair(tribe)
@@ -2231,7 +2245,7 @@ class Simulation:
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
             f"\U0001f389 {tribe.name} celebrates the discovery of a game-rich site at ({tx},{ty}), "
-            f"spending {spent} food on a feast{_celebration_shout(tribe)}"
+            f"spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )
         if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
             pair = _eligible_breeding_pair(tribe)
@@ -2297,7 +2311,7 @@ class Simulation:
                     "surplus has become the norm, not a special occasion"
                 )
         tribe.history.append(
-            f"\U0001f389 {tribe.name} holds a celebration for {reason}, spending {spent} food on a feast{_celebration_shout(tribe)}"
+            f"\U0001f389 {tribe.name} holds a celebration for {reason}, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )
 
         if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
@@ -2319,7 +2333,7 @@ class Simulation:
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
-            f"\U0001f389 {tribe.name} celebrates settling here for good, spending {spent} food on a feast{_celebration_shout(tribe)}"
+            f"\U0001f389 {tribe.name} celebrates settling here for good, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )
         tribe.pending_settlement_naming = True
         if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
@@ -2340,7 +2354,7 @@ class Simulation:
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
-            f"\U0001f389 {tribe.name} holds a harvest festival, spending {spent} food on a feast{_celebration_shout(tribe)}"
+            f"\U0001f389 {tribe.name} holds a harvest festival, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )
         if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
             pair = _eligible_breeding_pair(tribe)
@@ -2358,7 +2372,7 @@ class Simulation:
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
         tribe.history.append(
-            f"\U0001f389 {tribe.name} celebrates learning to fish, spending {spent} food on a feast{_celebration_shout(tribe)}"
+            f"\U0001f389 {tribe.name} celebrates learning to fish, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )
         if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
             pair = _eligible_breeding_pair(tribe)

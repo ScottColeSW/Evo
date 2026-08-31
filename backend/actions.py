@@ -163,6 +163,22 @@ def _build_fire(sim, tribe, biome, target):
     return None
 
 
+def _cook_food(sim, tribe, biome, target):
+    """Explicit request: "Celebrations can even be cheaper if they learn how to cook
+    food." Requires an already-built fire at the tribe's own tile -- a real
+    prerequisite already in the game, not an invented one. One-way, like
+    fishing_learned: once a tribe has genuinely figured out cooking, it isn't
+    unlearned. No further effect on its own here -- Simulation._celebration_cost is
+    what actually charges less from then on."""
+    if tribe.cooking_learned:
+        return None
+    if not _already_built(sim, tribe, "fire"):
+        return "no fire here to cook over"
+    tribe.cooking_learned = True
+    sim._award_trophy(tribe, "Master Chef")
+    return "the tribe learns to cook properly over the fire -- feasts will go further from now on"
+
+
 def _construct_wall(sim, tribe, biome, target):
     """Explicit request: a wall is built in stages, like a crop, not finished in one
     action -- "30% of a wall can be built through a day with a team of 3." Reuses
@@ -597,6 +613,7 @@ ACTION_REGISTRY = {
     "GATHER_FOOD": _forage,
     "HUNT_DEER": _hunt_deer,
     "BUILD_FIRE": _build_fire,
+    "COOK_FOOD": _cook_food,
     "CONSTRUCT_WALL": _construct_wall,
     "PLANT_CROP": _plant_crop,
     "GATHER_EGGS": _gather_eggs,
@@ -625,6 +642,7 @@ ACTION_DESCRIPTIONS = {
     "GATHER_FOOD": "Forage for berries, fruit, and wild plants at your current tile -- plains yields the most, forest some, mountains and ocean almost none. No hazard, unlike hunting, but a lower yield ceiling. Yield also drops the more this exact spot has been foraged recently.",
     "HUNT_DEER": "Attempt to harvest food at your current tile -- forest has the most game, plains and river tiles some, mountains and ocean almost none. Small risk of losing a hunter to a wolf pack, most likely in forest.",
     "BUILD_FIRE": "Build a fire at your current tile using stored wood. Does nothing if one is already built here.",
+    "COOK_FOOD": "Learn to cook properly over a fire at your current tile -- only possible where a fire is already built. A one-time skill: once learned, every future celebration feast goes further, costing the tribe less.",
     "CONSTRUCT_WALL": "Work on a wall at your current tile using stored wood and stone -- a real defensive structure built up over several turns, not finished in one. Each turn spent on it adds real progress (more so with more people to put to the work), and a more complete wall meaningfully improves your odds of defending against a raider attack. Does nothing further once complete.",
     "PLANT_CROP": "Plant a farm plot at your current tile using stored wood -- only possible once the tribe has settled somewhere with real water access. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
     "GATHER_EGGS": "Search for wild fowl nests near your current tile -- only possible on the same settled ground with reliable water access that farming needs (fowl nest near water, not in it). A found egg is set aside and hatches on its own, growing the tribe's flock by one.",

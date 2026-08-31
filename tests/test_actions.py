@@ -296,6 +296,41 @@ def test_first_successful_catch_learns_fishing_and_celebrates():
     assert "first catch" in result
 
 
+def test_cook_food_requires_an_existing_fire():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    result = ACTION_REGISTRY["COOK_FOOD"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.cooking_learned is False
+    assert "no fire" in result
+
+
+def test_cook_food_learns_cooking_once_a_fire_exists():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.world.add_construction(50, 50, "fire", sim.cycle)
+
+    result = ACTION_REGISTRY["COOK_FOOD"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.cooking_learned is True
+    assert any(t["name"] == "Master Chef" for t in tribe.trophies)
+    assert "learns to cook" in result
+
+
+def test_cook_food_is_a_no_op_once_already_learned():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.world.add_construction(50, 50, "fire", sim.cycle)
+    tribe.cooking_learned = True
+    trophies_before = list(tribe.trophies)
+
+    result = ACTION_REGISTRY["COOK_FOOD"](sim, tribe, "plains", _NO_TARGET)
+
+    assert result is None
+    assert tribe.trophies == trophies_before
+
+
 def test_later_catches_do_not_re_learn_or_re_celebrate():
     from unittest import mock
 
@@ -694,6 +729,13 @@ def test_strike_raider_camp_unlocked_only_from_bronze_age():
 
     assert "STRIKE_RAIDER_CAMP" not in unlocked_actions_through("stone_age")
     assert "STRIKE_RAIDER_CAMP" in unlocked_actions_through("bronze_age")
+
+
+def test_cook_food_unlocked_only_from_bronze_age():
+    from backend.eras import unlocked_actions_through
+
+    assert "COOK_FOOD" not in unlocked_actions_through("stone_age")
+    assert "COOK_FOOD" in unlocked_actions_through("bronze_age")
 
 
 def test_raid_ignores_extinct_tribes_and_self():

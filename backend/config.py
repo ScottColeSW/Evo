@@ -266,6 +266,15 @@ CELEBRATION_COOLDOWN_CYCLES = 20
 # the discovery branch (always a genuinely new, distinct thing) never retires.
 CELEBRATION_SURPLUS_RETIREMENT_COUNT = 3
 
+# Explicit request: "Celebrations can even be cheaper if they learn how to cook
+# food... a pot luck event where they all go out and hunt and gather for a feast."
+# COOK_FOOD (backend/actions.py) requires an already-built fire at the tribe's own
+# tile -- a real prerequisite already in the game, not an invented one -- and once
+# learned (tribe.cooking_learned, the same "learn once, keep forever" shape
+# fishing_learned uses), every future celebration costs less: real food is being
+# contributed and prepared efficiently, not just handed over from the stockpile.
+CELEBRATION_COOKING_COST_MULTIPLIER = 0.5
+
 # Milestone trophies (backend/simulation.py._award_trophy's `individual` param): unlike
 # the chief-credited trophies above, these are earned by a specific named scout or
 # hunter and credit them by name, not the chief. Also the pool of "named individuals"

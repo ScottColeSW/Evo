@@ -2690,6 +2690,35 @@ def test_celebration_cost_is_capped_regardless_of_wealth():
     assert tribe.food == 10_000 - config.CELEBRATION_MAX_COST
 
 
+def test_celebration_costs_less_once_cooking_is_learned():
+    """Explicit request: "Celebrations can even be cheaper if they learn how to
+    cook food.\""""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 10_000
+    tribe.cooking_learned = True
+
+    sim._check_for_celebration(tribe)
+
+    expected_cost = round(config.CELEBRATION_MAX_COST * config.CELEBRATION_COOKING_COST_MULTIPLIER)
+    assert tribe.food == 10_000 - expected_cost
+
+
+def test_celebration_chronicle_calls_it_a_potluck_once_cooking_is_learned():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = config.FOOD_TROPHY_THRESHOLD
+    tribe.cooking_learned = True
+
+    sim._check_for_celebration(tribe)
+
+    assert any("potluck feast" in e for e in tribe.history)
+
+
 def test_surplus_only_celebration_retires_after_the_configured_count():
     """A tribe that has already celebrated mere plenty a few times shouldn't keep
     paying for it forever -- the same 'generalist narrows to specialist' shape
