@@ -1373,12 +1373,22 @@ function drawSettlementWall(t) {
   // a collar right on top of it.
   const half = r * 2.4;
   const progress = Math.max(0, Math.min(100, wall.progress ?? 100));
+  // Explicit request: "walls should expand concentrically as territory expands, so
+  // there will be layers of township." Visual only, per explicit confirmation --
+  // reuses the same single wall_fraction (progress) for every ring's styling
+  // rather than a separate mechanic per layer. One extra ring per every 2
+  // city_buildings (a real, already-tracked 0-6 count), matching how drawTerritory
+  // already scales with the same number.
+  const layerCount = 1 + Math.floor((t.city_buildings || 0) / 2);
   ctx.save();
   ctx.strokeStyle = "#a8a29e";
   ctx.lineWidth = Math.max(1.5, TILE * 0.12);
   ctx.globalAlpha = 0.35 + 0.65 * (progress / 100);
   if (progress < 100) ctx.setLineDash([4, 3]);
-  ctx.strokeRect(cx - half, cy - half, half * 2, half * 2);
+  for (let i = 0; i < layerCount; i++) {
+    const layerHalf = half + i * TILE * 1.6;
+    ctx.strokeRect(cx - layerHalf, cy - layerHalf, layerHalf * 2, layerHalf * 2);
+  }
   ctx.restore();
 }
 
@@ -1418,21 +1428,35 @@ function drawFarmPlot(t) {
 // a single one-time icon flip -- drawSettlementMarker stays the town's "seat," these
 // are the buildings growing up around it, arranged in a small deterministic ring so a
 // bigger city visibly reads as bigger.
+// Explicit request: buildings distribute across the same concentric layers
+// drawSettlementWall draws (2 buildings per layer, matching that function's own
+// "one extra ring per 2 city_buildings" pacing), sitting inside each layer's own
+// wall ring with real clearance -- "leave space enough for housing in each
+// ring/square/partial square," not all buildings bunched at one fixed radius
+// regardless of how many wall layers exist.
+const BUILDINGS_PER_LAYER = 2;
+
 function drawCityBuildings(t) {
   if (t.city_buildings <= 0) return;
   const [landX, landY] = landAnchor(t.x, t.y);
   const baseX = landX * TILE + TILE / 2;
   const baseY = landY * TILE + TILE / 2;
-  const ringRadius = Math.max(14, TILE * 2.4);
-  // Explicit request: "maybe up, 2 or 3 story buildings eventually." Once the ring
-  // is completely full (the real MAX_CITY_BUILDINGS cap, not an invented
+  const r = Math.max(6, (TILE * MOON_CORE_RADIUS_TILES) / 3);
+  const wallHalf = r * 2.4;
+  // Explicit request: "maybe up, 2 or 3 story buildings eventually." Once the
+  // whole allotment is full (the real MAX_CITY_BUILDINGS cap, not an invented
   // threshold), a city that can't expand out anymore starts reading as building up
   // instead -- taller icons, not a bigger ring.
   const full = t.city_buildings >= config_MAX_CITY_BUILDINGS_HINT;
   for (let i = 0; i < t.city_buildings; i++) {
-    const angle = (i / config_MAX_CITY_BUILDINGS_HINT) * Math.PI * 2;
-    const bx = baseX + Math.cos(angle) * ringRadius;
-    const by = baseY + Math.sin(angle) * ringRadius * 0.6;
+    const layer = Math.floor(i / BUILDINGS_PER_LAYER);
+    const posInLayer = i % BUILDINGS_PER_LAYER;
+    const countInLayer = Math.min(BUILDINGS_PER_LAYER, t.city_buildings - layer * BUILDINGS_PER_LAYER);
+    const layerWallHalf = wallHalf + layer * TILE * 1.6;
+    const housingRadius = Math.max(10, layerWallHalf - TILE * 0.9);
+    const angle = (posInLayer / countInLayer) * Math.PI * 2 + layer * 0.6;
+    const bx = baseX + Math.cos(angle) * housingRadius;
+    const by = baseY + Math.sin(angle) * housingRadius * 0.6;
     ctx.font = `${Math.max(9, TILE * (full ? 1.15 : 0.9))}px sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
