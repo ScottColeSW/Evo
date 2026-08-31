@@ -1060,6 +1060,35 @@ def test_expedition_arrival_home_delivers_water_finding_to_memory_and_clears_sta
     assert any("fresh water at (40,37)" in m["text"] for m in tribe.memory.entries)
 
 
+def test_water_discovery_does_not_stack_a_second_celebration_the_same_cycle():
+    """Explicit question: "are celebrations stomping on each other?" Yes, in one real
+    case -- _celebrate_water_discovery/_celebrate_game_discovery run from
+    _advance_expeditions, a separate, later loop than the one _celebrate_settling/
+    _advance_farming's harvest celebration run from, so nothing previously stopped a
+    second celebration (spending food, resetting last_celebration_cycle again) from
+    firing in the exact same cycle as one that already happened."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 100
+    tribe.last_celebration_cycle = sim.cycle  # a celebration already fired this exact cycle
+    tribe.expeditions = [{
+        "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
+        "day": 2, "phase": "returning", "found": [40, 37], "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+
+    sim._advance_expeditions(tribe)
+
+    # Only the ordinary arrival-home food delivery -- no extra feast cost stacked on top.
+    assert tribe.food == 100 + config.EXPEDITION_RETURN_DAILY_FOOD
+    assert not any("celebrates the discovery of water" in entry for entry in tribe.history)
+    # The underlying discovery itself still lands -- only the party is suppressed.
+    assert tribe.confirmed_water_sites == [(40, 37)]
+
+
 def test_water_bringer_trophy_credits_the_scout_who_confirmed_it_not_the_chief():
     """Explicit request: crediting Water Bringer only ever to the chief (the original
     design) meant a young tribe could go a long time with just one named individual,
@@ -1544,6 +1573,41 @@ def test_forest_terrain_report_confirms_both_a_lumber_and_a_wildlife_site():
     assert tribe.lumber_sites == [(60, 60)]
     assert tribe.wildlife_sites == [(60, 60)]
     assert tribe.quarry_sites == []
+
+
+def test_new_wildlife_site_throws_a_game_discovery_celebration():
+    """Explicit request: "the celebration label should say celebrating... the
+    discovery of a small-game site." Terrain reports only ever carry memory weight
+    0.6, below CELEBRATION_DISCOVERY_WEIGHT, so this would otherwise never trigger
+    the generic _check_for_celebration path at all."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 100
+    exp = _returning_scout_exp((60, 60), "forest")
+    tribe.expeditions = [exp]
+
+    sim._advance_one_expedition(tribe, exp)
+
+    assert any("celebrates the discovery of a game-rich site at (60,60)" in entry for entry in tribe.history)
+    assert tribe.food < 100
+    assert tribe.last_celebration_cycle == sim.cycle
+
+
+def test_revisiting_an_already_known_wildlife_site_does_not_re_celebrate():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wildlife_sites = [(60, 60)]
+    tribe.food = 100
+    exp = _returning_scout_exp((60, 60), "forest")
+    tribe.expeditions = [exp]
+
+    sim._advance_one_expedition(tribe, exp)
+
+    # Only the ordinary arrival-home food delivery -- no feast cost, not a new site.
+    assert tribe.food == 100 + config.EXPEDITION_RETURN_DAILY_FOOD
+    assert not any("celebrates the discovery of a game-rich site" in entry for entry in tribe.history)
 
 
 def test_mountains_terrain_report_confirms_a_quarry_site():
@@ -2251,6 +2315,54 @@ def test_advance_farming_does_nothing_with_no_plots():
 
     assert tribe.crop_growth == 0
     assert tribe.water == 100
+
+
+def test_advance_water_supply_flows_in_once_settled_near_water():
+    """Explicit request: "like relocate, gather water becomes irrelevant once they
+    have settled." A tribe genuinely settled next to real water shouldn't need to
+    keep manually choosing GATHER_WATER every cycle just to stand still."""
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.water = 10
+
+    sim._advance_water_supply(tribe)
+
+    assert tribe.water == 10 + config.SETTLED_WATER_SUPPLY_PER_CYCLE
+
+
+def test_advance_water_supply_does_nothing_before_settling():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # forest, not settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.water = 10
+
+    sim._advance_water_supply(tribe)
+
+    assert tribe.water == 10
+
+
+def test_settled_near_water_fact_mentions_passive_water_supply():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Water now flows in on its own each cycle" in request["prompt"]
+
+
+def test_resource_priority_fact_ranks_stockpiles_lowest_to_highest():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.wood, tribe.stone, tribe.food, tribe.water = 50, 20, 5, 30
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Resource priority, lowest to highest: food (5), stone (20), water (30), wood (50)" in request["prompt"]
 
 
 def test_advance_flock_consumes_feed():

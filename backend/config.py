@@ -139,6 +139,14 @@ STARTING_WATER = 30
 WATER_YIELD_RIVER = 15
 WATER_YIELD_OFF_RIVER = 3
 
+# Explicit request ("like relocate, gather water becomes irrelevant once they have
+# settled"): a tribe genuinely settled next to real water (Simulation.
+# _is_settled_near_water) shouldn't need to keep manually choosing GATHER_WATER every
+# cycle just to stand still -- the same "passive consequence, not a discrete action"
+# category as crop growth (Simulation._advance_farming). GATHER_WATER still works and
+# still adds more on top; this just means the tap never really runs dry once settled.
+SETTLED_WATER_SUPPLY_PER_CYCLE = 10
+
 # Reaching a new era (backend/eras.py) radiates a pride event at the tribe's location,
 # same mechanism as BUILD_FIRE -- advancement is a genuine "the ground remembers this"
 # moment, not just a silent counter change.

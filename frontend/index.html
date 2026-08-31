@@ -496,6 +496,24 @@ function advanceBannerQueue() {
 // second banner element, distinguished by the "party" variant's own gradient style.
 let lastCelebrationCycleByTribe = {};
 
+// Explicit request: the banner should say *what* is being celebrated (a birth, a
+// game-site or water discovery, settling, a harvest), not just "is celebrating."
+// Backend/simulation.py's celebration methods each write their own distinct chronicle
+// line the same cycle they fire -- matched here the same way chronicleEntryClass
+// already classifies chronicle lines by fixed substrings, rather than threading a
+// separate "reason" field through the whole state payload just for this banner.
+function celebrationReason(t) {
+  const recent = (t.history || []).slice(-4);
+  if (recent.some(e => e.includes("welcome a child"))) return "a new birth";
+  if (recent.some(e => e.includes("celebrates the discovery of water"))) return "finding water";
+  if (recent.some(e => e.includes("celebrates the discovery of a game-rich site"))) return "a game-rich discovery";
+  if (recent.some(e => e.includes("celebrates settling here for good"))) return "settling down for good";
+  if (recent.some(e => e.includes("holds a harvest festival"))) return "a bountiful harvest";
+  if (recent.some(e => e.includes("a fresh discovery"))) return "a fresh discovery";
+  if (recent.some(e => e.includes("a season of plenty"))) return "a season of plenty";
+  return "";
+}
+
 function checkCelebrations(state) {
   Object.entries(state.tribes || {}).forEach(([id, t]) => {
     const cycle = t.last_celebration_cycle;
@@ -504,7 +522,8 @@ function checkCelebrations(state) {
       return;
     }
     if (cycle !== lastCelebrationCycleByTribe[id]) {
-      queueBanner(`🎉 ${t.name} is celebrating!`, false, "party");
+      const reason = celebrationReason(t);
+      queueBanner(`🎉 ${t.name} is celebrating${reason ? ` -- ${reason}!` : "!"}`, false, "party");
       lastCelebrationCycleByTribe[id] = cycle;
     }
   });

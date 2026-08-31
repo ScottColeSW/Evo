@@ -673,6 +673,7 @@ class Simulation:
             self._advance_era_if_ready(tribe)
             if not tribe.settlement_name and not tribe.pending_settlement_naming and self._is_settled_near_water(tribe):
                 self._celebrate_settling(tribe)
+            self._advance_water_supply(tribe)
             self._advance_farming(tribe)
             self._advance_flock(tribe)
             self._advance_city_growth(tribe)
@@ -974,7 +975,8 @@ class Simulation:
             )
         if settled_near_water:
             visible_entities.append(
-                "The tribe has settled here, next to real water, and is no longer considering relocating."
+                "The tribe has settled here, next to real water, and is no longer considering relocating. "
+                "Water now flows in on its own each cycle -- manually gathering more here is no longer necessary."
             )
         elif settled:
             # A real, non-final state: good enough ground to gather wood/stone on, but
@@ -1049,6 +1051,22 @@ class Simulation:
                 visible_entities.append(
                     f"Already stockpiled well beyond any near-term building need: {', '.join(surplus)}."
                 )
+
+        # NUDGE (2026-08-31, explicit request: "when it comes to inventory management
+        # they always want to resupply the lowest item first, in order"). States the
+        # tribe's own four core stockpiles ranked lowest-to-highest as a plain fact --
+        # the raw numbers already appear in METABOLIC STOCKPILES above, but nothing
+        # previously said which one is actually the most urgent to address. Still just
+        # a ranking, not a command; the model picks whether and how to act on it.
+        stockpile_order = sorted(
+            (("wood", tribe.wood), ("stone", tribe.stone), ("food", tribe.food), ("water", tribe.water)),
+            key=lambda pair: pair[1],
+        )
+        visible_entities.append(
+            "Resource priority, lowest to highest: "
+            + ", ".join(f"{name} ({amount})" for name, amount in stockpile_order)
+            + " -- resupplying the lowest one first is usually the most efficient use of this turn."
+        )
 
         # Stated as fact (what you previously chose), not as an instruction to continue --
         # whether to keep going or change course is left entirely to the model.
@@ -1331,7 +1349,13 @@ class Simulation:
                         f"{scout} is home and gives {recipient} a full report: "
                         f"fresh water confirmed at ({fx},{fy}), {forage_note}"
                     )
-                    if is_new_site and not self._is_settled_near_water(tribe):
+                    # `!= self.cycle`, not the full CELEBRATION_COOLDOWN_CYCLES gate --
+                    # this is meant to fire on every genuine new find, just not twice
+                    # in the exact same cycle (two expeditions can both arrive home
+                    # with news this same tick -- see _advance_expeditions' loop over
+                    # every in-field party) or on top of an unrelated celebration
+                    # (settling, harvest) that already happened this same cycle.
+                    if is_new_site and not self._is_settled_near_water(tribe) and tribe.last_celebration_cycle != self.cycle:
                         self._celebrate_water_discovery(tribe, fx, fy)
                 elif exp["terrain_report"]:
                     label = BIOME_LABELS.get(exp["terrain_report"], exp["terrain_report"])
@@ -1340,8 +1364,11 @@ class Simulation:
                     if exp["terrain_report"] == "forest":
                         if (tx, ty) not in tribe.lumber_sites:
                             tribe.lumber_sites.append((tx, ty))
-                        if (tx, ty) not in tribe.wildlife_sites:
+                        is_new_game_site = (tx, ty) not in tribe.wildlife_sites
+                        if is_new_game_site:
                             tribe.wildlife_sites.append((tx, ty))
+                            if tribe.last_celebration_cycle != self.cycle:
+                                self._celebrate_game_discovery(tribe, tx, ty)
                     elif exp["terrain_report"] == "mountains":
                         if (tx, ty) not in tribe.quarry_sites:
                             tribe.quarry_sites.append((tx, ty))
@@ -1582,6 +1609,15 @@ class Simulation:
             tribe.x, tribe.y, config.ERA_ADVANCE_PRIDE_MAGNITUDE, config.ERA_ADVANCE_PRIDE_RADIUS
         )
 
+    def _advance_water_supply(self, tribe: Tribe) -> None:
+        """Explicit request: "like relocate, gather water becomes irrelevant once they
+        have settled." A tribe genuinely settled next to real water shouldn't need to
+        keep manually choosing GATHER_WATER every cycle just to stand still -- the
+        same "passive consequence, not a discrete action" category as crop growth.
+        GATHER_WATER still works and still adds more on top of this."""
+        if self._is_settled_near_water(tribe):
+            tribe.water += config.SETTLED_WATER_SUPPLY_PER_CYCLE
+
     def _advance_farming(self, tribe: Tribe) -> None:
         """A planted crop plot (actions.py._plant_crop) grows on its own every cycle,
         the same "passive consequence, not a discrete action" category as upkeep and
@@ -1709,6 +1745,27 @@ class Simulation:
         tribe.history.append(
             f"\U0001f389 {tribe.name} celebrates the discovery of water at ({fx},{fy}), spending {spent} "
             "food on a feast -- the tribe will move to settle there soon"
+        )
+        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+            pair = _eligible_breeding_pair(tribe)
+            if pair is not None:
+                parent_a, parent_b = pair
+                tribe.pending_birth = {"parent_a": parent_a, "parent_b": parent_b}
+                tribe.history.append(f"amid the celebration, {parent_a} and {parent_b} decide to start a family together")
+
+    def _celebrate_game_discovery(self, tribe: Tribe, tx: int, ty: int) -> None:
+        """A scout reporting back a genuinely new game-rich site is its own real find --
+        same "you found something! now we party!" treatment as _celebrate_water_
+        discovery, just for a small-game site instead of water. Terrain reports only
+        ever carry memory weight 0.6, below CELEBRATION_DISCOVERY_WEIGHT, so this would
+        otherwise never trigger the generic _check_for_celebration path at all."""
+        tribe.last_celebration_cycle = self.cycle
+        spent = round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION)
+        tribe.food -= spent
+        self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.history.append(
+            f"\U0001f389 {tribe.name} celebrates the discovery of a game-rich site at ({tx},{ty}), "
+            f"spending {spent} food on a feast"
         )
         if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
             pair = _eligible_breeding_pair(tribe)
