@@ -143,11 +143,17 @@ async def main():
                 json.dump(all_reports, f, indent=2, default=str)
             _print_report(report)
     elif immortal:
+        # Optional 3rd arg overrides Mountain Tribe's model (Forest stays MODELS[0]) --
+        # lets --immortal answer "does time alone compensate for a weaker model", not
+        # just "what happens if the default pairing gets time".
         n_runs = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+        models = [MODELS[0], sys.argv[3]] if len(sys.argv) > 3 else None
         for i in range(n_runs):
             print(f"=== IMMORTAL RUN {i} starting (protected for the first "
                   f"{IMMORTAL_CYCLES_WINDOW} of up to {IMMORTAL_MAX_CYCLES} cycles) ===", flush=True)
-            report = await run_once(i, immortality_cycles=IMMORTAL_CYCLES_WINDOW, max_cycles=IMMORTAL_MAX_CYCLES)
+            report = await run_once(
+                i, models=models, immortality_cycles=IMMORTAL_CYCLES_WINDOW, max_cycles=IMMORTAL_MAX_CYCLES
+            )
             all_reports.append(report)
             with open(out_path, "w") as f:
                 json.dump(all_reports, f, indent=2, default=str)
