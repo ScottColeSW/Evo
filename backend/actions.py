@@ -413,6 +413,13 @@ def _breed(sim, tribe, biome, target):
     return f"{parent_a} and {parent_b} decide to start a family together"
 
 
+# Explicit request: IDLE isn't offered as a real choice anymore (see eras.py's
+# stone_age.unlocks_actions and config.PRE_SETTLEMENT_ACTIONS) -- a tribe always has
+# something worth doing. This handler stays registered purely as the internal safe
+# no-op Simulation._resolve_action dispatches to when a decision genuinely can't be
+# understood at all, or when a syntactically real action name just isn't unlocked
+# right now (wrong era, not settled, etc.) -- never something a model is told it can
+# pick.
 def _idle(sim, tribe, biome, target):
     return None
 
@@ -562,5 +569,6 @@ ACTION_DESCRIPTIONS = {
     "BREED": "Your chief and whoever currently holds a trophy start a family together, costing food and water and growing your population by one child if it succeeds. Does nothing if fewer than two named individuals (a chief plus at least one trophy-holder) exist yet, or if food/water can't cover the cost.",
     "RAID": "Attempt to raid a rival tribe if one is near target_vector. A win steals some of their stockpile but still costs you people; a loss costs you more. Does nothing if no rival is there.",
     "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. Does nothing if no rival is there.",
-    "IDLE": "Do nothing this cycle.",
+    # IDLE deliberately has no entry here -- it's never offered as a real choice (see
+    # backend/actions.py._idle), so it has no description to show the model.
 }

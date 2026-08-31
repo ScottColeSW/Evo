@@ -88,8 +88,8 @@ def test_system_prompt_explains_what_each_available_action_does():
 def test_system_prompt_action_glossary_only_lists_currently_available_actions():
     """Era-gated actions not yet unlocked shouldn't get an explanation either -- the
     glossary should track available_actions exactly, not the full registry."""
-    prompt = get_prime_consciousness_prompt("Forest Tribe", "gemma2:2b", available_actions=("IDLE",))
-    assert "IDLE: Do nothing" in prompt
+    prompt = get_prime_consciousness_prompt("Forest Tribe", "gemma2:2b", available_actions=("RELOCATE",))
+    assert "RELOCATE: Move your whole tribe" in prompt
     assert "GATHER_WOOD:" not in prompt
 
 

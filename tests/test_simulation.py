@@ -2,7 +2,7 @@ from unittest import mock
 
 from backend.actions import GAME_SPECIES_BY_BIOME
 from backend.ancestral_matrix import AncestralTraumaMatrix
-from backend.simulation import SPAWN_POINTS, Simulation, Tribe
+from backend.simulation import SPAWN_POINTS, Simulation, Tribe, _guess_intended_action, _resolve_action
 from backend.world import Landscape
 from tests.conftest import run_async
 
@@ -817,6 +817,94 @@ def test_action_outside_current_era_is_rejected_to_idle():
 
     sim._apply_turn(tribe, {"visual_action": "CONSTRUCT_WALL"}, 50.0, ctx)
     assert "IDLE" in tribe.history[-1]
+    # A real, well-formed action name that's just not unlocked yet (wrong era) is a
+    # legitimate "can't do that here" case, not a parse failure -- no confusion nudge.
+    assert tribe.last_confusion is None
+
+
+def test_idle_is_never_offered_as_a_real_choice():
+    """Explicit request: IDLE isn't a valid or valuable option -- a tribe always has
+    something worth doing. It must not appear in any era's unlocked actions or in
+    the pre-settlement action set, even though it still exists internally as the
+    safe no-op _resolve_action falls back to."""
+    from backend import config
+    from backend.eras import ERAS
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    _, ctx = sim._prepare_turn(tribe)
+    assert "IDLE" not in ctx["available_actions"]
+    assert "IDLE" not in config.PRE_SETTLEMENT_ACTIONS
+    for era in ERAS:
+        assert "IDLE" not in era.unlocks_actions
+
+
+def test_resolve_action_exact_and_normalized_and_out_of_context_cases():
+    avail = ["GATHER_FOOD", "GATHER_WATER", "SCOUT", "RELOCATE"]
+    assert _resolve_action("GATHER_FOOD", avail) == ("GATHER_FOOD", None)
+    assert _resolve_action("gather-food", avail) == ("GATHER_FOOD", None)
+    assert _resolve_action("gather food", avail) == ("GATHER_FOOD", None)
+    # A real, globally-known action that's simply not in this tribe's current
+    # available_actions (wrong era/context) -- not a parse failure.
+    assert _resolve_action("PLANT_CROP", avail) == ("IDLE", None)
+    # Nothing recognizable at all -- a genuine confusion case.
+    action, unresolved = _resolve_action("xyzzy nonsense", avail)
+    assert action == "IDLE"
+    assert unresolved == "xyzzy nonsense"
+
+
+def test_guess_intended_action_is_display_only_and_best_effort():
+    avail = ["GATHER_FOOD", "GATHER_WATER", "SCOUT", "RELOCATE", "GATHER_FISH"]
+    assert _guess_intended_action("catch some fish", avail) == "GATHER_FISH"
+    assert _guess_intended_action("xyzzy nonsense", avail) is None
+
+
+def test_gibberish_action_text_falls_back_to_idle_and_records_confusion():
+    """A decision that matches nothing real at all -- not even a formatting variant
+    of a real action -- is a genuine parse failure. It still resolves to the safe
+    IDLE no-op mechanically, but is recorded distinctly from a deliberate choice so
+    _prepare_turn can surface a correction fact next cycle."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    ctx = {"biome": "plains", "available_actions": ["GATHER_FOOD", "GATHER_WATER", "SCOUT", "RELOCATE"]}
+
+    sim._apply_turn(tribe, {"visual_action": "PONDER THE MEANING OF WATER"}, 50.0, ctx)
+
+    assert tribe.last_action == "IDLE"
+    assert tribe.last_confusion is not None
+    assert tribe.last_confusion["raw"] == "PONDER THE MEANING OF WATER"
+    assert "unrecognized decision text" in tribe.history[-1]
+
+
+def test_case_and_spacing_variants_resolve_cleanly_without_confusion():
+    """Cheap normalization (case, spaces/hyphens for underscores) should recover the
+    intended action with no correction nudge needed -- these aren't confusion, just
+    formatting noise."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    ctx = {"biome": "plains", "available_actions": ["GATHER_FOOD", "GATHER_WATER", "SCOUT", "RELOCATE"]}
+
+    sim._apply_turn(tribe, {"visual_action": "gather-food"}, 50.0, ctx)
+
+    assert tribe.last_action == "GATHER_FOOD"
+    assert tribe.last_confusion is None
+
+
+def test_confusion_nudge_appears_once_then_clears():
+    """The 'Instant Enlightenment' correction fact should show up in the very next
+    cycle's facts after a genuine parse failure, then not repeat once addressed."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.last_confusion = {"raw": "PONDER THE MEANING OF WATER", "guess": None}
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "PONDER THE MEANING OF WATER" in request["prompt"]
+    assert "did not match any valid action" in request["prompt"]
+    assert tribe.last_confusion is None  # cleared after being surfaced once
+
+    request2, _ = sim._prepare_turn(tribe)
+    assert "PONDER" not in request2["prompt"]  # doesn't repeat on the following cycle
 
 
 def test_apply_turn_records_last_target_only_for_relocate():

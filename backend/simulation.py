@@ -1,4 +1,5 @@
 import asyncio
+import difflib
 import importlib
 import math
 import random
@@ -61,6 +62,48 @@ def _compass_direction(dx: float, dy: float) -> str:
     return directions[round(angle / 45) % 8]
 
 
+# Explicit request: the model's "visual_action" text used to need an exact, case-
+# sensitive match against available_actions or it silently collapsed to IDLE -- with
+# no record of the mismatch anywhere, a genuine parse failure was indistinguishable
+# from the tribe deliberately choosing to do nothing. Live data showed exact-match
+# already succeeds the overwhelming majority of the time, so this stays a cheap,
+# free-in-the-common-case ladder (no second LLM call): exact match, then a
+# normalization pass for case/spacing/hyphen variance, then a fuzzy close-match for
+# typos. Only a genuine miss falls through to IDLE, and even then a looser fuzzy pass
+# records a best-guess for the correction nudge (_prepare_turn's last_confusion
+# block) to name -- "Instant Enlightenment" for next cycle, not a forced action now.
+def _resolve_action(raw: str, available_actions: list[str]) -> tuple[str, str | None]:
+    """Returns (action_to_apply, unresolved_raw). unresolved_raw is None on any real
+    match (exact, normalized, or a confident fuzzy match) -- including a syntactically
+    real action name that just isn't unlocked/available right now (wrong era, not
+    settled, etc.), which is a legitimate "can't do that here" case, not a parse
+    failure, and gets no correction nudge. unresolved_raw is only the original raw
+    text when nothing recognizable was said at all; action_to_apply is "IDLE" as the
+    safe no-op fallback in both no-match cases."""
+    raw = str(raw)
+    if raw in available_actions:
+        return raw, None
+    normalized = raw.strip().upper().replace(" ", "_").replace("-", "_")
+    if normalized in available_actions:
+        return normalized, None
+    if normalized in ACTION_REGISTRY:
+        return "IDLE", None
+    close = difflib.get_close_matches(normalized, available_actions, n=1, cutoff=0.6)
+    if close:
+        return close[0], None
+    return "IDLE", raw
+
+
+def _guess_intended_action(raw: str, available_actions: list[str]) -> str | None:
+    """A looser, display-only fuzzy pass used only to name a possible intended action
+    in the next cycle's correction fact -- never used to actually decide what
+    happens. A wrong guess here costs nothing (it's a suggestion in a fact block, not
+    an applied action), so a lower cutoff than _resolve_action's is fine."""
+    normalized = str(raw).strip().upper().replace(" ", "_").replace("-", "_")
+    close = difflib.get_close_matches(normalized, available_actions, n=1, cutoff=0.3)
+    return close[0] if close else None
+
+
 class Tribe:
     def __init__(
         self, tribe_id: str, name: str, model: str, x: int, y: int, color: str,
@@ -79,6 +122,11 @@ class Tribe:
         self.era = ERAS[0].key
         self.last_broadcast = ""
         self.last_action = ""
+        # Set by _apply_turn whenever _resolve_action couldn't match the model's raw
+        # visual_action text to anything real; surfaced once as a correction fact by
+        # _prepare_turn next cycle, then cleared. None means last cycle's answer was
+        # understood (whether or not IDLE was the actual chosen/resolved action).
+        self.last_confusion: dict | None = None
         self.last_target: list[int] | None = None
         self.history: list[str] = TribeHistory(name, event_log)
         self.memory = TribeMemory(tribe_id)
@@ -969,6 +1017,22 @@ class Simulation:
             available_actions = [a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS", "GATHER_FISH")]
 
         visible_entities = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
+        # NUDGE (2026-08-31, explicit request: an "Instant Enlightenment" for a chief
+        # whose last answer didn't match any real action -- see _resolve_action/
+        # _apply_turn). Names exactly what was said, exactly what a valid answer looks
+        # like, and a best-effort guess at what was probably meant, so a genuine
+        # parse miss becomes a one-time teachable fact instead of a silent, invisible
+        # no-op the tribe never gets a chance to correct. Shown once, then cleared --
+        # this is a fact about what just happened, not a standing rule.
+        if tribe.last_confusion:
+            raw = tribe.last_confusion["raw"]
+            guess = tribe.last_confusion["guess"]
+            guess_clause = f" You most likely meant {guess} -- consider it strongly now." if guess else ""
+            visible_entities.append(
+                f"Last cycle's answer ('{raw}') did not match any valid action, so nothing happened. "
+                f"Your visual_action must be copied exactly from the list below, nothing else.{guess_clause}"
+            )
+            tribe.last_confusion = None
         if not tribe.has_ever_settled:
             visible_entities.append(
                 "The tribe has not yet settled anywhere for good, so only survival and exploration "
@@ -1155,9 +1219,13 @@ class Simulation:
         return request, {"biome": biome, "available_actions": available_actions}
 
     def _apply_turn(self, tribe: Tribe, intent: dict, latency_ms: float, ctx: dict) -> None:
-        action = intent.get("visual_action", "IDLE")
-        if action not in ctx["available_actions"]:
-            action = "IDLE"
+        raw_action = intent.get("visual_action", "IDLE")
+        action, unresolved_raw = _resolve_action(raw_action, ctx["available_actions"])
+        if unresolved_raw is not None:
+            guess = _guess_intended_action(unresolved_raw, ctx["available_actions"])
+            tribe.last_confusion = {"raw": unresolved_raw[:80], "guess": guess}
+        else:
+            tribe.last_confusion = None
         broadcast = intent.get("synthetic_language_broadcast") or ""
         target = intent.get("target_vector", [tribe.x, tribe.y])
         if not (isinstance(target, list) and len(target) == 2):
@@ -1202,6 +1270,11 @@ class Simulation:
         if len(rationale) > 240:
             rationale = rationale[:240].rstrip() + "…"
         entry = f"[{latency_ms:.0f}ms] {action}: {rationale}"
+        if unresolved_raw is not None:
+            # Distinguishes a genuine parse miss from a deliberate IDLE in the
+            # chronicle -- both apply the same no-op mechanically, but only one of
+            # them is the tribe actually choosing to rest.
+            entry += f" (unrecognized decision text: '{unresolved_raw[:60]}')"
         if hazard_note:
             entry += f" | {hazard_note}"
         tribe.history.append(entry)

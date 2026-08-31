@@ -25,7 +25,7 @@ FARMABLE_BIOMES = ("plains", "river", "lake")
 # time it genuinely settles, not re-locked if it later relocates again. Still the
 # model's own choice among what's offered, same gating principle as GATHER_WOOD/STONE
 # being locked pre-settlement -- just applied to the whole early action set at once.
-PRE_SETTLEMENT_ACTIONS = ("GATHER_WATER", "GATHER_FOOD", "SCOUT", "RELOCATE", "IDLE")
+PRE_SETTLEMENT_ACTIONS = ("GATHER_WATER", "GATHER_FOOD", "SCOUT", "RELOCATE")
 
 # Tiles moved per axis per cycle toward target_vector. At 1 (the original value), crossing
 # the 100-tile grid takes 100+ cycles minimum -- at roughly 2 seconds of real inference
