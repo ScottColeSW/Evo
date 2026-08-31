@@ -22,6 +22,8 @@
   #btn-start { background: #4338ca; color: white; flex: 1; padding: 10px 16px; }
   #btn-start:disabled { background: #333344; color: #666; cursor: not-allowed; }
   #model-warning { color: #f59e0b; font-size: 12px; margin-top: 8px; display: none; }
+  #immortality-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; color: #c7d2fe; }
+  #immortality-row input[type=number] { width: 60px; background: #141419; border: 1px solid #333344; color: #e2e2e7; padding: 4px 6px; border-radius: 4px; }
 
   /* --- Theater screen --- */
   #theater { display: none; flex-direction: column; height: 100vh; }
@@ -31,6 +33,8 @@
   #theater-header h1 { font-size: 15px; color: #a5b4fc; letter-spacing: 0.5px; flex-shrink: 0; }
   #status-banner { padding: 6px 14px; background: #065f46; color: #34d399; font-weight: bold; border-radius: 4px; font-size: 11px; font-family: monospace; }
   #status-banner.refactoring { background: #991b1b; color: #fca5a5; }
+  #immortal-banner { padding: 6px 14px; background: #3730a3; color: #c7d2fe; font-weight: bold; border-radius: 4px; font-size: 11px; font-family: monospace; }
+  #immortal-banner.hidden { display: none; }
   #btn-pause { background: #4338ca; color: white; padding: 8px 16px; font-size: 12px; margin-left: auto; }
 
   #theater-body { flex: 1; display: flex; min-height: 0; }
@@ -81,6 +85,7 @@
   .log-box .log-birth { color: #f0abfc; font-weight: bold; }
   .log-box .log-reflection { color: #93c5fd; font-style: italic; }
   .log-box .log-celebration { color: #fbbf24; font-weight: bold; }
+  .log-box .log-gathering { color: #a3e635; }
   .log-box .log-vram { color: #f59e0b; }
   .consensus-row { background: #222232; padding: 8px; border-radius: 6px; font-size: 11px; }
   .consensus-bar { height: 4px; background: #333344; border-radius: 2px; margin-top: 4px; overflow: hidden; }
@@ -99,6 +104,11 @@
   <p>Pick a local Ollama model per tribe, then press start. This is a spectator sandbox — the tribes play entirely on their own.</p>
   <div id="tribe-list"></div>
   <div id="model-warning">No local Ollama models found at localhost:11434. Run <code>ollama pull llama3</code> (or similar) and reload this page.</div>
+  <div id="immortality-row">
+    <label><input type="checkbox" id="immortal-toggle" /> Immortal start (no tribe can go extinct for the first</label>
+    <input type="number" id="immortal-cycles" value="200" min="1" />
+    <label for="immortal-cycles">cycles)</label>
+  </div>
   <div id="picker-controls">
     <button id="btn-add">+ Add Tribe</button>
     <button id="btn-start">Begin Simulation</button>
@@ -109,6 +119,7 @@
   <div id="theater-header">
     <h1>EVOLUTION2CIV</h1>
     <div id="status-banner">OPERATIONAL</div>
+    <div id="immortal-banner" class="hidden"></div>
     <button id="btn-pause">PAUSE</button>
   </div>
   <div id="theater-body">
@@ -232,8 +243,11 @@ document.getElementById("btn-start").addEventListener("click", () => {
   firstStateReceived = false;
   showSpawnSplash();
 
+  const immortalOn = document.getElementById("immortal-toggle").checked;
+  const immortalCycles = immortalOn ? (parseInt(document.getElementById("immortal-cycles").value, 10) || 0) : 0;
+
   socket = new WebSocket(`ws://${location.host}/ws`);
-  socket.onopen = () => socket.send(JSON.stringify({ command: "START", tribes }));
+  socket.onopen = () => socket.send(JSON.stringify({ command: "START", tribes, immortality_cycles: immortalCycles }));
   socket.onmessage = (event) => {
     latestState = JSON.parse(event.data);
     if (!firstStateReceived) {
@@ -681,13 +695,40 @@ function drawTribeIndividuals(tribeId, t) {
   }
 
   if (t.last_broadcast) {
+    // A tribe's own invented language (see prompts.py's LINGUISTIC SYNTHESIS PROTOCOL)
+    // deserves to read as speech, not a flat label -- a rounded bubble with a small
+    // tail pointing down at the tribe it came from, bordered in that tribe's own color
+    // so whose voice this is is legible even before reading the text.
     ctx.font = "bold 10px monospace";
     const w = ctx.measureText(t.last_broadcast).width;
-    const by = centerY - clusterRadius - 14;
-    ctx.fillStyle = "rgba(15,15,21,0.85)";
-    ctx.fillRect(centerX - w / 2 - 3, by - 10, w + 6, 14);
+    const padX = 6, padY = 4, tailH = 6;
+    const bw = w + padX * 2, bh = 14 + padY;
+    const bx = centerX - bw / 2;
+    const by = centerY - clusterRadius - 14 - bh;
+    const r = 5;
+
+    ctx.beginPath();
+    ctx.moveTo(bx + r, by);
+    ctx.lineTo(bx + bw - r, by);
+    ctx.arcTo(bx + bw, by, bx + bw, by + r, r);
+    ctx.lineTo(bx + bw, by + bh - r);
+    ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r);
+    ctx.lineTo(centerX + tailH * 0.7, by + bh);
+    ctx.lineTo(centerX, by + bh + tailH);
+    ctx.lineTo(centerX - tailH * 0.7, by + bh);
+    ctx.lineTo(bx + r, by + bh);
+    ctx.arcTo(bx, by + bh, bx, by + bh - r, r);
+    ctx.lineTo(bx, by + r);
+    ctx.arcTo(bx, by, bx + r, by, r);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(15,15,21,0.88)";
+    ctx.fill();
+    ctx.strokeStyle = t.color;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
     ctx.fillStyle = "#fbbf24";
-    ctx.fillText(t.last_broadcast, centerX - w / 2, by);
+    ctx.fillText(t.last_broadcast, bx + padX, by + bh - padY - 2);
   }
 
   (t.expeditions || []).forEach((exp, i) => drawExpedition(t, tribeId, exp, i));
@@ -800,6 +841,43 @@ function drawExpedition(t, tribeId, exp, expIndex) {
 const TRAIL_COLOR_LOW = [107, 91, 68];   // dull packed dirt, barely trodden
 const TRAIL_COLOR_HIGH = [250, 204, 21]; // bright, well-worn gold track
 
+// Landmarks: fixed points a tribe's own scouts have earned real knowledge of, marked
+// permanently on the map rather than left to scroll away in the chronicle. The same fix
+// that made a scouted discovery a durable fact in the tribe's own live reasoning (see
+// Simulation._build_visible_entities) also makes it a durable landmark here. Each entry
+// is a [field, emoji, offset] triple: field is the Tribe.to_dict() list to read,
+// offset nudges same-tile markers apart (a forest terrain report logs both a lumber and
+// a wildlife landmark at the identical coordinate) so they don't fully overlap.
+const LANDMARK_TYPES = [
+  ["confirmed_water_sites", "\u{1F4A7}", [0, 0]],       // droplet, centered
+  ["lumber_sites", "\u{1F332}", [-0.55, -0.4]],          // evergreen, upper-left
+  ["wildlife_sites", "\u{1F43E}", [0.55, -0.4]],         // paw prints, upper-right
+  ["quarry_sites", "⛏️", [0, 0.55]],           // pick, lower-center
+];
+
+function drawLandmarks() {
+  Object.values(latestState.tribes || {}).forEach(t => {
+    LANDMARK_TYPES.forEach(([field, emoji, [ox, oy]]) => {
+      (t[field] || []).forEach(([x, y]) => {
+        const cx = x * TILE + TILE / 2 + ox * TILE;
+        const cy = y * TILE + TILE / 2 + oy * TILE;
+        const r = Math.max(3.5, TILE * 0.32);
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+        ctx.fillStyle = "rgba(15,23,42,0.75)";
+        ctx.fill();
+        ctx.strokeStyle = t.color;
+        ctx.lineWidth = Math.max(1, TILE * 0.1);
+        ctx.stroke();
+        ctx.font = `${Math.max(7, TILE * 0.62)}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(emoji, cx, cy + 1);
+      });
+    });
+  });
+}
+
 function drawTrails() {
   (latestState.trails || []).forEach(tr => {
     const cx = tr.x * TILE + TILE / 2;
@@ -824,7 +902,7 @@ function drawTrails() {
 // day+night takes DAY_LENGTH_CYCLES simulation cycles; the first half is day (the sun
 // arcs left-to-right across the top of the map), the second half is night (no sun, a
 // deepening dark tint instead, peaking at midnight).
-const DAY_LENGTH_CYCLES = 20;
+const DAY_LENGTH_CYCLES = 20; // must match backend/config.py's DAY_LENGTH_CYCLES -- that's what the innate daily tribal gathering uses to land at this same in-game dawn
 const SUN_COLOR = "255,158,109"; // warm coral, as an r,g,b triplet for template reuse
 const MOON_COLOR = "180,200,255"; // cool pale blue-silver -- the sun's opposite
 
@@ -836,15 +914,31 @@ function drawCelestialLighting(cycle) {
     const dayFrac = progress / 0.5; // 0 = dawn, 0.5 = noon, 1 = dusk
     const sunX = dayFrac * width;
     const sunY = height * 0.16 - Math.sin(dayFrac * Math.PI) * height * 0.14;
-    const glowRadius = TILE * 7;
+    const glowRadius = TILE * 9;
 
     const glow = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, glowRadius);
     glow.addColorStop(0, `rgba(${SUN_COLOR},0.55)`);
     glow.addColorStop(1, `rgba(${SUN_COLOR},0)`);
     ctx.fillStyle = glow;
     ctx.beginPath(); ctx.arc(sunX, sunY, glowRadius, 0, 2 * Math.PI); ctx.fill();
+    // A plain disc read as a blurry dot more than "the sun" -- a slow-rotating ring of
+    // rays (animFrame, not cycle, so it turns smoothly between simulation ticks rather
+    // than only ever snapping to a new angle when a tick lands) gives it an actual sun
+    // silhouette without needing a sprite asset.
+    const sunCoreRadius = TILE * 2.0;
+    ctx.strokeStyle = `rgba(${SUN_COLOR},0.8)`;
+    ctx.lineWidth = Math.max(1, TILE * 0.12);
+    const rayCount = 8;
+    for (let i = 0; i < rayCount; i++) {
+      const angle = (i / rayCount) * Math.PI * 2 + animFrame * 0.004;
+      const rayLen = sunCoreRadius * (0.55 + 0.25 * Math.sin(animFrame * 0.03 + i));
+      ctx.beginPath();
+      ctx.moveTo(sunX + Math.cos(angle) * sunCoreRadius * 1.15, sunY + Math.sin(angle) * sunCoreRadius * 1.15);
+      ctx.lineTo(sunX + Math.cos(angle) * (sunCoreRadius * 1.15 + rayLen), sunY + Math.sin(angle) * (sunCoreRadius * 1.15 + rayLen));
+      ctx.stroke();
+    }
     ctx.fillStyle = `rgb(${SUN_COLOR})`;
-    ctx.beginPath(); ctx.arc(sunX, sunY, TILE * 1.3, 0, 2 * Math.PI); ctx.fill();
+    ctx.beginPath(); ctx.arc(sunX, sunY, sunCoreRadius, 0, 2 * Math.PI); ctx.fill();
   } else {
     // Same arc, same direction, the sun's opposite in every other way: cool pale
     // color instead of warm coral, a dimmer/tighter glow (moonlight, not sunlight),
@@ -852,15 +946,26 @@ function drawCelestialLighting(cycle) {
     const nightFrac = (progress - 0.5) / 0.5; // 0 = dusk, 0.5 = midnight, 1 = dawn
     const moonX = nightFrac * width;
     const moonY = height * 0.16 - Math.sin(nightFrac * Math.PI) * height * 0.14;
-    const glowRadius = TILE * 5;
+    const glowRadius = TILE * 6.5;
 
     const glow = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, glowRadius);
     glow.addColorStop(0, `rgba(${MOON_COLOR},0.35)`);
     glow.addColorStop(1, `rgba(${MOON_COLOR},0)`);
     ctx.fillStyle = glow;
     ctx.beginPath(); ctx.arc(moonX, moonY, glowRadius, 0, 2 * Math.PI); ctx.fill();
+    const moonCoreRadius = TILE * 1.6;
     ctx.fillStyle = `rgb(${MOON_COLOR})`;
-    ctx.beginPath(); ctx.arc(moonX, moonY, TILE * 1.0, 0, 2 * Math.PI); ctx.fill();
+    ctx.beginPath(); ctx.arc(moonX, moonY, moonCoreRadius, 0, 2 * Math.PI); ctx.fill();
+    // A handful of fixed darker craters (fixed relative to the moon's own center, not
+    // animFrame -- a sun gets motion since light rays, a moon gets texture since it's a
+    // solid surface) so the disc reads as a moon's pockmarked face, not a plain circle.
+    ctx.fillStyle = "rgba(120,135,170,0.55)";
+    const craters = [[-0.35, -0.25, 0.28], [0.3, 0.1, 0.22], [-0.05, 0.4, 0.18]];
+    craters.forEach(([ox, oy, r]) => {
+      ctx.beginPath();
+      ctx.arc(moonX + ox * moonCoreRadius, moonY + oy * moonCoreRadius, r * moonCoreRadius, 0, 2 * Math.PI);
+      ctx.fill();
+    });
   }
 }
 
@@ -885,6 +990,46 @@ function drawDayNightOverlay(cycle) {
   }
 }
 
+// A wandering storm cloud (backend/simulation.py's Simulation._advance_weather) --
+// real world state tied to map coordinates, not a sky decoration like the sun/moon.
+// Drawn as a soft shadow-like patch of overlapping puffs rather than a flat circle, so
+// it reads as a cloud silhouette. lightning_strike only exists for the one cycle it
+// happened (cleared every _advance_weather call), so this snapshot IS that cycle --
+// drawn at full brightness rather than an animated fade that wouldn't survive to the
+// next real state update anyway (each cycle is several seconds of real inference time).
+function drawWeather() {
+  if (latestState.storm_cloud) {
+    const { x, y } = latestState.storm_cloud;
+    const cx = x * TILE + TILE / 2, cy = y * TILE + TILE / 2;
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, TILE * 4);
+    glow.addColorStop(0, "rgba(120,130,150,0.5)");
+    glow.addColorStop(1, "rgba(120,130,150,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(cx, cy, TILE * 4, 0, 2 * Math.PI); ctx.fill();
+    ctx.fillStyle = "rgba(148,163,184,0.5)";
+    [[-0.5, 0], [0.3, -0.2], [0.5, 0.15], [-0.1, 0.25]].forEach(([ox, oy]) => {
+      ctx.beginPath();
+      ctx.arc(cx + ox * TILE * 3, cy + oy * TILE * 3, TILE * 1.6, 0, 2 * Math.PI);
+      ctx.fill();
+    });
+  }
+
+  if (latestState.lightning_strike) {
+    const [x, y] = latestState.lightning_strike;
+    const cx = x * TILE + TILE / 2, cy = y * TILE + TILE / 2;
+    ctx.fillStyle = "rgba(224,242,254,0.35)";
+    ctx.beginPath(); ctx.arc(cx, cy, TILE * 2.5, 0, 2 * Math.PI); ctx.fill();
+    ctx.strokeStyle = "rgba(224,242,254,0.95)";
+    ctx.lineWidth = Math.max(1.5, TILE * 0.2);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - TILE * 5);
+    ctx.lineTo(cx - TILE * 0.6, cy - TILE * 2);
+    ctx.lineTo(cx + TILE * 0.4, cy - TILE * 1.5);
+    ctx.lineTo(cx, cy);
+    ctx.stroke();
+  }
+}
+
 function drawFrame() {
   animFrame++;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -892,6 +1037,7 @@ function drawFrame() {
 
   if (latestState) {
     drawCelestialLighting(latestState.cycle);
+    drawWeather();
 
     (latestState.structures || []).forEach(s => {
       const px = s.x * TILE, py = s.y * TILE;
@@ -907,6 +1053,7 @@ function drawFrame() {
       }
     });
 
+    drawLandmarks();
     Object.entries(latestState.tribes || {}).forEach(([id, t]) => drawTribeIndividuals(id, t));
     // Drawn last, on top of everything -- a trail at a tribe's own home tile (very
     // common, since journeys start and end there) was getting completely hidden under
@@ -932,12 +1079,13 @@ function chronicleEntryClass(entry) {
   if (entry.includes("has become chief")) return "log-chief";
   if (entry.includes("decrees:")) return "log-decree";
   if (entry.includes("claimed lives")) return "log-hazard";
-  if (entry.includes("wolf pack struck") || entry.includes("current pulled someone under")) return "log-hazard";
+  if (entry.includes("wolf pack struck") || entry.includes("current pulled someone under") || entry.includes("lightning struck")) return "log-hazard";
   if (entry.includes("raided ") || entry.includes("was repelled")) return "log-raid";
   if (entry.includes("opened trade")) return "log-trade";
   if (entry.includes("welcome a child") || entry.includes("decide to start a family")) return "log-birth";
   if (entry.includes("reconsiders the tribe's philosophy")) return "log-reflection";
   if (entry.includes("holds a celebration")) return "log-celebration";
+  if (entry.includes("gathers as the sun rises")) return "log-gathering";
   if (entry.startsWith("VRAM WARNING")) return "log-vram";
   return "";
 }
@@ -954,6 +1102,7 @@ function chronicleEntryIcon(entry) {
     case "log-birth": return "👶 ";
     case "log-reflection": return "🌙 ";
     case "log-celebration": return "🎉 ";
+    case "log-gathering": return "🌅 ";
     case "log-vram": return "🖥️ ";
     default: return "";
   }
@@ -972,6 +1121,19 @@ function updateSidebar(state) {
   } else {
     banner.textContent = "OPERATIONAL";
     banner.classList.remove("refactoring");
+  }
+
+  // Immortality suppresses extinction on the backend only (see Simulation.
+  // _lose_population) -- a tribe's own prompt never learns it's protected, but the
+  // spectator watching should still be told, so a run that never dies doesn't read as
+  // the sim being broken.
+  const immortalBanner = document.getElementById("immortal-banner");
+  const immortalCycles = state.immortality_cycles || 0;
+  if (immortalCycles > 0 && state.cycle <= immortalCycles) {
+    immortalBanner.textContent = `IMMORTAL (${state.cycle}/${immortalCycles})`;
+    immortalBanner.classList.remove("hidden");
+  } else {
+    immortalBanner.classList.add("hidden");
   }
 
   const stats = document.getElementById("tribe-stats");
