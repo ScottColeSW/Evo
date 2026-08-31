@@ -15,8 +15,14 @@ BIOME_LABELS = {
 # down through plains and forest to a coastline (east), rather than being an arbitrary
 # diagonal band unrelated to anything else on the map.
 OCEAN_X_START = 90
-MOUNTAIN_X_END = 30
-MOUNTAIN_Y_END = 35
+# A real mountain range is a long spine, not a squat corner block -- narrower in x than
+# the original (30) but reaching much further south in y (was 35) so the range actually
+# runs most of the length of the west edge. See SPAWN_POINTS in simulation.py: the
+# Mountain Tribe used to spawn one tile from the river running through the range's
+# original northern corner; this shape gives it somewhere to spawn further down the
+# range's eastern (grassy) edge, genuinely distant from water instead of standing on it.
+MOUNTAIN_X_END = 24
+MOUNTAIN_Y_END = 55
 RIVER_SOURCE_X = 15
 RIVER_HALF_WIDTH = 3
 
@@ -83,6 +89,29 @@ def _is_lake(x: int, y: int) -> bool:
     return math.hypot(x - proj_x, y - proj_y) <= LAKE_TRIBUTARY_HALF_WIDTH
 
 
+# Mountains/forest/plains used to meet along perfectly straight, axis-aligned lines --
+# a real range or treeline never does. Same technique as the coastline above (two
+# overlapping sine waves of different periods, so the edge doesn't just repeat itself):
+# each boundary gets its own low-amplitude wobble, small enough that no existing
+# interior point (a spawn, a test fixture deep inside one biome) flips to another, but
+# enough that the edge itself reads as a natural, uneven line instead of a ruler-drawn
+# one.
+def _mountain_x_boundary(y: float) -> float:
+    return MOUNTAIN_X_END + 4 * math.sin(y * 0.1) + 2 * math.sin(y * 0.27 + 0.9)
+
+
+def _mountain_y_boundary(x: float) -> float:
+    return MOUNTAIN_Y_END + 4 * math.sin(x * 0.09 + 2.1) + 2 * math.sin(x * 0.22)
+
+
+def _forest_north_boundary(x: float) -> float:
+    return 18 + 3 * math.sin(x * 0.08) + 1.5 * math.sin(x * 0.19 + 1.3)
+
+
+def _forest_east_boundary(y: float) -> float:
+    return 70 + 4 * math.sin(y * 0.07 + 0.5) + 2 * math.sin(y * 0.21)
+
+
 def biome_at(x: int, y: int) -> str:
     # River is checked before the coast texture so its mouth cuts straight through to
     # the sea rather than being interrupted by a cliff/shoal band -- real river mouths
@@ -97,9 +126,9 @@ def biome_at(x: int, y: int) -> str:
         return "cliffs" if _coast_is_headland(y) else "shoals"
     if _is_lake(x, y):
         return "lake"
-    if x < MOUNTAIN_X_END and y < MOUNTAIN_Y_END:
+    if x < _mountain_x_boundary(y) and y < _mountain_y_boundary(x):
         return "mountains"
-    if y < 18 or x >= 70:
+    if y < _forest_north_boundary(x) or x >= _forest_east_boundary(y):
         return "forest"
     return "plains"
 
