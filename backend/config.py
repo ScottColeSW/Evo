@@ -438,6 +438,13 @@ RAIDER_ATTACK_POPULATION_LOSS_UNDEFENDED = 2
 RAIDER_ATTACK_POPULATION_LOSS_AT_FULL_WALL = 1
 RAIDER_STEAL_FRACTION = 0.25
 
+# Explicit request: "the repelling Tribe better get some good rewards from that.
+# it's huge for them!" -- a successful defense used to yield only pride and a
+# counter, nothing tangible. Scales with raider_strength (the same signal driving
+# how dangerous the attack was) so a genuinely tough repelled raid leaves real,
+# substantial spoils behind, not a token amount.
+RAIDER_DEFEAT_LOOT_FRACTION = 0.2
+
 # Scout early-warning (Simulation._advance_one_expedition's arrival-home branch): an
 # independent roll, NOT tied to the biome of whatever terrain_report was rolled --
 # unlike lumber/wildlife/quarry sites, raiders aren't a biome feature, so a party can
@@ -448,6 +455,27 @@ RAIDER_STEAL_FRACTION = 0.25
 RAIDER_SIGHTING_CHANCE = 0.1
 RAIDER_SIGHTING_TRAUMA_MAGNITUDE = -0.4
 RAIDER_SIGHTING_TRAUMA_RADIUS = 4
+
+# Explicit request: "I do want to see RAIDERs ride in over time" -- an attack used to
+# resolve entirely in one invisible instant (roll, resolve, done). Now a triggered
+# attack (Simulation._check_raider_attack) starts a real, visible, multi-cycle
+# approach (Simulation._advance_raider_approach) before it actually resolves -- real
+# advance warning the tribe can act on (finish a wall) before the attack lands, not
+# just a surprise.
+RAIDER_APPROACH_CYCLES = 3
+RAIDER_APPROACH_START_DISTANCE = 8
+
+# Explicit request: "It would be interesting to see a Scout encounter a RAIDER
+# group" -- a real, in-the-field ambush during expedition travel, distinct from the
+# settlement-level attack above and distinct from the report-based sighting roll
+# (RAIDER_SIGHTING_CHANCE) -- this is a party physically running into raiders, not a
+# rumor or a distant attack on the camp. Ends the trip immediately, the same way the
+# wolf-pack hazard ends a hunt outright (Simulation._advance_hunting_party_outbound).
+# Gated behind has_ever_settled the same as the settlement attack -- raiders being
+# active against a tribe at all is itself tied to that tribe having something worth
+# raiding.
+EXPEDITION_RAIDER_AMBUSH_CHANCE = 0.04
+EXPEDITION_RAIDER_AMBUSH_POPULATION_LOSS = 1
 
 # Staged wall construction (backend/actions.py._construct_wall): reuses
 # _labor_multiplier(population) -- the same "more hands get more done per action"

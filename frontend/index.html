@@ -1584,6 +1584,21 @@ function drawFrame() {
       ctx.fillStyle = "#fecaca";
       ctx.fillText(e.label, cx, cy + TILE * 0.6);
     });
+    // Explicit request: "I do want to see RAIDERs ride in over time" -- a real,
+    // moving marker for the whole multi-cycle approach (Simulation._advance_
+    // raider_approach), not just a flash once it resolves.
+    Object.values(latestState.tribes || {}).forEach(t => {
+      const approach = t.raiders_approaching;
+      if (!approach) return;
+      const cx = approach.x * TILE + TILE / 2;
+      const cy = approach.y * TILE + TILE / 2;
+      ctx.font = `${Math.max(11, TILE * 1.0)}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.fillText("\u{1F3F4}", cx, cy);
+      ctx.font = `bold ${Math.max(8, TILE * 0.35)}px sans-serif`;
+      ctx.fillStyle = "#fca5a5";
+      ctx.fillText(`${approach.cycles_left}`, cx, cy + TILE * 0.55);
+    });
     Object.values(latestState.tribes || {}).forEach(t => {
       drawSettlementMarker(t);
       drawSettlementWall(t);

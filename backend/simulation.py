@@ -193,6 +193,10 @@ class Tribe:
         # See Simulation._check_raider_attack -- very negative so a tribe's first
         # possible raid isn't blocked by a cooldown it never actually used yet.
         self.last_raider_attack_cycle: int = -config.RAIDER_HAZARD_COOLDOWN_CYCLES
+        # A triggered attack in its multi-cycle "riding in" approach -- see
+        # Simulation._advance_raider_approach. None means no attack is currently
+        # approaching. {"start_x", "start_y", "x", "y", "cycles_left", "total_cycles"}.
+        self.raiders_approaching: dict | None = None
         # Honors a chief has personally proposed via the night cycle (see
         # reflection.py's AWARD_CATEGORIES). Simulation._check_custom_awards hands one
         # out to whoever first earns it after it's proposed.
@@ -346,6 +350,7 @@ class Tribe:
             "quarry_sites": self.quarry_sites,
             "raider_sightings": self.raider_sightings,
             "last_raider_attack_cycle": self.last_raider_attack_cycle,
+            "raiders_approaching": self.raiders_approaching,
             "next_era": next_era_info,
             "expeditions": [
                 {
@@ -770,6 +775,7 @@ class Simulation:
             self._apply_turn(tribe, outcome["intent"], outcome["latency_ms"], contexts[tid])
             self._apply_upkeep(tribe)
             self._check_raider_attack(tribe)
+            self._advance_raider_approach(tribe)
             self._grow_population(tribe)
             self._advance_era_if_ready(tribe)
             if not tribe.settlement_name and not tribe.pending_settlement_naming and self._is_settled_near_water(tribe):
@@ -910,6 +916,13 @@ class Simulation:
         visible_entities += [f"confirmed wildlife-rich area at ({x},{y})" for x, y in tribe.wildlife_sites[-3:]]
         visible_entities += [f"confirmed stone-rich area at ({x},{y})" for x, y in tribe.quarry_sites[-3:]]
         visible_entities += [f"raiders reported near ({x},{y})" for x, y in tribe.raider_sightings[-3:]]
+        if tribe.raiders_approaching:
+            ax, ay = tribe.raiders_approaching["x"], tribe.raiders_approaching["y"]
+            cycles_left = tribe.raiders_approaching["cycles_left"]
+            visible_entities.append(
+                f"RAIDERS ARE RIDING IN, currently near ({ax},{ay}) -- {cycles_left} cycles until they "
+                "reach camp. This is real time to prepare, not a surprise."
+            )
         if tribe.gathering_brief:
             visible_entities.append(f"this morning's gathering: {tribe.gathering_brief}")
         # Factual telemetry about this exact tile, not a suggestion to move -- what the
@@ -1473,6 +1486,10 @@ class Simulation:
             reached_biome = biome_at(nx, ny)
             scout = exp["lead_scout"]
 
+            if self._expedition_raider_ambush(tribe, exp, nx, ny):
+                exp["phase"] = "returning"
+                return False
+
             if [nx, ny] == [px, py] and [px, py] != [tx, ty]:
                 # Regression: physics.terrain_aware_step falls back to "stay put" when
                 # every candidate step toward the target is ocean (boxed in on every
@@ -1542,6 +1559,7 @@ class Simulation:
             exp["food_gathered"] += config.EXPEDITION_RETURN_DAILY_FOOD
             exp["water_gathered"] += config.EXPEDITION_RETURN_DAILY_WATER
             self._expedition_river_hazard(tribe, nx, ny)
+            self._expedition_raider_ambush(tribe, exp, nx, ny)
             if [nx, ny] == [ox, oy]:
                 # Whatever was foraged along the way comes home regardless of whether the
                 # expedition succeeded -- the trip cost real time either way, so it isn't
@@ -1678,6 +1696,31 @@ class Simulation:
         )
         return True
 
+    def _expedition_raider_ambush(self, tribe: Tribe, exp: dict, x: int, y: int) -> bool:
+        """Explicit request: "It would be interesting to see a Scout encounter a
+        RAIDER group" -- a real, in-the-field ambush during travel, distinct from the
+        settlement-level attack (_check_raider_attack) and from a report-based
+        sighting (RAIDER_SIGHTING_CHANCE) -- a party physically running into raiders,
+        not a rumor or a distant attack on the camp. Gated the same as the
+        settlement attack: raiders being active against a tribe at all is tied to
+        that tribe having something worth raiding. Returns True if it happened
+        (population loss and trauma already applied); the caller ends the trip
+        immediately, the same way the wolf-pack hazard ends a hunt outright."""
+        if not tribe.has_ever_settled or random.random() >= config.EXPEDITION_RAIDER_AMBUSH_CHANCE:
+            return False
+        self.trauma.radiate_event_wave(x, y, config.RAIDER_SIGHTING_TRAUMA_MAGNITUDE, config.RAIDER_SIGHTING_TRAUMA_RADIUS)
+        self._lose_population(tribe, config.EXPEDITION_RAIDER_AMBUSH_POPULATION_LOSS, cause="raider_ambush")
+        if (x, y) not in tribe.raider_sightings:
+            tribe.raider_sightings.append((x, y))
+        tribe.history.append(f"{exp['lead_scout']}'s party was ambushed by raiders near ({x},{y}) and flees for home")
+        tribe.memory.remember(
+            f"Raiders ambushed our party near ({x},{y}) -- real danger there.", self.cycle, weight=0.85,
+        )
+        self.recent_encounters.append({
+            "x": x, "y": y, "kind": "raider_attack", "label": "Scouts ambushed", "outcome": "struck",
+        })
+        return True
+
     def _advance_hunting_party_outbound(self, tribe: Tribe, exp: dict, current_biome: str, scout: str) -> None:
         """One outbound day for a HUNTING_PARTY expedition (see actions.py._hunting_party).
         Every day out is its own roll of the same wolf-pack hazard an instant hunt
@@ -1763,14 +1806,77 @@ class Simulation:
             self._dehydrate(tribe)
 
     def _check_raider_attack(self, tribe: Tribe) -> None:
-        """A real, population-scaled hazard -- see config.RAIDER_HAZARD_* for the full
+        """Trigger only -- see _resolve_raider_attack for the actual outcome.
+        Explicit request: "I do want to see RAIDERs ride in over time," so a
+        triggered attack no longer resolves in the same invisible instant it's
+        rolled -- it starts a real, visible, multi-cycle approach instead
+        (_advance_raider_approach), giving the tribe actual advance warning it can
+        act on (finishing a wall) before the attack lands.
+
+        A real, population-scaled hazard -- see config.RAIDER_HAZARD_* for the full
         rationale (deliberately not a scripted "your people are not safe" fact with
         nothing behind it -- a hardcoded HUNT_DEER directive was already reverted once
         on that exact principle). Gated behind tribe.has_ever_settled (a nomadic band
         has nothing worth raiding) and a cooldown (mirrors CELEBRATION_COOLDOWN_CYCLES)
         so this reads as discrete events, not background noise. Runs once per tribe
         per cycle regardless of the tribe's own chosen action -- a system-level event,
-        the same category as _apply_upkeep.
+        the same category as _apply_upkeep."""
+        if not tribe.has_ever_settled or tribe.extinct or tribe.raiders_approaching:
+            return
+        if self.cycle - tribe.last_raider_attack_cycle < config.RAIDER_HAZARD_COOLDOWN_CYCLES:
+            return
+
+        attack_chance = min(
+            config.RAIDER_HAZARD_MAX_CHANCE,
+            config.RAIDER_HAZARD_MAX_CHANCE * tribe.population / config.RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE,
+        )
+        if random.random() >= attack_chance:
+            return
+
+        tribe.last_raider_attack_cycle = self.cycle
+        angle = random.uniform(0, 2 * math.pi)
+        sx = round(tribe.x + config.RAIDER_APPROACH_START_DISTANCE * math.cos(angle))
+        sy = round(tribe.y + config.RAIDER_APPROACH_START_DISTANCE * math.sin(angle))
+        tribe.raiders_approaching = {
+            "start_x": sx, "start_y": sy, "x": sx, "y": sy,
+            "cycles_left": config.RAIDER_APPROACH_CYCLES, "total_cycles": config.RAIDER_APPROACH_CYCLES,
+        }
+        tribe.history.append(
+            f"raiders have been spotted riding in from ({sx},{sy}) -- "
+            f"{config.RAIDER_APPROACH_CYCLES} cycles until they arrive"
+        )
+
+    def _advance_raider_approach(self, tribe: Tribe) -> None:
+        """One cycle of an in-progress raider approach (see _check_raider_attack) --
+        runs every cycle regardless of the tribe's own chosen action, the same
+        category as _apply_upkeep. A real, visible countdown, not an instant
+        off-screen resolve.
+
+        Explicit request: a jagged, explorational path rather than a straight line
+        -- echoes drawCelestialLighting's own arc-across-the-sky shape (an
+        established visual language this project already uses for "movement over
+        cycles"), but weaving instead of smooth. A perpendicular wobble tapers to
+        zero as they arrive, so they still land exactly on the settlement."""
+        approach = tribe.raiders_approaching
+        if approach is None or tribe.extinct:
+            return
+        approach["cycles_left"] -= 1
+        if approach["cycles_left"] <= 0:
+            tribe.raiders_approaching = None
+            self._resolve_raider_attack(tribe)
+            return
+        t = 1 - approach["cycles_left"] / approach["total_cycles"]
+        dx = tribe.x - approach["start_x"]
+        dy = tribe.y - approach["start_y"]
+        dist = math.hypot(dx, dy) or 1.0
+        perp_x, perp_y = -dy / dist, dx / dist
+        wobble = math.sin(t * math.pi * 3) * (1 - t) * config.RAIDER_APPROACH_START_DISTANCE * 0.3
+        approach["x"] = round(approach["start_x"] + dx * t + perp_x * wobble)
+        approach["y"] = round(approach["start_y"] + dy * t + perp_y * wobble)
+
+    def _resolve_raider_attack(self, tribe: Tribe) -> None:
+        """The actual outcome, once an approach (see _check_raider_attack/
+        _advance_raider_approach) finishes counting down.
 
         Defense is additive, not binary: population alone gives some chance to fight
         back (the same "more hands" logic actions.py._raid's own population-ratio win
@@ -1789,19 +1895,6 @@ class Simulation:
         already drives whether an attack happens at all: a bigger, wealthier tribe
         draws a genuinely stronger raiding force, which is what makes a wall (and
         water) actually matter rather than population alone being enough."""
-        if not tribe.has_ever_settled or tribe.extinct:
-            return
-        if self.cycle - tribe.last_raider_attack_cycle < config.RAIDER_HAZARD_COOLDOWN_CYCLES:
-            return
-
-        attack_chance = min(
-            config.RAIDER_HAZARD_MAX_CHANCE,
-            config.RAIDER_HAZARD_MAX_CHANCE * tribe.population / config.RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE,
-        )
-        if random.random() >= attack_chance:
-            return
-
-        tribe.last_raider_attack_cycle = self.cycle
         existing = self.world.constructions.get((tribe.x, tribe.y))
         wall_fraction = (existing["progress"] / 100) if existing and existing["type"] == "wall" else 0.0
         raider_strength = min(1.0, tribe.population / config.RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE)
@@ -1816,8 +1909,16 @@ class Simulation:
         ))
         if random.random() < defense_chance:
             tribe.raids_defended += 1
+            self._award_trophy(tribe, "Raid Breaker")
+            looted = {
+                resource: round(getattr(tribe, resource) * config.RAIDER_DEFEAT_LOOT_FRACTION * raider_strength)
+                for resource in ("wood", "stone", "food")
+            }
+            for resource, amount in looted.items():
+                setattr(tribe, resource, getattr(tribe, resource) + amount)
             self.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
-            note = "raiders were spotted approaching camp and repelled"
+            loot_note = f" -- {looted['food']} food, {looted['wood']} wood, and {looted['stone']} stone recovered from what they left behind"
+            note = f"raiders were spotted approaching camp and repelled{loot_note}"
             tribe.history.append(f"{note} -- the walls held" if wall_fraction > 0 else note)
             self.recent_encounters.append({
                 "x": tribe.x, "y": tribe.y, "kind": "raider_attack",
