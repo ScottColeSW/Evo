@@ -2931,6 +2931,50 @@ def test_gather_food_retirement_survives_fishing_being_learned_later_checked():
     assert "GATHER_FOOD" in ctx["available_actions"]  # not retired on planting alone
 
 
+def test_diversification_note_suggests_farming_once_fishing_alone_is_proven():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "bronze_age"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.fishing_learned = True
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "no crop has ever been planted" in request["prompt"]
+
+
+def test_diversification_note_suggests_fishing_once_farming_alone_is_proven():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "bronze_age"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.last_harvest_cycle = 5
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "fishing has never been tried" in request["prompt"]
+
+
+def test_diversification_note_absent_once_both_are_proven():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "bronze_age"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.fishing_learned = True
+    tribe.last_harvest_cycle = 5
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "no crop has ever been planted" not in request["prompt"]
+    assert "fishing has never been tried" not in request["prompt"]
+
+
 def test_settled_near_water_fact_mentions_passive_water_supply():
     from backend import config
 

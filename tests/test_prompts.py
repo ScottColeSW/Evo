@@ -150,7 +150,7 @@ def test_growth_imperative_layer_is_the_last_thing_before_the_json_slot():
     had before it got moved to be the prompt's own dedicated last-thing-before-the-
     JSON-slot section. This applies that same fix one tier up."""
     prompt = compile_live_state_prompt(
-        "base", _world_state(era_gap_note="To reach Bronze Age, still short on: wood 5/40."), "", "",
+        "base", _world_state(growth_note="To reach Bronze Age, still short on: wood 5/40."), "", "",
     )
     growth_i = prompt.index("GROWTH IMPERATIVE LAYER")
     survival_i = prompt.index("SURVIVAL INSTINCT LAYER")

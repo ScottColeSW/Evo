@@ -1198,6 +1198,29 @@ class Simulation:
                         "permanent, daily source of food from then on."
                     )
 
+        # Explicit finding: "I wonder why one figured out fishing and the other
+        # farming but only one figured out both." The eligibility nudges above
+        # already suggest each food method unconditionally and independently -- this
+        # isn't a missing fact, it's the same salience problem the era-progress fact
+        # had before that got moved to the dedicated GROWTH IMPERATIVE LAYER. Once a
+        # tribe has proven ONE food method works, the felt pressure to try the other
+        # disappears even though the suggestion was there the whole time. Elevated
+        # to the same top-tier slot as era_gap_note rather than duplicating the
+        # already-existing eligibility nudge.
+        diversification_note = ""
+        has_fish = tribe.fishing_learned
+        has_farm = tribe.farm_plots > 0 or tribe.last_harvest_cycle > 0
+        if settled_near_water and has_fish and not has_farm:
+            diversification_note = (
+                "Fishing sustains the tribe daily, but no crop has ever been planted -- relying on a "
+                "single food source is its own risk that planting a farm would reduce."
+            )
+        elif settled_near_water and has_farm and not has_fish:
+            diversification_note = (
+                "Farming has proven itself, but fishing has never been tried -- relying on a single "
+                "food source is its own risk that fishing would reduce."
+            )
+
         if tribe.fishing_learned:
             visible_entities.append(
                 "Fishing has been mastered here -- food now flows in on its own each cycle, on top of "
@@ -1285,7 +1308,11 @@ class Simulation:
             "available_actions": available_actions,
             "visible_entities": visible_entities,
             "journey_note": journey_note,
-            "era_gap_note": era_gap_note,
+            # Combined into one growth-tier slot (see prompts.py's GROWTH IMPERATIVE
+            # LAYER): both are the same category of "not urgent, but real" pressure,
+            # and both need the same salience fix era_gap_note already proved out --
+            # a fact buried in the generic list gets ignored even when it's true.
+            "growth_note": " ".join(n for n in (era_gap_note, diversification_note) if n),
         }
         lineage_note = ""
         if tribe.lineage:

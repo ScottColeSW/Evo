@@ -160,7 +160,7 @@ SURVIVAL INSTINCT LAYER
 ========================================================================
 GROWTH IMPERATIVE LAYER
 ========================================================================
-{_growth_pressure_text(world_state.get('era_gap_note', ''), bool(survival_bias))}
+{_growth_pressure_text(world_state.get('growth_note', ''), bool(survival_bias))}
 
 ========================================================================
 MANDATORY REACTION SCHEMA (VALID JSON MODE ONLY)
