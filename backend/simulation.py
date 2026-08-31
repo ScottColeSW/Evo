@@ -1694,7 +1694,16 @@ class Simulation:
             tribe.history.append("a farm plot withers for lack of water")
             return
         tribe.water -= water_needed
-        tribe.crop_growth += config.CROP_GROWTH_PER_CYCLE
+        # Explicit request: fish fertilizer -- once fishing is learned, whatever a
+        # tribe already does with its catch (guts, scraps, the parts that aren't
+        # eaten) is assumed to go back into the soil, roughly halving the time a plot
+        # takes to mature. Tied to fishing_learned rather than a separate fertilizer
+        # resource/action -- the same "one flag, no new subsystem" shape the rest of
+        # fishing already uses.
+        growth = config.CROP_GROWTH_PER_CYCLE
+        if tribe.fishing_learned:
+            growth *= config.FISH_FERTILIZER_GROWTH_MULTIPLIER
+        tribe.crop_growth += growth
         if tribe.crop_growth >= 100:
             tribe.crop_growth = 0
             harvested = config.CROP_HARVEST_YIELD * tribe.farm_plots

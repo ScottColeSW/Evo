@@ -7,4 +7,5 @@ logs/
 server_out.log
 server_err.log
 scripts/*.log
+scripts/*log*.txt
 scripts/*_results.json

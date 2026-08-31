@@ -86,5 +86,11 @@ class OllamaClient:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 await client.post(f"{self.base_url}/api/generate", json=payload)
-        except Exception:
-            pass
+        except Exception as exc:
+            # Still best-effort (a failed unload isn't worth crashing an ending game
+            # over), but this used to swallow the exception completely -- diagnosing
+            # a real live bug (one of two models silently staying loaded after QUIT)
+            # required standalone curl/ollama-ps probing instead of just reading a
+            # log line. repr(), not str(): some exceptions (seen on Windows --
+            # ConnectError wrapping an OSError) stringify to an empty message.
+            print(f"[ollama_client] unload_model({model!r}) failed: {exc!r}")

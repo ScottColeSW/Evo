@@ -214,6 +214,10 @@ GATHER_FISH_SUCCESS_CHANCE = 0.5
 FISHING_CATCH_FOOD_MIN = 8
 FISHING_CATCH_FOOD_MAX = 16
 FISHING_SUPPLY_PER_CYCLE = 8
+# Explicit request: fish fertilizer -- once fishing is learned, a farm plot's growth
+# rate roughly doubles (halving the season), reusing tribe.fishing_learned rather than
+# a separate fertilizer resource/action. See Simulation._advance_farming.
+FISH_FERTILIZER_GROWTH_MULTIPLIER = 2.0
 
 # Chief trophies (backend/simulation.py._check_chief_trophies): a lightweight legacy
 # system credited to whichever chief is in power the moment each is first earned, once
