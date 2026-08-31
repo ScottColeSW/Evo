@@ -1003,6 +1003,21 @@ class Simulation:
                 "finally settle and begin farming and raising a flock."
             )
 
+        if "HUNTING_PARTY" in available_actions and tribe.wildlife_sites:
+            # NUDGE (2026-08-31, explicit request: "scouts have to evolve so they can
+            # inform the hunters and gatherers"). A confirmed wildlife-rich area used
+            # to only ever surface as a bare coordinate in the landmark list, same gap
+            # water had before the relocate nudge above -- the scouting work already
+            # happened, but nothing connected it to the hunting action that could
+            # actually use it. HUNTING_PARTY only appears in available_actions once
+            # settled (see PRE_SETTLEMENT_ACTIONS), so this can't suggest an action a
+            # still-nomadic tribe couldn't take anyway.
+            gx, gy = tribe.wildlife_sites[-1]
+            visible_entities.append(
+                f"Confirmed game-rich ground at ({gx},{gy}) -- a hunting party sent there would "
+                "likely fare better than hunting blind."
+            )
+
         if "PLANT_CROP" in unlocked_actions_through(tribe.era) or "GATHER_EGGS" in unlocked_actions_through(tribe.era):
             if not settled_near_water:
                 visible_entities.append(
@@ -1196,9 +1211,20 @@ class Simulation:
         reloading the tab mid-game left them resident in Ollama's VRAM until their
         keep_alive window expired on its own -- real contention on repeated
         restarts. Safe to call even if _trigger_game_over already did this
-        (unloading an already-unloaded model is a no-op)."""
+        (unloading an already-unloaded model is a no-op).
+
+        Regression: unloading concurrently via asyncio.gather (a longer timeout was
+        tried first, see unload_model's own docstring) still intermittently left one
+        of two models resident -- confirmed live, one QUIT unloaded mistral:7b but not
+        phi4-mini, with unload_model's own broad except swallowing whatever actually
+        went wrong. Ollama already appears to serialize the real VRAM eviction work
+        regardless of how the requests arrive, so concurrency here was buying nothing
+        but a chance for the second request to collide with the first mid-eviction.
+        Sequential now -- shutdown only ever runs once, as a session ends, so a few
+        extra seconds costs nothing that matters."""
         models = {tribe.model for tribe in self.tribes.values()}
-        await asyncio.gather(*(self.client.unload_model(model) for model in models), return_exceptions=True)
+        for model in models:
+            await self.client.unload_model(model)
 
     def _advance_expeditions(self, tribe: Tribe) -> None:
         """Advances every one of a tribe's in-field parties by one day (see

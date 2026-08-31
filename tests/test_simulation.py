@@ -501,6 +501,38 @@ def test_farming_and_eggs_available_once_settled_next_to_real_water():
     assert "gathering their eggs here could begin one" in request["prompt"]
 
 
+def test_hunting_party_nudge_names_a_confirmed_wildlife_site():
+    """Explicit request: "scouts have to evolve so they can inform the hunters and
+    gatherers." A confirmed wildlife-rich area used to only ever surface as a bare
+    coordinate, same gap water had before its own relocate nudge -- nothing connected
+    it to the hunting action that could actually use it."""
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES  # HUNTING_PARTY needs has_ever_settled
+    tribe.wildlife_sites = [(60, 60)]
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "HUNTING_PARTY" in ctx["available_actions"]
+    assert "Confirmed game-rich ground at (60,60)" in request["prompt"]
+
+
+def test_no_hunting_party_nudge_before_settling():
+    """HUNTING_PARTY isn't in available_actions pre-settlement (config.
+    PRE_SETTLEMENT_ACTIONS), so the nudge shouldn't suggest an action the tribe
+    couldn't actually take yet."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.wildlife_sites = [(60, 60)]
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "HUNTING_PARTY" not in ctx["available_actions"]
+    assert "Confirmed game-rich ground" not in request["prompt"]
+
+
 def test_no_farming_nudge_once_a_plot_and_flock_already_exist():
     from backend import config
 

@@ -178,6 +178,10 @@ let tribeCount = 0;
 let socket = null;
 let latestState = null;
 let animFrame = 0;
+// Every thought/speech bubble drawn so far this frame ({x, y, w, h} in canvas pixels),
+// so a second tribe's bubble can be nudged clear of one that already claimed the same
+// space -- see claimBubbleSlot, reset once per frame in drawFrame.
+let activeBubbleRects = [];
 
 const canvas = document.getElementById("simCanvas");
 const ctx = canvas.getContext("2d");
@@ -767,41 +771,67 @@ function hashUnit(seed) {
 // in the moon's own cool palette (night belongs to reflection, day to speech). Wraps
 // onto a few lines since reasoning is a real sentence, not a short broadcast token, and
 // caps how many lines it can grow to so it can't dominate the screen.
+// Nudges a bubble's vertical position up and out of any already-claimed rectangle's
+// way this frame (see activeBubbleRects), then records its final spot. Horizontal
+// position (bx) is left alone -- two tribes' camps rarely sit at the exact same X, so
+// stacking vertically above the map is enough to resolve the collision cleanly.
+function claimBubbleSlot(bx, by, bw, bh) {
+  for (let attempts = 0; attempts < 20; attempts++) {
+    const collision = activeBubbleRects.find(r =>
+      bx < r.x + r.w && bx + bw > r.x && by < r.y + r.h && by + bh > r.y
+    );
+    if (!collision) break;
+    by = collision.y - bh - 6;
+  }
+  activeBubbleRects.push({ x: bx, y: by, w: bw, h: bh });
+  return by;
+}
+
 function drawThoughtBubble(t, centerX, bubbleBottomY) {
   // Regression: this used to hard-wrap at 150px and cap at 4 lines, which sliced off
   // the actual point of a chief's reflection (usually 200-300+ chars) right around
-  // where the reasoning would land on its conclusion -- the one thing this bubble
-  // exists to surface. Widened and given real headroom; the ellipsis is now a rare
-  // last resort instead of the common case.
-  const maxWidth = 260;
-  const maxLines = 10;
+  // where the reasoning would land on its conclusion. Widened once already, but a
+  // fixed-width box read as too wide regardless of how short the actual reflection
+  // was -- "if I was doing this by hand I would make them dynamically shapeable."
+  // Sized to the text's own natural width up to wrapWidth, only wrapping (and only as
+  // wide as wrapWidth) once a reflection actually needs it, rather than every bubble
+  // claiming the same footprint regardless of content.
+  const wrapWidth = 190;
+  const maxLines = 14;
   ctx.font = "10px monospace";
-  const words = t.last_reflection.split(" ");
-  const lines = [];
-  let current = "";
-  for (const w of words) {
-    const test = current ? current + " " + w : w;
-    if (ctx.measureText(test).width > maxWidth && current) {
-      lines.push(current);
-      current = w;
-    } else {
-      current = test;
+  const fullWidth = ctx.measureText(t.last_reflection).width;
+  let lines;
+  if (fullWidth <= wrapWidth) {
+    lines = [t.last_reflection];
+  } else {
+    const words = t.last_reflection.split(" ");
+    lines = [];
+    let current = "";
+    for (const w of words) {
+      const test = current ? current + " " + w : w;
+      if (ctx.measureText(test).width > wrapWidth && current) {
+        lines.push(current);
+        current = w;
+      } else {
+        current = test;
+      }
     }
-  }
-  if (current) lines.push(current);
-  if (lines.length > maxLines) {
-    lines.length = maxLines;
-    lines[maxLines - 1] = lines[maxLines - 1].replace(/\s*\S*$/, "") + "…";
+    if (current) lines.push(current);
+    if (lines.length > maxLines) {
+      lines.length = maxLines;
+      lines[maxLines - 1] = lines[maxLines - 1].replace(/\s*\S*$/, "") + "…";
+    }
   }
 
   const lineHeight = 12;
   const padX = 8, padY = 7;
-  const bw = maxWidth + padX * 2;
+  const contentWidth = Math.min(wrapWidth, Math.max(40, ...lines.map(l => ctx.measureText(l).width)));
+  const bw = contentWidth + padX * 2;
   const bh = lines.length * lineHeight + padY * 2;
   // Clamp horizontal position so a tribe camped near the map edge doesn't push most of
   // this much wider bubble off-canvas.
   const bx = Math.max(4, Math.min(canvas.width - bw - 4, centerX - bw / 2));
-  const by = Math.max(4, bubbleBottomY - bh);
+  const by = claimBubbleSlot(bx, Math.max(4, bubbleBottomY - bh), bw, bh);
   const r = 9;
 
   ctx.beginPath();
@@ -820,6 +850,40 @@ function drawThoughtBubble(t, centerX, bubbleBottomY) {
   ctx.strokeStyle = `rgba(${MOON_COLOR},0.9)`;
   ctx.lineWidth = 1.2;
   ctx.stroke();
+
+  // Explicit request: attribute the reflection to whoever is actually thinking it --
+  // a small name tag straddling the top border, the same way a diagram labels an
+  // outlined box rather than leaving the reader to guess whose thought this is.
+  if (t.chief_name) {
+    ctx.font = "bold 9px monospace";
+    const tagText = `👑 ${t.chief_name}`;
+    const tagPadX = 5;
+    const tagWidth = ctx.measureText(tagText).width + tagPadX * 2;
+    const tagX = centerX - tagWidth / 2;
+    const tagHeight = 12;
+    const tagY = by - tagHeight / 2;
+    const tagR = 4;
+    ctx.beginPath();
+    ctx.moveTo(tagX + tagR, tagY);
+    ctx.lineTo(tagX + tagWidth - tagR, tagY);
+    ctx.arcTo(tagX + tagWidth, tagY, tagX + tagWidth, tagY + tagR, tagR);
+    ctx.lineTo(tagX + tagWidth, tagY + tagHeight - tagR);
+    ctx.arcTo(tagX + tagWidth, tagY + tagHeight, tagX + tagWidth - tagR, tagY + tagHeight, tagR);
+    ctx.lineTo(tagX + tagR, tagY + tagHeight);
+    ctx.arcTo(tagX, tagY + tagHeight, tagX, tagY + tagHeight - tagR, tagR);
+    ctx.lineTo(tagX, tagY + tagR);
+    ctx.arcTo(tagX, tagY, tagX + tagR, tagY, tagR);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(18,22,42,1)";
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${MOON_COLOR},0.9)`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = `rgb(${MOON_COLOR})`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(tagText, centerX, tagY + tagHeight / 2 + 1);
+  }
 
   ctx.fillStyle = "rgba(18,22,42,0.9)";
   [[7, by + bh + 7], [4, by + bh + 15]].forEach(([cr, cy]) => {
@@ -957,8 +1021,31 @@ function drawTribeIndividuals(tribeId, t) {
   const dayProgress = ((latestState.cycle % DAY_LENGTH_CYCLES) + DAY_LENGTH_CYCLES) % DAY_LENGTH_CYCLES / DAY_LENGTH_CYCLES;
   const isNight = dayProgress >= 0.5;
 
+  // Explicit request: "thought bubbles shouldn't overlap." A fixed clusterRadius + 14
+  // clearance only ever accounted for the wandering dot cluster -- once a settlement
+  // marker (drawSettlementMarker), a ring of city buildings (drawCityBuildings), a farm
+  // plot (drawFarmPlot, offset up-and-right), or an active firework burst
+  // (drawCelebrationFireworks) are also on screen, the bubble could sit low enough to
+  // cover them. Clears whichever of those actually extends furthest above center this
+  // frame, not just the dots.
+  let topClearance = clusterRadius + 14;
+  if (t.city_buildings > 0) {
+    const ringRadius = Math.max(14, TILE * 2.4);
+    topClearance = Math.max(topClearance, ringRadius * 0.6 + 14);
+  }
+  if (t.farm_plots > 0) {
+    const farmRadius = Math.max(5, (TILE * MOON_CORE_RADIUS_TILES) / 3.6);
+    topClearance = Math.max(topClearance, TILE * 1.4 + farmRadius + 14);
+  }
+  if (t.last_celebration_cycle != null) {
+    const celebrationAge = latestState.cycle - t.last_celebration_cycle;
+    if (celebrationAge >= 0 && celebrationAge <= CELEBRATION_VISUAL_CYCLES) {
+      topClearance = Math.max(topClearance, 34 + 14); // clears the firework peak/emoji
+    }
+  }
+
   if (isNight && t.last_reflection) {
-    drawThoughtBubble(t, centerX, centerY - clusterRadius - 14);
+    drawThoughtBubble(t, centerX, centerY - topClearance);
   } else if (!isNight && t.last_broadcast) {
     // A tribe's own invented language (see prompts.py's LINGUISTIC SYNTHESIS PROTOCOL)
     // deserves to read as speech, not a flat label -- a rounded bubble with a small
@@ -969,7 +1056,7 @@ function drawTribeIndividuals(tribeId, t) {
     const padX = 6, padY = 4, tailH = 6;
     const bw = w + padX * 2, bh = 14 + padY;
     const bx = centerX - bw / 2;
-    const by = centerY - clusterRadius - 14 - bh;
+    const by = claimBubbleSlot(bx, centerY - topClearance - bh, bw, bh);
     const r = 5;
 
     ctx.beginPath();
@@ -1387,6 +1474,14 @@ function drawFrame() {
   animFrame++;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(terrainCanvas, 0, 0);
+  // Explicit request: "the visual overlap happened when both thought bubbles were up
+  // at the same time" -- two tribes close enough together (common at low zoom, since
+  // a bubble can span a large fraction of the whole map's pixel width) could each
+  // anchor a bubble above their own camp with no awareness of the other one doing the
+  // same. Reset once per frame; claimBubbleSlot (used by drawThoughtBubble and the
+  // speech bubble) nudges a new bubble up and out of any already-claimed rectangle's
+  // way before it ever gets drawn.
+  activeBubbleRects.length = 0;
 
   if (latestState) {
     drawCelestialLighting(latestState.cycle);
