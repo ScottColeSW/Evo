@@ -112,6 +112,97 @@ def test_second_wall_at_the_same_tile_costs_nothing():
     assert (tribe.wood, tribe.stone) == (wood_after_first, stone_after_first)
 
 
+def test_plant_crop_spends_wood_and_adds_a_plot():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 50
+
+    from backend import config
+    ACTION_REGISTRY["PLANT_CROP"](sim, tribe, "river", _NO_TARGET)
+
+    assert tribe.farm_plots == 1
+    assert tribe.wood == 50 - config.PLANT_CROP_WOOD_COST
+
+
+def test_plant_crop_does_nothing_without_enough_wood():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 0
+
+    ACTION_REGISTRY["PLANT_CROP"](sim, tribe, "river", _NO_TARGET)
+
+    assert tribe.farm_plots == 0
+
+
+def test_plant_crop_is_capped_at_max_farm_plots():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 1000
+    tribe.farm_plots = config.MAX_FARM_PLOTS
+
+    ACTION_REGISTRY["PLANT_CROP"](sim, tribe, "river", _NO_TARGET)
+
+    assert tribe.farm_plots == config.MAX_FARM_PLOTS  # no further growth past the cap
+    assert tribe.wood == 1000  # and no wood spent trying
+
+
+def test_gather_eggs_sets_pending_hatch_on_a_successful_roll():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # below any chance
+        ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
+
+    assert tribe.pending_hatch == {"parents": None}  # founding egg -- nothing to cross yet
+
+
+def test_gather_eggs_does_nothing_on_a_failed_roll():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    with mock.patch("backend.actions.random.random", return_value=0.999):  # above any chance
+        ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
+
+    assert tribe.pending_hatch is None
+
+
+def test_gather_eggs_refuses_a_second_egg_while_one_is_already_pending():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.pending_hatch = {"parents": None}
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        result = ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
+
+    assert tribe.pending_hatch == {"parents": None}  # unchanged, not overwritten
+    assert result == "an egg is already being tended -- one thing at a time"
+
+
+def test_gather_eggs_crosses_the_two_most_recent_flock_members_once_available():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock_lineage = [
+        {"trait": "first", "parents": [], "cycle": 1, "note": ""},
+        {"trait": "second", "parents": [], "cycle": 2, "note": ""},
+        {"trait": "third", "parents": [], "cycle": 3, "note": ""},
+    ]
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
+
+    assert [p["trait"] for p in tribe.pending_hatch["parents"]] == ["second", "third"]
+
+
 def test_hunting_success_also_depletes_local_game():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Plains Tribe", "gemma2:2b", 65, 85, "#34d399")

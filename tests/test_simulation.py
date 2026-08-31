@@ -422,6 +422,85 @@ def test_settled_long_enough_but_on_unfarmable_ground_still_cannot_gather():
     assert "GATHER_WOOD" not in ctx["available_actions"]
 
 
+def test_farming_and_eggs_need_real_water_access_not_just_any_farmable_ground():
+    """PLANT_CROP/GATHER_EGGS use a stricter gate (Simulation._is_settled_near_water)
+    than the general settlement check GATHER_WOOD/STONE use -- plains alone (farmable,
+    per config.FARMABLE_BIOMES) doesn't mean a tribe resettled somewhere with real
+    water access, per the original design spec for farming."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "bronze_age"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "PLANT_CROP" not in ctx["available_actions"]
+    assert "GATHER_EGGS" not in ctx["available_actions"]
+    assert "GATHER_WOOD" in ctx["available_actions"]  # the looser gate still passes
+
+
+def test_farming_and_eggs_available_once_settled_next_to_real_water():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "bronze_age"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "PLANT_CROP" in ctx["available_actions"]
+    assert "GATHER_EGGS" in ctx["available_actions"]
+    assert "this ground could support a farm plot" in request["prompt"]
+    assert "gathering their eggs here could begin one" in request["prompt"]
+
+
+def test_no_farming_nudge_once_a_plot_and_flock_already_exist():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "bronze_age"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.farm_plots = 1
+    tribe.flock = 3
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "this ground could support a farm plot" not in request["prompt"]
+    assert "gathering their eggs here could begin one" not in request["prompt"]
+    assert "1 farm plot(s) growing" in request["prompt"]
+    assert "A flock of 3 is being kept" in request["prompt"]
+
+
+def test_unsettled_tribe_can_still_relocate():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    assert tribe.cycles_since_relocate == 0  # freshly founded, hasn't settled anywhere
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "RELOCATE" in ctx["available_actions"]
+
+
+def test_settled_tribe_can_no_longer_relocate():
+    """A tribe that has genuinely settled -- farmable ground, stable long enough to be
+    gathering wood and stone -- shouldn't be one whim away from uprooting the whole
+    settlement. Symmetric with the not-settled GATHER_WOOD/STONE gate above."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "RELOCATE" not in ctx["available_actions"]
+    assert "no longer considering relocating" in _request["prompt"]
+
+
 def test_choosing_relocate_resets_settlement_progress():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
@@ -441,6 +520,45 @@ def test_choosing_a_non_relocate_action_advances_settlement_progress():
     sim._apply_turn(tribe, {"visual_action": "IDLE"}, 100.0, {"biome": "plains", "available_actions": ["IDLE"]})
 
     assert tribe.cycles_since_relocate == 4
+
+
+def test_apply_turn_records_the_full_rationale_not_a_60_char_fragment():
+    """Regression: the chronicle/sidebar history line used to hard-cut a chief's
+    metacognitive_rationale at 60 characters with no ellipsis, silently chopping it off
+    mid-word most of the time -- a live-run complaint ('thinking output is cut off')
+    even though the prompt already asks the model for brief reasoning."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    rationale = (
+        "Water reserves are healthy for now, but food is running low and no one is "
+        "out gathering, so the priority this cycle is securing a fresh food source."
+    )
+    assert len(rationale) > 60  # the old cap would have mangled this
+
+    sim._apply_turn(
+        tribe,
+        {"visual_action": "IDLE", "metacognitive_rationale": rationale},
+        100.0,
+        {"biome": "plains", "available_actions": ["IDLE"]},
+    )
+
+    assert rationale in tribe.history[-1]
+
+
+def test_apply_turn_still_caps_an_extremely_long_rationale():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    rationale = "word " * 100  # 500 chars, well past any real "brief" reasoning
+
+    sim._apply_turn(
+        tribe,
+        {"visual_action": "IDLE", "metacognitive_rationale": rationale},
+        100.0,
+        {"biome": "plains", "available_actions": ["IDLE"]},
+    )
+
+    assert tribe.history[-1].endswith("…")
+    assert len(tribe.history[-1]) < len(rationale)
 
 
 def test_unsettled_fact_reports_real_progress():
@@ -957,6 +1075,28 @@ def test_hunting_party_does_not_give_up_from_day_count_alone():
         sim._advance_expeditions(tribe)
 
     assert tribe.expeditions[0]["phase"] == "outbound"
+
+
+def test_hunting_party_gives_up_when_physically_boxed_in_by_ocean():
+    """Regression: the ocean-boxed-in stuck-forever fix (see the scout version of this
+    test) originally only lived in the scout branch -- a hunting party's own push-onward
+    target can land in open water exactly the same way, and hunting parties are
+    dispatched to a branch that returned before ever reaching that check."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 90, 84, "#c084fc")
+    tribe.expeditions = [{
+        "kind": "hunt", "pos": [90, 84], "origin": [50, 84], "target": [99, 84],
+        "day": 5, "phase": "outbound", "food_caught": 0, "pushed_onward": True,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
+    }]
+
+    with mock.patch("backend.simulation.random.random", return_value=0.99):  # no hazard, no catch
+        sim._advance_expeditions(tribe)
+
+    assert tribe.expeditions[0]["phase"] == "returning"
+    assert tribe.expeditions[0]["pos"] == [90, 84]
+    assert any("can go no further" in entry for entry in tribe.history)
 
 
 def test_hunting_party_gives_up_upon_reaching_the_edge_of_the_hunting_grounds():
@@ -1509,7 +1649,7 @@ async def test_night_cycle_updates_philosophy_when_the_reviewer_calls_for_a_chan
     tribe.chief_philosophy = "expand aggressively"
     tribe.history.append("starvation claimed lives")
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
         return {"revised_philosophy": "caution and hoarding", "changed": True, "reasoning": "too many losses"}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -1527,7 +1667,7 @@ async def test_night_cycle_leaves_philosophy_and_history_untouched_when_nothing_
     tribe.chief_philosophy = "expand aggressively"
     history_before = list(tribe.history)
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
         return {"revised_philosophy": "expand aggressively", "changed": False, "reasoning": "still working"}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -1547,7 +1687,7 @@ async def test_night_cycle_records_the_reasoning_even_when_nothing_changed():
     tribe.chief_name = "Ashgar"
     sim.cycle = 30
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
         return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": "still working"}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -1566,11 +1706,12 @@ async def test_night_cycle_passes_the_tribes_own_recent_history_and_philosophy()
     tribe.history.append("starvation claimed lives")
     captured = {}
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
         captured["reviewer_model"] = reviewer_model
         captured["tribe_name"] = tribe_name
         captured["current_philosophy"] = current_philosophy
         captured["recent_events"] = recent_events
+        captured["inventory"] = inventory
         return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": ""}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -1581,6 +1722,42 @@ async def test_night_cycle_passes_the_tribes_own_recent_history_and_philosophy()
     assert captured["tribe_name"] == "Forest Tribe"
     assert captured["current_philosophy"] == "expand aggressively"
     assert "starvation claimed lives" in captured["recent_events"]
+    assert f"Population: {tribe.population}." in captured["inventory"]
+
+
+def test_night_inventory_reports_the_real_state_of_affairs():
+    """The night-cycle reviewer used to only ever see prose chronicle entries, which
+    tend to just echo whatever the tribe has been doing turn after turn -- a real
+    mismatch (surplus water, zero food) was easy to miss reading prose alone. This is
+    the structured "state of affairs" the chief takes stock of before sleeping on it."""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.population = 5
+    tribe.food = 0
+    tribe.water = 200
+    tribe.wood = 10
+    tribe.stone = 10
+
+    inventory = sim._build_night_inventory(tribe)
+
+    assert "Population: 5." in inventory
+    assert "10 wood, 10 stone, 0 food, 200 water" in inventory
+    assert "starving" in inventory.lower()
+    assert f"not settled anywhere farmable yet (0/{config.SETTLEMENT_STABILITY_CYCLES}" in inventory
+
+
+def test_night_inventory_reports_settlement_when_actually_settled():
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+
+    inventory = sim._build_night_inventory(tribe)
+
+    assert "settled on farmable ground" in inventory
 
 
 @run_async
@@ -1589,7 +1766,7 @@ async def test_night_cycle_captures_a_valid_proposed_award():
     tribe = sim.tribes["tribe_0"]
     tribe.chief_name = "Ashgar"
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_award": {"name": "Keeper of the Trails", "category": "scouting"},
@@ -1611,7 +1788,7 @@ async def test_night_cycle_survives_a_non_dict_proposed_award():
     tribe = sim.tribes["tribe_0"]
     tribe.chief_name = "Ashgar"
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_award": "Keeper of the Trails",
@@ -1632,7 +1809,7 @@ async def test_night_cycle_ignores_a_proposed_award_outside_the_real_categories(
     tribe = sim.tribes["tribe_0"]
     tribe.chief_name = "Ashgar"
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_award": {"name": "Master of Dreams", "category": "dreaming"},
@@ -1833,6 +2010,216 @@ def test_population_growth_threshold_is_reachable_by_realistic_sustained_play():
     assert tribe.food > config.POPULATION_GROWTH_FOOD_THRESHOLD
 
 
+def test_advance_farming_grows_the_plot_and_consumes_water():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.farm_plots = 1
+    tribe.water = 100
+
+    sim._advance_farming(tribe)
+
+    assert tribe.crop_growth == config.CROP_GROWTH_PER_CYCLE
+    assert tribe.water == 100 - config.CROP_WATER_PER_PLOT_PER_CYCLE
+
+
+def test_advance_farming_harvests_food_once_growth_matures_and_resets():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.farm_plots = 2
+    tribe.crop_growth = 100 - config.CROP_GROWTH_PER_CYCLE
+    tribe.water = 100
+    tribe.food = 0
+
+    sim._advance_farming(tribe)
+
+    assert tribe.crop_growth == 0
+    assert tribe.food == config.CROP_HARVEST_YIELD * 2
+    assert tribe.last_harvest_cycle == sim.cycle
+    assert any("harvest" in entry for entry in tribe.history)
+
+
+def test_advance_farming_withers_a_plot_without_enough_water():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.farm_plots = 1
+    tribe.crop_growth = 40
+    tribe.water = 0
+
+    sim._advance_farming(tribe)
+
+    assert tribe.farm_plots == 0
+    assert tribe.crop_growth == 0
+    assert any("withers" in entry for entry in tribe.history)
+
+
+def test_advance_farming_does_nothing_with_no_plots():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.water = 100
+
+    sim._advance_farming(tribe)
+
+    assert tribe.crop_growth == 0
+    assert tribe.water == 100
+
+
+def test_advance_flock_consumes_feed():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = 3
+    tribe.food = 100
+
+    with mock.patch("backend.simulation.random.random", return_value=0.999):  # no natural hatch
+        sim._advance_flock(tribe)
+
+    assert tribe.food == 100 - config.FLOCK_UPKEEP_FOOD_PER_MEMBER * 3
+    assert tribe.flock == 3
+
+
+def test_advance_flock_shrinks_without_enough_feed():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = 2
+    tribe.food = 0
+
+    sim._advance_flock(tribe)
+
+    assert tribe.flock == 1
+    assert any("lost for lack of feed" in entry for entry in tribe.history)
+
+
+def test_advance_flock_can_naturally_hatch_once_established_and_fed():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = config.FLOCK_MIN_SIZE_TO_BREED
+    tribe.food = 1000
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):  # below any chance
+        sim._advance_flock(tribe)
+
+    assert tribe.pending_hatch == {"parents": None}
+
+
+def test_advance_flock_does_nothing_with_an_empty_flock():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 100
+
+    sim._advance_flock(tribe)
+
+    assert tribe.food == 100
+    assert tribe.pending_hatch is None
+
+
+def test_advance_city_growth_adds_buildings_as_population_climbs():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.founded_city = True
+    tribe.population = config.CITY_BUILDING_POPULATION_STEP * 2
+
+    sim._advance_city_growth(tribe)
+
+    assert tribe.city_buildings == 2
+    assert any("new building rises" in entry for entry in tribe.history)
+
+
+def test_advance_city_growth_does_nothing_before_a_city_is_founded():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 1000
+
+    sim._advance_city_growth(tribe)
+
+    assert tribe.city_buildings == 0
+
+
+def test_advance_city_growth_caps_at_max_buildings():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.founded_city = True
+    tribe.population = config.CITY_BUILDING_POPULATION_STEP * (config.MAX_CITY_BUILDINGS + 10)
+
+    sim._advance_city_growth(tribe)
+
+    assert tribe.city_buildings == config.MAX_CITY_BUILDINGS
+
+
+@run_async
+async def test_resolve_hatch_founding_egg_hatches_without_crossing():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.pending_hatch = {"parents": None}
+
+    await sim._resolve_hatch(tribe)
+
+    assert tribe.flock == 1
+    assert tribe.pending_hatch is None
+    assert tribe.flock_lineage[0]["parents"] == []
+    assert any("hatches" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_resolve_hatch_crosses_two_existing_parents_via_hatch():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.flock = 2
+    parents = [
+        {"trait": "hardy", "parents": [], "cycle": 1, "note": ""},
+        {"trait": "quick to forage", "parents": [], "cycle": 2, "note": ""},
+    ]
+    tribe.pending_hatch = {"parents": parents}
+    captured = {}
+
+    async def fake_hatch(client, model, parent_a, parent_b, era):
+        captured["parent_a"] = parent_a
+        captured["parent_b"] = parent_b
+        return {"trait": "hardy forager", "note": "a promising hatchling"}
+
+    with mock.patch("backend.simulation.hatch", fake_hatch):
+        await sim._resolve_hatch(tribe)
+
+    assert captured["parent_a"] == parents[0]
+    assert captured["parent_b"] == parents[1]
+    assert tribe.flock == 3
+    assert tribe.flock_lineage[-1]["trait"] == "hardy forager"
+    assert tribe.flock_lineage[-1]["parents"] == ["hardy", "quick to forage"]
+    assert any("hardy forager" not in entry for entry in tribe.history)  # trait itself isn't echoed
+    assert any("a promising hatchling" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_resolve_hatch_falls_back_gracefully_if_the_llm_call_fails():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.flock = 2
+    parents = [
+        {"trait": "hardy", "parents": [], "cycle": 1, "note": ""},
+        {"trait": "quick to forage", "parents": [], "cycle": 2, "note": ""},
+    ]
+    tribe.pending_hatch = {"parents": parents}
+
+    async def fake_hatch(client, model, parent_a, parent_b, era):
+        return {}
+
+    with mock.patch("backend.simulation.hatch", fake_hatch):
+        await sim._resolve_hatch(tribe)
+
+    assert tribe.flock == 3
+    assert tribe.flock_lineage[-1]["trait"] == "unremarkable but hardy"
+
+
 def test_upkeep_consumes_food_and_water_proportional_to_population():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
@@ -1988,6 +2375,28 @@ def test_a_population_loss_can_claim_the_chief():
     assert tribe.chief_philosophy == ""
     assert tribe.chief_decree == ""
     assert any("Chief Ashgar has died" in entry for entry in tribe.history)
+
+
+def test_chief_death_carries_the_fallen_chiefs_legacy_into_pending_chief_context():
+    """Regression: a fallen chief's philosophy and decree used to just vanish, with
+    nothing carried into the next election -- a live-run complaint ('new chiefs aren't
+    inheriting the old chief's knowledge'). _install_chief already has a real mechanism
+    for exactly this (pending_chief_context, previously wired up only for the conquest
+    merge case) -- this doesn't force the new chief to keep anything, it just makes sure
+    the next election is actually told what the predecessor believed."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 8
+    tribe.chief_name = "Ashgar"
+    tribe.chief_philosophy = "aggressive expansion"
+    tribe.chief_decree = "seek water"
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._lose_population(tribe, 1)
+
+    assert "Ashgar" in tribe.pending_chief_context
+    assert "aggressive expansion" in tribe.pending_chief_context
+    assert "seek water" in tribe.pending_chief_context
 
 
 def test_a_population_loss_does_not_always_claim_the_chief():

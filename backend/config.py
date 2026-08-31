@@ -155,6 +155,36 @@ POPULATION_GROWTH_FOOD_THRESHOLD = 25
 POPULATION_GROWTH_FOOD_COST = 8
 POPULATION_GROWTH_CAP = 80
 
+# Farming (backend/actions.py PLANT_CROP, Simulation._advance_farming): gated on
+# genuinely settled ground with real water access, not just any farmable biome -- see
+# Simulation._is_settled_near_water. "Plains" alone doesn't mean a tribe resettled
+# somewhere with easy water, per the original design spec for this feature.
+FARMING_REQUIRES_ADJACENT_WATER = ("river", "lake")
+PLANT_CROP_WOOD_COST = 10
+MAX_FARM_PLOTS = 4
+CROP_GROWTH_PER_CYCLE = 10  # a plot matures in ~10 cycles once planted
+CROP_HARVEST_YIELD = 15  # food per plot, per harvest
+CROP_WATER_PER_PLOT_PER_CYCLE = 2  # a plot that goes unwatered withers outright
+
+# City growth (backend/simulation.py._advance_city_growth): once a tribe founds a city
+# (Era.founds_city), one more building appears every time population crosses another
+# multiple of this step, up to MAX_CITY_BUILDINGS -- a small, legible stand-in for real
+# city-layout simulation, not an attempt at one.
+CITY_BUILDING_POPULATION_STEP = 5
+MAX_CITY_BUILDINGS = 6
+
+# Egg-gathering/flock genetics (backend/actions.py GATHER_EGGS, Simulation._resolve_hatch,
+# backend/genetics.py hatch()): gated the same as farming (settled + real water access) --
+# wild fowl near a confirmed water source, not a separate condition.
+GATHER_EGGS_SUCCESS_CHANCE = 0.4
+# A flock isn't just a one-way counter -- it eats, and an established flock can also
+# breed on its own (Simulation._advance_flock), the same "passive consequence, not a
+# discrete action" category as crop growth. Real stakes both ways: undersized on feed
+# and it shrinks, big enough and it can grow without another GATHER_EGGS at all.
+FLOCK_UPKEEP_FOOD_PER_MEMBER = 1
+FLOCK_MIN_SIZE_TO_BREED = 2
+FLOCK_NATURAL_HATCH_CHANCE = 0.15
+
 # Chief trophies (backend/simulation.py._check_chief_trophies): a lightweight legacy
 # system credited to whichever chief is in power the moment each is first earned, once
 # per tribe's lifetime. "Water Bringer" is deliberately the standout -- reliable water

@@ -172,6 +172,37 @@ def _construct_wall(sim, tribe, biome, target):
     return None
 
 
+def _plant_crop(sim, tribe, biome, target):
+    """Only reachable at all once Simulation._prepare_turn's settled-near-water gate
+    (Simulation._is_settled_near_water) allows it -- plains alone doesn't mean a tribe
+    resettled somewhere with real water access, per the original design spec for
+    farming. Growth itself is a passive per-cycle tick (Simulation._advance_farming),
+    not something this action does directly -- planting just adds one more plot to
+    tend."""
+    if tribe.farm_plots >= config.MAX_FARM_PLOTS or tribe.wood < config.PLANT_CROP_WOOD_COST:
+        return None
+    tribe.wood -= config.PLANT_CROP_WOOD_COST
+    tribe.farm_plots += 1
+    return f"a new plot is planted -- {tribe.farm_plots} now growing"
+
+
+def _gather_eggs(sim, tribe, biome, target):
+    """Wild fowl near a real water source -- gated the same as PLANT_CROP (Simulation.
+    _is_settled_near_water). A find doesn't hatch here: this only sets
+    tribe.pending_hatch; Simulation.step() resolves it with a real, non-scripted LLM
+    call (backend/genetics.py's hatch()) the same cycle, the same pattern BREED already
+    uses for pending_birth. Once the flock has at least two members, the two most
+    recently hatched are what get crossed -- mirrors _eligible_breeding_pair preferring
+    a fresh milestone over the whole population."""
+    if tribe.pending_hatch is not None:
+        return "an egg is already being tended -- one thing at a time"
+    if random.random() >= config.GATHER_EGGS_SUCCESS_CHANCE:
+        return "no eggs found this time"
+    parents = tribe.flock_lineage[-2:] if len(tribe.flock_lineage) >= 2 else None
+    tribe.pending_hatch = {"parents": parents}
+    return "an egg is found and set aside to hatch"
+
+
 # A small, cheap flavor name for whoever is leading an expedition -- not a second LLM
 # agent (that would double Ollama calls per tribe per cycle for a party that doesn't
 # make its own strategic decisions anyway; the tribe already decided to send them).
@@ -475,6 +506,8 @@ ACTION_REGISTRY = {
     "HUNT_DEER": _hunt_deer,
     "BUILD_FIRE": _build_fire,
     "CONSTRUCT_WALL": _construct_wall,
+    "PLANT_CROP": _plant_crop,
+    "GATHER_EGGS": _gather_eggs,
     "SCOUT": _scout,
     "HUNTING_PARTY": _hunting_party,
     "RELOCATE": _relocate,
@@ -499,6 +532,8 @@ ACTION_DESCRIPTIONS = {
     "HUNT_DEER": "Attempt to harvest food at your current tile -- forest has the most game, plains and river tiles some, mountains and ocean almost none. Small risk of losing a hunter to a wolf pack, most likely in forest.",
     "BUILD_FIRE": "Build a fire at your current tile using stored wood. Does nothing if one is already built here.",
     "CONSTRUCT_WALL": "Build a wall at your current tile using stored wood and stone. Does nothing if one is already built here.",
+    "PLANT_CROP": "Plant a farm plot at your current tile using stored wood -- only possible once the tribe has settled somewhere with real water access. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
+    "GATHER_EGGS": "Search for wild fowl nests near your current tile -- only possible on the same settled ground with reliable water access that farming needs (fowl nest near water, not in it). A found egg is set aside and hatches on its own, growing the tribe's flock by one.",
     "SCOUT": "Dispatch an expedition toward target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home. Your tribe can have a couple of parties out at once (scouting or hunting, any mix) -- choosing SCOUT again sends another one if there's room, or just reports on whoever's already out once you're at capacity.",
     "HUNTING_PARTY": "Send a hunting party toward target_vector -- shares the same expedition capacity as SCOUT (a couple of parties, scouting or hunting in any mix, can be out at once). They travel and hunt on their own supply for up to several days, facing the same wolf-pack risk as an instant hunt on every day out, until they catch something or give up. Any food caught only becomes real, usable food once they've walked all the way home -- a hunt still in the field does nothing for hunger right now, no matter how promising.",
     "RELOCATE": "Move your whole tribe several tiles toward target_vector this cycle, possibly over several cycles for a far destination. Produces no resources while traveling and costs extra food and water for the effort.",

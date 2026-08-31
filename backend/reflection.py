@@ -30,13 +30,22 @@ AWARD_CATEGORIES = ("scouting", "hunting", "trading", "raiding")
 
 async def reflect_on_history(
     client: OllamaClient, reviewer_model: str, tribe_name: str,
-    current_philosophy: str, recent_events: list[str],
+    current_philosophy: str, recent_events: list[str], inventory: str = "",
 ) -> dict:
     events_block = "\n".join(f"- {e}" for e in recent_events) or "(nothing notable recorded)"
     categories_list = ", ".join(AWARD_CATEGORIES)
+    # `inventory` (Simulation._build_night_inventory) is the tribe's actual current
+    # state -- resources, settlement status, era-progress gaps -- separate from the
+    # prose chronicle below. The chronicle alone tends to just echo whatever the tribe
+    # has been doing turn after turn in its own recent phrasing, which made a real
+    # mismatch (surplus water, zero food; still settled but still scouting for water
+    # long after it's secured) easy for a reviewer to miss entirely reading prose
+    # alone. Framed as what the chief actually takes stock of before turning in for
+    # the night, not a separate instruction.
+    inventory_block = f"\nBefore retiring for the night, the chief takes stock: {inventory}\n" if inventory else ""
     prompt = f"""You are reviewing, from a distance, the recent history of the {tribe_name} \
 tribe. Its current guiding philosophy is: "{current_philosophy}"
-
+{inventory_block}
 Here is what has actually happened recently, in order:
 {events_block}
 

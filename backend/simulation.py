@@ -10,6 +10,7 @@ from .actions import (
 )
 from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
+from .genetics import hatch
 from .reflection import AWARD_CATEGORIES, reflect_on_history
 from .eras import ERAS, era_index, next_era, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
@@ -173,6 +174,23 @@ class Tribe:
         # tribe can run more than one party at once (up to config.MAX_CONCURRENT_
         # EXPEDITIONS), any mix of scouting and hunting.
         self.expeditions: list[dict] = []
+        # Farming (backend/actions.py PLANT_CROP, Simulation._advance_farming). Growth
+        # is a passive per-cycle tick once at least one plot exists, not a discrete
+        # action -- same category as upkeep/population growth.
+        self.farm_plots = 0
+        self.crop_growth = 0
+        self.last_harvest_cycle = 0
+        # City growth (Simulation._advance_city_growth): founded_city stays the
+        # one-time era-advancement flag it always was; this is the separate, growing
+        # count of buildings that appear afterward as population climbs.
+        self.city_buildings = 0
+        # Egg-gathering/flock genetics (backend/actions.py GATHER_EGGS, Simulation.
+        # _resolve_hatch, backend/genetics.py hatch()) -- same pending_X/resolve shape
+        # as pending_birth/lineage above, applied to a flock instead of the tribe's own
+        # population. flock_lineage entries: {"trait", "parents", "cycle", "note"}.
+        self.flock = 0
+        self.flock_lineage: list[dict] = []
+        self.pending_hatch: dict | None = None
 
     def to_dict(self) -> dict:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
@@ -208,6 +226,12 @@ class Tribe:
             "scout_successes": self.scout_successes,
             "hunt_successes": self.hunt_successes,
             "founded_city": self.founded_city,
+            "city_buildings": self.city_buildings,
+            "farm_plots": self.farm_plots,
+            "crop_growth": self.crop_growth,
+            "last_harvest_cycle": self.last_harvest_cycle,
+            "flock": self.flock,
+            "flock_lineage": self.flock_lineage,
             "survival_warning": survival_warning,
             "extinct": self.extinct,
             "chief_name": self.chief_name,
@@ -389,6 +413,33 @@ class Simulation:
         entry = f"{parent_a} and {parent_b} welcome a child, {child_name}"
         tribe.history.append(f"{entry} -- {note}" if note else f"{entry}.")
 
+    async def _resolve_hatch(self, tribe: "Tribe") -> None:
+        """Resolves a GATHER_EGGS action's pending_hatch (see actions.py._gather_eggs)
+        with a real, non-scripted LLM call (backend/genetics.py's hatch()) -- same
+        pattern as _resolve_birth, applied to the flock instead of the tribe's own
+        population. A founding egg (no existing pair to cross) just hatches with a
+        plain trait; once two flock members exist, hatch() crosses their traits with
+        one mutation, the same spirit as genetics.py's dormant breed()."""
+        parents = tribe.pending_hatch["parents"]
+        tribe.pending_hatch = None
+
+        if parents:
+            result = await hatch(self.client, tribe.model, parents[0], parents[1], tribe.era)
+        else:
+            result = {"trait": "unremarkable but hardy", "note": "the first of the flock hatches"}
+        trait = result.get("trait") or "unremarkable but hardy"
+        note = result.get("note", "")
+
+        tribe.flock += 1
+        tribe.flock_lineage.append({
+            "trait": trait,
+            "parents": [p["trait"] for p in parents] if parents else [],
+            "cycle": self.cycle,
+            "note": note,
+        })
+        entry = "an egg hatches -- the flock grows"
+        tribe.history.append(f"{entry} ({note})." if note else f"{entry}.")
+
     def _hold_tribal_gathering(self, tribe: "Tribe") -> None:
         """An innate tradition, not a chief's choice: every tribe, whatever its
         philosophy or model, gathers once per in-game day (config.DAY_LENGTH_CYCLES,
@@ -430,6 +481,42 @@ class Simulation:
         tribe.last_gathering_cycle = self.cycle
         tribe.population_at_last_gathering = tribe.population
 
+    def _build_night_inventory(self, tribe: "Tribe") -> str:
+        """A structured "state of affairs" snapshot for the night-cycle reviewer,
+        alongside the raw chronicle -- what the chief actually takes stock of after the
+        day's council, before retiring to sleep and dream on it. The raw chronicle
+        alone tends to just echo whatever the tribe has been doing turn after turn (its
+        own recent phrasing), which made a real mismatch -- surplus water, zero food,
+        still settling scouts out for water long after it's secured -- easy for the
+        reviewer to miss entirely. Facts only; the reviewer still decides for itself
+        what, if anything, should change."""
+        lines = [
+            f"Population: {tribe.population}.",
+            f"Resources on hand: {tribe.wood} wood, {tribe.stone} stone, {tribe.food} food, {tribe.water} water.",
+        ]
+        survival_bias, _critical = survival_bias_string(tribe.food, tribe.water, tribe.population)
+        if survival_bias:
+            lines.append(survival_bias)
+        if self._is_settled(tribe):
+            lines.append("The tribe is settled on farmable ground.")
+        else:
+            lines.append(
+                f"The tribe has not settled anywhere farmable yet "
+                f"({tribe.cycles_since_relocate}/{config.SETTLEMENT_STABILITY_CYCLES} cycles without relocating)."
+            )
+        nxt = next_era(tribe.era)
+        if nxt is not None:
+            gaps = []
+            if tribe.population < nxt.requires_population:
+                gaps.append(f"population {tribe.population}/{nxt.requires_population}")
+            for resource, minimum in nxt.requires_resources.items():
+                have = getattr(tribe, resource, 0)
+                if have < minimum:
+                    gaps.append(f"{resource} {have}/{minimum}")
+            if gaps:
+                lines.append(f"To reach {nxt.label}, still short on: {', '.join(gaps)}.")
+        return " ".join(lines)
+
     async def _run_night_cycle(self, tribe: "Tribe") -> None:
         """The "night cycle" (backend/reflection.py): a larger reviewing model looks
         back at this tribe's own recent history and decides for itself whether its
@@ -440,9 +527,10 @@ class Simulation:
         compound into wisdom over time, distinct from breed()/breed_individuals'
         cross-tribe/cross-individual crossover."""
         recent_events = list(tribe.history)[-config.NIGHT_CYCLE_HISTORY_WINDOW:]
+        inventory = self._build_night_inventory(tribe)
         result = await reflect_on_history(
             self.client, config.NIGHT_CYCLE_REVIEWER_MODEL, tribe.name,
-            tribe.chief_philosophy, recent_events,
+            tribe.chief_philosophy, recent_events, inventory,
         )
         # The chief's own reasoning for this reflection -- kept even when the
         # philosophy didn't change, so the frontend has something real to show as a
@@ -556,6 +644,9 @@ class Simulation:
             self._apply_upkeep(tribe)
             self._grow_population(tribe)
             self._advance_era_if_ready(tribe)
+            self._advance_farming(tribe)
+            self._advance_flock(tribe)
+            self._advance_city_growth(tribe)
             self._check_chief_trophies(tribe)
             self._check_for_celebration(tribe)
 
@@ -570,6 +661,10 @@ class Simulation:
         for tribe in self.tribes.values():
             if not tribe.extinct and tribe.pending_birth:
                 await self._resolve_birth(tribe)
+
+        for tribe in self.tribes.values():
+            if not tribe.extinct and tribe.pending_hatch:
+                await self._resolve_hatch(tribe)
 
         for tribe in self.tribes.values():
             if not tribe.extinct and not tribe.chief_name:
@@ -771,6 +866,16 @@ class Simulation:
             and self.world.biome(tribe.x, tribe.y) in config.FARMABLE_BIOMES
         )
 
+    def _is_settled_near_water(self, tribe: Tribe) -> bool:
+        """Stricter than _is_settled: PLANT_CROP/GATHER_EGGS need a tribe that actually
+        resettled somewhere with real, easily accessible water -- "plains" alone (which
+        counts for the general settlement/GATHER_WOOD gate) doesn't mean that, per the
+        original design spec for farming."""
+        return (
+            tribe.cycles_since_relocate >= config.SETTLEMENT_STABILITY_CYCLES
+            and self.world.biome(tribe.x, tribe.y) in config.FARMING_REQUIRES_ADJACENT_WATER
+        )
+
     def _prepare_turn(self, tribe: Tribe) -> tuple[dict, dict]:
         """Builds this tribe's prompt with no network calls; returns (request, context)."""
         biome = self.world.biome(tribe.x, tribe.y)
@@ -782,6 +887,17 @@ class Simulation:
         settled = self._is_settled(tribe)
         if not settled:
             available_actions = [a for a in available_actions if a not in ("GATHER_WOOD", "GATHER_STONE")]
+        else:
+            # A tribe that has genuinely put down roots -- farmable ground, invested in
+            # long enough to be gathering wood and stone here -- shouldn't be one bad
+            # turn away from uprooting the whole settlement on a whim. Symmetric with
+            # the not-settled case above: a real constraint on the choice set, not a
+            # scripted override of whatever the tribe would otherwise decide.
+            available_actions = [a for a in available_actions if a != "RELOCATE"]
+
+        settled_near_water = self._is_settled_near_water(tribe)
+        if not settled_near_water:
+            available_actions = [a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS")]
 
         visible_entities = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         if not settled:
@@ -790,6 +906,43 @@ class Simulation:
                 f"farmable long enough yet ({tribe.cycles_since_relocate}/{config.SETTLEMENT_STABILITY_CYCLES} "
                 "cycles without relocating, on farmable ground)."
             )
+        else:
+            visible_entities.append(
+                "The tribe has settled here and is no longer considering relocating."
+            )
+
+        if "PLANT_CROP" in unlocked_actions_through(tribe.era) or "GATHER_EGGS" in unlocked_actions_through(tribe.era):
+            if not settled_near_water:
+                visible_entities.append(
+                    "Crops and eggs need somewhere with real water access to work -- the tribe hasn't "
+                    "settled on ground like that yet (a river or lake tile, not just any farmable ground)."
+                )
+            else:
+                # NUDGE (2026-08-30, explicit "nudge harder" request): a plain, concrete
+                # suggestion once the gate is actually met, not just silent availability
+                # -- same category as the survival-critical nudge in instincts.py.
+                # PLANT_CROP/GATHER_EGGS are still ordinary entries in available_actions
+                # the model chooses or ignores; this doesn't force either one.
+                if tribe.farm_plots == 0:
+                    visible_entities.append(
+                        "The tribe has settled near reliable water -- this ground could support a farm plot."
+                    )
+                if tribe.flock == 0:
+                    visible_entities.append(
+                        "No flock has been started yet -- wild fowl nest near settlements with reliable "
+                        "water like this, so gathering their eggs here could begin one."
+                    )
+
+        if tribe.farm_plots > 0:
+            visible_entities.append(
+                f"{tribe.farm_plots} farm plot(s) growing ({tribe.crop_growth}/100 toward the next harvest)."
+            )
+        if tribe.flock > 0:
+            last_note = tribe.flock_lineage[-1]["note"] if tribe.flock_lineage else ""
+            flock_line = f"A flock of {tribe.flock} is being kept."
+            if last_note:
+                flock_line += f" Most recent hatchling: {last_note}"
+            visible_entities.append(flock_line)
 
         # A tribe starving/dehydrating while sitting on 100+ wood or stone had a real
         # information gap: the stockpile itself never said "this is already more than
@@ -885,7 +1038,14 @@ class Simulation:
         tribe.last_action = action
         self.translation.record_broadcast(tribe.id, broadcast, action)
 
-        rationale = str(intent.get("metacognitive_rationale", ""))[:60]
+        # Regression: this used to hard-cut at 60 chars with no ellipsis, silently
+        # chopping the model's reasoning off mid-word most of the time -- the prompt
+        # already asks for "brief" reasoning (see prompts.py's MANDATORY REACTION
+        # SCHEMA), so this was working against, not with, that instruction. A much
+        # higher cap here is just a guard against a model ignoring "brief" entirely.
+        rationale = str(intent.get("metacognitive_rationale", ""))
+        if len(rationale) > 240:
+            rationale = rationale[:240].rstrip() + "…"
         entry = f"[{latency_ms:.0f}ms] {action}: {rationale}"
         if hazard_note:
             entry += f" | {hazard_note}"
@@ -961,6 +1121,25 @@ class Simulation:
             reached_biome = biome_at(nx, ny)
             scout = exp["lead_scout"]
 
+            if [nx, ny] == [px, py] and [px, py] != [tx, ty]:
+                # Regression: physics.terrain_aware_step falls back to "stay put" when
+                # every candidate step toward the target is ocean (boxed in on every
+                # axis -- see its own docstring). A pushed-onward target
+                # (extend_ray_to_grid_edge) can land past the actual coastline into
+                # open water, which made this fallback fire every single day forever --
+                # a live run caught a party stuck at the same tile for 400+ days,
+                # hoarding phantom food/water in its own counters the whole time.
+                # Physically unable to advance at all is just as much "nowhere left to
+                # search" as reaching the grid's literal edge -- give up the same way.
+                # Checked before the hunt/water split below since it's kind-agnostic --
+                # a hunting party can push its own target into the ocean exactly the
+                # same way (see _advance_hunting_party_outbound's own push-onward). The
+                # target-equals-position exclusion matters for a hunt/scout that's
+                # deliberately working right where it already stands (target == origin)
+                # -- that's arrival, not being boxed in, and has its own handling below.
+                exp["phase"] = "returning"
+                tribe.history.append(f"{scout}'s party can go no further this way and turns back after {exp['day']} days")
+                return False
             if exp.get("kind") == "hunt":
                 self._advance_hunting_party_outbound(tribe, exp, reached_biome, scout)
                 return False
@@ -976,18 +1155,6 @@ class Simulation:
                     tribe.history.append(f"{scout}'s party has found fresh water and is heading home to report it")
                 else:
                     tribe.history.append(f"{scout}'s party hears water nearby and marks ({wx},{wy}) before heading home to report it")
-            elif [nx, ny] == [px, py]:
-                # Regression: physics.terrain_aware_step falls back to "stay put" when
-                # every candidate step toward the target is ocean (boxed in on every
-                # axis -- see its own docstring). A pushed-onward target
-                # (extend_ray_to_grid_edge) can land past the actual coastline into
-                # open water, which made this fallback fire every single day forever --
-                # a live run caught a party stuck at the same tile for 400+ days,
-                # hoarding phantom food/water in its own counters the whole time.
-                # Physically unable to advance at all is just as much "nowhere left to
-                # search" as reaching the grid's literal edge -- give up the same way.
-                exp["phase"] = "returning"
-                tribe.history.append(f"{scout}'s party can go no further this way and turns back after {exp['day']} days")
             elif [nx, ny] == [tx, ty] and exp["terrain_report"] is None:
                 # Reached wherever the tribe told them to look, but the model's own
                 # target_vector is usually close (a single EXPEDITION_SPEED step), so
@@ -1243,6 +1410,21 @@ class Simulation:
             fallen = tribe.chief_name
             tribe.chief_deaths += 1
             tribe.chief_name = ""
+            # Regression: the fallen chief's philosophy and decree used to just vanish
+            # here, with nothing carried into the next election -- a live-run complaint
+            # ("new chiefs aren't inheriting the old chief's knowledge"). _install_chief
+            # already has a real mechanism for exactly this (pending_chief_context, see
+            # _merge_tribes' conquest case) -- it was just never wired up for an
+            # ordinary chief death. This doesn't force continuity: the next election is
+            # simply told what the predecessor believed and decreed, and decides for
+            # itself whether to keep it, adapt it, or break from it entirely.
+            legacy = f'governed by this guiding philosophy: "{tribe.chief_philosophy}"' if tribe.chief_philosophy else "left no clear guiding philosophy behind"
+            decree_note = f' Their standing decree was: "{tribe.chief_decree}".' if tribe.chief_decree else ""
+            tribe.pending_chief_context = (
+                f"The previous chief, {fallen}, has just died, having {legacy}.{decree_note} "
+                "The new chief inherits this legacy and may choose to continue it, adapt it, "
+                "or break from it entirely -- that judgment is theirs to make."
+            )
             tribe.chief_philosophy = ""
             tribe.chief_decree = ""
             tribe.history.append(f"Chief {fallen} has died. {tribe.name} is left without a leader.")
@@ -1286,6 +1468,71 @@ class Simulation:
         self.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.ERA_ADVANCE_PRIDE_MAGNITUDE, config.ERA_ADVANCE_PRIDE_RADIUS
         )
+
+    def _advance_farming(self, tribe: Tribe) -> None:
+        """A planted crop plot (actions.py._plant_crop) grows on its own every cycle,
+        the same "passive consequence, not a discrete action" category as upkeep and
+        population growth -- once planted, tending it isn't something the model has to
+        keep choosing to do. Harvest fires automatically on maturity.
+
+        Real stakes, not a free one-way counter: growth needs water the same way a
+        person does. Enough on hand and the plot grows and drinks its share; too little
+        and the plot withers on the vine (lost outright) instead of quietly stalling --
+        a real cost for neglecting a farm during a water crisis, mirroring the flock's
+        own feed-or-shrink stakes in _advance_flock."""
+        if tribe.farm_plots <= 0:
+            return
+        water_needed = config.CROP_WATER_PER_PLOT_PER_CYCLE * tribe.farm_plots
+        if tribe.water < water_needed:
+            tribe.farm_plots -= 1
+            tribe.crop_growth = 0
+            tribe.history.append("a farm plot withers for lack of water")
+            return
+        tribe.water -= water_needed
+        tribe.crop_growth += config.CROP_GROWTH_PER_CYCLE
+        if tribe.crop_growth >= 100:
+            tribe.crop_growth = 0
+            harvested = config.CROP_HARVEST_YIELD * tribe.farm_plots
+            tribe.food += harvested
+            tribe.last_harvest_cycle = self.cycle
+            tribe.history.append(f"the farm plots yield a harvest -- {harvested} food gathered in")
+
+    def _advance_flock(self, tribe: Tribe) -> None:
+        """A flock isn't a one-way counter -- it eats, and once established it can
+        also breed on its own (the same "passive consequence" category as crop
+        growth), without another GATHER_EGGS action. Real stakes both ways: undersized
+        on feed and it shrinks; big enough and fed, and it can grow by itself."""
+        if tribe.flock <= 0:
+            return
+        feed_needed = config.FLOCK_UPKEEP_FOOD_PER_MEMBER * tribe.flock
+        if tribe.food < feed_needed:
+            tribe.flock -= 1
+            tribe.history.append("part of the flock is lost for lack of feed")
+            return
+        tribe.food -= feed_needed
+        if (
+            tribe.flock >= config.FLOCK_MIN_SIZE_TO_BREED
+            and tribe.pending_hatch is None
+            and random.random() < config.FLOCK_NATURAL_HATCH_CHANCE
+        ):
+            parents = tribe.flock_lineage[-2:] if len(tribe.flock_lineage) >= 2 else None
+            tribe.pending_hatch = {"parents": parents}
+
+    def _advance_city_growth(self, tribe: Tribe) -> None:
+        """Once a city is founded (Era.founds_city), one more building appears every
+        time population crosses another multiple of CITY_BUILDING_POPULATION_STEP, up
+        to MAX_CITY_BUILDINGS -- a small, legible stand-in for real city-layout
+        simulation, not an attempt at one. Mirrors _grow_population's surplus-threshold
+        shape, keyed on population instead of food."""
+        if not tribe.founded_city or tribe.city_buildings >= config.MAX_CITY_BUILDINGS:
+            return
+        earned = min(
+            tribe.population // config.CITY_BUILDING_POPULATION_STEP,
+            config.MAX_CITY_BUILDINGS,
+        )
+        if earned > tribe.city_buildings:
+            tribe.city_buildings = earned
+            tribe.history.append(f"a new building rises in {tribe.name}'s city")
 
     def _award_trophy(self, tribe: Tribe, name: str, individual: str | None = None) -> None:
         """`individual`, when given, credits a specific named person (e.g. the scout or

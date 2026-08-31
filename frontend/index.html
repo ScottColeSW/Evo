@@ -35,6 +35,7 @@
   #status-banner.refactoring { background: #991b1b; color: #fca5a5; }
   #immortal-banner { padding: 6px 14px; background: #3730a3; color: #c7d2fe; font-weight: bold; border-radius: 4px; font-size: 11px; font-family: monospace; }
   #immortal-banner.hidden { display: none; }
+  #day-banner { padding: 6px 14px; background: #1e293b; color: #cbd5e1; font-weight: bold; border-radius: 4px; font-size: 11px; font-family: monospace; }
   #btn-pause { background: #4338ca; color: white; padding: 8px 16px; font-size: 12px; margin-left: auto; }
   #btn-quit { background: #7f1d1d; color: #fecaca; padding: 8px 16px; font-size: 12px; }
 
@@ -74,6 +75,8 @@
   .stat-card.extinct { opacity: 0.55; filter: grayscale(0.6); }
   .speech { font-style: italic; color: #fbbf24; display: block; margin-top: 4px; }
   .survival-warning { color: #f87171; font-size: 11px; margin-top: 4px; }
+  .farming-panel { margin-top: 6px; padding: 6px 8px; background: #1a2a1a; border: 1px solid #365d36; border-radius: 5px; font-size: 11px; color: #bbf7d0; }
+  .farming-panel .farming-title { color: #86efac; font-weight: bold; }
 
   .log-box { background: #0f0f15; border: 1px solid #2a2a3a; border-radius: 6px; padding: 8px; font-family: monospace; font-size: 10px; overflow-y: auto; color: #34d399; flex: 1; }
   .log-box div { padding: 1px 0; }
@@ -121,6 +124,7 @@
   <div id="theater-header">
     <h1>EVOLUTION2CIV</h1>
     <div id="status-banner">OPERATIONAL</div>
+    <div id="day-banner">Day 1</div>
     <div id="immortal-banner" class="hidden"></div>
     <button id="btn-pause">PAUSE</button>
     <button id="btn-quit">QUIT</button>
@@ -1083,6 +1087,62 @@ function drawSettlementMarker(t) {
   ctx.fillText(t.founded_city ? "🏛️" : "🛖", cx, cy + 1);
 }
 
+// One plot icon per tribe (not one per t.farm_plots -- identical repeated icons would
+// just be clutter without new information), staged by t.crop_growth so the plot
+// visibly progresses from bare soil to ready-to-harvest, driven entirely by real
+// backend state (Simulation._advance_farming), not a frontend-only animation loop.
+function drawFarmPlot(t) {
+  if (t.farm_plots <= 0) return;
+  const [landX, landY] = landAnchor(t.x, t.y);
+  // Offset in pixel space, not tile space -- landAnchor's own water-avoidance search
+  // works in whole tiles, so the offset is applied after anchoring, the same way the
+  // thought bubble/speech bubble already sit at a pixel offset above the tribe center.
+  const cx = landX * TILE + TILE / 2 + TILE * 1.4;
+  const cy = landY * TILE + TILE / 2 - TILE * 1.4;
+  const r = Math.max(5, (TILE * MOON_CORE_RADIUS_TILES) / 3.6);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+  ctx.fillStyle = "rgba(15,23,42,0.8)";
+  ctx.fill();
+  ctx.strokeStyle = t.color;
+  ctx.lineWidth = Math.max(1, TILE * 0.1);
+  ctx.stroke();
+  const stage = t.crop_growth < 33 ? "🌱" : t.crop_growth < 66 ? "🌿" : "🌾";
+  ctx.font = `${Math.max(8, r * 1.4)}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(stage, cx, cy + 1);
+  if (t.farm_plots > 1) {
+    ctx.font = `bold ${Math.max(7, r * 0.7)}px sans-serif`;
+    ctx.fillStyle = "rgb(226,232,240)";
+    ctx.fillText(`x${t.farm_plots}`, cx, cy + r + 6);
+  }
+}
+
+// A city that grows building-by-building (Simulation._advance_city_growth) instead of
+// a single one-time icon flip -- drawSettlementMarker stays the town's "seat," these
+// are the buildings growing up around it, arranged in a small deterministic ring so a
+// bigger city visibly reads as bigger.
+function drawCityBuildings(t) {
+  if (t.city_buildings <= 0) return;
+  const [landX, landY] = landAnchor(t.x, t.y);
+  const baseX = landX * TILE + TILE / 2;
+  const baseY = landY * TILE + TILE / 2;
+  const ringRadius = Math.max(14, TILE * 2.4);
+  for (let i = 0; i < t.city_buildings; i++) {
+    const angle = (i / config_MAX_CITY_BUILDINGS_HINT) * Math.PI * 2;
+    const bx = baseX + Math.cos(angle) * ringRadius;
+    const by = baseY + Math.sin(angle) * ringRadius * 0.6;
+    ctx.font = `${Math.max(9, TILE * 0.9)}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("🏠", bx, by);
+  }
+}
+// Matches backend/config.py's MAX_CITY_BUILDINGS -- spaces the ring evenly regardless
+// of how many buildings have appeared so far, rather than bunching them as they grow.
+const config_MAX_CITY_BUILDINGS_HINT = 6;
+
 function drawTrails() {
   // Regression fix: each trail tile used to draw at 1.6x the actual tile size with a
   // heavy dark border -- neighboring trail tiles (very common; that's what a worn
@@ -1266,7 +1326,11 @@ function drawFrame() {
     });
 
     drawLandmarks();
-    Object.values(latestState.tribes || {}).forEach(t => drawSettlementMarker(t));
+    Object.values(latestState.tribes || {}).forEach(t => {
+      drawSettlementMarker(t);
+      drawCityBuildings(t);
+      drawFarmPlot(t);
+    });
     Object.entries(latestState.tribes || {}).forEach(([id, t]) => drawTribeIndividuals(id, t));
     // Drawn last, on top of everything -- a trail at a tribe's own home tile (very
     // common, since journeys start and end there) was getting completely hidden under
@@ -1356,6 +1420,24 @@ function landmarkCounts(t) {
   return counts.length ? " · " + counts.join(" ") : "";
 }
 
+// A dedicated mini-panel for farming/flock state, per explicit request -- separate
+// from the general intel-line so plot growth and flock lineage read as their own
+// distinct system on the map, not another buried stat.
+function farmingPanel(t) {
+  if (!t.farm_plots && !t.flock) return "";
+  const parts = [];
+  if (t.farm_plots > 0) {
+    const stage = t.crop_growth < 33 ? "🌱 sprouting" : t.crop_growth < 66 ? "🌿 growing" : "🌾 ready to harvest";
+    parts.push(`${t.farm_plots} plot${t.farm_plots > 1 ? "s" : ""} · ${stage} (${t.crop_growth}/100)`);
+  }
+  if (t.flock > 0) {
+    const lineage = t.flock_lineage || [];
+    const lastTrait = lineage.length ? lineage[lineage.length - 1].trait : "";
+    parts.push(`🐔 flock of ${t.flock}${lastTrait ? ` — latest: ${escapeHtml(lastTrait)}` : ""}`);
+  }
+  return `<div class="farming-panel"><span class="farming-title">🌾 Farm</span><br>${parts.join("<br>")}</div>`;
+}
+
 // The chronicle/rationale text is model-generated plain text, not markup, but it's
 // inserted raw into innerHTML below -- escape it so a stray "<" or "&" in a model's
 // own output can't break the layout.
@@ -1377,6 +1459,14 @@ function updateSidebar(state) {
     banner.textContent = "OPERATIONAL";
     banner.classList.remove("refactoring");
   }
+
+  // A viewer had no way to answer "what day is this?" without doing cycle-count math
+  // themselves -- DAY_LENGTH_CYCLES is already how the day/night lighting and the
+  // innate tribal gathering both mark a day's boundary, so it's the real unit here,
+  // not an arbitrary new one.
+  const dayNumber = Math.floor((state.cycle || 0) / DAY_LENGTH_CYCLES) + 1;
+  const dayProgress = (((state.cycle || 0) % DAY_LENGTH_CYCLES) + DAY_LENGTH_CYCLES) % DAY_LENGTH_CYCLES / DAY_LENGTH_CYCLES;
+  document.getElementById("day-banner").textContent = `${dayProgress < 0.5 ? "☀️" : "🌙"} Day ${dayNumber}`;
 
   // Immortality suppresses extinction on the backend only (see Simulation.
   // _lose_population) -- a tribe's own prompt never learns it's protected, but the
@@ -1430,6 +1520,7 @@ function updateSidebar(state) {
           </div>
           <span class="speech">"${t.last_broadcast || "..."}"</span>
           ${t.survival_warning ? `<div class="survival-warning">⚠️ ${t.survival_warning.replace("[SURVIVAL INSTINCT]: ", "")}</div>` : ""}
+          ${farmingPanel(t)}
         </div>`;
     }
     (t.history || []).forEach(entry => {

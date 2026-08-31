@@ -18,17 +18,18 @@ def test_low_food_produces_warning_not_critical():
     assert critical is False
 
 
-def test_survival_bias_never_prescribes_a_specific_action():
-    """A prior version named HUNT_DEER/GATHER_WATER directly as a near-command, which
-    measurably changed behavior but amounts to scripting the outcome rather than letting
-    the model reason its way there. This describes the crisis honestly and stops -- if a
-    model can't connect "starving" to "go hunt" on its own, that's real information about
-    that model, not something to paper over with a forced instruction."""
-    for food, water in [(1, 50), (3, 50), (50, 1), (50, 3), (1, 1)]:
-        text, _ = survival_bias_string(food=food, water=water, population=SMALL_TRIBE)
-        assert "HUNT_DEER" not in text
-        assert "GATHER_WATER" not in text
-        assert "Choose visual_action" not in text
+def test_survival_bias_now_names_a_concrete_response():
+    """Regression/reversal: an earlier version deliberately described the crisis
+    without naming an action, on the theory that a model connecting "starving" to "go
+    hunt" on its own was more honest than scripting the outcome. Explicit request:
+    nudge harder. This still isn't a forced action -- available_actions and the
+    model's own choice are untouched -- but the fact block no longer pretends not to
+    know what the tribe actually needs."""
+    food_text, _ = survival_bias_string(food=1, water=50, population=SMALL_TRIBE)
+    assert "hunting party" in food_text or "gather food" in food_text
+
+    water_text, _ = survival_bias_string(food=50, water=1, population=SMALL_TRIBE)
+    assert "gather water" in water_text or "scouts" in water_text
 
 
 def test_critical_food_produces_urgent_text_and_critical_flag():
