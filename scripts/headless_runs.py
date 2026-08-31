@@ -46,6 +46,11 @@ IMMORTAL_CYCLES_WINDOW = 300
 IMMORTAL_MAX_CYCLES = 400
 
 
+def _wall_progress_at(sim, tribe) -> int | None:
+    existing = sim.world.constructions.get((tribe.x, tribe.y))
+    return existing["progress"] if existing and existing["type"] == "wall" else None
+
+
 async def run_once(
     run_id, models: list[str] | None = None, immortality_cycles: int = 0, max_cycles: int | None = None,
 ) -> dict:
@@ -112,6 +117,8 @@ async def run_once(
             "expeditions_succeeded": tribe.expeditions_succeeded,
             "scout_successes": tribe.scout_successes,
             "raids_won": tribe.raids_won,
+            "raids_lost": tribe.raids_lost,
+            "raids_defended": tribe.raids_defended,
             "trades_completed": tribe.trades_completed,
             "chiefs_elected": tribe.chiefs_elected,
             "chief_deaths": tribe.chief_deaths,
@@ -126,6 +133,11 @@ async def run_once(
             "farm_plots": tribe.farm_plots,
             "flock": tribe.flock,
             "city_buildings": tribe.city_buildings,
+            "fishing_learned": tribe.fishing_learned,
+            "cooking_learned": tribe.cooking_learned,
+            "foraging_retired": tribe.foraging_retired,
+            "raider_sightings": len(tribe.raider_sightings),
+            "wall_progress": _wall_progress_at(sim, tribe),
             "last_history": list(tribe.history)[-8:],
         })
     return report
@@ -139,12 +151,17 @@ def _print_report(report: dict) -> None:
               f"final_pos={t['final_position']} final_biome={t['final_biome']} "
               f"confirmed_water={t['ever_confirmed_water']} "
               f"res={t['final_resources']} exp={t['expeditions_launched']}/{t['expeditions_succeeded']} "
-              f"raids_won={t['raids_won']} trades={t['trades_completed']} births={t['births']} "
+              f"raids_won={t['raids_won']} raids_lost={t['raids_lost']} raids_defended={t['raids_defended']} "
+              f"trades={t['trades_completed']} births={t['births']} "
               f"trophies={t['trophies']} custom_awards={t['custom_awards']} "
               f"lumber_sites={t['lumber_sites']} wildlife_sites={t['wildlife_sites']} quarry_sites={t['quarry_sites']}",
               flush=True)
         print(f"    settled={t['has_ever_settled']} settlement_name={t['settlement_name']!r} "
               f"farm_plots={t['farm_plots']} flock={t['flock']} city_buildings={t['city_buildings']}",
+              flush=True)
+        print(f"    fishing_learned={t['fishing_learned']} cooking_learned={t['cooking_learned']} "
+              f"foraging_retired={t['foraging_retired']} raider_sightings={t['raider_sightings']} "
+              f"wall_progress={t['wall_progress']}",
               flush=True)
         print(f"    first_chosen_cycle={t['first_chosen_cycle']}", flush=True)
         print(f"    action_counts={t['action_counts']}", flush=True)
