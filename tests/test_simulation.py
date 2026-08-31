@@ -2642,6 +2642,28 @@ def test_advance_farming_harvests_food_once_growth_matures_and_resets():
     assert any("harvest festival" in entry for entry in tribe.history)
 
 
+def test_advance_farming_harvest_scales_with_population():
+    """Explicit finding: a harvest used to be a flat CROP_HARVEST_YIELD per plot
+    regardless of population -- every other resource-producing mechanic already
+    scales with _labor_multiplier ("more hands get more done"), but farming never
+    did, making a single GATHER_FOOD action out-yield an entire farming cycle for
+    any tribe past starting size."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.farm_plots = 1
+    tribe.population = 40  # well past POPULATION_YIELD_BASELINE (8)
+    tribe.crop_growth = 100 - config.CROP_GROWTH_PER_CYCLE
+    tribe.water = 100
+    tribe.food = 0
+    tribe.last_celebration_cycle = sim.cycle  # skip the celebration cost for a clean read
+
+    sim._advance_farming(tribe)
+
+    assert tribe.food > config.CROP_HARVEST_YIELD
+
+
 def test_advance_farming_harvest_celebration_respects_the_cooldown():
     """Unlike the water-discovery/settling celebrations (each essentially one-time),
     a harvest recurs every ~10 cycles per plot -- an uncapped feast on every single

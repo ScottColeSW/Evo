@@ -7,7 +7,7 @@ import random
 from . import config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
-    _eligible_breeding_pair, expedition_capacity,
+    _eligible_breeding_pair, _labor_multiplier, expedition_capacity,
 )
 from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
@@ -1946,7 +1946,15 @@ class Simulation:
         tribe.crop_growth += growth
         if tribe.crop_growth >= 100:
             tribe.crop_growth = 0
-            harvested = config.CROP_HARVEST_YIELD * tribe.farm_plots
+            # Explicit finding: a harvest used to be a flat CROP_HARVEST_YIELD per
+            # plot regardless of population -- every other resource-producing
+            # mechanic (_harvest, staged wall construction) already scales with
+            # _labor_multiplier ("more hands get more done"), but farming never did.
+            # For any tribe past starting size, a single GATHER_FOOD action could
+            # already out-yield an entire ~10-cycle farming cycle, which is a real
+            # economic reason to never bother planting, independent of any framing
+            # bias. More hands to bring in a harvest should mean more harvested.
+            harvested = round(config.CROP_HARVEST_YIELD * tribe.farm_plots * _labor_multiplier(tribe.population))
             tribe.food += harvested
             tribe.last_harvest_cycle = self.cycle
             tribe.history.append(f"the farm plots yield a harvest -- {harvested} food gathered in")
@@ -2101,18 +2109,23 @@ class Simulation:
             return
 
         surplus = tribe.food >= config.FOOD_TROPHY_THRESHOLD
-        discovery = any(
-            e["cycle"] == self.cycle and e["weight"] >= config.CELEBRATION_DISCOVERY_WEIGHT
-            for e in tribe.memory.entries
-        )
-        if not surplus and not discovery:
+        # Explicit request: "they celebrated a 'fresh discovery' but they need to
+        # name it" -- this used to only check WHETHER a qualifying memory existed,
+        # never which one, so the chronicle line could never say what was actually
+        # discovered. Keeps the actual entry (most recent if more than one landed
+        # this cycle) so the celebration can name the real thing being celebrated.
+        discovery_entries = [
+            e for e in tribe.memory.entries
+            if e["cycle"] == self.cycle and e["weight"] >= config.CELEBRATION_DISCOVERY_WEIGHT
+        ]
+        if not surplus and not discovery_entries:
             return
 
         tribe.last_celebration_cycle = self.cycle
         spent = round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
-        reason = "a fresh discovery" if discovery else "a season of plenty"
+        reason = f"a fresh discovery: {discovery_entries[-1]['text']}" if discovery_entries else "a season of plenty"
         tribe.history.append(
             f"\U0001f389 {tribe.name} holds a celebration for {reason}, spending {spent} food on a feast{_celebration_shout(tribe)}"
         )

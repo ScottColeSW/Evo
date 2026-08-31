@@ -1306,7 +1306,10 @@ function drawSettlementWall(t) {
   const cx = landX * TILE + TILE / 2;
   const cy = landY * TILE + TILE / 2;
   const r = Math.max(6, (TILE * MOON_CORE_RADIUS_TILES) / 3);
-  const half = r * 1.6;
+  // Explicit feedback: the wall read as sitting too tight against the settlement
+  // marker -- more clearance so it reads as a perimeter around the settlement, not
+  // a collar right on top of it.
+  const half = r * 2.4;
   const progress = Math.max(0, Math.min(100, wall.progress ?? 100));
   ctx.save();
   ctx.strokeStyle = "#a8a29e";
@@ -1387,7 +1390,11 @@ function drawTrails() {
     const r = Math.round(TRAIL_COLOR_LOW[0] + (high[0] - TRAIL_COLOR_LOW[0]) * w);
     const g = Math.round(TRAIL_COLOR_LOW[1] + (high[1] - TRAIL_COLOR_LOW[1]) * w);
     const b = Math.round(TRAIL_COLOR_LOW[2] + (high[2] - TRAIL_COLOR_LOW[2]) * w);
-    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${Math.min(0.75, 0.3 + w * 0.35)})`;
+    // Explicit feedback: trails weren't visible in a live run -- confirmed the data
+    // was real (47 recorded tiles), just too faint at low wear to read against
+    // terrain. Higher floor so even a freshly-worn tile is clearly a path, not
+    // guesswork against the green.
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${Math.min(0.8, 0.45 + w * 0.35)})`;
     ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
   });
 }
@@ -1768,7 +1775,9 @@ function updateSidebar(state) {
             (${t.x}, ${t.y}) · ${t.model} · Pop ${t.population}<br>
             🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${t.food} &nbsp;💧 ${t.water}
             ${t.chief_name ? `<br><span class="chief-line">👑 ${t.chief_name} — ${t.chief_philosophy}</span>` : ""}
+            ${t.chief_victory ? `<br><span class="chief-line">⚔️ ${t.chief_victory}</span>` : ""}
             ${t.chief_decree ? `<br><span class="chief-line">📜 decreed: ${t.chief_decree}</span>` : ""}
+            ${(t.lineage && t.lineage.length) ? `<br><span class="chief-line">\u{1F476} ${t.lineage[t.lineage.length - 1].child_name}, child of ${t.lineage[t.lineage.length - 1].parents.join(" and ")}</span>` : ""}
             ${(t.expeditions || []).map(exp => `<br><span class="chief-line">${exp.kind === "hunt" ? "🏹" : "🧭"} ${exp.lead_scout}'s ${exp.kind === "hunt" ? "hunting party" : "party"} ${exp.phase}, day ${exp.day} at (${exp.pos[0]},${exp.pos[1]}) · 🍖${exp.food_gathered} 💧${exp.water_gathered} foraged</span>`).join("")}
             ${(t.trophies && t.trophies.length) ? `<br><span class="chief-line">🏆 ${t.trophies.map(tr => tr.name).join(", ")}</span>` : ""}
             <br><span class="intel-line">${settlementLine(t)}${landmarkCounts(t)}</span>
