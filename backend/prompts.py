@@ -119,7 +119,7 @@ do not copy the placeholder text itself into your answer. Any malformed syntax w
 trigger an automated retry:
 
 {{
-    "metacognitive_rationale": "<your brief private reasoning>",
+    "metacognitive_rationale": "<answer this: given everything above, what will your tribe do this cycle, and why? one short sentence>",
     "visual_action": "<one action name from the list above, nothing else>",
     "synthetic_language_broadcast": "<your invented-language phrase, or empty string>",
     "target_vector": [x, y]

@@ -626,6 +626,24 @@ def test_choosing_relocate_resets_settlement_progress():
     assert tribe.cycles_since_relocate == 0
 
 
+def test_relocating_to_your_own_current_tile_does_not_reset_settlement_progress():
+    """Regression: choosing RELOCATE used to reset cycles_since_relocate to 0 purely
+    because it was the *chosen action*, even when target_vector pointed at the tribe's
+    own current tile and terrain_aware_step was a genuine no-op. A model that keeps
+    re-issuing RELOCATE toward an already-reached confirmed water site (the fact
+    recommending it stays true after arrival) could never accumulate any settlement
+    progress at all, standing right on the water forever."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = 8
+
+    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [40, 37]}, 100.0,
+                     {"biome": "river", "available_actions": ["RELOCATE"]})
+
+    assert (tribe.x, tribe.y) == (40, 37)  # genuinely didn't move
+    assert tribe.cycles_since_relocate == 9  # advanced, same as any other non-moving action
+
+
 def test_choosing_a_non_relocate_action_advances_settlement_progress():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]

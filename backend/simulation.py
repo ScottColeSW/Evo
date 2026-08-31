@@ -1119,11 +1119,22 @@ class Simulation:
         # turn happened to carry.
         if action == "RELOCATE":
             tribe.last_target = [target[0], target[1]]
+        pos_before = (tribe.x, tribe.y)
+
+        hazard_note = self._apply_action(tribe, action, ctx["biome"], target)
+
+        # Regression: this used to reset cycles_since_relocate to 0 purely because
+        # RELOCATE was the *chosen action*, even when the tribe had already arrived
+        # and target_vector pointed at its own current tile -- terrain_aware_step is a
+        # genuine no-op there. A model that keeps re-issuing RELOCATE toward an
+        # already-reached confirmed water site (the fact recommending it never stops
+        # being true just because they arrived) could never accumulate any settlement
+        # progress at all, standing right on the water forever. Only a real change in
+        # position should restart the clock.
+        if action == "RELOCATE" and (tribe.x, tribe.y) != pos_before:
             tribe.cycles_since_relocate = 0
         else:
             tribe.cycles_since_relocate += 1
-
-        hazard_note = self._apply_action(tribe, action, ctx["biome"], target)
         tribe.last_broadcast = broadcast
         tribe.last_action = action
         self.translation.record_broadcast(tribe.id, broadcast, action)
