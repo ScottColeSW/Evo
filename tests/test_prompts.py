@@ -1,4 +1,4 @@
-from backend.prompts import compile_live_state_prompt, get_prime_consciousness_prompt
+from backend.prompts import _growth_pressure_text, compile_live_state_prompt, get_prime_consciousness_prompt
 
 
 def _world_state(**overrides):
@@ -141,3 +141,44 @@ def test_live_state_prompt_no_longer_carries_the_action_glossary():
     )
     assert "GATHER_WATER" in prompt  # the bare name list is still there
     assert "Harvest water at your current tile" not in prompt  # the explanation is not
+
+
+def test_growth_imperative_layer_is_the_last_thing_before_the_json_slot():
+    """Explicit hypothesis: real data showed tribes plateau at low population and
+    near-zero wood/stone for 70+ cycles despite era_gap_note stating exactly what
+    was missing the whole time -- the same salience problem the survival-crisis fact
+    had before it got moved to be the prompt's own dedicated last-thing-before-the-
+    JSON-slot section. This applies that same fix one tier up."""
+    prompt = compile_live_state_prompt(
+        "base", _world_state(era_gap_note="To reach Bronze Age, still short on: wood 5/40."), "", "",
+    )
+    growth_i = prompt.index("GROWTH IMPERATIVE LAYER")
+    survival_i = prompt.index("SURVIVAL INSTINCT LAYER")
+    schema_i = prompt.index("MANDATORY REACTION SCHEMA")
+    assert survival_i < growth_i < schema_i
+    assert "still short on: wood 5/40" in prompt
+
+
+def test_growth_pressure_text_defers_to_survival_when_critical():
+    text = _growth_pressure_text("To reach Bronze Age, still short on: wood 5/40.", survival_critical=True)
+    assert "Survival still comes first" in text
+    assert "wood 5/40" in text
+
+
+def test_growth_pressure_text_is_encouraging_and_honest_once_stable():
+    """Explicit request: gratitude and real urgency, not a fabricated threat -- there
+    is no actual danger once a tribe is settled and fed, so the stakes named here
+    must be the real one (a small population's fragility to any ordinary setback),
+    not an invented monster."""
+    text = _growth_pressure_text("To reach Bronze Age, still short on: wood 5/40.", survival_critical=False)
+    assert "grateful" in text.lower()
+    assert "wood 5/40" in text
+    assert "fragile" in text.lower()
+    assert "monster" not in text.lower()
+    assert "not safe" not in text.lower()
+
+
+def test_growth_pressure_text_is_neutral_when_nothing_is_missing():
+    text = _growth_pressure_text("", survival_critical=False)
+    assert "GROWTH STATE" in text
+    assert "grateful" not in text.lower()

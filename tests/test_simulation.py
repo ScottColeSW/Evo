@@ -348,7 +348,7 @@ def test_visible_entities_reports_a_direct_lightning_hit():
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     sim.lightning_strike = (50, 50)
 
-    entities = sim._build_visible_entities(tribe, "plains", [], [], [])
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
 
     assert "lightning just struck directly at your camp" in entities
 
@@ -359,7 +359,7 @@ def test_visible_entities_reports_a_nearby_forest_lightning_strike():
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 80, 10, "#c084fc")  # deep in the forest band
     sim.lightning_strike = (82, 10)  # 2 tiles away -- nearby, not a direct hit
 
-    entities = sim._build_visible_entities(tribe, "forest", [], [], [])
+    entities, _ = sim._build_visible_entities(tribe, "forest", [], [], [])
 
     assert "lightning struck a tree near (82,10) -- it looks like it's burning" in entities
 
@@ -370,7 +370,7 @@ def test_visible_entities_ignores_a_distant_lightning_strike():
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     sim.lightning_strike = (90, 90)
 
-    entities = sim._build_visible_entities(tribe, "plains", [], [], [])
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
 
     assert not any("lightning" in e for e in entities)
 
@@ -1660,7 +1660,7 @@ def test_confirmed_water_sites_are_surfaced_as_a_durable_fact():
     sim.tribes = {"tribe_0": tribe}
     tribe.confirmed_water_sites = [(12, 34), (40, 37)]
 
-    entities = sim._build_visible_entities(tribe, "plains", [], [], [])
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
 
     assert "confirmed water source at (12,34)" in entities
     assert "confirmed water source at (40,37)" in entities
@@ -1762,7 +1762,7 @@ def test_resource_landmarks_are_surfaced_as_durable_facts_and_exposed_to_the_fro
     tribe.wildlife_sites = [(60, 60)]
     tribe.quarry_sites = [(15, 20)]
 
-    entities = sim._build_visible_entities(tribe, "plains", [], [], [])
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
 
     assert "confirmed lumber-rich area at (60,60)" in entities
     assert "confirmed wildlife-rich area at (60,60)" in entities
@@ -1952,7 +1952,7 @@ def test_gathering_brief_is_surfaced_into_the_next_turns_visible_entities():
     sim.tribes = {"tribe_0": tribe}
     tribe.gathering_brief = "the tribe has grown by 2 since the last gathering"
 
-    entities = sim._build_visible_entities(tribe, "plains", [], [], [])
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
 
     assert any("this morning's gathering: the tribe has grown by 2" in e for e in entities)
 

@@ -838,7 +838,7 @@ class Simulation:
             self.storm_cloud = None
 
     def _build_visible_entities(self, tribe: Tribe, biome: str, nearby: list[dict],
-                                 memories: list[dict], available_actions: list[str]) -> list[str]:
+                                 memories: list[dict], available_actions: list[str]) -> tuple[list[str], str]:
         visible_entities = [f"structure:{s['type']}@({s['x']},{s['y']})" for s in nearby]
         visible_entities += [f"memory(cycle {m['cycle']}): {m['text']}" for m in memories]
 
@@ -932,6 +932,18 @@ class Simulation:
         # this (Tribe.to_dict's next_era block) -- it just never made it back into the
         # tribe's own reasoning. Naming the *specific* still-short resource(s) is the
         # fact; which one (if any) to prioritize is still the tribe's own call.
+        #
+        # Explicit hypothesis (2026-08-31): this used to be one more line buried in
+        # visible_entities, the same flattened list as every generic terrain/landmark
+        # fact -- real data showed two tribes settle, survive, and sit at population
+        # 6-11 and near-zero wood/stone for 70+ cycles despite this fact stating
+        # exactly what they were short on the whole time. That's the same salience
+        # problem the survival-crisis fact had before it was moved to be the last
+        # thing before the JSON slot (see get_prime_consciousness_prompt's docstring)
+        # -- not duplicated here, *moved*, so the prompt doesn't get wordier for it.
+        # Not returned via visible_entities at all now; compile_live_state_prompt
+        # renders it as its own section, same tier as the survival instinct layer.
+        era_gap_note = ""
         nxt = next_era(tribe.era)
         if nxt is not None:
             gaps = []
@@ -942,11 +954,11 @@ class Simulation:
                 if have < minimum:
                     gaps.append(f"{resource} {have}/{minimum}")
             if gaps:
-                visible_entities.append(f"To reach {nxt.label}, still short on: {', '.join(gaps)}.")
+                era_gap_note = f"To reach {nxt.label}, still short on: {', '.join(gaps)}."
 
         if not visible_entities:
             visible_entities = ["none"]
-        return visible_entities
+        return visible_entities, era_gap_note
 
     def _is_settled(self, tribe: Tribe) -> bool:
         """Whether this tribe has actually put down roots -- see config.
@@ -1019,7 +1031,7 @@ class Simulation:
         if not settled_near_water:
             available_actions = [a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS", "GATHER_FISH")]
 
-        visible_entities = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
+        visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         # NUDGE (2026-08-31, explicit request: an "Instant Enlightenment" for a chief
         # whose last answer didn't match any real action -- see _resolve_action/
         # _apply_turn). Names exactly what was said, exactly what a valid answer looks
@@ -1209,6 +1221,7 @@ class Simulation:
             "available_actions": available_actions,
             "visible_entities": visible_entities,
             "journey_note": journey_note,
+            "era_gap_note": era_gap_note,
         }
         lineage_note = ""
         if tribe.lineage:

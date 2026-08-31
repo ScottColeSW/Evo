@@ -82,6 +82,37 @@ assigned it a meaning -- your private rationale field may be plain English, your
 field may not.{leadership_block}{glossary_block}"""
 
 
+# Explicit hypothesis (2026-08-31): once water/food pressure is gone, real data
+# showed tribes plateau at low population and near-zero wood/stone for 70+ cycles
+# despite Simulation._prepare_turn's era_gap_note stating exactly what's missing the
+# whole time -- it used to be one line buried in the generic visible_entities list,
+# the same salience problem the survival-crisis fact had before *that* got moved to
+# be the prompt's own dedicated last-thing-before-the-JSON-slot section. This is the
+# same fix, applied one tier up Maslow's hierarchy: growth/expansion only reads as
+# the tribe's defining pressure once survival itself is stable, not something
+# competing for attention with literally starving.
+def _growth_pressure_text(era_gap_note: str, survival_critical: bool) -> str:
+    if not era_gap_note:
+        return "[GROWTH STATE: NO ADVANCEMENT PENDING // FURTHEST ERA REACHED OR ALL THRESHOLDS MET]"
+    if survival_critical:
+        return f"Survival still comes first, but not forgotten: {era_gap_note}"
+    # Explicit request: fold in real gratitude and real urgency here, not a fabricated
+    # threat -- there genuinely is no active danger once a tribe is settled and fed,
+    # so claiming otherwise would be exactly the scripted-directive-dressed-as-a-fact
+    # pattern this project reverted once already (see get_prime_consciousness_prompt's
+    # leadership_block and the README's own account of that reversal). What IS true:
+    # a small, unchanging population is objectively fragile -- any single ordinary
+    # loss (a hazard, a failed hunt, a hard season) costs it proportionally more than
+    # it would a larger one. That fragility, not an invented monster, is the honest
+    # stakes behind "grow or stay vulnerable."
+    return (
+        "Your people are grateful for steady leadership, and now look to you for what "
+        f"comes next. {era_gap_note} A small, unchanging tribe stays fragile -- any "
+        "single ordinary setback costs it proportionally more than it would a larger, "
+        "more developed one. Growing and advancing is how that fragility actually ends."
+    )
+
+
 def compile_live_state_prompt(base_prompt: str, world_state: dict, ancestral_bias: str, survival_bias: str) -> str:
     """Assembles the final text block injected into Ollama for a specific simulation turn.
 
@@ -125,6 +156,11 @@ EPISTEMOLOGICAL INHERITANCE LAYER
 SURVIVAL INSTINCT LAYER
 ========================================================================
 {survival_bias or '[SURVIVAL STATE: STABLE // NO IMMEDIATE PHYSIOLOGICAL PRESSURE]'}
+
+========================================================================
+GROWTH IMPERATIVE LAYER
+========================================================================
+{_growth_pressure_text(world_state.get('era_gap_note', ''), bool(survival_bias))}
 
 ========================================================================
 MANDATORY REACTION SCHEMA (VALID JSON MODE ONLY)
