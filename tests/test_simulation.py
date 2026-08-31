@@ -1953,6 +1953,78 @@ def test_partial_wall_gives_partial_defense_bonus_not_full_or_zero():
     assert no_wall_defense < half_wall_defense < full_wall_defense
 
 
+def test_settled_near_water_gives_a_defense_bonus_even_without_a_wall():
+    from backend import config
+
+    on_water = Tribe("tribe_0", "A", "gemma2:2b", 40, 37, "#c084fc")  # river
+    on_water.has_ever_settled = True
+    on_water.population = 10
+    on_water.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    sim_water = _bare_simulation()
+
+    off_water = Tribe("tribe_1", "B", "gemma2:2b", 80, 38, "#fb923c")  # forest, not water
+    off_water.has_ever_settled = True
+    off_water.population = 10
+    off_water.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    sim_land = _bare_simulation()
+
+    base_defense = (
+        config.RAIDER_DEFENSE_BASE_CHANCE
+        + (10 // 10) * config.RAIDER_DEFENSE_POPULATION_BONUS_PER_10
+        - config.RAIDER_STRENGTH_DEFENSE_PENALTY_AT_MAX * min(1.0, 10 / config.RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE)
+    )
+    roll = base_defense + config.RAIDER_DEFENSE_WATER_BONUS / 2  # clears on-water only
+
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, roll]):
+        sim_land._check_raider_attack(off_water)
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, roll]):
+        sim_water._check_raider_attack(on_water)
+
+    assert off_water.raids_defended == 0
+    assert on_water.raids_defended == 1
+
+
+def test_raider_strength_scales_with_population_and_can_outweigh_its_own_defense_bonus():
+    """Explicit finding: raiders were being repelled too consistently because the
+    raiding force never scaled with what it was attacking -- a bigger tribe's own
+    population defense bonus could reliably clear the cap. Now a big enough
+    population's raider-strength penalty outweighs that same population's defense
+    bonus, so a wall/water genuinely matters instead of population alone being
+    enough."""
+    from backend import config
+
+    small = Tribe("tribe_0", "A", "gemma2:2b", 50, 50, "#c084fc")
+    small.has_ever_settled = True
+    small.population = 5
+    sim_small = _bare_simulation()
+
+    big = Tribe("tribe_1", "B", "gemma2:2b", 50, 50, "#fb923c")
+    big.has_ever_settled = True
+    big.population = config.RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE  # raider_strength = 1.0
+    sim_big = _bare_simulation()
+
+    small_defense = (
+        config.RAIDER_DEFENSE_BASE_CHANCE
+        + (5 // 10) * config.RAIDER_DEFENSE_POPULATION_BONUS_PER_10
+        - config.RAIDER_STRENGTH_DEFENSE_PENALTY_AT_MAX * min(1.0, 5 / config.RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE)
+    )
+    big_defense = (
+        config.RAIDER_DEFENSE_BASE_CHANCE
+        + (big.population // 10) * config.RAIDER_DEFENSE_POPULATION_BONUS_PER_10
+        - config.RAIDER_STRENGTH_DEFENSE_PENALTY_AT_MAX * 1.0
+    )
+    assert big_defense < small_defense  # the whole point of the fix
+
+    roll = (small_defense + big_defense) / 2
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, roll]):
+        sim_small._check_raider_attack(small)
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, roll]):
+        sim_big._check_raider_attack(big)
+
+    assert small.raids_defended == 1
+    assert big.raids_defended == 0
+
+
 def test_full_wall_reduces_population_loss_more_than_a_partial_wall():
     sim_partial = _bare_simulation()
     partial = Tribe("tribe_0", "A", "gemma2:2b", 50, 50, "#c084fc")

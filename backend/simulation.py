@@ -1774,10 +1774,21 @@ class Simulation:
 
         Defense is additive, not binary: population alone gives some chance to fight
         back (the same "more hands" logic actions.py._raid's own population-ratio win
-        chance already uses), and a wall at the tribe's own tile adds more on top,
-        scaled continuously by its own construction progress (actions.py._construct_
-        wall) -- a half-built wall gives roughly half the bonus, not zero and not
-        full. No wall never means automatic loss; a wall never means automatic safety."""
+        chance already uses), a wall at the tribe's own tile adds more on top, scaled
+        continuously by its own construction progress (actions.py._construct_wall) --
+        a half-built wall gives roughly half the bonus, not zero and not full -- and a
+        river/lake tile is a natural partial barrier of its own (RAIDER_DEFENSE_WATER_
+        BONUS), so a settled-near-water tribe needs less constructed wall for the same
+        real protection. No wall never means automatic loss; a wall never means
+        automatic safety.
+
+        Explicit finding: raiders were being repelled too consistently -- the raiding
+        force itself never scaled with what it was actually attacking, so population/
+        wall bonuses alone could reliably clear the defense cap for any moderately
+        developed tribe. raider_strength scales with the same population signal that
+        already drives whether an attack happens at all: a bigger, wealthier tribe
+        draws a genuinely stronger raiding force, which is what makes a wall (and
+        water) actually matter rather than population alone being enough."""
         if not tribe.has_ever_settled or tribe.extinct:
             return
         if self.cycle - tribe.last_raider_attack_cycle < config.RAIDER_HAZARD_COOLDOWN_CYCLES:
@@ -1793,13 +1804,16 @@ class Simulation:
         tribe.last_raider_attack_cycle = self.cycle
         existing = self.world.constructions.get((tribe.x, tribe.y))
         wall_fraction = (existing["progress"] / 100) if existing and existing["type"] == "wall" else 0.0
+        raider_strength = min(1.0, tribe.population / config.RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE)
 
-        defense_chance = min(
+        defense_chance = max(0.0, min(
             config.RAIDER_DEFENSE_MAX_CHANCE,
             config.RAIDER_DEFENSE_BASE_CHANCE
             + (tribe.population // 10) * config.RAIDER_DEFENSE_POPULATION_BONUS_PER_10
-            + config.RAIDER_DEFENSE_WALL_BONUS_AT_FULL_PROGRESS * wall_fraction,
-        )
+            + config.RAIDER_DEFENSE_WALL_BONUS_AT_FULL_PROGRESS * wall_fraction
+            + (config.RAIDER_DEFENSE_WATER_BONUS if self._is_settled_near_water(tribe) else 0.0)
+            - config.RAIDER_STRENGTH_DEFENSE_PENALTY_AT_MAX * raider_strength
+        ))
         if random.random() < defense_chance:
             tribe.raids_defended += 1
             self.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)

@@ -417,6 +417,18 @@ RAIDER_DEFENSE_BASE_CHANCE = 0.25
 RAIDER_DEFENSE_POPULATION_BONUS_PER_10 = 0.05
 RAIDER_DEFENSE_WALL_BONUS_AT_FULL_PROGRESS = 0.35
 RAIDER_DEFENSE_MAX_CHANCE = 0.85
+# Explicit request: a river/lake tile is a natural partial barrier -- a settled-near-
+# water tribe (Simulation._is_settled_near_water) needs less constructed wall to reach
+# the same real protection, not a separate wall requirement.
+RAIDER_DEFENSE_WATER_BONUS = 0.15
+# Explicit finding: raiders were being repelled too consistently -- the raiding force
+# itself never scaled with what it was actually attacking, so any moderately-sized
+# tribe's population/wall bonuses alone could reliably clear RAIDER_DEFENSE_MAX_CHANCE.
+# Scales with the same population signal that already drives whether an attack happens
+# at all (RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE) -- a bigger, wealthier tribe draws a
+# genuinely stronger raiding force, not the same fixed threat every time. This is what
+# makes a wall (and water) actually matter, not just population.
+RAIDER_STRENGTH_DEFENSE_PENALTY_AT_MAX = 0.35
 
 # A failed defense costs population and stockpile -- mitigated continuously by wall
 # progress, never fully negated. Reuses RAID_TRAUMA_MAGNITUDE/RADIUS and
