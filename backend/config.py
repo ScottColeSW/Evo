@@ -210,9 +210,17 @@ FLOCK_NATURAL_HATCH_CHANCE = 0.15
 # system" shape crops and water already use. The first successful catch flips
 # Tribe.fishing_learned, which is all _advance_fish_supply checks; every GATHER_FISH
 # after that (including the first) still pays out its own immediate catch too.
-GATHER_FISH_SUCCESS_CHANCE = 0.5
-FISHING_CATCH_FOOD_MIN = 8
-FISHING_CATCH_FOOD_MAX = 16
+#
+# Explicit request (2026-08-31): a settled tribe fishes right at its own water tile --
+# no expedition, no travel time, unlike HUNTING_PARTY's multi-day trip -- so fishing
+# should read as strictly the best food return once available: higher success odds
+# and a higher catch than HUNT_DEER's base_yield=15 (which also risks a wolf-pack
+# hazard) or GATHER_FOOD's base_yield=10 (both in actions.py), and it already carries
+# no resource cost the way PLANT_CROP spends wood. Expected value per attempt is now
+# 0.8 * 19 = 15.2, above both of those bases, with zero hazard risk.
+GATHER_FISH_SUCCESS_CHANCE = 0.8
+FISHING_CATCH_FOOD_MIN = 14
+FISHING_CATCH_FOOD_MAX = 24
 FISHING_SUPPLY_PER_CYCLE = 8
 # Explicit request: fish fertilizer -- once fishing is learned, a farm plot's growth
 # rate roughly doubles (halving the season), reusing tribe.fishing_learned rather than
