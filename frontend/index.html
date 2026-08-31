@@ -1311,6 +1311,31 @@ function drawLandmarks() {
   });
 }
 
+// Explicit request: "a visual on how much land they have staked out... its
+// expansion dynamically as they grow." Radius scales with t.city_buildings (a real,
+// already-tracked number, 0-6 -- see backend/simulation.py._advance_city_growth)
+// rather than an invented territory stat, so it grows exactly when the city
+// visibly does.
+function drawTerritory(t) {
+  if (!isSettled(t)) return;
+  const [landX, landY] = landAnchor(t.x, t.y);
+  const cx = landX * TILE + TILE / 2;
+  const cy = landY * TILE + TILE / 2;
+  const buildings = t.city_buildings || 0;
+  const radius = Math.max(24, TILE * 3.2) + buildings * TILE * 1.1;
+  const [r, g, b] = hexToRgb(t.color);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
+  ctx.fillStyle = `rgba(${r},${g},${b},0.06)`;
+  ctx.fill();
+  ctx.strokeStyle = `rgba(${r},${g},${b},0.3)`;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 4]);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawSettlementMarker(t) {
   if (!isSettled(t)) return;
   const [landX, landY] = landAnchor(t.x, t.y);
@@ -1399,14 +1424,19 @@ function drawCityBuildings(t) {
   const baseX = landX * TILE + TILE / 2;
   const baseY = landY * TILE + TILE / 2;
   const ringRadius = Math.max(14, TILE * 2.4);
+  // Explicit request: "maybe up, 2 or 3 story buildings eventually." Once the ring
+  // is completely full (the real MAX_CITY_BUILDINGS cap, not an invented
+  // threshold), a city that can't expand out anymore starts reading as building up
+  // instead -- taller icons, not a bigger ring.
+  const full = t.city_buildings >= config_MAX_CITY_BUILDINGS_HINT;
   for (let i = 0; i < t.city_buildings; i++) {
     const angle = (i / config_MAX_CITY_BUILDINGS_HINT) * Math.PI * 2;
     const bx = baseX + Math.cos(angle) * ringRadius;
     const by = baseY + Math.sin(angle) * ringRadius * 0.6;
-    ctx.font = `${Math.max(9, TILE * 0.9)}px sans-serif`;
+    ctx.font = `${Math.max(9, TILE * (full ? 1.15 : 0.9))}px sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("🏠", bx, by);
+    ctx.fillText(full ? "🏢" : "🏠", bx, by);
   }
 }
 // Matches backend/config.py's MAX_CITY_BUILDINGS -- spaces the ring evenly regardless
@@ -1592,6 +1622,10 @@ function drawFrame() {
   if (latestState) {
     drawCelestialLighting(latestState.cycle);
     drawWeather();
+    // Explicit request: "a visual on how much land they have staked out... its
+    // expansion dynamically as they grow." Drawn early so it reads as ground the
+    // settlement/structures/tribe sit on top of, not something covering them.
+    Object.values(latestState.tribes || {}).forEach(t => drawTerritory(t));
 
     (latestState.structures || []).forEach(s => {
       const px = s.x * TILE, py = s.y * TILE;
