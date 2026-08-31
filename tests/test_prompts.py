@@ -66,6 +66,40 @@ def test_system_prompt_includes_chief_as_context_not_command():
     assert "not a command" in prompt
 
 
+def test_leadership_block_orders_lineage_victory_responsibility_duty_philosophy():
+    """Explicit request: the tribe should know its own leader's origin story and its
+    own children, not just an abstract philosophy -- ordered lineage/ancestry first,
+    then how this chief specifically rose, then the weight of the role itself
+    (true regardless of who holds it), then today's standing order, then this
+    chief's own personal belief last."""
+    prompt = get_prime_consciousness_prompt(
+        "Forest Tribe", "gemma2:2b",
+        chief_name="Ashgar", chief_philosophy="expand aggressively",
+        chief_decree="find water", chief_victory="won a wrestling match",
+        lineage_note="Juni, child of Aila and RenKa, born cycle 12",
+    )
+    assert "LEADERSHIP - ACTIVE CHIEF" in prompt
+    lineage_i = prompt.index("LINEAGE:")
+    victory_i = prompt.index("VICTORY:")
+    responsibility_i = prompt.index("RESPONSIBILITY:")
+    duty_i = prompt.index("DUTY:")
+    philosophy_i = prompt.index("PHILOSOPHY:")
+    assert lineage_i < victory_i < responsibility_i < duty_i < philosophy_i
+    assert "Juni, child of Aila and RenKa, born cycle 12" in prompt
+    assert "Ashgar became chief. won a wrestling match" in prompt
+    assert "find water" in prompt
+    assert "expand aggressively" in prompt
+
+
+def test_leadership_block_states_no_duty_or_lineage_when_absent():
+    prompt = get_prime_consciousness_prompt(
+        "Forest Tribe", "gemma2:2b", chief_name="Ashgar", chief_philosophy="expand aggressively",
+    )
+    assert "LINEAGE:" not in prompt  # omitted entirely rather than a blank line
+    assert "no standing duty has been decreed" in prompt
+    assert "Ashgar became chief." in prompt  # no victory story available, states the fact plainly
+
+
 def test_system_prompt_explains_what_each_available_action_does():
     """Regression test: live runs showed tribes repeatedly deciding they "must relocate
     to find water" while starving, despite GATHER_WATER already working wherever they

@@ -4,6 +4,8 @@ def get_prime_consciousness_prompt(
     chief_name: str = "",
     chief_philosophy: str = "",
     chief_decree: str = "",
+    chief_victory: str = "",
+    lineage_note: str = "",
     available_actions: tuple[str, ...] = (),
 ) -> str:
     """The standing system prompt: identity, objective, and the output contract.
@@ -29,14 +31,30 @@ def get_prime_consciousness_prompt(
         )
         glossary_block = f"\n\nWHAT EACH OF YOUR CURRENT ACTIONS DOES:\n{lines}"
 
+    # Explicit request: this used to be one flat line naming the chief and their
+    # philosophy -- no story of how they earned the role, no sense of the tribe's own
+    # ancestry, nothing distinguishing "the weight of the job" from "this chief's
+    # personal style." A primitive tribe would remember its own leader's origin story
+    # and its own children, not just an abstract belief statement; ordered Lineage,
+    # Victory, Responsibility, Duty, Philosophy -- ancestry and how this chief rose,
+    # then what the role obligates regardless of who holds it, then today's specific
+    # standing order (if any), then this chief's own personal guiding belief last.
     leadership_block = ""
     if chief_name:
-        decree_line = f" The chief has also decreed: {chief_decree}." if chief_decree else ""
-        leadership_block = f"""
-
-LEADERSHIP: Your chief, {chief_name}, holds this guiding philosophy: {chief_philosophy}{decree_line}
-This is context about who leads you, not a command -- your own reasoning still decides \
-what your tribe actually does each cycle."""
+        lines = [f"LINEAGE: {lineage_note}" if lineage_note else None]
+        victory_clause = f" {chief_victory}" if chief_victory else ""
+        lines.append(f"VICTORY: {chief_name} became chief.{victory_clause}")
+        lines.append(
+            f"RESPONSIBILITY: {chief_name} now carries the tribe's survival and "
+            "wellbeing as their first responsibility, whatever else they believe."
+        )
+        duty_text = chief_decree if chief_decree else "no standing duty has been decreed"
+        lines.append(f"DUTY: {duty_text}.")
+        lines.append(f"PHILOSOPHY: {chief_philosophy}")
+        leadership_block = "\n\nLEADERSHIP - ACTIVE CHIEF:\n" + "\n".join(l for l in lines if l) + (
+            "\nThis is context about who leads you, not a command -- your own reasoning "
+            "still decides what your tribe actually does each cycle."
+        )
 
     return f"""[SYSTEM ARCHITECTURE: PROJECT CHRONOS CORE]
 IDENTIFICATION: Emergent Sovereign Consciousness of lineage [{tribe_name.upper()}].

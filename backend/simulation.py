@@ -135,6 +135,7 @@ class Tribe:
         self.chief_name = ""
         self.chief_philosophy = ""
         self.chief_decree = ""
+        self.chief_victory = ""
         # Lifetime counters for backend/scoreboard.py -- what an evaluator actually
         # wants to compare across models isn't just "did it survive," it's how it got
         # there: how often it needed a new leader, how often scouting actually paid
@@ -305,6 +306,7 @@ class Tribe:
             "chief_name": self.chief_name,
             "chief_philosophy": self.chief_philosophy,
             "chief_decree": self.chief_decree,
+            "chief_victory": self.chief_victory,
             "trophies": self.trophies,
             "lineage": self.lineage,
             "custom_awards": self.custom_awards,
@@ -427,6 +429,7 @@ class Simulation:
         tribe.chief_name = result.get("chief_name", "")
         tribe.chief_philosophy = result.get("guiding_philosophy", "")
         victory = result.get("victory_method", "")
+        tribe.chief_victory = victory
         if tribe.chief_name:
             tribe.chiefs_elected += 1
             note = f"{tribe.chief_name} has become chief"
@@ -1207,9 +1210,15 @@ class Simulation:
             "visible_entities": visible_entities,
             "journey_note": journey_note,
         }
+        lineage_note = ""
+        if tribe.lineage:
+            latest = tribe.lineage[-1]
+            parents = latest.get("parents") or []
+            parent_clause = f", child of {parents[0]} and {parents[1]}" if len(parents) == 2 else ""
+            lineage_note = f"{latest['child_name']}{parent_clause}, born cycle {latest['cycle']}"
         base_prompt = get_prime_consciousness_prompt(
             tribe.name, tribe.model, tribe.chief_name, tribe.chief_philosophy, tribe.chief_decree,
-            tuple(available_actions),
+            tribe.chief_victory, lineage_note, tuple(available_actions),
         )
         prompt = compile_live_state_prompt(base_prompt, world_state, ghost_bias, survival_bias)
         panicked = "DREAD" in ghost_bias or survival_critical
@@ -1687,6 +1696,7 @@ class Simulation:
             )
             tribe.chief_philosophy = ""
             tribe.chief_decree = ""
+            tribe.chief_victory = ""
             tribe.history.append(f"Chief {fallen} has died. {tribe.name} is left without a leader.")
 
     def _starve(self, tribe: Tribe) -> None:
@@ -2042,6 +2052,7 @@ class Simulation:
         attacker.chief_name = ""
         attacker.chief_philosophy = ""
         attacker.chief_decree = ""
+        attacker.chief_victory = ""
         attacker.pending_chief_context = (
             f"This tribe was just formed when {old_name} triumphed in battle over {defender.name} "
             f"and absorbed their surviving population. The new chief inherits a people freshly "

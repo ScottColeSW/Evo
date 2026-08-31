@@ -3238,6 +3238,40 @@ async def test_install_chief_records_decree_when_decreed_and_not_on_water():
     assert any("decrees" in entry for entry in tribe.history)
 
 
+@run_async
+async def test_install_chief_records_victory_story_for_the_leadership_block():
+    """Explicit request: the tribe's own standing prompt context should carry the
+    chief's origin story (see prompts.py's LEADERSHIP - ACTIVE CHIEF block), not just
+    a distilled philosophy the human sidebar happens to also show."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    fake_result = {
+        "chief_name": "Ashgar", "victory_method": "won a wrestling match",
+        "guiding_philosophy": "expansion",
+    }
+    with mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=fake_result)):
+        await sim._install_chief(tribe)
+
+    assert tribe.chief_victory == "won a wrestling match"
+    request, ctx = sim._prepare_turn(tribe)
+    assert "won a wrestling match" in request["prompt"]
+
+
+def test_chief_victory_clears_alongside_philosophy_on_chief_death():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+    tribe.chief_philosophy = "expansion"
+    tribe.chief_victory = "won a wrestling match"
+    tribe.population = 5
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._lose_population(tribe, 1, cause="wolf_attack")
+
+    assert tribe.chief_name == ""
+    assert tribe.chief_victory == ""
+
+
 def test_water_decree_clears_once_water_is_actually_confirmed():
     """Regression test: real live runs showed tribes repeatedly scouting for water
     they'd already found -- the hardcoded water decree, once set, never expired on
