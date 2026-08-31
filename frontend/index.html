@@ -97,6 +97,9 @@
   .consensus-bar { height: 4px; background: #333344; border-radius: 2px; margin-top: 4px; overflow: hidden; }
   .consensus-fill { height: 100%; background: #34d399; }
   .empty-hint { color: #6b7280; font-size: 12px; padding: 8px 0; }
+  .lineage-row { background: #222232; padding: 8px 10px; border-radius: 6px; border-left: 3px solid; font-size: 12px; margin-bottom: 6px; }
+  .lineage-cycle { color: #8a8a9a; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 6px; }
+  .lineage-tribe { color: #c7d2fe; font-weight: bold; margin-right: 4px; }
   .score-card { background: #222232; padding: 10px; border-radius: 6px; font-size: 12px; margin-bottom: 8px; border-left: 4px solid #6366f1; }
   .score-card .score-model { font-weight: bold; color: #c7d2fe; }
   .score-card .score-stats { color: #9ca3af; margin-top: 4px; line-height: 1.5; }
@@ -143,6 +146,7 @@
       <div id="sidebar-tabs">
         <button class="tab-btn active" data-tab="tribes">Tribes</button>
         <button class="tab-btn" data-tab="consensus">Consensus</button>
+        <button class="tab-btn" data-tab="lineage">Lineage</button>
         <button class="tab-btn" data-tab="chronicle">Chronicle</button>
         <button class="tab-btn" data-tab="scoreboard">Scoreboard</button>
       </div>
@@ -159,6 +163,9 @@
       </div>
       <div id="tab-consensus" class="tab-panel">
         <div id="consensus-panel"></div>
+      </div>
+      <div id="tab-lineage" class="tab-panel">
+        <div id="lineage-panel"></div>
       </div>
       <div id="tab-chronicle" class="tab-panel">
         <div id="log-chronicle" class="log-box"></div>
@@ -365,6 +372,36 @@ function renderEraLadder(state) {
         ${[popLine, ...resourceLines].join(" &nbsp;·&nbsp; ")}
       </div>`;
   }).join("");
+}
+
+/* ---------- Lineage: births (tribe.lineage) and hatchlings (tribe.flock_lineage)
+   over time, across every tribe -- previously only the single most-recent entry
+   showed up inline in the Tribes panel, with no way to browse the whole history. */
+function renderLineage(state) {
+  const panel = document.getElementById("lineage-panel");
+  if (!panel) return;
+  const entries = [];
+  Object.values(state.tribes || {}).forEach(t => {
+    (t.lineage || []).forEach(l => entries.push({
+      cycle: l.cycle, tribeName: t.name, tribeColor: t.color,
+      icon: "\u{1F476}", text: `${l.child_name}, child of ${(l.parents || []).join(" and ")}`,
+    }));
+    (t.flock_lineage || []).forEach(l => entries.push({
+      cycle: l.cycle, tribeName: t.name, tribeColor: t.color,
+      icon: "\u{1F423}", text: `A hatchling, ${l.trait}${l.note ? ` -- ${l.note}` : ""}`,
+    }));
+  });
+  if (entries.length === 0) {
+    panel.innerHTML = `<div class="empty-hint">No births or hatchlings recorded yet.</div>`;
+    return;
+  }
+  entries.sort((a, b) => b.cycle - a.cycle);
+  panel.innerHTML = entries.map(e => `
+    <div class="lineage-row" style="border-left-color:${e.tribeColor}">
+      <span class="lineage-cycle">Cycle ${e.cycle}</span>
+      <span class="lineage-tribe">${e.tribeName}</span>
+      ${e.icon} ${escapeHtml(e.text)}
+    </div>`).join("");
 }
 
 /* ---------- Scoreboard: cross-run benchmark (backend/scoreboard.py) ---------- */
@@ -1809,6 +1846,7 @@ function updateSidebar(state) {
   });
 
   renderEraLadder(state);
+  renderLineage(state);
 
   const pairs = state.linguistic_consensus || [];
   if (pairs.length === 0) {
