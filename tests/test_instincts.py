@@ -66,6 +66,22 @@ def test_effective_food_upkeep_never_drops_below_one():
     assert effective_food_upkeep(1, cooking_learned=True) == 1
 
 
+def test_kitchen_alone_without_cooking_changes_nothing():
+    assert effective_food_upkeep(6, cooking_learned=False, kitchen_built=True) == 6
+
+
+def test_kitchen_stacks_a_further_multiplier_on_top_of_cooking():
+    """Explicit follow-up: "a kitchen which improves cooked food to excellent
+    food yielding 3 per cooked item" -- excellent food is 3x as good as cooked
+    food, not just 3x raw."""
+    from backend import config
+
+    cooked_only = effective_food_upkeep(90, cooking_learned=True, kitchen_built=False)
+    excellent = effective_food_upkeep(90, cooking_learned=True, kitchen_built=True)
+    assert cooked_only == max(1, round(90 / config.COOKING_UPKEEP_DIVISOR))
+    assert excellent == max(1, round(90 / (config.COOKING_UPKEEP_DIVISOR * config.KITCHEN_UPKEEP_MULTIPLIER)))
+
+
 def test_cooking_learned_raises_the_real_hunger_threshold():
     """A tribe that has learned to cook genuinely isn't as close to starving at the
     same raw food number -- the threshold itself should reflect the real, reduced

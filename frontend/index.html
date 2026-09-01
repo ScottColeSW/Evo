@@ -1971,21 +1971,21 @@ function landmarkCounts(t) {
   return counts.length ? " · " + counts.join(" ") : "";
 }
 
-// Mirrors backend/config.py's FISHING_SUPPLY_PER_CYCLE -- the real, passive daily
-// yield _advance_fish_supply pays out once fishing is learned, same number the
-// Fishery line below reports rather than a vaguer "mastered" label.
+// Mirrors backend/config.py's FISHING_SUPPLY_PER_CYCLE/MINE_YIELD_PER_CYCLE -- the
+// real, passive daily yields _advance_fish_supply/_advance_mine_yield pay out, same
+// numbers the lines below report rather than a vaguer "mastered" label.
 const FISHING_SUPPLY_PER_CYCLE = 8;
+const MINE_YIELD_PER_CYCLE = 5;
 
 // A dedicated mini-panel for each real production system a tribe has stood up --
 // per explicit request, each one gets its own named line with a real yield/stage,
 // the same visual weight the farm's growth stage already had, not a buried stat.
 // Explicit request: "when they build a Sawmill it will be here, and when they
-// build a Quarry it will be here, and Mines too as they find and excavate them" --
-// Sawmill/Quarry/Mine don't exist as mechanics yet (still queued backend work), so
-// they're not listed below; add each one's own `if` block here, following the
-// Fishery line's shape, the same day its backend mechanic lands.
+// build a Quarry it will be here, and Mines too as they find and excavate them."
 function farmingPanel(t) {
-  if (!t.farm_plots && !t.flock && !t.fishing_learned) return "";
+  const hasAny = t.farm_plots || t.flock || t.fishing_learned || t.sawmill_built
+    || t.quarry_built || t.kitchen_built || t.mine_built;
+  if (!hasAny) return "";
   const parts = [];
   if (t.farm_plots > 0) {
     const stage = t.crop_growth < 33 ? "🌱 sprouting" : t.crop_growth < 66 ? "🌿 growing" : "🌾 ready to harvest";
@@ -2011,6 +2011,13 @@ function farmingPanel(t) {
   if (t.fishing_learned) {
     const dockNote = t.dock_built ? " · dock boosts every manual catch further" : "";
     parts.push(`🎣 Fishery — ${FISHING_SUPPLY_PER_CYCLE} food/day flows in automatically${dockNote}`);
+  }
+  if (t.sawmill_built) parts.push("🪵 Sawmill — every load of gathered wood is worth 3x");
+  if (t.quarry_built) parts.push("⛏️ Quarry — every load of harvested stone is worth 3x");
+  if (t.kitchen_built) parts.push("🍲 Kitchen — cooked meals count as excellent food");
+  if (t.mine_built) {
+    const amount = (t.unique_resources || {})[t.mine_resource_name] || 0;
+    parts.push(`💎 Mine — ${MINE_YIELD_PER_CYCLE} ${escapeHtml(t.mine_resource_name)}/day (${amount} stored)`);
   }
   return `<div class="farming-panel"><span class="farming-title">🏘️ Establishments</span><br>${parts.join("<br>")}</div>`;
 }

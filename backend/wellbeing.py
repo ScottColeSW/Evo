@@ -42,7 +42,7 @@ def compute_wellbeing(tribe, wall_fraction: float) -> dict:
     # "cooked food is worth 3 raw food") -- water is unaffected, so the two need
     # separate buffers rather than one shared upkeep divisor.
     upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
-    food_upkeep = effective_food_upkeep(upkeep, tribe.cooking_learned)
+    food_upkeep = effective_food_upkeep(upkeep, tribe.cooking_learned, tribe.kitchen_built)
     buffer_cycles = min(tribe.food / food_upkeep, tribe.water / upkeep)
     physiological = min(1.0, buffer_cycles / (config.HUNGER_WARNING_CYCLES_LEFT * 2))
 

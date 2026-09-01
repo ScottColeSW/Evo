@@ -11,6 +11,24 @@ BIOME_LABELS = {
     "shoals": "The Glass Shallows",
 }
 
+# Explicit request: "Mines can contain the Unique Resource of the Biome... you can
+# make unique names for each." One named resource per biome a Mine can be built
+# on, each name drawing on that biome's own BIOME_LABELS flavor above rather than
+# a single generic "ore" -- see Simulation._advance_one_expedition (discovery) and
+# actions.py._build_mine (excavation). Trade finally has something a tribe would
+# actually want to hold onto or offer, not just the same four generic resources
+# (see the "Mine & unique resource" design note this was scoped from).
+UNIQUE_RESOURCE_BY_BIOME = {
+    "forest": "Whisperwood Amber",
+    "mountains": "Orosite Ore",
+    "river": "Serpent's Gold",
+    "lake": "Mere Pearl",
+    "plains": "Basin Loamstone",
+    "ocean": "Abyssal Pearl",
+    "cliffs": "Brinkspar Crystal",
+    "shoals": "Shoalglass",
+}
+
 # Earth-like hydrology: the river originates in the mountains (west) and winds its way
 # down through plains and forest to a coastline (east), rather than being an arbitrary
 # diagonal band unrelated to anything else on the map.
