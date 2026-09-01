@@ -81,7 +81,9 @@
     padding: 1px 6px;
     border-radius: 4px;
     letter-spacing: 0.02em;
+    font-style: italic;
   }
+  .chief-outcome { color: #9ca3af; font-style: italic; }
   .stat-card.extinct { opacity: 0.55; filter: grayscale(0.6); }
   .speech { font-style: italic; color: #fbbf24; display: block; margin-top: 4px; }
   .survival-warning { color: #f87171; font-size: 11px; margin-top: 4px; }
@@ -2047,21 +2049,35 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Explicit request: the 🧠 line "still looks suspect as a choice to be made by the
-// Chief... it would be great to see highlighted his final decision for the days
-// work to be done by everyone." A turn's history entry is built server-side as
-// "[XXXms] ACTION_NAME: rationale..." (see Simulation._apply_turn) -- everything
-// else in that string is free-form model text, but the action name itself is the
-// one real, structured fact in it: literally what the Chief decided everyone will
-// do. Pulled out into its own highlighted chip so it reads as a decision, not just
-// more prose to skim past. System-generated lines (harvests, hatches, raids) don't
-// match this shape at all and render unchanged.
+// Explicit request, revised twice now: first to highlight the Chief's final
+// decision at all (it "looks suspect as a choice to be made by the Chief"), then
+// -- once that highlight just wrapped the raw SNAKE_CASE action name next to a
+// bare "[XXXms]" latency figure -- "I'd like that revised so it is posed as a
+// question they are pondering. right now it still looks like code." A turn's
+// history entry is built server-side as "[XXXms] ACTION_NAME: rationale..." (see
+// Simulation._apply_turn), optionally followed by " | outcome" if the action
+// resolved to a real result/rejection message. Nothing here is invented: the
+// latency and action name are real structured facts, the rationale is the
+// model's own real text -- this only changes how those same facts are laid out,
+// framing the action as the question the Chief was weighing rather than a
+// log line reporting what already happened. System-generated lines (harvests,
+// hatches, raids) don't match this shape at all and render unchanged.
+function humanizeAction(action) {
+  return action.toLowerCase().replace(/_/g, " ");
+}
+
 function formatChiefDecision(entry) {
   const escaped = escapeHtml(entry);
-  const match = escaped.match(/^(\[\d+ms\]\s+)([A-Z_]+)(:.*)$/s);
+  const match = escaped.match(/^\[(\d+)ms\]\s+([A-Z_]+):\s*(.*)$/s);
   if (!match) return escaped;
-  const [, prefix, action, rest] = match;
-  return `${prefix}<span class="chief-decision">${action}</span>${rest}`;
+  const [, latencyMs, action, remainder] = match;
+  const pipeIdx = remainder.indexOf(" | ");
+  const rationale = pipeIdx === -1 ? remainder : remainder.slice(0, pipeIdx);
+  const outcome = pipeIdx === -1 ? "" : remainder.slice(pipeIdx + 3);
+  const question = `<span class="chief-decision" title="decided in ${latencyMs}ms">"Should we ${humanizeAction(action)}?"</span>`;
+  let html = `${question} ${rationale}`;
+  if (outcome) html += ` <span class="chief-outcome">— ${outcome}</span>`;
+  return html;
 }
 
 function updateSidebar(state) {
