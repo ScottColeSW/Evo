@@ -99,12 +99,24 @@ def expedition_capacity(tribe) -> int:
 
 
 def _gather_wood(sim, tribe, biome, target):
-    tribe.wood += _harvest(sim, tribe, "wood", 10, biome)
+    # Explicit request: "saw mill turns 1 wood into 3 wood" -- a permanent
+    # multiplier on every future harvest once built (config.SAWMILL_WOOD_MULTIPLIER),
+    # not a separate conversion action spent on the stockpile. Same "3x via a
+    # multiplier applied once at the point of harvest" shape cooking already uses.
+    amount = _harvest(sim, tribe, "wood", 10, biome)
+    if tribe.sawmill_built:
+        amount *= config.SAWMILL_WOOD_MULTIPLIER
+    tribe.wood += amount
     return None
 
 
 def _gather_stone(sim, tribe, biome, target):
-    tribe.stone += _harvest(sim, tribe, "stone", 10, biome)
+    # Explicit request: "quarried stone is also worth 3 times as much as a
+    # harvested stone" -- mirrors _gather_wood's sawmill multiplier exactly.
+    amount = _harvest(sim, tribe, "stone", 10, biome)
+    if tribe.quarry_built:
+        amount *= config.QUARRY_STONE_MULTIPLIER
+    tribe.stone += amount
     return None
 
 
@@ -295,6 +307,73 @@ def _build_dock(sim, tribe, biome, target):
     tribe.dock_built = True
     sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.BUILD_FIRE_PRIDE_MAGNITUDE, config.BUILD_FIRE_PRIDE_RADIUS)
     return "a dock rises at the water's edge -- fishing here will pay out more from now on"
+
+
+def _build_sawmill(sim, tribe, biome, target):
+    """Explicit request: "after they have farming and fishing down and are
+    building homes" -- gated on the two real facts named (long_house_built,
+    fishing_learned), not era alone. One-way, like dock_built; permanently
+    triples every future GATHER_WOOD yield (see _gather_wood)."""
+    if tribe.sawmill_built or not (tribe.long_house_built and tribe.fishing_learned):
+        return None
+    if tribe.wood < config.SAWMILL_WOOD_COST or tribe.stone < config.SAWMILL_STONE_COST:
+        return None
+    tribe.wood -= config.SAWMILL_WOOD_COST
+    tribe.stone -= config.SAWMILL_STONE_COST
+    tribe.sawmill_built = True
+    sim._award_trophy(tribe, "Sawyer")
+    return "a sawmill rises -- every load of wood gathered from here on is worth three times as much"
+
+
+def _build_quarry(sim, tribe, biome, target):
+    """Mirrors _build_sawmill exactly, for stone instead of wood."""
+    if tribe.quarry_built or not (tribe.long_house_built and tribe.fishing_learned):
+        return None
+    if tribe.wood < config.QUARRY_WOOD_COST or tribe.stone < config.QUARRY_STONE_COST:
+        return None
+    tribe.wood -= config.QUARRY_WOOD_COST
+    tribe.stone -= config.QUARRY_STONE_COST
+    tribe.quarry_built = True
+    sim._award_trophy(tribe, "Quarrier")
+    return "a quarry opens -- every load of stone harvested from here on is worth three times as much"
+
+
+def _build_kitchen(sim, tribe, biome, target):
+    """Explicit follow-up: "we might have to let them build a kitchen which
+    improves cooked food to excellent food yielding 3 per cooked item." Only
+    means anything once cooking is already known -- gated on cooking_learned +
+    long_house_built (real shelter, same "building homes" signal sawmill/quarry
+    use). Stacks config.KITCHEN_UPKEEP_MULTIPLIER on top of the cooking divisor
+    (see instincts.effective_food_upkeep) rather than replacing it."""
+    if tribe.kitchen_built or not (tribe.cooking_learned and tribe.long_house_built):
+        return None
+    if tribe.wood < config.KITCHEN_WOOD_COST or tribe.stone < config.KITCHEN_STONE_COST:
+        return None
+    tribe.wood -= config.KITCHEN_WOOD_COST
+    tribe.stone -= config.KITCHEN_STONE_COST
+    tribe.kitchen_built = True
+    sim._award_trophy(tribe, "Gourmet")
+    return "a kitchen is built -- cooked meals now count as excellent food, stretching stores even further"
+
+
+def _build_mine(sim, tribe, biome, target):
+    """Explicit request: "Mines can [also] contain the Unique Resource of the
+    Biome... these locations are scattered about the map." Gated on quarry_built
+    (excavating a named seam is a deeper extension of already knowing how to
+    quarry) plus at least one site actually discovered via scouting (Simulation.
+    _advance_one_expedition). Locks in the most recently discovered site's
+    resource permanently -- a tribe with several discovered veins on record still
+    only ever works the one it chose to excavate."""
+    if tribe.mine_built or not tribe.quarry_built or not tribe.mine_sites:
+        return None
+    if tribe.wood < config.MINE_WOOD_COST or tribe.stone < config.MINE_STONE_COST:
+        return None
+    tribe.wood -= config.MINE_WOOD_COST
+    tribe.stone -= config.MINE_STONE_COST
+    tribe.mine_built = True
+    tribe.mine_resource_name = tribe.mine_sites[-1]["resource"]
+    sim._award_trophy(tribe, "Prospector")
+    return f"a mine is excavated -- {tribe.mine_resource_name} will flow in steadily from now on"
 
 
 def _plant_crop(sim, tribe, biome, target):
@@ -839,6 +918,10 @@ ACTION_REGISTRY = {
     "BUILD_ROAD": _build_road,
     "EXPAND_TERRITORY": _expand_territory,
     "BUILD_DOCK": _build_dock,
+    "BUILD_SAWMILL": _build_sawmill,
+    "BUILD_QUARRY": _build_quarry,
+    "BUILD_MINE": _build_mine,
+    "BUILD_KITCHEN": _build_kitchen,
     "PLANT_CROP": _plant_crop,
     "GATHER_EGGS": _gather_eggs,
     "CATCH_FISH": _catch_fish,
@@ -875,6 +958,10 @@ ACTION_DESCRIPTIONS = {
     "BUILD_ROAD": "Build a road at your current tile using stored wood and stone. A one-time, permanent improvement: every future scouting party, hunting party, or trade emissary you send out travels faster from then on.",
     "EXPAND_TERRITORY": "Push your city's growth beyond its normal limit using stored wood and stone -- only possible once your city has already finished growing on its own. Adds more buildings, up to double the usual cap.",
     "BUILD_DOCK": "Build a dock at your current tile using stored wood -- only possible once the tribe has settled here. A one-time, permanent structure: every future fish caught here pays out more from then on.",
+    "BUILD_SAWMILL": "Build a sawmill using stored wood and stone -- only possible once a long house stands and fishing is mastered. A one-time, permanent structure: every future load of gathered wood is worth three times as much from then on.",
+    "BUILD_QUARRY": "Build a quarry using stored wood and stone -- only possible once a long house stands and fishing is mastered. A one-time, permanent structure: every future load of harvested stone is worth three times as much from then on.",
+    "BUILD_MINE": "Excavate a mine at a vein your scouts have already found, using stored wood and stone -- only possible once a quarry stands and at least one vein is known. A one-time, permanent structure: its unique resource flows in steadily from then on.",
+    "BUILD_KITCHEN": "Build a kitchen using stored wood and stone -- only possible once cooking is known and a long house stands. A one-time, permanent structure: cooked meals become excellent food, stretching stores even further from then on.",
     "PLANT_CROP": "Plant a farm plot at your current tile using stored wood -- only possible once the tribe has settled here. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
     "GATHER_EGGS": "Search for wild fowl nests near your current tile -- only possible once the tribe has settled here. A found egg is set aside and hatches on its own, growing the tribe's flock by one.",
     "CATCH_FISH": "Fish at your current tile -- only possible once the tribe has settled here. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",

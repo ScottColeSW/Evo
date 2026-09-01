@@ -357,6 +357,132 @@ def test_build_dock_boosts_future_fish_catches():
     assert "30 food" in catch_result
 
 
+def test_sawmill_triples_every_future_wood_harvest():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 0
+
+    with mock.patch("backend.actions._harvest", return_value=10):
+        ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "forest", _NO_TARGET)
+        assert tribe.wood == 10
+
+        tribe.sawmill_built = True
+        ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "forest", _NO_TARGET)
+        assert tribe.wood == 40  # +10 unboosted, then +30 (10 * SAWMILL_WOOD_MULTIPLIER)
+
+
+def test_quarry_triples_every_future_stone_harvest():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Mountain Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.stone = 0
+
+    with mock.patch("backend.actions._harvest", return_value=10):
+        ACTION_REGISTRY["GATHER_STONE"](sim, tribe, "mountains", _NO_TARGET)
+        assert tribe.stone == 10
+
+        tribe.quarry_built = True
+        ACTION_REGISTRY["GATHER_STONE"](sim, tribe, "mountains", _NO_TARGET)
+        assert tribe.stone == 40  # +10 unboosted, then +30 (10 * QUARRY_STONE_MULTIPLIER)
+
+
+def test_build_sawmill_requires_long_house_and_fishing_first():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = config.SAWMILL_WOOD_COST
+    tribe.stone = config.SAWMILL_STONE_COST
+
+    assert ACTION_REGISTRY["BUILD_SAWMILL"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.sawmill_built is False
+
+    tribe.long_house_built = True
+    tribe.fishing_learned = True
+    result = ACTION_REGISTRY["BUILD_SAWMILL"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.sawmill_built is True
+    assert "sawmill rises" in result
+
+
+def test_build_quarry_requires_long_house_and_fishing_first():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Mountain Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = config.QUARRY_WOOD_COST
+    tribe.stone = config.QUARRY_STONE_COST
+
+    assert ACTION_REGISTRY["BUILD_QUARRY"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.quarry_built is False
+
+    tribe.long_house_built = True
+    tribe.fishing_learned = True
+    result = ACTION_REGISTRY["BUILD_QUARRY"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.quarry_built is True
+    assert "quarry opens" in result
+
+
+def test_build_mine_requires_quarry_and_a_discovered_site():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Mountain Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = config.MINE_WOOD_COST
+    tribe.stone = config.MINE_STONE_COST
+    tribe.quarry_built = True
+
+    # No discovered site yet -- quarry_built alone isn't enough.
+    assert ACTION_REGISTRY["BUILD_MINE"](sim, tribe, "mountains", _NO_TARGET) is None
+    assert tribe.mine_built is False
+
+    tribe.mine_sites.append({"x": 10, "y": 10, "biome": "mountains", "resource": "Orosite Ore"})
+    result = ACTION_REGISTRY["BUILD_MINE"](sim, tribe, "mountains", _NO_TARGET)
+
+    assert tribe.mine_built is True
+    assert tribe.mine_resource_name == "Orosite Ore"
+    assert "Orosite Ore" in result
+
+
+def test_build_mine_locks_in_the_most_recently_discovered_site():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Mountain Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = config.MINE_WOOD_COST
+    tribe.stone = config.MINE_STONE_COST
+    tribe.quarry_built = True
+    tribe.mine_sites.append({"x": 10, "y": 10, "biome": "mountains", "resource": "Orosite Ore"})
+    tribe.mine_sites.append({"x": 20, "y": 60, "biome": "forest", "resource": "Whisperwood Amber"})
+
+    ACTION_REGISTRY["BUILD_MINE"](sim, tribe, "mountains", _NO_TARGET)
+
+    assert tribe.mine_resource_name == "Whisperwood Amber"
+
+
+def test_build_kitchen_requires_cooking_and_long_house_first():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = config.KITCHEN_WOOD_COST
+    tribe.stone = config.KITCHEN_STONE_COST
+
+    assert ACTION_REGISTRY["BUILD_KITCHEN"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.kitchen_built is False
+
+    tribe.cooking_learned = True
+    tribe.long_house_built = True
+    result = ACTION_REGISTRY["BUILD_KITCHEN"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.kitchen_built is True
+    assert "kitchen is built" in result
+
+
 def test_plant_crop_spends_wood_and_adds_a_plot():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")

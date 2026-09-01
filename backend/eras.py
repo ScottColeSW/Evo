@@ -96,6 +96,7 @@ ERAS: tuple[Era, ...] = (
         unlocks_actions=(
             "CONSTRUCT_WALL", "PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "STRIKE_RAIDER_CAMP",
             "BUILD_LONG_HOUSE", "DECLARE_ALLIANCE", "DECLARE_WAR", "BUILD_DOCK",
+            "BUILD_SAWMILL", "BUILD_QUARRY", "BUILD_KITCHEN",
         ),
         announcement="{tribe} has forged the Tribal Synapse -- true society begins!",
     ),
@@ -105,7 +106,7 @@ ERAS: tuple[Era, ...] = (
         requires_population=40,
         requires_resources={"water": 60, "stone": 30, "wood": 50},
         advancement_cost={"wood": 40, "stone": 40, "water": 40},
-        unlocks_actions=("BUILD_CASTLE", "BUILD_ROAD", "EXPAND_TERRITORY"),
+        unlocks_actions=("BUILD_CASTLE", "BUILD_ROAD", "EXPAND_TERRITORY", "BUILD_MINE"),
         announcement="{tribe} has founded a lasting city and entered the Monolithic Era!",
         founds_city=True,
     ),

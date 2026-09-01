@@ -27,7 +27,7 @@ from .scheduler import ModelBatchScheduler
 from .self_mod import SelfModEngine
 from .translation_matrix import TranslationConfidenceMatrix
 from .vram_guard import HardwareVRAMBoundaryGuard
-from .world import BIOME_LABELS, Landscape, biome_at
+from .world import BIOME_LABELS, UNIQUE_RESOURCE_BY_BIOME, Landscape, biome_at
 
 # One spawn per land biome (forest, mountains, plains, river -- not ocean, nothing spawns
 # at sea) so the default picker order (Forest Tribe, Mountain Tribe, ...) actually starts
@@ -317,6 +317,31 @@ class Tribe:
         # See actions.py._build_dock -- one-way, gated on general settling.
         # Boosts every future CATCH_FISH catch.
         self.dock_built = False
+        # See actions.py._build_sawmill/_build_quarry -- one-way, each gated on
+        # long_house_built + fishing_learned (explicit request: "after they have
+        # farming and fishing down and are building homes"). Each permanently
+        # triples every future GATHER_WOOD/GATHER_STONE yield respectively.
+        self.sawmill_built = False
+        self.quarry_built = False
+        # A discovered-but-unexcavated mine (see Simulation._advance_one_expedition),
+        # same shape as quarry_sites/lumber_sites -- {"x", "y", "biome", "resource"}
+        # dicts, most recent last. Scattered across any biome, not just mountains --
+        # see world.UNIQUE_RESOURCE_BY_BIOME.
+        self.mine_sites: list[dict] = []
+        # See actions.py._build_mine -- one-way, gated on quarry_built (excavating a
+        # named seam is a deeper extension of already knowing how to quarry) plus at
+        # least one discovered mine site. mine_resource_name locks in which of the
+        # tribe's discovered sites it actually excavated -- a tribe with more than
+        # one on record still only ever works the one it chose. unique_resources is
+        # a dict (not a fixed field per biome) since most tribes will only ever hold
+        # zero or one named resource in their whole run.
+        self.mine_built = False
+        self.mine_resource_name: str | None = None
+        self.unique_resources: dict[str, int] = {}
+        # See actions.py._build_kitchen -- one-way, gated on cooking_learned +
+        # long_house_built. Stacks config.KITCHEN_UPKEEP_MULTIPLIER on top of the
+        # cooking divisor (see instincts.effective_food_upkeep).
+        self.kitchen_built = False
         # See Simulation._prepare_turn's GATHER_FOOD retirement -- one-way, like
         # has_ever_settled, once a genuinely proven passive food source exists.
         self.foraging_retired = False
@@ -354,7 +379,9 @@ class Tribe:
 
     def to_dict(self) -> dict:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
-        survival_warning, _ = survival_bias_string(self.food, self.water, self.population, self.cooking_learned)
+        survival_warning, _ = survival_bias_string(
+            self.food, self.water, self.population, self.cooking_learned, self.kitchen_built
+        )
         nxt = next_era(self.era)
         next_era_info = None
         if nxt is not None:
@@ -397,6 +424,13 @@ class Tribe:
             "castle_built": self.castle_built,
             "road_built": self.road_built,
             "dock_built": self.dock_built,
+            "sawmill_built": self.sawmill_built,
+            "quarry_built": self.quarry_built,
+            "mine_sites": self.mine_sites,
+            "mine_built": self.mine_built,
+            "mine_resource_name": self.mine_resource_name,
+            "unique_resources": self.unique_resources,
+            "kitchen_built": self.kitchen_built,
             "foraging_retired": self.foraging_retired,
             "watering_retired": self.watering_retired,
             "last_harvest_cycle": self.last_harvest_cycle,
@@ -693,7 +727,9 @@ class Simulation:
             f"Population: {tribe.population}.",
             f"Resources on hand: {tribe.wood} wood, {tribe.stone} stone, {tribe.food} food, {tribe.water} water.",
         ]
-        survival_bias, _critical = survival_bias_string(tribe.food, tribe.water, tribe.population, tribe.cooking_learned)
+        survival_bias, _critical = survival_bias_string(
+            tribe.food, tribe.water, tribe.population, tribe.cooking_learned, tribe.kitchen_built
+        )
         if survival_bias:
             lines.append(survival_bias)
         if self._is_settled(tribe):
@@ -873,6 +909,7 @@ class Simulation:
                 self._celebrate_settling(tribe)
             self._advance_water_supply(tribe)
             self._advance_fish_supply(tribe)
+            self._advance_mine_yield(tribe)
             self._advance_farming(tribe)
             self._advance_flock(tribe)
             self._advance_city_growth(tribe)
@@ -1020,6 +1057,9 @@ class Simulation:
         visible_entities += [f"confirmed lumber-rich area at ({x},{y})" for x, y in tribe.lumber_sites[-3:]]
         visible_entities += [f"confirmed wildlife-rich area at ({x},{y})" for x, y in tribe.wildlife_sites[-3:]]
         visible_entities += [f"confirmed stone-rich area at ({x},{y})" for x, y in tribe.quarry_sites[-3:]]
+        visible_entities += [
+            f"a vein of {site['resource']} was found at ({site['x']},{site['y']})" for site in tribe.mine_sites[-3:]
+        ]
         visible_entities += [f"raiders reported near ({x},{y})" for x, y in tribe.raider_sightings[-3:]]
         if tribe.raiders_approaching:
             ax, ay = tribe.raiders_approaching["x"], tribe.raiders_approaching["y"]
@@ -1165,7 +1205,9 @@ class Simulation:
         biome = self.world.biome(tribe.x, tribe.y)
         nearby = self.world.nearby_structures(tribe.x, tribe.y)
         ghost_bias = self.trauma.bias_string(tribe.x, tribe.y)
-        survival_bias, survival_critical = survival_bias_string(tribe.food, tribe.water, tribe.population, tribe.cooking_learned)
+        survival_bias, survival_critical = survival_bias_string(
+            tribe.food, tribe.water, tribe.population, tribe.cooking_learned, tribe.kitchen_built
+        )
         # NUDGE (2026-08-31, explicit request: "the warnings do not mention settling
         # as an alternative to low water"). A tribe already sitting on a chronic water
         # shortage may well already know exactly where real water is (a confirmed
@@ -1405,6 +1447,38 @@ class Simulation:
                 visible_entities.append(
                     f"The wall here is only {wall_fraction:.0%} complete -- a long house is not worth "
                     "attempting until the wall is finished."
+                )
+
+        if "BUILD_SAWMILL" in available_actions and not tribe.sawmill_built:
+            if tribe.long_house_built and tribe.fishing_learned:
+                visible_entities.append(
+                    "Farming and fishing are both established, and real shelter stands -- a sawmill "
+                    "would triple every future load of gathered wood."
+                )
+        if "BUILD_KITCHEN" in available_actions and not tribe.kitchen_built:
+            if tribe.cooking_learned and tribe.long_house_built:
+                visible_entities.append(
+                    "Cooking is known and real shelter stands -- a kitchen would turn cooked meals into "
+                    "excellent food, stretching stores even further."
+                )
+        if "BUILD_QUARRY" in available_actions and not tribe.quarry_built:
+            if tribe.long_house_built and tribe.fishing_learned:
+                visible_entities.append(
+                    "Farming and fishing are both established, and real shelter stands -- a quarry "
+                    "would triple the value of every future load of harvested stone."
+                )
+        if "BUILD_MINE" in available_actions and not tribe.mine_built:
+            if tribe.quarry_built and tribe.mine_sites:
+                site = tribe.mine_sites[-1]
+                visible_entities.append(
+                    f"A vein of {site['resource']} is known at ({site['x']},{site['y']}) -- excavating a "
+                    "mine would bring in a steady supply of it, a resource no other tribe's own land "
+                    "necessarily shares."
+                )
+            elif tribe.quarry_built:
+                visible_entities.append(
+                    "Quarrying is mastered, but no vein of a unique resource has been found yet -- "
+                    "scouting may turn one up."
                 )
 
         settlement_actions = ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH")
@@ -1888,6 +1962,22 @@ class Simulation:
                     elif exp["terrain_report"] == "mountains":
                         if (tx, ty) not in tribe.quarry_sites:
                             tribe.quarry_sites.append((tx, ty))
+                    # Explicit request: "Mines can [also] contain the Unique
+                    # Resource of the Biome (these locations are scattered about
+                    # the map)." A rarer find layered on top of whatever else
+                    # this same scouted tile already reported, across any biome
+                    # (not just mountains) -- see world.UNIQUE_RESOURCE_BY_BIOME.
+                    resource_name = UNIQUE_RESOURCE_BY_BIOME.get(exp["terrain_report"])
+                    if resource_name and random.random() < config.MINE_DISCOVERY_CHANCE:
+                        already_known = any(site["x"] == tx and site["y"] == ty for site in tribe.mine_sites)
+                        if not already_known:
+                            tribe.mine_sites.append(
+                                {"x": tx, "y": ty, "biome": exp["terrain_report"], "resource": resource_name}
+                            )
+                            tribe.history.append(
+                                f"{scout} also reports something rarer at ({tx},{ty}) -- a vein of "
+                                f"{resource_name}, waiting to be excavated"
+                            )
                     tribe.history.append(
                         f"{scout} is home and gives {recipient} a full report: "
                         f"{label} terrain at ({tx},{ty}), {forage_note}"
@@ -2095,7 +2185,7 @@ class Simulation:
         instincts.effective_food_upkeep) -- "cooked food is worth 3 raw food."
         Water is unaffected."""
         upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
-        tribe.food -= effective_food_upkeep(upkeep, tribe.cooking_learned)
+        tribe.food -= effective_food_upkeep(upkeep, tribe.cooking_learned, tribe.kitchen_built)
         tribe.water -= upkeep
 
         if tribe.food < 0:
@@ -2370,6 +2460,15 @@ class Simulation:
         explicit correction that the extra water-adjacency distinction was bogus."""
         if tribe.fishing_learned and self._is_settled(tribe):
             tribe.food += config.FISHING_SUPPLY_PER_CYCLE
+
+    def _advance_mine_yield(self, tribe: Tribe) -> None:
+        """Once a mine is excavated (actions.py._build_mine), its named unique
+        resource flows in daily -- same passive "action unlocks a system" shape
+        _advance_fish_supply already uses, gated on the same general settled check."""
+        if tribe.mine_built and tribe.mine_resource_name and self._is_settled(tribe):
+            tribe.unique_resources[tribe.mine_resource_name] = (
+                tribe.unique_resources.get(tribe.mine_resource_name, 0) + config.MINE_YIELD_PER_CYCLE
+            )
 
     def _advance_farming(self, tribe: Tribe) -> None:
         """A planted crop plot (actions.py._plant_crop) grows on its own every cycle,

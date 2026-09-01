@@ -607,6 +607,45 @@ TERRITORY_EXPANSION_BUILDINGS_BONUS = 2
 DOCK_WOOD_COST = 20
 DOCK_FISH_CATCH_BONUS_FRACTION = 0.5
 
+# BUILD_SAWMILL/BUILD_QUARRY (backend/actions.py): explicit request, "I think they
+# should build a saw mill and a quarry after they have farming and fishing down and
+# are building homes. saw mill turns 1 wood into 3 wood. quarried stone is also
+# worth 3 times as much as a harvested stone." Same "3x via a multiplier applied
+# once at the point of harvest" shape cooked food already uses (config.
+# COOKING_UPKEEP_DIVISOR) -- not a conversion action spending wood to make more
+# wood, a permanent multiplier on every future GATHER_WOOD/GATHER_STONE. Gated on
+# tribe.long_house_built ("building homes") and tribe.fishing_learned ("fishing
+# down"), the two real facts named in the request, not era alone.
+SAWMILL_WOOD_COST = 30
+SAWMILL_STONE_COST = 15
+SAWMILL_WOOD_MULTIPLIER = 3
+QUARRY_WOOD_COST = 15
+QUARRY_STONE_COST = 30
+QUARRY_STONE_MULTIPLIER = 3
+
+# BUILD_MINE + the per-biome unique resource (backend/actions.py): explicit
+# request -- "Mines can [also] contain the Unique Resource of the Biome (these
+# locations are scattered about the map)." A mine site is discovered the same way
+# lumber_sites/quarry_sites are (see Simulation._advance_one_expedition's terrain
+# report), at MINE_DISCOVERY_CHANCE odds on top of whatever else that scouted
+# terrain already reports, across any biome, not just mountains -- a rarer, richer
+# find layered on top of the ordinary lumber/quarry read. Gated on tribe.
+# quarry_built: excavating a named seam is a deeper extension of already knowing
+# how to quarry, not a parallel unrelated skill.
+MINE_DISCOVERY_CHANCE = 0.12
+MINE_WOOD_COST = 20
+MINE_STONE_COST = 30
+MINE_YIELD_PER_CYCLE = 5
+
+# BUILD_KITCHEN (backend/actions.py): explicit follow-up -- "we might have to let
+# them build a kitchen which improves cooked food to excellent food yielding 3
+# per cooked item." Stacks on top of COOKING_UPKEEP_DIVISOR (see instincts.py.
+# effective_food_upkeep) rather than replacing it -- excellent food is 3x as good
+# as cooked food, not just 3x raw. Gated on cooking_learned + long_house_built.
+KITCHEN_WOOD_COST = 20
+KITCHEN_STONE_COST = 10
+KITCHEN_UPKEEP_MULTIPLIER = 3
+
 # Bronze Age counter-offensive (backend/actions.py._strike_raider_camp): a tribe that
 # has scouted a raider camp (raider_sightings) can strike it directly once organized
 # enough -- turning a warning into an actionable target instead of only ever
