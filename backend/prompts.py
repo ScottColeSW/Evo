@@ -113,7 +113,9 @@ def _growth_pressure_text(era_gap_note: str, survival_critical: bool) -> str:
     )
 
 
-def compile_live_state_prompt(base_prompt: str, world_state: dict, ancestral_bias: str, survival_bias: str) -> str:
+def compile_live_state_prompt(
+    base_prompt: str, world_state: dict, ancestral_bias: str, survival_bias: str, wellbeing_summary: str = ""
+) -> str:
     """Assembles the final text block injected into Ollama for a specific simulation turn.
 
     `world_state['visible_entities']` must be a list of plain strings -- nearby structures,
@@ -124,6 +126,11 @@ def compile_live_state_prompt(base_prompt: str, world_state: dict, ancestral_bia
     `ancestral_bias` is location-based (what happened *here*, historically);
     `survival_bias` is state-based (is this tribe starving or dehydrated *right now*) --
     kept as separate layers since they come from unrelated causes (see instincts.py).
+    `wellbeing_summary` is a slower-moving, five-tier Maslow's-hierarchy read on the
+    tribe's overall condition (see wellbeing.compute_wellbeing) -- broader and less
+    urgent than survival_bias, meant to answer "how are we doing, overall?" rather
+    than "are we in danger this instant?" Per explicit design decision this reaches
+    the chief as a real fact, not just a viewer-facing UI widget.
     """
     state_injection = f"""
 ========================================================================
@@ -161,6 +168,11 @@ SURVIVAL INSTINCT LAYER
 GROWTH IMPERATIVE LAYER
 ========================================================================
 {_growth_pressure_text(world_state.get('growth_note', ''), bool(survival_bias))}
+
+========================================================================
+COMMUNITY WELL-BEING LAYER
+========================================================================
+{wellbeing_summary or '[WELL-BEING STATE: UNASSESSED]'}
 
 ========================================================================
 MANDATORY REACTION SCHEMA (VALID JSON MODE ONLY)

@@ -79,6 +79,15 @@
   .farming-panel { margin-top: 6px; padding: 6px 8px; background: #1a2a1a; border: 1px solid #365d36; border-radius: 5px; font-size: 11px; color: #bbf7d0; }
   .farming-panel .farming-title { color: #86efac; font-weight: bold; }
 
+  .wellbeing-panel { margin-top: 6px; padding: 6px 8px; background: #1a1a2a; border: 1px solid #35365d; border-radius: 5px; font-size: 11px; color: #c7d2fe; }
+  .wellbeing-panel .wellbeing-title { color: #a5b4fc; font-weight: bold; }
+  .wellbeing-row { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+  .wellbeing-row .wellbeing-label { width: 92px; flex-shrink: 0; color: #a5b4fc; white-space: nowrap; }
+  .wellbeing-row.focus .wellbeing-label { color: #fbbf24; font-weight: bold; }
+  .wellbeing-bar { flex: 1; height: 4px; background: #2a2a3a; border-radius: 2px; overflow: hidden; }
+  .wellbeing-fill { height: 100%; background: #818cf8; }
+  .wellbeing-row.focus .wellbeing-fill { background: #fbbf24; }
+
   .log-box { background: #0f0f15; border: 1px solid #2a2a3a; border-radius: 6px; padding: 8px; font-family: monospace; font-size: 10px; overflow-y: auto; color: #34d399; flex: 1; }
   .log-box div { padding: 1px 0; }
   .log-box .log-chief { color: #fbbf24; font-weight: bold; }
@@ -1811,6 +1820,31 @@ function farmingPanel(t) {
   return `<div class="farming-panel"><span class="farming-title">🌾 Farm</span><br>${parts.join("<br>")}</div>`;
 }
 
+// Maslow's-hierarchy read on the tribe's overall condition (see backend/wellbeing.py
+// compute_wellbeing) -- sits alongside the era pill per the original design request,
+// since era/age is itself basically the self-actualization tier's own headline
+// number. The focus tier (the lowest tier not yet satisfied, real bottom-up Maslow
+// logic, not just whichever score is smallest) is highlighted so it reads at a
+// glance which need is actually the pressing one right now.
+const WELLBEING_TIER_ORDER = ["physiological", "safety", "belonging", "esteem", "self_actualization"];
+const WELLBEING_TIER_ICONS = { physiological: "🍖", safety: "🛡️", belonging: "🤝", esteem: "🏆", self_actualization: "🏛️" };
+const WELLBEING_TIER_LABELS = { physiological: "Physiological", safety: "Safety", belonging: "Belonging", esteem: "Esteem", self_actualization: "Self-Actual." };
+
+function wellbeingPanel(t) {
+  const wb = t.wellbeing;
+  if (!wb || !wb.tiers) return "";
+  const rows = WELLBEING_TIER_ORDER.map(tier => {
+    const pct = Math.round((wb.tiers[tier] || 0) * 100);
+    const isFocus = wb.focus === tier;
+    return `
+      <div class="wellbeing-row${isFocus ? " focus" : ""}" title="${escapeHtml(wb.summary || "")}">
+        <span class="wellbeing-label">${WELLBEING_TIER_ICONS[tier]} ${WELLBEING_TIER_LABELS[tier]}</span>
+        <div class="wellbeing-bar"><div class="wellbeing-fill" style="width:${pct}%"></div></div>
+      </div>`;
+  }).join("");
+  return `<div class="wellbeing-panel"><span class="wellbeing-title">🧭 Well-Being</span>${rows}</div>`;
+}
+
 // The chronicle/rationale text is model-generated plain text, not markup, but it's
 // inserted raw into innerHTML below -- escape it so a stray "<" or "&" in a model's
 // own output can't break the layout.
@@ -1896,6 +1930,7 @@ function updateSidebar(state) {
           <span class="speech">"${t.last_broadcast || "..."}"</span>
           ${t.survival_warning ? `<div class="survival-warning">⚠️ ${t.survival_warning.replace("[SURVIVAL INSTINCT]: ", "")}</div>` : ""}
           ${farmingPanel(t)}
+          ${wellbeingPanel(t)}
         </div>`;
     }
     (t.history || []).forEach(entry => {

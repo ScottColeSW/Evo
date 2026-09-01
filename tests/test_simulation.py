@@ -106,6 +106,33 @@ def test_broadcast_not_overheard_beyond_hearing_radius():
     assert "overheard" not in request["prompt"]
 
 
+def test_prepare_turn_caches_wellbeing_on_the_tribe_and_injects_its_summary_into_the_prompt():
+    """See backend/wellbeing.py -- per explicit design decision, the Maslow's-ladder
+    read isn't viewer-only: _prepare_turn must both cache it on the tribe (so the
+    frontend renders the same numbers) and inject its summary text into the actual
+    prompt the chief reasons from, the same way survival_bias already does."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert tribe.wellbeing.get("tiers")
+    assert tribe.wellbeing.get("focus")
+    assert "COMMUNITY WELL-BEING LAYER" in request["prompt"]
+    assert tribe.wellbeing["summary"] in request["prompt"]
+
+
+def test_wall_fraction_helper_reused_by_wellbeing_matches_raider_defense_lookup():
+    """_wall_fraction is the single source of truth both _resolve_raider_attack and
+    the wellbeing safety tier read from -- a half-built wall should report the same
+    0.5 to both, not two independently-computed numbers that could drift apart."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    sim.world.add_construction(tribe.x, tribe.y, "wall", sim.cycle, progress=50)
+
+    assert sim._wall_fraction(tribe) == 0.5
+
+
 def test_compass_direction_matches_the_map_convention():
     from backend.simulation import _compass_direction
 

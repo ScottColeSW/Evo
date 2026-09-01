@@ -17,6 +17,7 @@ from .eras import ERAS, era_index, next_era, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
 from .instincts import survival_bias_string
+from .wellbeing import compute_wellbeing
 from .leadership import elect_chief, name_settlement
 from .memory import TribeMemory
 from .ollama_client import OllamaClient
@@ -304,6 +305,11 @@ class Tribe:
         # because the point is to have proven the tribe CAN settle, once.
         self.has_ever_settled = False
 
+        # Set once per turn by Simulation._prepare_turn (see wellbeing.compute_wellbeing)
+        # -- cached here rather than recomputed in to_dict() because the safety tier
+        # needs a world.constructions lookup only Simulation has access to.
+        self.wellbeing: dict = {}
+
     def to_dict(self) -> dict:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
         survival_warning, _ = survival_bias_string(self.food, self.water, self.population)
@@ -365,6 +371,7 @@ class Tribe:
             "raider_sightings": self.raider_sightings,
             "last_raider_attack_cycle": self.last_raider_attack_cycle,
             "raiders_approaching": self.raiders_approaching,
+            "wellbeing": self.wellbeing,
             "next_era": next_era_info,
             "expeditions": [
                 {
@@ -1052,6 +1059,14 @@ class Simulation:
             and self.world.biome(tribe.x, tribe.y) in config.FARMING_REQUIRES_ADJACENT_WATER
         )
 
+    def _wall_fraction(self, tribe: Tribe) -> float:
+        """0.0-1.0 construction progress of a wall at this tribe's own tile, if any.
+        Shared by raider-defense resolution (_resolve_raider_attack) and the
+        wellbeing safety tier (wellbeing.compute_wellbeing) -- both need the same
+        real signal, not two copies of the same world.constructions lookup."""
+        existing = self.world.constructions.get((tribe.x, tribe.y))
+        return (existing["progress"] / 100) if existing and existing["type"] == "wall" else 0.0
+
     def _prepare_turn(self, tribe: Tribe) -> tuple[dict, dict]:
         """Builds this tribe's prompt with no network calls; returns (request, context)."""
         biome = self.world.biome(tribe.x, tribe.y)
@@ -1341,6 +1356,12 @@ class Simulation:
             # a fact buried in the generic list gets ignored even when it's true.
             "growth_note": " ".join(n for n in (era_gap_note, diversification_note) if n),
         }
+        # See wellbeing.compute_wellbeing -- a slower-moving, five-tier read on the
+        # tribe's overall condition, distinct from the moment-to-moment survival_bias
+        # above. Cached on the tribe (not just injected into this turn's prompt) so
+        # the frontend can render the same numbers the chief itself is reasoning
+        # from -- one source of truth, not a UI-only recomputation.
+        tribe.wellbeing = compute_wellbeing(tribe, self._wall_fraction(tribe))
         lineage_note = ""
         if tribe.lineage:
             latest = tribe.lineage[-1]
@@ -1351,7 +1372,9 @@ class Simulation:
             tribe.name, tribe.model, tribe.chief_name, tribe.chief_philosophy, tribe.chief_decree,
             tribe.chief_victory, lineage_note, tuple(available_actions),
         )
-        prompt = compile_live_state_prompt(base_prompt, world_state, ghost_bias, survival_bias)
+        prompt = compile_live_state_prompt(
+            base_prompt, world_state, ghost_bias, survival_bias, tribe.wellbeing.get("summary", "")
+        )
         panicked = "DREAD" in ghost_bias or survival_critical
         temperature = config.ANCESTRAL_DREAD_TEMPERATURE if panicked else config.DEFAULT_TEMPERATURE
 
@@ -1964,8 +1987,7 @@ class Simulation:
         already drives whether an attack happens at all: a bigger, wealthier tribe
         draws a genuinely stronger raiding force, which is what makes a wall (and
         water) actually matter rather than population alone being enough."""
-        existing = self.world.constructions.get((tribe.x, tribe.y))
-        wall_fraction = (existing["progress"] / 100) if existing and existing["type"] == "wall" else 0.0
+        wall_fraction = self._wall_fraction(tribe)
         raider_strength = min(1.0, tribe.population / config.RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE)
 
         defense_chance = max(0.0, min(
