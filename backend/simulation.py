@@ -878,7 +878,11 @@ class Simulation:
             "tribes": {tid: t.to_dict() for tid, t in self.tribes.items()},
             "structures": [{"x": x, "y": y, **info} for (x, y), info in self.world.constructions.items()],
             "trails": [
-                {"x": x, "y": y, "wear": t["wear"], "color": t["color"]}
+                {
+                    "x": x, "y": y, "wear": t["wear"], "color": t["color"],
+                    "crossings": t.get("crossings", 0), "owner": t.get("owner"),
+                    "is_toll_road": self.world.is_toll_road(x, y),
+                }
                 for (x, y), t in self.world.trails.items()
             ],
             "linguistic_consensus": consensus,
@@ -1093,6 +1097,31 @@ class Simulation:
             f"a vein of {site['resource']} was found at ({site['x']},{site['y']})" for site in tribe.mine_sites
         ]
         visible_entities += [f"raiders reported near ({x},{y})" for x, y in tribe.raider_sightings]
+
+        # Bug report: "one is not exploring and one only explores in one
+        # direction." A real, honest fact about how lopsided (or absent) a
+        # tribe's own scouting coverage has actually been -- not a nudge
+        # toward SCOUT specifically or any particular heading, just naming
+        # what the tribe's own confirmed discoveries (which now all persist,
+        # see the site-list facts above) actually show about where it's
+        # already looked versus never looked at all.
+        all_known_sites = (
+            tribe.confirmed_water_sites + tribe.lumber_sites + tribe.wildlife_sites
+            + tribe.quarry_sites + [(s["x"], s["y"]) for s in tribe.mine_sites] + tribe.raider_sightings
+        )
+        if not all_known_sites:
+            visible_entities.append(
+                "No scouting has turned up anything yet -- the wider world beyond home remains "
+                "completely unknown in every direction."
+            )
+        elif len(all_known_sites) >= 3:
+            directions_seen = {_compass_direction(x - tribe.x, y - tribe.y) for x, y in all_known_sites}
+            if len(directions_seen) == 1:
+                visible_entities.append(
+                    f"Every confirmed discovery so far lies to the {next(iter(directions_seen))} -- every "
+                    "other direction remains completely unexplored."
+                )
+
         if tribe.raiders_approaching:
             ax, ay = tribe.raiders_approaching["x"], tribe.raiders_approaching["y"]
             cycles_left = tribe.raiders_approaching["cycles_left"]
@@ -1237,6 +1266,38 @@ class Simulation:
             self.world.biome(tribe.x, tribe.y) in config.FARMING_REQUIRES_ADJACENT_WATER
             or self._near_confirmed_water(tribe)
         )
+
+    def _resolve_toll(self, tribe: Tribe, cx: int, cy: int, nx: int, ny: int) -> tuple[int, int]:
+        """Explicit request: "trails that have been traversed more than 5 times
+        by anyone will automatically evolve into visible and owned roads that
+        others may travel for a fee... The first trailblazer gets the
+        ownership and tolls (automatically collected when used or crossed).
+        can't pay, can't cross." Called by every movement call site (RELOCATE,
+        SCOUT/HUNTING_PARTY/trade emissary outbound and return) right after
+        physics.terrain_aware_step computes a candidate step, before it's
+        actually committed. `cx, cy` is wherever the mover (the tribe itself
+        for RELOCATE, or an expedition's own field position for everything
+        else -- never assumed to be tribe.x/y) actually stands right now, so a
+        blocked party stalls in place rather than snapping back to the home
+        camp. Returns (nx, ny) unchanged if no toll applies or it's paid;
+        returns (cx, cy) if the toll can't be afforded -- blocked from
+        crossing this cycle, same as physically hitting impassable terrain.
+        No pathfinding-level rerouting around a blocked tile -- a still-
+        blocked party just doesn't advance until it can pay or the model
+        picks a different target."""
+        if not self.world.is_toll_road(nx, ny):
+            return nx, ny
+        owner_id = self.world.road_owner(nx, ny)
+        if owner_id is None or owner_id == tribe.id:
+            return nx, ny
+        owner = self.tribes.get(owner_id)
+        if owner is None or owner.extinct:
+            return nx, ny  # no one left to collect -- free passage
+        if tribe.wood < config.TOLL_FEE_WOOD:
+            return cx, cy  # can't pay -- blocked, stay put
+        tribe.wood -= config.TOLL_FEE_WOOD
+        owner.wood += config.TOLL_FEE_WOOD
+        return nx, ny
 
     def _wall_fraction(self, tribe: Tribe) -> float:
         """0.0-1.0 construction progress of a wall at this tribe's own tile, if any.
@@ -1897,7 +1958,8 @@ class Simulation:
             # wear in from repeated travel the way a trail does.
             base_speed = config.EXPEDITION_SPEED + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
             nx, ny = physics.terrain_aware_step(px, py, tx, ty, base_speed=base_speed)
-            self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color)
+            nx, ny = self._resolve_toll(tribe, px, py, nx, ny)
+            self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
             exp["pos"] = [nx, ny]
             exp["path"].append([nx, ny])
             exp["food_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_FOOD
@@ -1985,7 +2047,8 @@ class Simulation:
             bonus = self.world.trail_speed_bonus(px, py, config.MAX_TRAIL_BONUS_SPEED)
             base_speed = config.EXPEDITION_SPEED + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
             nx, ny = physics.terrain_aware_step(px, py, ox, oy, base_speed=base_speed)
-            self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color)
+            nx, ny = self._resolve_toll(tribe, px, py, nx, ny)
+            self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
             exp["pos"] = [nx, ny]
             exp["path"].append([nx, ny])
             exp["food_gathered"] += config.EXPEDITION_RETURN_DAILY_FOOD

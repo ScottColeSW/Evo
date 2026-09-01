@@ -53,6 +53,60 @@ def test_decay_trails_reduces_wear_but_not_below_zero():
     assert (10, 10) not in land.trails  # fully decayed, removed rather than negative
 
 
+def test_wear_trail_tracks_crossings_and_first_owner_separately_from_wear():
+    """Explicit request: "trails that have been traversed more than 5 times by
+    anyone will automatically evolve into visible and owned roads... The first
+    trailblazer gets the ownership." Crossings never decay (unlike wear) and
+    ownership is set once, from whoever wore the tile first, even if a
+    different tribe wears it far more since."""
+    from backend import config
+
+    land = Landscape(100)
+    land.wear_trail(10, 10, 0.1, tribe_id="tribe_a")
+    assert land.trails[(10, 10)]["crossings"] == 1
+    assert land.trails[(10, 10)]["owner"] == "tribe_a"
+
+    for _ in range(config.ROAD_EVOLVE_CROSSINGS - 1):
+        land.wear_trail(10, 10, 0.1, tribe_id="tribe_b")
+
+    assert land.trails[(10, 10)]["crossings"] == config.ROAD_EVOLVE_CROSSINGS
+    assert land.trails[(10, 10)]["owner"] == "tribe_a"  # unchanged despite tribe_b's heavier use
+
+
+def test_is_toll_road_only_once_crossings_exceed_the_threshold():
+    from backend import config
+
+    land = Landscape(100)
+    for _ in range(config.ROAD_EVOLVE_CROSSINGS):
+        land.wear_trail(10, 10, 0.1, tribe_id="tribe_a")
+    assert land.is_toll_road(10, 10) is False  # exactly at the threshold, not yet over it
+
+    land.wear_trail(10, 10, 0.1, tribe_id="tribe_a")
+    assert land.is_toll_road(10, 10) is True
+
+
+def test_road_owner_is_none_for_an_untouched_tile():
+    land = Landscape(100)
+    assert land.road_owner(10, 10) is None
+
+
+def test_decay_trails_never_deletes_an_evolved_road():
+    """A road that's crossed enough to have evolved is a real, permanent
+    structure now -- it shouldn't revert to open ground just from disuse the
+    way an ordinary trail's cosmetic wear does."""
+    from backend import config
+
+    land = Landscape(100)
+    for _ in range(config.ROAD_EVOLVE_CROSSINGS + 1):
+        land.wear_trail(10, 10, 0.01, tribe_id="tribe_a")
+
+    for _ in range(200):  # far more than enough to fully decay ordinary wear
+        land.decay_trails(0.05)
+
+    assert (10, 10) in land.trails
+    assert land.is_toll_road(10, 10) is True
+
+
 def test_fresh_tile_has_no_scarcity():
     land = Landscape(100)
     assert land.scarcity("wood", 10, 10) == 0.0

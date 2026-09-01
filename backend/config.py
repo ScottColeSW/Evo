@@ -27,6 +27,17 @@ FARMABLE_BIOMES = ("plains", "river", "lake")
 # existing exact-biome-match check, not instead of it.
 SETTLEMENT_WATER_TERRITORY_RADIUS = 6
 
+# Toll roads (backend/world.py.wear_trail/is_toll_road/road_owner, Simulation.
+# _resolve_toll): explicit request -- "trails that have been traversed more
+# than 5 times by anyone will automatically evolve into visible and owned
+# roads that others may travel for a fee... The first trailblazer gets the
+# ownership and tolls (automatically collected when used or crossed). can't
+# pay, can't cross." A real, cumulative, never-decaying crossing count is
+# separate from the existing decaying `wear` value (cosmetic/speed-bonus
+# only) -- 5 crossings is the literal number named in the request.
+ROAD_EVOLVE_CROSSINGS = 5
+TOLL_FEE_WOOD = 5
+
 # Explicit request: a weak model faced with the full ~13-action Stone Age list from
 # cycle one has no structural push toward the single most important early decision --
 # settling somewhere real. Before a tribe has EVER settled next to real water (see

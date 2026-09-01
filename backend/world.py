@@ -1,5 +1,7 @@
 import math
 
+from . import config
+
 BIOME_LABELS = {
     "forest": "Whispering Wilds",
     "mountains": "Crags of Oros",
@@ -214,27 +216,61 @@ class Landscape:
             else:
                 self.depletion[key] = remaining
 
-    def wear_trail(self, x: int, y: int, amount: float, color: str | None = None) -> None:
+    def wear_trail(self, x: int, y: int, amount: float, color: str | None = None, tribe_id: str | None = None) -> None:
         """A tribe just relocated through (x, y) -- wear the path a little more. Any
         tribe passing through benefits, not just whoever wore it first: a trail is a
         feature of the ground, not a private memory. `color` (whichever tribe wore it
         just now) overwrites the tile's displayed color -- the most recent walker's
         color wins on a shared tile, rather than trying to blend multiple tribes'
-        colors together."""
+        colors together.
+
+        Explicit request: "trails that have been traversed more than 5 times by
+        anyone will automatically evolve into visible and owned roads... The
+        first trailblazer gets the ownership and tolls." `crossings` is a
+        separate, never-decaying lifetime counter from `wear` (which fades on
+        disuse and is purely cosmetic/speed-bonus) -- see is_toll_road/
+        road_owner below, and Simulation._resolve_toll for where a toll is
+        actually charged. `owner` is set once, from whichever tribe_id first
+        ever wore this exact tile, and never changes after that even if a
+        different tribe wears it far more since."""
         key = (x, y)
-        existing = self.trails.get(key, {"wear": 0.0, "color": None})
+        existing = self.trails.get(key, {"wear": 0.0, "color": None, "crossings": 0, "owner": None})
         wear = min(1.0, existing["wear"] + amount)
-        self.trails[key] = {"wear": wear, "color": color if color is not None else existing["color"]}
+        self.trails[key] = {
+            "wear": wear,
+            "color": color if color is not None else existing["color"],
+            "crossings": existing["crossings"] + 1,
+            "owner": existing["owner"] if existing["owner"] is not None else tribe_id,
+        }
 
     def trail_speed_bonus(self, x: int, y: int, max_bonus: float) -> float:
         """Extra movement speed from standing on a worn trail, scaled linearly by wear."""
         entry = self.trails.get((x, y))
         return (entry["wear"] if entry else 0.0) * max_bonus
 
+    def is_toll_road(self, x: int, y: int) -> bool:
+        """A trail that's been crossed enough times to have evolved into a real,
+        owned road -- see wear_trail's own docstring."""
+        entry = self.trails.get((x, y))
+        return bool(entry) and entry.get("crossings", 0) > config.ROAD_EVOLVE_CROSSINGS
+
+    def road_owner(self, x: int, y: int) -> str | None:
+        """The tribe_id of whoever first ever wore this tile, if anyone has."""
+        entry = self.trails.get((x, y))
+        return entry.get("owner") if entry else None
+
     def decay_trails(self, rate: float) -> None:
         """Called once per tick alongside regenerate() -- an unused trail fades back
-        into open ground rather than staying fast forever once worn."""
+        into open ground rather than staying fast forever once worn.
+
+        A tile that's already evolved into a real, owned road is exempt -- a
+        road doesn't revert to open ground just because no one's walked it
+        this week, the same way a built wall doesn't un-build itself from
+        disuse. Its speed-bonus wear can still fade toward a lower (but
+        nonzero-crossings) floor; only the deletion is skipped."""
         for key in list(self.trails):
+            if self.trails[key].get("crossings", 0) > config.ROAD_EVOLVE_CROSSINGS:
+                continue
             remaining = self.trails[key]["wear"] - rate
             if remaining <= 0:
                 del self.trails[key]

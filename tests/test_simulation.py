@@ -207,6 +207,77 @@ def test_settling_near_water_still_fails_outside_the_territory_radius():
     assert sim._is_settled_near_water(tribe) is False
 
 
+def test_resolve_toll_ignores_a_tile_that_isnt_a_toll_road_yet():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+
+    assert sim._resolve_toll(tribe, 0, 0, 10, 10) == (10, 10)
+
+
+def test_resolve_toll_free_on_your_own_road():
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    for _ in range(config.ROAD_EVOLVE_CROSSINGS + 1):
+        sim.world.wear_trail(10, 10, 0.01, tribe_id=tribe.id)
+    wood_before = tribe.wood
+
+    assert sim._resolve_toll(tribe, 0, 0, 10, 10) == (10, 10)
+    assert tribe.wood == wood_before
+
+
+def test_resolve_toll_charges_a_different_tribe_and_pays_the_owner():
+    """Explicit request: "The first trailblazer gets the ownership and tolls
+    (automatically collected when used or crossed)." """
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "gemma2:2b"}])
+    owner, traveler = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    for _ in range(config.ROAD_EVOLVE_CROSSINGS + 1):
+        sim.world.wear_trail(10, 10, 0.01, tribe_id=owner.id)
+    traveler.wood = config.TOLL_FEE_WOOD + 20
+    owner_wood_before = owner.wood
+
+    result = sim._resolve_toll(traveler, 0, 0, 10, 10)
+
+    assert result == (10, 10)
+    assert traveler.wood == 20
+    assert owner.wood == owner_wood_before + config.TOLL_FEE_WOOD
+
+
+def test_resolve_toll_blocks_a_tribe_that_cant_afford_it():
+    """Explicit request: "can't pay, can't cross." Blocked means staying at
+    the mover's own current position (cx, cy) -- not the tribe's home camp,
+    since an expedition's own field position is what's actually passed in."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "gemma2:2b"}])
+    owner, traveler = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    for _ in range(config.ROAD_EVOLVE_CROSSINGS + 1):
+        sim.world.wear_trail(10, 10, 0.01, tribe_id=owner.id)
+    traveler.wood = config.TOLL_FEE_WOOD - 1
+
+    result = sim._resolve_toll(traveler, 3, 4, 10, 10)
+
+    assert result == (3, 4)  # blocked -- stayed at its own current position
+    assert traveler.wood == config.TOLL_FEE_WOOD - 1  # untouched, toll never charged
+
+
+def test_resolve_toll_free_passage_once_the_owner_is_extinct():
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "gemma2:2b"}])
+    owner, traveler = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    for _ in range(config.ROAD_EVOLVE_CROSSINGS + 1):
+        sim.world.wear_trail(10, 10, 0.01, tribe_id=owner.id)
+    owner.extinct = True
+    traveler.wood = 0
+
+    assert sim._resolve_toll(traveler, 0, 0, 10, 10) == (10, 10)
+    assert traveler.wood == 0  # no one left to collect from
+
+
 def test_unfinished_wall_nudges_against_a_premature_long_house():
     """Explicit bug report: live logs showed the chief repeatedly choosing
     BUILD_LONG_HOUSE against an unfinished wall, over and over, each attempt
@@ -2228,6 +2299,43 @@ def test_all_confirmed_sites_are_remembered_not_just_the_most_recent_three():
     assert "confirmed stone-rich area at (8,8)" in entities
 
 
+def test_no_discoveries_at_all_is_named_as_a_real_fact():
+    """Bug report: "one is not exploring and one only explores in one
+    direction.\""""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert any("wider world beyond home remains completely unknown" in e for e in entities)
+
+
+def test_discoveries_clustered_in_one_direction_are_named_as_a_real_fact():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.lumber_sites = [(60, 50), (70, 50), (80, 50)]  # all due east of (50, 50)
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert any("Every confirmed discovery so far lies to the east" in e for e in entities)
+
+
+def test_discoveries_spread_across_directions_dont_trigger_the_one_direction_fact():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.lumber_sites = [(60, 50)]  # east
+    tribe.wildlife_sites = [(50, 40)]  # north
+    tribe.quarry_sites = [(40, 50)]  # west
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert not any("remains completely unexplored" in e for e in entities)
+    assert not any("wider world beyond home remains completely unknown" in e for e in entities)
+
+
 def test_confirmed_water_sites_are_exposed_to_the_frontend_as_landmarks():
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.confirmed_water_sites = [(12, 34)]
@@ -3430,8 +3538,26 @@ def test_snapshot_includes_worn_trails_for_the_frontend_to_render():
     sim.status = "OPERATIONAL"
 
     trails = sim.snapshot()["trails"]
+    entry = next(t for t in trails if t["x"] == 12 and t["y"] == 34)
 
-    assert {"x": 12, "y": 34, "wear": 0.5, "color": "#c084fc"} in trails
+    assert entry["wear"] == 0.5
+    assert entry["color"] == "#c084fc"
+    assert entry["is_toll_road"] is False
+
+
+def test_snapshot_marks_an_evolved_road_and_its_owner():
+    from backend import config
+
+    sim = _bare_simulation()
+    sim.tribes = {}
+    sim.status = "OPERATIONAL"
+    for _ in range(config.ROAD_EVOLVE_CROSSINGS + 1):
+        sim.world.wear_trail(12, 34, 0.01, tribe_id="tribe_0")
+
+    entry = next(t for t in sim.snapshot()["trails"] if t["x"] == 12 and t["y"] == 34)
+
+    assert entry["is_toll_road"] is True
+    assert entry["owner"] == "tribe_0"
 
 
 def test_population_grows_once_food_clears_the_threshold():
