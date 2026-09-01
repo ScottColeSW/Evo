@@ -198,6 +198,24 @@ def test_unfinished_wall_nudges_against_a_premature_long_house():
     assert "a long house is not worth attempting until the wall is finished" in request["prompt"]
 
 
+def test_no_wall_started_yet_nudges_toward_construct_wall():
+    """Bug report: "wall building is not coming up for them" -- a tribe sat at
+    Tribal Synapse for many cycles with a wall never even started, buried among
+    a dozen other newly-unlocked actions with nothing calling it out
+    specifically."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "CONSTRUCT_WALL" in ctx["available_actions"]
+    assert "No wall has been started here yet" in request["prompt"]
+
+
 def test_finished_wall_nudges_toward_a_long_house_then_reinforcement():
     from backend import config
 

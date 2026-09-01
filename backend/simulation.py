@@ -1454,7 +1454,20 @@ class Simulation:
             # without this being stated as a fact. Same category as the COOK_FOOD
             # eligibility nudge above: a real gate the tribe couldn't otherwise see.
             wall_fraction = self._wall_fraction(tribe)
-            if wall_fraction >= 1.0:
+            if wall_fraction <= 0.0:
+                # Bug report: "wall building is not coming up for them" -- live
+                # runs showed a tribe sitting at Tribal Synapse for many cycles
+                # with a wall never even started, buried among a dozen other
+                # newly-unlocked actions at the same era with nothing calling it
+                # out specifically. Sawmill/Quarry/Kitchen/Keep/Moat all build on
+                # a wall existing first, so this is the one foundational nudge
+                # missing relative to every other eligibility nudge here.
+                visible_entities.append(
+                    "No wall has been started here yet -- CONSTRUCT_WALL is available now, and a long "
+                    "house, sawmill, quarry, kitchen, and further defenses all build on a wall existing "
+                    "first."
+                )
+            elif wall_fraction >= 1.0:
                 if tribe.long_houses_built == 0:
                     visible_entities.append(
                         "The wall here is complete -- a long house is now worth building for real, "
