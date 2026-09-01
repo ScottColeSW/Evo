@@ -198,7 +198,7 @@ def test_unfinished_wall_nudges_against_a_premature_long_house():
     assert "a long house is not worth attempting until the wall is finished" in request["prompt"]
 
 
-def test_finished_wall_nudges_toward_a_long_house_then_a_castle():
+def test_finished_wall_nudges_toward_a_long_house_then_reinforcement():
     from backend import config
 
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, farmable
@@ -210,9 +210,50 @@ def test_finished_wall_nudges_toward_a_long_house_then_a_castle():
     request, _ctx = sim._prepare_turn(tribe)
     assert "a long house is now worth building for real, lasting shelter" in request["prompt"]
 
-    tribe.long_house_built = True
+    tribe.long_houses_built = 1
     request, _ctx = sim._prepare_turn(tribe)
-    assert "a castle is now worth building for a further defense bonus" in request["prompt"]
+    assert "it can be reinforced with" in request["prompt"]
+
+
+def test_long_house_count_nudges_toward_keep_then_fortress_then_castle():
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "monolithic_era"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    sim.world.add_construction(tribe.x, tribe.y, "wall", sim.cycle, progress=100)
+
+    tribe.long_houses_built = config.KEEP_LONG_HOUSES_REQUIRED
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "a keep is now worth building" in request["prompt"]
+
+    tribe.keep_built = True
+    tribe.long_houses_built = config.FORTRESS_LONG_HOUSES_REQUIRED
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "a fortress is now worth building" in request["prompt"]
+
+    tribe.fortress_built = True
+    tribe.long_houses_built = config.CASTLE_LONG_HOUSES_REQUIRED
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "a castle is now worth building" in request["prompt"]
+
+
+def test_torches_and_moat_nudge_once_wall_is_fully_reinforced():
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.fire_ever_built = True
+    sim.world.add_construction(tribe.x, tribe.y, "wall", sim.cycle, progress=100)
+    tribe.wall_layers = config.WALL_MAX_LAYERS
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "torches now line it for free" in request["prompt"]
+    assert "a moat is now available" in request["prompt"]
 
 
 def test_compass_direction_matches_the_map_convention():

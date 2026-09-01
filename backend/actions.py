@@ -205,10 +205,23 @@ def _construct_wall(sim, tribe, biome, target):
     from the old instant version (15 wood, 15 stone), just paid proportionally to
     the progress each action actually adds, so a tribe can start without the full
     amount banked yet."""
-    if _already_built(sim, tribe, "wall"):
-        return None
     existing = sim.world.constructions.get((tribe.x, tribe.y))
     current_progress = existing["progress"] if existing and existing["type"] == "wall" else 0
+
+    if current_progress >= 100:
+        # Explicit request: "Torches can be a freebie for building walls 2
+        # levels" / "a Moat should be available after 2 layers of walls have
+        # been built." A completed wall can be reinforced with more layers, up
+        # to WALL_MAX_LAYERS -- a flat cost, not another multi-action progress
+        # bar the way the very first layer was.
+        if tribe.wall_layers >= config.WALL_MAX_LAYERS:
+            return None
+        if tribe.wood < config.WALL_LAYER_WOOD_COST or tribe.stone < config.WALL_LAYER_STONE_COST:
+            return None
+        tribe.wood -= config.WALL_LAYER_WOOD_COST
+        tribe.stone -= config.WALL_LAYER_STONE_COST
+        tribe.wall_layers += 1
+        return f"a wall layer is reinforced -- {tribe.wall_layers} layers of defense now stand"
 
     added = min(100 - current_progress, round(config.WALL_PROGRESS_PER_ACTION_BASE * _labor_multiplier(tribe.population)))
     wood_cost = round(config.WALL_WOOD_COST_TOTAL * added / 100)
@@ -221,39 +234,99 @@ def _construct_wall(sim, tribe, biome, target):
     new_progress = current_progress + added
     sim.world.add_construction(tribe.x, tribe.y, "wall", sim.cycle, progress=new_progress)
     if new_progress >= 100:
+        tribe.wall_layers = 1
         return "the wall is complete -- the camp is properly defended now"
     return f"wall construction continues -- {new_progress}% complete"
 
 
+def _build_moat(sim, tribe, biome, target):
+    """Explicit request: "a Moat should be available after 2 layers of walls
+    have been built." A cheaper alternative investment once wall layers are
+    maxed out, not a replacement for the wall already standing -- smaller cost,
+    smaller bonus than a wall layer (Simulation._resolve_raider_attack)."""
+    if tribe.moat_built or tribe.wall_layers < config.WALL_MAX_LAYERS:
+        return None
+    if tribe.wood < config.MOAT_WOOD_COST or tribe.stone < config.MOAT_STONE_COST:
+        return None
+    tribe.wood -= config.MOAT_WOOD_COST
+    tribe.stone -= config.MOAT_STONE_COST
+    tribe.moat_built = True
+    sim._award_trophy(tribe, "Moat Digger")
+    return "a moat is dug around the camp -- a further defense bonus, cheaper than another wall layer"
+
+
 def _build_long_house(sim, tribe, biome, target):
     """Explicit request, gated on the wall already being complete first -- defense
-    before shelter. Tracked as a one-time flag on the tribe (tribe.long_house_built,
-    same shape as fishing_learned/cooking_learned) rather than a second
-    world.constructions entry at the same tile the wall already occupies -- that
-    dict holds one record per tile, so layering a second type there would silently
-    overwrite the wall's own progress (see Landscape.add_construction)."""
-    if tribe.long_house_built:
-        return None
+    before shelter. Explicit correction: "most structures they only need 1 of.
+    but house builds are dependant on population needs" -- repeatable, not a
+    one-time flag, gated each time on real population need
+    (config.HOUSING_POPULATION_PER_LONG_HOUSE) so a tribe can't spam housing it
+    doesn't need. tribe.long_houses_built is also the real proxy the Keep/
+    Fortress/Castle tier reads for how established this settlement has become."""
     if sim._wall_fraction(tribe) < 1.0:
         return "the wall must be finished before a long house is worth building here"
+    houses_needed = max(1, -(-tribe.population // config.HOUSING_POPULATION_PER_LONG_HOUSE))
+    if tribe.long_houses_built >= houses_needed:
+        return None
     if tribe.wood < config.LONG_HOUSE_WOOD_COST or tribe.stone < config.LONG_HOUSE_STONE_COST:
         return None
     tribe.wood -= config.LONG_HOUSE_WOOD_COST
     tribe.stone -= config.LONG_HOUSE_STONE_COST
-    tribe.long_house_built = True
-    sim._award_trophy(tribe, "Master Builder")
-    sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
-    return "a long house rises -- the tribe has real, lasting shelter for the first time"
+    tribe.long_houses_built += 1
+    if tribe.long_houses_built == 1:
+        sim._award_trophy(tribe, "Master Builder")
+        sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        return "a long house rises -- the tribe has real, lasting shelter for the first time"
+    return f"another long house rises -- {tribe.long_houses_built} now stand"
+
+
+def _build_keep(sim, tribe, biome, target):
+    """Explicit request: "they can have 10 houses before they build a Keep."
+    First tier of the defensive ladder after Long House -- a real additional
+    defense bonus stacked on top of the wall's own (Simulation.
+    _resolve_raider_attack)."""
+    if tribe.keep_built:
+        return None
+    if tribe.long_houses_built < config.KEEP_LONG_HOUSES_REQUIRED:
+        return f"{config.KEEP_LONG_HOUSES_REQUIRED} long houses are needed before a keep is worth building here"
+    if tribe.wood < config.KEEP_WOOD_COST or tribe.stone < config.KEEP_STONE_COST:
+        return None
+    tribe.wood -= config.KEEP_WOOD_COST
+    tribe.stone -= config.KEEP_STONE_COST
+    tribe.keep_built = True
+    sim._award_trophy(tribe, "Keep Warden")
+    return "a keep rises -- a further defense bonus for the settlement"
+
+
+def _build_fortress(sim, tribe, biome, target):
+    """Explicit request: "40 [houses] until they reach a Fortress." Second tier,
+    gated on the Keep already standing."""
+    if tribe.fortress_built:
+        return None
+    if not tribe.keep_built:
+        return "a keep must be built before a fortress is worth building here"
+    if tribe.long_houses_built < config.FORTRESS_LONG_HOUSES_REQUIRED:
+        return f"{config.FORTRESS_LONG_HOUSES_REQUIRED} long houses are needed before a fortress is worth building here"
+    if tribe.wood < config.FORTRESS_WOOD_COST or tribe.stone < config.FORTRESS_STONE_COST:
+        return None
+    tribe.wood -= config.FORTRESS_WOOD_COST
+    tribe.stone -= config.FORTRESS_STONE_COST
+    tribe.fortress_built = True
+    sim._award_trophy(tribe, "Fortress Warden")
+    return "a fortress rises -- a further defense bonus for the settlement"
 
 
 def _build_castle(sim, tribe, biome, target):
-    """The construction tier after BUILD_LONG_HOUSE -- gated on the long house
-    already standing, a real additional defense bonus stacked on top of the wall's
-    own (Simulation._resolve_raider_attack), not just a bigger cosmetic building."""
+    """Explicit request: "70 [houses] until they can build castles." Top tier of
+    the defensive ladder, gated on the Fortress already standing -- a real
+    additional defense bonus stacked on top of the wall's own (Simulation.
+    _resolve_raider_attack), not just a bigger cosmetic building."""
     if tribe.castle_built:
         return None
-    if not tribe.long_house_built:
-        return "a long house must be built before a castle is worth building here"
+    if not tribe.fortress_built:
+        return "a fortress must be built before a castle is worth building here"
+    if tribe.long_houses_built < config.CASTLE_LONG_HOUSES_REQUIRED:
+        return f"{config.CASTLE_LONG_HOUSES_REQUIRED} long houses are needed before a castle is worth building here"
     if tribe.wood < config.CASTLE_WOOD_COST or tribe.stone < config.CASTLE_STONE_COST:
         return None
     tribe.wood -= config.CASTLE_WOOD_COST
@@ -314,7 +387,7 @@ def _build_sawmill(sim, tribe, biome, target):
     building homes" -- gated on the two real facts named (long_house_built,
     fishing_learned), not era alone. One-way, like dock_built; permanently
     triples every future GATHER_WOOD yield (see _gather_wood)."""
-    if tribe.sawmill_built or not (tribe.long_house_built and tribe.fishing_learned):
+    if tribe.sawmill_built or not (tribe.long_houses_built > 0 and tribe.fishing_learned):
         return None
     if tribe.wood < config.SAWMILL_WOOD_COST or tribe.stone < config.SAWMILL_STONE_COST:
         return None
@@ -327,7 +400,7 @@ def _build_sawmill(sim, tribe, biome, target):
 
 def _build_quarry(sim, tribe, biome, target):
     """Mirrors _build_sawmill exactly, for stone instead of wood."""
-    if tribe.quarry_built or not (tribe.long_house_built and tribe.fishing_learned):
+    if tribe.quarry_built or not (tribe.long_houses_built > 0 and tribe.fishing_learned):
         return None
     if tribe.wood < config.QUARRY_WOOD_COST or tribe.stone < config.QUARRY_STONE_COST:
         return None
@@ -345,7 +418,7 @@ def _build_kitchen(sim, tribe, biome, target):
     long_house_built (real shelter, same "building homes" signal sawmill/quarry
     use). Stacks config.KITCHEN_UPKEEP_MULTIPLIER on top of the cooking divisor
     (see instincts.effective_food_upkeep) rather than replacing it."""
-    if tribe.kitchen_built or not (tribe.cooking_learned and tribe.long_house_built):
+    if tribe.kitchen_built or not (tribe.cooking_learned and tribe.long_houses_built > 0):
         return None
     if tribe.wood < config.KITCHEN_WOOD_COST or tribe.stone < config.KITCHEN_STONE_COST:
         return None
@@ -922,6 +995,9 @@ ACTION_REGISTRY = {
     "BUILD_QUARRY": _build_quarry,
     "BUILD_MINE": _build_mine,
     "BUILD_KITCHEN": _build_kitchen,
+    "BUILD_MOAT": _build_moat,
+    "BUILD_KEEP": _build_keep,
+    "BUILD_FORTRESS": _build_fortress,
     "PLANT_CROP": _plant_crop,
     "GATHER_EGGS": _gather_eggs,
     "CATCH_FISH": _catch_fish,
@@ -953,8 +1029,8 @@ ACTION_DESCRIPTIONS = {
     "BUILD_FIRE": "Build a fire at your current tile using stored wood. Does nothing if one is already built here.",
     "COOK_FOOD": "Learn to cook -- only possible once you've successfully hunted and successfully built a fire at some point. A one-time skill, usable anywhere from then on: once learned, stored food goes much further and every future celebration feast costs less.",
     "CONSTRUCT_WALL": "Work on a wall at your current tile using stored wood and stone -- a real defensive structure built up over several turns, not finished in one. Each turn spent on it adds real progress (more so with more people to put to the work), and a more complete wall meaningfully improves your odds of defending against a raider attack. Does nothing further once complete.",
-    "BUILD_LONG_HOUSE": "Build a long house at your current tile using stored wood and stone -- only possible once your wall is fully complete. A one-time, permanent structure: real, lasting shelter for the tribe.",
-    "BUILD_CASTLE": "Build a castle at your current tile using stored wood and stone -- only possible once your long house is built. A one-time, permanent structure that adds real defense on top of whatever your wall already provides.",
+    "BUILD_LONG_HOUSE": "Build a long house at your current tile using stored wood and stone -- only possible once your wall is fully complete. Repeatable as population grows: real, lasting shelter for the tribe, one house at a time.",
+    "BUILD_CASTLE": "Build a castle at your current tile using stored wood and stone -- only possible once a fortress stands and enough long houses have been built. A one-time, permanent structure that adds real defense on top of whatever your wall already provides.",
     "BUILD_ROAD": "Build a road at your current tile using stored wood and stone. A one-time, permanent improvement: every future scouting party, hunting party, or trade emissary you send out travels faster from then on.",
     "EXPAND_TERRITORY": "Push your city's growth beyond its normal limit using stored wood and stone -- only possible once your city has already finished growing on its own. Adds more buildings, up to double the usual cap.",
     "BUILD_DOCK": "Build a dock at your current tile using stored wood -- only possible once the tribe has settled here. A one-time, permanent structure: every future fish caught here pays out more from then on.",
@@ -962,6 +1038,9 @@ ACTION_DESCRIPTIONS = {
     "BUILD_QUARRY": "Build a quarry using stored wood and stone -- only possible once a long house stands and fishing is mastered. A one-time, permanent structure: every future load of harvested stone is worth three times as much from then on.",
     "BUILD_MINE": "Excavate a mine at a vein your scouts have already found, using stored wood and stone -- only possible once a quarry stands and at least one vein is known. A one-time, permanent structure: its unique resource flows in steadily from then on.",
     "BUILD_KITCHEN": "Build a kitchen using stored wood and stone -- only possible once cooking is known and a long house stands. A one-time, permanent structure: cooked meals become excellent food, stretching stores even further from then on.",
+    "BUILD_MOAT": "Dig a moat using stored wood and stone -- only possible once the wall has been reinforced with a second layer. A one-time, permanent structure, cheaper than another wall layer: a further defense bonus.",
+    "BUILD_KEEP": "Build a keep using stored wood and stone -- only possible once enough long houses stand. A one-time, permanent structure: a further defense bonus for the settlement.",
+    "BUILD_FORTRESS": "Build a fortress using stored wood and stone -- only possible once a keep stands and enough long houses have been built. A one-time, permanent structure: a further defense bonus for the settlement.",
     "PLANT_CROP": "Plant a farm plot at your current tile using stored wood -- only possible once the tribe has settled here. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
     "GATHER_EGGS": "Search for wild fowl nests near your current tile -- only possible once the tribe has settled here. A found egg is set aside and hatches on its own, growing the tribe's flock by one.",
     "CATCH_FISH": "Fish at your current tile -- only possible once the tribe has settled here. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",

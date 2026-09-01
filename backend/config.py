@@ -565,20 +565,60 @@ WALL_PROGRESS_PER_ACTION_BASE = 30
 WALL_WOOD_COST_TOTAL = 15
 WALL_STONE_COST_TOTAL = 15
 
-# BUILD_LONG_HOUSE (backend/actions.py._build_long_house): explicit request, gated on
-# the wall already being complete first -- defense before shelter. A one-time flag on
-# the tribe (tribe.long_house_built), not a second world.constructions entry at the
-# same tile the wall already occupies -- that dict holds one record per tile, so a
-# second type there would silently overwrite the wall's own progress (see
-# Landscape.add_construction). Costs more than the wall itself: a real communal
-# building, not another defensive structure.
+# A second wall layer, reinforcing an already-complete wall (backend/actions.py.
+# _construct_wall): explicit request -- "Torches can be a freebie for building
+# walls 2 levels" and "a Moat should be available after 2 layers of walls have
+# been built." A flat cost, not another multi-action progress bar the way the
+# very first layer was -- reinforcing a standing wall is simpler than raising one
+# from nothing. Capped at WALL_MAX_LAYERS: 2 layers is the whole point named in
+# both requests, not an arbitrary stopping point.
+WALL_MAX_LAYERS = 2
+WALL_LAYER_WOOD_COST = 20
+WALL_LAYER_STONE_COST = 20
+
+# Torches (backend/simulation.py._resolve_raider_attack): explicit request --
+# free once a tribe has fire and a second wall layer, no action or cost of its
+# own, just a real defense bonus applied directly in the raid formula.
+TORCHES_DEFENSE_BONUS = 0.05
+
+# BUILD_MOAT (backend/actions.py._build_moat): explicit request, "a Moat should
+# be available after 2 layers of walls have been built." A cheaper alternative
+# investment once wall layers are maxed out, not a replacement for the wall
+# already standing -- smaller cost, smaller bonus than a wall layer.
+MOAT_WOOD_COST = 15
+MOAT_STONE_COST = 10
+MOAT_DEFENSE_BONUS = 0.08
+
+# BUILD_LONG_HOUSE (backend/actions.py._build_long_house): explicit correction --
+# "most structures they only need 1 of. but house builds are dependant on
+# population needs." Repeatable now, gated on real population need
+# (HOUSING_POPULATION_PER_LONG_HOUSE) rather than a single one-time flag -- a
+# growing tribe keeps needing more shelter, the same way farm plots keep
+# growing rather than capping at one. Still gated on the wall already being
+# complete first -- defense before shelter.
 LONG_HOUSE_WOOD_COST = 25
 LONG_HOUSE_STONE_COST = 20
+HOUSING_POPULATION_PER_LONG_HOUSE = 8
 
-# BUILD_CASTLE (backend/actions.py._build_castle): the construction tier after
-# BUILD_LONG_HOUSE, gated on the long house already standing -- a real, additional
-# defense bonus stacked on top of the wall's own (Simulation._resolve_raider_attack's
-# RAIDER_DEFENSE_WALL_BONUS_AT_FULL_PROGRESS), not just a bigger cosmetic building.
+# The defensive tier ladder after Long House (backend/actions.py._build_keep/
+# _build_fortress/_build_castle): explicit request -- "they can have 10 houses
+# before they build a Keep, 40 until they reach a Fortress, 70 until they can
+# build castles." Gated on tribe.long_houses_built (a real proxy for how
+# established the settlement has become) rather than era or population alone,
+# each stage requiring the previous one already standing. Each is a real,
+# additional defense bonus stacked on top of the wall's own (Simulation.
+# _resolve_raider_attack's RAIDER_DEFENSE_WALL_BONUS_AT_FULL_PROGRESS).
+KEEP_LONG_HOUSES_REQUIRED = 10
+KEEP_WOOD_COST = 30
+KEEP_STONE_COST = 35
+KEEP_DEFENSE_BONUS = 0.10
+
+FORTRESS_LONG_HOUSES_REQUIRED = 40
+FORTRESS_WOOD_COST = 50
+FORTRESS_STONE_COST = 60
+FORTRESS_DEFENSE_BONUS = 0.20
+
+CASTLE_LONG_HOUSES_REQUIRED = 70
 CASTLE_WOOD_COST = 40
 CASTLE_STONE_COST = 50
 CASTLE_DEFENSE_BONUS = 0.15

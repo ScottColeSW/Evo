@@ -172,7 +172,7 @@ def test_build_long_house_requires_the_wall_to_be_complete_first():
 
     result = ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
 
-    assert tribe.long_house_built is False
+    assert tribe.long_houses_built == 0
     assert "wall must be finished" in result
 
 
@@ -188,7 +188,7 @@ def test_build_long_house_succeeds_once_wall_is_complete():
 
     result = ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
 
-    assert tribe.long_house_built is True
+    assert tribe.long_houses_built == 1
     assert tribe.wood < wood_before
     assert tribe.stone < stone_before
     assert any(t["name"] == "Master Builder" for t in tribe.trophies)
@@ -209,7 +209,32 @@ def test_build_long_house_no_op_when_cannot_afford_it():
 
     ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
 
-    assert tribe.long_house_built is False
+    assert tribe.long_houses_built == 0
+
+
+def test_build_long_house_repeats_as_population_grows():
+    """Explicit correction: "most structures they only need 1 of. but house
+    builds are dependant on population needs.\""""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 200
+    tribe.stone = 200
+    for _ in range(6):
+        ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
+
+    ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.long_houses_built == 1
+    # No more housing need yet at the same population -- a no-op, not a second house.
+    assert ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.long_houses_built == 1
+
+    tribe.population = config.HOUSING_POPULATION_PER_LONG_HOUSE * 2
+    result = ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.long_houses_built == 2
+    assert "another long house rises" in result
 
 
 def test_build_long_house_is_a_no_op_once_already_built():
@@ -230,7 +255,51 @@ def test_build_long_house_is_a_no_op_once_already_built():
     assert tribe.trophies == trophies_after
 
 
-def test_build_castle_requires_the_long_house_first():
+def test_build_keep_requires_ten_long_houses():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 200
+    tribe.stone = 200
+
+    result = ACTION_REGISTRY["BUILD_KEEP"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.keep_built is False
+    assert "10 long houses" in result
+
+    tribe.long_houses_built = config.KEEP_LONG_HOUSES_REQUIRED
+    wood_before, stone_before = tribe.wood, tribe.stone
+    result = ACTION_REGISTRY["BUILD_KEEP"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.keep_built is True
+    assert tribe.wood < wood_before
+    assert tribe.stone < stone_before
+    assert any(t["name"] == "Keep Warden" for t in tribe.trophies)
+    assert "keep rises" in result
+
+
+def test_build_fortress_requires_keep_and_forty_long_houses():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 200
+    tribe.stone = 200
+    tribe.long_houses_built = config.FORTRESS_LONG_HOUSES_REQUIRED
+
+    result = ACTION_REGISTRY["BUILD_FORTRESS"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.fortress_built is False
+    assert "keep must be built" in result
+
+    tribe.keep_built = True
+    result = ACTION_REGISTRY["BUILD_FORTRESS"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.fortress_built is True
+    assert any(t["name"] == "Fortress Warden" for t in tribe.trophies)
+    assert "fortress rises" in result
+
+
+def test_build_castle_requires_the_fortress_first():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.wood = 200
@@ -239,17 +308,18 @@ def test_build_castle_requires_the_long_house_first():
     result = ACTION_REGISTRY["BUILD_CASTLE"](sim, tribe, "plains", _NO_TARGET)
 
     assert tribe.castle_built is False
-    assert "long house must be built" in result
+    assert "fortress must be built" in result
 
 
-def test_build_castle_succeeds_once_long_house_exists():
+def test_build_castle_succeeds_once_fortress_and_seventy_long_houses_exist():
+    from backend import config
+
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.wood = 300
     tribe.stone = 300
-    for _ in range(6):
-        ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
-    ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
+    tribe.fortress_built = True
+    tribe.long_houses_built = config.CASTLE_LONG_HOUSES_REQUIRED
     wood_before, stone_before = tribe.wood, tribe.stone
 
     result = ACTION_REGISTRY["BUILD_CASTLE"](sim, tribe, "plains", _NO_TARGET)
@@ -259,6 +329,54 @@ def test_build_castle_succeeds_once_long_house_exists():
     assert tribe.stone < stone_before
     assert any(t["name"] == "Castle Builder" for t in tribe.trophies)
     assert "castle rises" in result
+
+
+def test_wall_can_be_reinforced_with_a_second_layer_once_complete():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 300
+    tribe.stone = 300
+    for _ in range(6):  # comfortably enough to finish the first layer
+        ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.wall_layers == config.WALL_MAX_LAYERS  # the loop already reinforced it once
+
+
+def test_wall_reinforcement_stops_at_the_layer_cap():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 1000
+    tribe.stone = 1000
+    for _ in range(10):
+        ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.wall_layers == config.WALL_MAX_LAYERS
+    wood_before, stone_before = tribe.wood, tribe.stone
+    assert ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET) is None
+    assert (tribe.wood, tribe.stone) == (wood_before, stone_before)
+
+
+def test_build_moat_requires_wall_fully_reinforced():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = config.MOAT_WOOD_COST
+    tribe.stone = config.MOAT_STONE_COST
+
+    assert ACTION_REGISTRY["BUILD_MOAT"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.moat_built is False
+
+    tribe.wall_layers = config.WALL_MAX_LAYERS
+    result = ACTION_REGISTRY["BUILD_MOAT"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.moat_built is True
+    assert any(t["name"] == "Moat Digger" for t in tribe.trophies)
+    assert "moat is dug" in result
 
 
 def test_build_road_grants_a_flat_expedition_speed_bonus():
@@ -400,7 +518,7 @@ def test_build_sawmill_requires_long_house_and_fishing_first():
     assert ACTION_REGISTRY["BUILD_SAWMILL"](sim, tribe, "plains", _NO_TARGET) is None
     assert tribe.sawmill_built is False
 
-    tribe.long_house_built = True
+    tribe.long_houses_built = 1
     tribe.fishing_learned = True
     result = ACTION_REGISTRY["BUILD_SAWMILL"](sim, tribe, "plains", _NO_TARGET)
 
@@ -419,7 +537,7 @@ def test_build_quarry_requires_long_house_and_fishing_first():
     assert ACTION_REGISTRY["BUILD_QUARRY"](sim, tribe, "plains", _NO_TARGET) is None
     assert tribe.quarry_built is False
 
-    tribe.long_house_built = True
+    tribe.long_houses_built = 1
     tribe.fishing_learned = True
     result = ACTION_REGISTRY["BUILD_QUARRY"](sim, tribe, "plains", _NO_TARGET)
 
@@ -476,7 +594,7 @@ def test_build_kitchen_requires_cooking_and_long_house_first():
     assert tribe.kitchen_built is False
 
     tribe.cooking_learned = True
-    tribe.long_house_built = True
+    tribe.long_houses_built = 1
     result = ACTION_REGISTRY["BUILD_KITCHEN"](sim, tribe, "plains", _NO_TARGET)
 
     assert tribe.kitchen_built is True

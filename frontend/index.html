@@ -1985,7 +1985,8 @@ const MINE_YIELD_PER_CYCLE = 5;
 function farmingPanel(t) {
   const wall = (latestState.structures || []).find(s => s.x === t.x && s.y === t.y && s.type === "wall");
   const hasAny = t.farm_plots || t.flock || t.fishing_learned || t.fire_ever_built || wall
-    || t.long_house_built || t.castle_built || t.road_built || t.dock_built
+    || t.long_houses_built || t.keep_built || t.fortress_built || t.castle_built
+    || t.moat_built || t.road_built || t.dock_built
     || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built
     || t.founded_city || (t.cooking_learned && !t.kitchen_built);
   if (!hasAny) return "";
@@ -2020,9 +2021,16 @@ function farmingPanel(t) {
   }
   if (wall) {
     const progress = Math.max(0, Math.min(100, wall.progress ?? 100));
-    parts.push(progress >= 100 ? "🧱 Wall — complete" : `🧱 Wall — ${progress}% complete`);
+    const layers = t.wall_layers ? ` · ${t.wall_layers} layer${t.wall_layers === 1 ? "" : "s"}` : "";
+    parts.push(progress >= 100 ? `🧱 Wall — complete${layers}` : `🧱 Wall — ${progress}% complete`);
   }
-  if (t.long_house_built) parts.push("🏠 Long House — real, lasting shelter");
+  if (t.fire_ever_built && (t.wall_layers || 0) >= 2) parts.push("🔥🧱 Torches — lining the wall, a free defense bonus");
+  if (t.moat_built) parts.push("💧 Moat — a further defense bonus");
+  if (t.long_houses_built > 0) {
+    parts.push(`🏠 Long House — ${t.long_houses_built} standing, real lasting shelter`);
+  }
+  if (t.keep_built) parts.push("🏯 Keep — a further defense bonus");
+  if (t.fortress_built) parts.push("🏰 Fortress — a further defense bonus");
   if (t.castle_built) parts.push("🏯 Castle — a further defense bonus");
   if (t.road_built) parts.push("🛣️ Road — every future expedition travels faster");
   if (t.dock_built) parts.push("⚓ Dock — boosts every manual fish catch");

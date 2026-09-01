@@ -303,12 +303,30 @@ class Tribe:
         # other "proven once" flag here.
         self.hunt_ever_succeeded = False
         self.fire_ever_built = False
-        # See actions.py._build_long_house -- one-way, gated on the wall already
-        # being complete first.
-        self.long_house_built = False
-        # See actions.py._build_castle -- one-way, gated on the long house already
-        # standing. Adds a real defense bonus on top of the wall's own (Simulation.
-        # _resolve_raider_attack).
+        # A completed wall's second reinforcing layer (backend/actions.py.
+        # _construct_wall) -- explicit request: "Torches can be a freebie for
+        # building walls 2 levels" / "a Moat should be available after 2 layers of
+        # walls have been built." Capped at config.WALL_MAX_LAYERS.
+        self.wall_layers = 0
+        # See actions.py._build_moat -- one-way, gated on wall_layers maxed out.
+        # A cheaper alternative defense investment, not a wall replacement.
+        self.moat_built = False
+        # See actions.py._build_long_house -- explicit correction: "most
+        # structures they only need 1 of. but house builds are dependant on
+        # population needs." Repeatable, not a one-time flag -- a count, gated on
+        # real population need (config.HOUSING_POPULATION_PER_LONG_HOUSE) each
+        # time, and the real proxy the Keep/Fortress/Castle tier below reads for
+        # how established this settlement has become.
+        self.long_houses_built = 0
+        # The defensive tier ladder after Long House (backend/actions.py.
+        # _build_keep/_build_fortress/_build_castle): explicit request -- "10
+        # houses before they build a Keep, 40 until they reach a Fortress, 70
+        # until they can build castles." Each one-way, each gated on the previous
+        # stage already standing plus tribe.long_houses_built clearing its own
+        # threshold. Each adds a real defense bonus on top of the wall's own
+        # (Simulation._resolve_raider_attack).
+        self.keep_built = False
+        self.fortress_built = False
         self.castle_built = False
         # See actions.py._build_road -- one-way. Adds a flat speed bonus to every
         # future expedition (Simulation._advance_one_expedition), the same shape a
@@ -420,7 +438,11 @@ class Tribe:
             "cooking_learned": self.cooking_learned,
             "hunt_ever_succeeded": self.hunt_ever_succeeded,
             "fire_ever_built": self.fire_ever_built,
-            "long_house_built": self.long_house_built,
+            "wall_layers": self.wall_layers,
+            "moat_built": self.moat_built,
+            "long_houses_built": self.long_houses_built,
+            "keep_built": self.keep_built,
+            "fortress_built": self.fortress_built,
             "castle_built": self.castle_built,
             "road_built": self.road_built,
             "dock_built": self.dock_built,
@@ -1433,36 +1455,65 @@ class Simulation:
             # eligibility nudge above: a real gate the tribe couldn't otherwise see.
             wall_fraction = self._wall_fraction(tribe)
             if wall_fraction >= 1.0:
-                if not tribe.long_house_built:
+                if tribe.long_houses_built == 0:
                     visible_entities.append(
                         "The wall here is complete -- a long house is now worth building for real, "
                         "lasting shelter."
                     )
-                elif not tribe.castle_built:
+                elif tribe.wall_layers < config.WALL_MAX_LAYERS:
                     visible_entities.append(
-                        "The wall and long house both stand complete -- a castle is now worth building "
-                        "for a further defense bonus."
+                        f"The wall stands complete with {tribe.wall_layers} layer"
+                        f"{'s' if tribe.wall_layers != 1 else ''} -- it can be reinforced with "
+                        f"{config.WALL_MAX_LAYERS - tribe.wall_layers} more."
                     )
-            elif not tribe.long_house_built:
+            elif tribe.long_houses_built == 0:
                 visible_entities.append(
                     f"The wall here is only {wall_fraction:.0%} complete -- a long house is not worth "
                     "attempting until the wall is finished."
                 )
 
+        if "BUILD_MOAT" in available_actions and not tribe.moat_built and tribe.wall_layers >= config.WALL_MAX_LAYERS:
+            visible_entities.append(
+                "The wall has been reinforced to its full 2 layers -- a moat is now available, a "
+                "cheaper alternative defense investment."
+            )
+        if tribe.fire_ever_built and tribe.wall_layers >= config.WALL_MAX_LAYERS:
+            visible_entities.append(
+                "Fire is known and the wall stands fully reinforced -- torches now line it for free, "
+                "a further defense bonus."
+            )
+
+        if tribe.long_houses_built > 0:
+            if not tribe.keep_built and tribe.long_houses_built >= config.KEEP_LONG_HOUSES_REQUIRED:
+                visible_entities.append(
+                    f"{tribe.long_houses_built} long houses stand -- a keep is now worth building for a "
+                    "further defense bonus."
+                )
+            elif tribe.keep_built and not tribe.fortress_built and tribe.long_houses_built >= config.FORTRESS_LONG_HOUSES_REQUIRED:
+                visible_entities.append(
+                    f"{tribe.long_houses_built} long houses stand and the keep is complete -- a fortress "
+                    "is now worth building for a further defense bonus."
+                )
+            elif tribe.fortress_built and not tribe.castle_built and tribe.long_houses_built >= config.CASTLE_LONG_HOUSES_REQUIRED:
+                visible_entities.append(
+                    f"{tribe.long_houses_built} long houses stand and the fortress is complete -- a "
+                    "castle is now worth building for a further defense bonus."
+                )
+
         if "BUILD_SAWMILL" in available_actions and not tribe.sawmill_built:
-            if tribe.long_house_built and tribe.fishing_learned:
+            if tribe.long_houses_built > 0 and tribe.fishing_learned:
                 visible_entities.append(
                     "Farming and fishing are both established, and real shelter stands -- a sawmill "
                     "would triple every future load of gathered wood."
                 )
         if "BUILD_KITCHEN" in available_actions and not tribe.kitchen_built:
-            if tribe.cooking_learned and tribe.long_house_built:
+            if tribe.cooking_learned and tribe.long_houses_built > 0:
                 visible_entities.append(
                     "Cooking is known and real shelter stands -- a kitchen would turn cooked meals into "
                     "excellent food, stretching stores even further."
                 )
         if "BUILD_QUARRY" in available_actions and not tribe.quarry_built:
-            if tribe.long_house_built and tribe.fishing_learned:
+            if tribe.long_houses_built > 0 and tribe.fishing_learned:
                 visible_entities.append(
                     "Farming and fishing are both established, and real shelter stands -- a quarry "
                     "would triple the value of every future load of harvested stone."
@@ -2294,9 +2345,19 @@ class Simulation:
             + (tribe.population // 10) * config.RAIDER_DEFENSE_POPULATION_BONUS_PER_10
             + config.RAIDER_DEFENSE_WALL_BONUS_AT_FULL_PROGRESS * wall_fraction
             + (config.RAIDER_DEFENSE_WATER_BONUS if self._is_settled_near_water(tribe) else 0.0)
-            # See actions.py._build_castle -- a real bonus stacked on top of the
-            # wall's own, not another way to reach the same ceiling faster.
+            # See actions.py._build_keep/_build_fortress/_build_castle -- each a
+            # real bonus stacked on top of the wall's own, not another way to
+            # reach the same ceiling faster.
+            + (config.KEEP_DEFENSE_BONUS if tribe.keep_built else 0.0)
+            + (config.FORTRESS_DEFENSE_BONUS if tribe.fortress_built else 0.0)
             + (config.CASTLE_DEFENSE_BONUS if tribe.castle_built else 0.0)
+            # See actions.py._build_moat -- a cheaper alternative to a second
+            # wall layer, not a replacement for the wall itself.
+            + (config.MOAT_DEFENSE_BONUS if tribe.moat_built else 0.0)
+            # Explicit request: "Torches can be a freebie for building walls 2
+            # levels" -- free once a tribe has both fire and a fully reinforced
+            # wall, no action or cost of its own.
+            + (config.TORCHES_DEFENSE_BONUS if tribe.fire_ever_built and tribe.wall_layers >= config.WALL_MAX_LAYERS else 0.0)
             - config.RAIDER_STRENGTH_DEFENSE_PENALTY_AT_MAX * raider_strength
         ))
         if random.random() < defense_chance:
