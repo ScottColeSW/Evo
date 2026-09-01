@@ -591,7 +591,17 @@ function celebrationReason(t) {
   if (recent.some(e => e.includes("celebrates the discovery of a game-rich site"))) return "a game-rich discovery";
   if (recent.some(e => e.includes("celebrates settling here for good"))) return "settling down for good";
   if (recent.some(e => e.includes("holds a harvest festival"))) return "a bountiful harvest";
-  if (recent.some(e => e.includes("a fresh discovery"))) return "a fresh discovery";
+  // Bug report: "'a fresh Discover' of what? is what I ask everytime I see
+  // that." Simulation._check_for_celebration already names the actual thing
+  // discovered in the full chronicle line ("a fresh discovery: Scouts
+  // confirmed fresh water at (12,34)., spending..."), but this only ever
+  // detected the generic prefix's presence and threw the real detail away.
+  // Pulls the actual discovered-thing text back out instead.
+  const discoveryEntry = recent.find(e => e.includes("a fresh discovery:"));
+  if (discoveryEntry) {
+    const match = discoveryEntry.match(/a fresh discovery: (.+?)(?:, spending \d+ food|$)/);
+    return match ? `a fresh discovery -- ${match[1].replace(/\.$/, "")}` : "a fresh discovery";
+  }
   if (recent.some(e => e.includes("a season of plenty"))) return "a season of plenty";
   return "";
 }
