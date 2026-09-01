@@ -18,8 +18,11 @@ reconcile with the user's "Agentic Evolution Architecture" spec -- see the plan 
 the time of this change for the full reconciliation (what already existed vs. what
 was rejected as conflicting with this project's own "no scripted directives" rule).
 Thresholds extrapolate the original 3-era curve (population 0 -> 20 -> 40); the top
-two eras cap population at config.POPULATION_GROWTH_CAP (80), the hard ceiling
-_grow_population already enforces, and lean on higher resource requirements instead.
+two eras both require population 80 (real live runs reached this), the same
+population every subsequent era leans on higher resource requirements to keep
+climbing past rather than a raised population floor -- there's no longer a
+population ceiling at all (config.POPULATION_GROWTH_CAP, explicit request: "we
+should not put a cap on population").
 Mechanization/Silicon/Cosmic Post-Human currently unlock no new actions -- their real
 content (self-modification, symbolic doctrine-sharing, the endgame epilogue) is
 deliberately sequenced as separate follow-up work, not invented here just to fill

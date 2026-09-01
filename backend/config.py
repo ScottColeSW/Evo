@@ -188,7 +188,13 @@ UPKEEP_POPULATION_DIVISOR = 10  # cost per tick = max(1, population // this)
 # food cost per growth tick, not free), just inside the range tribes actually reach.
 POPULATION_GROWTH_FOOD_THRESHOLD = 25
 POPULATION_GROWTH_FOOD_COST = 8
-POPULATION_GROWTH_CAP = 80
+# Explicit request: "we should not put a cap on population" -- live runs tonight
+# showed multiple tribes actually reaching the old cap (80) and sitting there,
+# which was the whole point of removing it rather than just raising the number.
+# Infinity rather than deleting every `population < POPULATION_GROWTH_CAP` check
+# across simulation.py/actions.py -- same real per-growth-tick food cost gates
+# growth either way, there's just no longer a ceiling on top of that.
+POPULATION_GROWTH_CAP = float("inf")
 
 # Farming (backend/actions.py PLANT_CROP, Simulation._advance_farming): gated on
 # genuinely settled ground with real water access, not just any farmable biome -- see

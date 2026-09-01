@@ -44,8 +44,9 @@ def test_population_and_resource_requirements_never_decrease_up_the_ladder():
         assert current.requires_population >= previous.requires_population
 
 
-def test_top_two_eras_cap_population_at_the_hard_growth_ceiling():
-    from backend import config
-
-    assert ERAS[-1].requires_population == config.POPULATION_GROWTH_CAP
-    assert ERAS[-2].requires_population == config.POPULATION_GROWTH_CAP
+def test_top_two_eras_share_the_same_population_threshold():
+    # config.POPULATION_GROWTH_CAP is infinite now (explicit request: "we should
+    # not put a cap on population"), so the top two eras no longer track it --
+    # they just lean on the same real, concrete population threshold as each
+    # other and rely on higher resource requirements to keep climbing.
+    assert ERAS[-1].requires_population == ERAS[-2].requires_population == 80
