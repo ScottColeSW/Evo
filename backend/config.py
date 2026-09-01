@@ -446,6 +446,14 @@ TRADE_PRIDE_RADIUS = 4
 NEGOTIATE_PRIDE_MAGNITUDE = 0.3
 NEGOTIATE_PRIDE_RADIUS = 4
 
+# backend/threat.py -- the reconciled, non-overriding version of the Agentic
+# Evolution spec's Module A (calculate_threat_proximity). Same distance-weighted
+# exponential-decay shape the spec itself proposed (w_r * exp(-alpha * dist)),
+# scoped to declared-WAR rivals specifically -- raider proximity already has its
+# own honest fact (see Simulation._advance_raider_approach).
+THREAT_DECAY_RATE = 0.05
+THREAT_ASSESSMENT_MIN_LEVEL = 0.05
+
 # SEND_TRADE_EMISSARY (backend/actions.py): TRADE itself is instant and only works if
 # a rival already happens to be within TRADE_PROXIMITY_RADIUS right now -- a tribe can
 # never deliberately reach out to a rival it merely knows the rough direction of. This

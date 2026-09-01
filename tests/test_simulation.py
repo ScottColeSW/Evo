@@ -125,6 +125,31 @@ def test_declared_stance_is_surfaced_as_a_fact_regardless_of_distance():
     assert f"Currently war with {mountain.name}." in request["prompt"]
 
 
+def test_threat_assessment_layer_appears_in_the_prompt_for_a_declared_enemy():
+    sim = Simulation(
+        [
+            {"name": "Forest Tribe", "model": "gemma2:2b", "x": 50, "y": 50},
+            {"name": "Mountain Tribe", "model": "qwen2.5:3b", "x": 51, "y": 51},
+        ]
+    )
+    forest = sim.tribes["tribe_0"]
+    forest.stance_toward["tribe_1"] = "WAR"
+
+    request, _ctx = sim._prepare_turn(forest)
+
+    assert "THREAT ASSESSMENT LAYER" in request["prompt"]
+    assert "declared enemy" in request["prompt"]
+
+
+def test_threat_assessment_layer_shows_the_neutral_placeholder_without_a_declared_enemy():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "NO DECLARED ENEMY WITHIN ASSESSABLE RANGE" in request["prompt"]
+
+
 def test_prepare_turn_caches_wellbeing_on_the_tribe_and_injects_its_summary_into_the_prompt():
     """See backend/wellbeing.py -- per explicit design decision, the Maslow's-ladder
     read isn't viewer-only: _prepare_turn must both cache it on the tribe (so the

@@ -17,6 +17,7 @@ from .eras import ERAS, era_index, next_era, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
 from .instincts import effective_food_upkeep, survival_bias_string
+from .threat import threat_assessment_string
 from .wellbeing import compute_wellbeing
 from .leadership import elect_chief, name_settlement
 from .memory import TribeMemory
@@ -1513,8 +1514,11 @@ class Simulation:
             tribe.name, tribe.model, tribe.chief_name, tribe.chief_philosophy, tribe.chief_decree,
             tribe.chief_victory, lineage_note, tuple(available_actions),
         )
+        rival_tribes = [t for t in self.tribes.values() if t.id != tribe.id and not t.extinct]
+        threat_assessment = threat_assessment_string(tribe, rival_tribes)
         prompt = compile_live_state_prompt(
-            base_prompt, world_state, ghost_bias, survival_bias, tribe.wellbeing.get("summary", "")
+            base_prompt, world_state, ghost_bias, survival_bias, tribe.wellbeing.get("summary", ""),
+            threat_assessment,
         )
         panicked = "DREAD" in ghost_bias or survival_critical
         temperature = config.ANCESTRAL_DREAD_TEMPERATURE if panicked else config.DEFAULT_TEMPERATURE

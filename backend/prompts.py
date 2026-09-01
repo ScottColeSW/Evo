@@ -114,7 +114,8 @@ def _growth_pressure_text(era_gap_note: str, survival_critical: bool) -> str:
 
 
 def compile_live_state_prompt(
-    base_prompt: str, world_state: dict, ancestral_bias: str, survival_bias: str, wellbeing_summary: str = ""
+    base_prompt: str, world_state: dict, ancestral_bias: str, survival_bias: str, wellbeing_summary: str = "",
+    threat_assessment: str = "",
 ) -> str:
     """Assembles the final text block injected into Ollama for a specific simulation turn.
 
@@ -131,6 +132,9 @@ def compile_live_state_prompt(
     urgent than survival_bias, meant to answer "how are we doing, overall?" rather
     than "are we in danger this instant?" Per explicit design decision this reaches
     the chief as a real fact, not just a viewer-facing UI widget.
+    `threat_assessment` is the reconciled, non-overriding version of the Agentic
+    Evolution spec's Module A (see threat.py) -- real distance-weighted danger from
+    a declared-WAR rival, stated as a fact, never a forced response.
 
     Live-run finding: metacognitive_rationale used to precede visual_action in the
     JSON schema below, on the (wrong, for these small models) assumption that
@@ -184,6 +188,11 @@ GROWTH IMPERATIVE LAYER
 COMMUNITY WELL-BEING LAYER
 ========================================================================
 {wellbeing_summary or '[WELL-BEING STATE: UNASSESSED]'}
+
+========================================================================
+THREAT ASSESSMENT LAYER
+========================================================================
+{threat_assessment or '[THREAT STATE: NO DECLARED ENEMY WITHIN ASSESSABLE RANGE]'}
 
 ========================================================================
 MANDATORY REACTION SCHEMA (VALID JSON MODE ONLY)
