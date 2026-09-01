@@ -1483,6 +1483,25 @@ def test_prepare_turn_mentions_an_expedition_already_in_the_field():
     request, _ctx = sim._prepare_turn(tribe)
 
     assert "Still in the field" in request["prompt"]
+
+
+def test_expedition_in_the_field_names_its_actual_target_coordinate():
+    """Bug report: "2 scouts going same direction still." The field report
+    used to name who was out and what day/phase they were on, but never where
+    they were actually headed -- a second SCOUT call had no way to tell it
+    would just cover the same ground again."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.expeditions = [{
+        "pos": [tribe.x, tribe.y], "origin": [tribe.x, tribe.y], "target": [70, 30],
+        "day": 1, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "headed toward (70,30)" in request["prompt"]
     assert "Test Scout" in request["prompt"]
     assert "You could send out 1 more at once" in request["prompt"]
     assert "day 1" in request["prompt"]

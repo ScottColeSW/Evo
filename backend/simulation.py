@@ -1811,10 +1811,18 @@ class Simulation:
                 "you have not yet arrived there."
             )
         if tribe.expeditions:
+            # Bug report: "2 scouts going same direction still" -- right out of
+            # the gate, before any real discovery data exists to compare
+            # compass bearings against (see the lopsided-coverage fact
+            # elsewhere, which only ever looks at confirmed sites). This named
+            # who was out and what day/phase they were on, but never where
+            # they were actually headed -- a second SCOUT call had no way to
+            # tell it would just be covering the same ground again.
             party_word = {"scout": "scouts", "hunt": "a hunting party"}
             reports = "; ".join(
                 f"{party_word.get(exp.get('kind'), 'a party')} led by {exp['lead_scout']} "
-                f"(day {exp['day']}, {exp['phase']})"
+                f"(day {exp['day']}, {exp['phase']}, headed toward "
+                f"({exp['target'][0]},{exp['target'][1]}))"
                 for exp in tribe.expeditions
             )
             slots_left = expedition_capacity(tribe) - len(tribe.expeditions)
