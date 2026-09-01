@@ -1180,6 +1180,14 @@ function drawTribeIndividuals(tribeId, t) {
     ctx.lineWidth = 1.2;
     ctx.stroke();
 
+    // Bug report (live playtest): broadcast text rendered detached from its own
+    // bubble, overflowing past the left edge -- drawCelebrationFireworks (called
+    // earlier in this same per-tribe draw pass, whenever a tribe is mid-celebration)
+    // sets ctx.textAlign="center"/textBaseline="middle" and never resets them, so
+    // this fillText silently inherited that state instead of the left/alphabetic
+    // alignment its own box math (bx + padX, left-anchored) actually assumes.
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
     ctx.fillStyle = "#fbbf24";
     ctx.fillText(t.last_broadcast, bx + padX, by + bh - padY - 2);
   }
@@ -1314,20 +1322,28 @@ const LANDMARK_TYPES = [
 ];
 
 function drawLandmarks() {
+  // Bug report (live playtest): "I'm not sure what landmarks are on the map, I'd
+  // like to see those clearly depicted." The old Math.max(3.5, ...) / Math.max(7, ...)
+  // floors were tuned for a more zoomed-in view -- at this map's real TILE size
+  // (~5-6px on a 100-tile grid), they clamped every landmark down to a ~7px dot with
+  // a barely-legible 7px emoji, effectively invisible against the terrain texture.
+  // Floors raised well past anything the terrain/trail layers use, plus a solid
+  // (not translucent) backing disc and a heavier ring so a landmark reads as a real,
+  // deliberate marker at a glance, not a stray pixel.
   Object.values(latestState.tribes || {}).forEach(t => {
     LANDMARK_TYPES.forEach(([field, emoji, [ox, oy]]) => {
       (t[field] || []).forEach(([x, y]) => {
         const cx = x * TILE + TILE / 2 + ox * TILE;
         const cy = y * TILE + TILE / 2 + oy * TILE;
-        const r = Math.max(3.5, TILE * 0.32);
+        const r = Math.max(8, TILE * 0.55);
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, 2 * Math.PI);
-        ctx.fillStyle = "rgba(15,23,42,0.75)";
+        ctx.fillStyle = "rgba(10,14,26,0.92)";
         ctx.fill();
         ctx.strokeStyle = t.color;
-        ctx.lineWidth = Math.max(1, TILE * 0.1);
+        ctx.lineWidth = Math.max(1.5, TILE * 0.14);
         ctx.stroke();
-        ctx.font = `${Math.max(7, TILE * 0.62)}px sans-serif`;
+        ctx.font = `${Math.max(13, TILE * 0.95)}px sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(emoji, cx, cy + 1);

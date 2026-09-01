@@ -497,8 +497,10 @@ RAIDER_SIGHTING_TRAUMA_RADIUS = 4
 # attack (Simulation._check_raider_attack) starts a real, visible, multi-cycle
 # approach (Simulation._advance_raider_approach) before it actually resolves -- real
 # advance warning the tribe can act on (finish a wall) before the attack lands, not
-# just a surprise.
-RAIDER_APPROACH_CYCLES = 3
+# just a surprise. Explicit follow-up request: "let's start raiders 10 cycles away" --
+# raised from 3 to give a tribe genuinely enough real time to react (finish a wall
+# in progress, etc.) rather than a token few-cycle heads-up.
+RAIDER_APPROACH_CYCLES = 10
 RAIDER_APPROACH_START_DISTANCE = 8
 
 # Explicit request: "It would be interesting to see a Scout encounter a RAIDER

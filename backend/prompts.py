@@ -131,6 +131,17 @@ def compile_live_state_prompt(
     urgent than survival_bias, meant to answer "how are we doing, overall?" rather
     than "are we in danger this instant?" Per explicit design decision this reaches
     the chief as a real fact, not just a viewer-facing UI widget.
+
+    Live-run finding: metacognitive_rationale used to precede visual_action in the
+    JSON schema below, on the (wrong, for these small models) assumption that
+    writing the "why" first would make the eventual "what" follow from it, like a
+    chain-of-thought. Live chronicle data showed the opposite -- a rationale that
+    confidently named one need (e.g. "the tribe needs food and water") while
+    visual_action landed on something unrelated (BUILD_FIRE), a real, repeated
+    incoherence, not a one-off glitch. visual_action now comes first: for
+    autoregressive JSON generation, whatever field is asked for first is the one
+    actually decided independently; putting rationale second means it's generated
+    *conditioned on* the real chosen action instead of racing ahead of it.
     """
     state_injection = f"""
 ========================================================================
@@ -185,8 +196,8 @@ do not copy the placeholder text itself into your answer. Any malformed syntax w
 trigger an automated retry:
 
 {{
-    "metacognitive_rationale": "<answer this: given everything above, what will your tribe do this cycle, and why? one short sentence>",
     "visual_action": "<one action name from the list above, nothing else>",
+    "metacognitive_rationale": "<one short sentence: why this action, given everything above>",
     "synthetic_language_broadcast": "<your invented-language phrase, or empty string>",
     "target_vector": [x, y]
 }}
