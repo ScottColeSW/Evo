@@ -940,6 +940,26 @@ def test_relocate_moves_the_tribe_toward_target():
     assert tribe.x > 50  # moved toward the target, not away or nowhere
 
 
+def test_relocate_moves_five_times_as_fast_from_an_evolved_toll_road():
+    """Explicit request: "travel speed is 5x on toll roads.\""""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    # Evolving the road itself also wears the tile a little (unavoidable, same
+    # wear_trail call) -- computed against the exact bonus this leaves behind
+    # rather than assuming a bare config.MOVEMENT_SPEED baseline.
+    for _ in range(config.ROAD_EVOLVE_CROSSINGS + 1):
+        sim.world.wear_trail(50, 50, 0.01, tribe_id=tribe.id)
+    trail_bonus = sim.world.trail_speed_bonus(50, 50, config.MAX_TRAIL_BONUS_SPEED)
+    expected_speed = round((config.MOVEMENT_SPEED + trail_bonus) * config.TOLL_ROAD_SPEED_MULTIPLIER)
+
+    ACTION_REGISTRY["RELOCATE"](sim, tribe, "plains", (80, 50))
+
+    assert tribe.x - 50 == expected_speed
+    assert expected_speed > config.MOVEMENT_SPEED * config.TOLL_ROAD_SPEED_MULTIPLIER - 1  # genuinely ~5x, not 1x
+
+
 def test_relocate_costs_stamina():
     """Without a cost here, RELOCATE would be strictly free compared to every gathering
     action, which all cost time and risk -- marching should be tiring."""

@@ -37,6 +37,10 @@ SETTLEMENT_WATER_TERRITORY_RADIUS = 6
 # only) -- 5 crossings is the literal number named in the request.
 ROAD_EVOLVE_CROSSINGS = 5
 TOLL_FEE_WOOD = 5
+# Explicit request: "travel speed is 5x on toll roads." A real reason to want
+# one running toward you, not just a toll to dread -- far stronger than an
+# ordinary trail's own wear-scaled MAX_TRAIL_BONUS_SPEED.
+TOLL_ROAD_SPEED_MULTIPLIER = 5
 
 # Explicit request: a weak model faced with the full ~13-action Stone Age list from
 # cycle one has no structural push toward the single most important early decision --

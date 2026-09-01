@@ -1977,6 +1977,9 @@ class Simulation:
             # trail bonus above, since a deliberately-built road doesn't need to
             # wear in from repeated travel the way a trail does.
             base_speed = config.EXPEDITION_SPEED + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
+            # Explicit request: "travel speed is 5x on toll roads."
+            if self.world.is_toll_road(px, py):
+                base_speed *= config.TOLL_ROAD_SPEED_MULTIPLIER
             nx, ny = physics.terrain_aware_step(px, py, tx, ty, base_speed=base_speed)
             nx, ny = self._resolve_toll(tribe, px, py, nx, ny)
             self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
@@ -2066,6 +2069,9 @@ class Simulation:
             ox, oy = exp["origin"]
             bonus = self.world.trail_speed_bonus(px, py, config.MAX_TRAIL_BONUS_SPEED)
             base_speed = config.EXPEDITION_SPEED + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
+            # Explicit request: "travel speed is 5x on toll roads."
+            if self.world.is_toll_road(px, py):
+                base_speed *= config.TOLL_ROAD_SPEED_MULTIPLIER
             nx, ny = physics.terrain_aware_step(px, py, ox, oy, base_speed=base_speed)
             nx, ny = self._resolve_toll(tribe, px, py, nx, ny)
             self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)

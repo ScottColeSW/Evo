@@ -655,6 +655,9 @@ def _relocate(sim, tribe, biome, target):
     tx, ty = target
     bonus = sim.world.trail_speed_bonus(tribe.x, tribe.y, config.MAX_TRAIL_BONUS_SPEED)
     base_speed = config.MOVEMENT_SPEED + bonus
+    # Explicit request: "travel speed is 5x on toll roads."
+    if sim.world.is_toll_road(tribe.x, tribe.y):
+        base_speed *= config.TOLL_ROAD_SPEED_MULTIPLIER
     nx, ny = physics.terrain_aware_step(tribe.x, tribe.y, tx, ty, base_speed=base_speed)
     nx, ny = sim._resolve_toll(tribe, tribe.x, tribe.y, nx, ny)
     sim.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
