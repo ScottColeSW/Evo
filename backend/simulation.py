@@ -1736,6 +1736,21 @@ class Simulation:
                         "No one has fished here yet -- a single successful catch would make fishing a "
                         "permanent, daily source of food from then on."
                     )
+                elif "HUNTING_PARTY" in available_actions:
+                    # Explicit observation: "it should be an easy choice, fish
+                    # locally, no travel time, or send a hunting party taking
+                    # an indefinite amount of time depending on if they find a
+                    # Stand of Deer to hunt... still travel vs. home." Both
+                    # ACTION_DESCRIPTIONS already say this on their own
+                    # (CATCH_FISH pays out immediately; HUNTING_PARTY food does
+                    # nothing until the party walks all the way home), but nothing
+                    # ever put the two side by side -- small models don't
+                    # reliably synthesize a comparison across two separate
+                    # glossary entries on their own.
+                    visible_entities.append(
+                        "Fishing here pays out food immediately with no travel time, once caught -- a "
+                        "hunting party takes several days round trip and isn't guaranteed to find anything."
+                    )
 
         # Explicit finding: "I wonder why one figured out fishing and the other
         # farming but only one figured out both." The eligibility nudges above

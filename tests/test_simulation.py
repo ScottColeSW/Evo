@@ -3954,6 +3954,25 @@ def test_no_fishing_nudge_once_already_learned():
     request, _ctx = sim._prepare_turn(tribe)
 
     assert "a single successful catch would make fishing a permanent" not in request["prompt"]
+
+
+def test_fishing_vs_hunting_party_comparison_once_fishing_is_learned():
+    """Explicit observation: "it should be an easy choice, fish locally, no
+    travel time, or send a hunting party taking an indefinate amount of
+    time... still travel vs. home." Both action descriptions already say this
+    independently, but nothing ever put the two side by side for the model."""
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.fishing_learned = True
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "HUNTING_PARTY" in ctx["available_actions"]
+    assert "Fishing here pays out food immediately with no travel time" in request["prompt"]
     assert "Fishing has been mastered here" in request["prompt"]
 
 
