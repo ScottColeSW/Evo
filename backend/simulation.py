@@ -53,6 +53,22 @@ SPAWN_POINTS = [(80, 38), (18, 43), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 
 
+def _interpolated_path(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
+    """Every whole tile on the straight line from (x0, y0) to (x1, y1), inclusive
+    of both ends -- used by Simulation._advance_resource_trails to wear a real
+    route between a settlement and a resource site it draws from, the same way
+    a party's own footsteps wear one tile at a time via terrain_aware_step.
+    Simple linear interpolation, not pathfinding around terrain -- a supply
+    route between two known points, not a search for one."""
+    steps = max(abs(x1 - x0), abs(y1 - y0))
+    if steps == 0:
+        return [(x0, y0)]
+    return [
+        (round(x0 + (x1 - x0) * i / steps), round(y0 + (y1 - y0) * i / steps))
+        for i in range(steps + 1)
+    ]
+
+
 def _compass_direction(dx: float, dy: float) -> str:
     """An 8-point compass label for a (dx, dy) offset -- used for a distant rival
     sighting (see config.RIVAL_DISTANT_SIGHTING_RADIUS), where only a rough heading is
@@ -337,10 +353,20 @@ class Tribe:
         self.dock_built = False
         # See actions.py._build_sawmill/_build_quarry -- one-way, each gated on
         # long_house_built + fishing_learned (explicit request: "after they have
-        # farming and fishing down and are building homes"). Each permanently
-        # triples every future GATHER_WOOD/GATHER_STONE yield respectively.
+        # farming and fishing down and are building homes") plus a real
+        # discovered site (lumber_sites/quarry_sites). Each permanently triples
+        # every future GATHER_WOOD/GATHER_STONE yield respectively.
         self.sawmill_built = False
         self.quarry_built = False
+        # The exact site coordinate locked in when each was built (from
+        # lumber_sites/quarry_sites/mine_sites at that moment) -- a tribe with
+        # more discoveries on record afterward still only ever draws from the
+        # one it actually excavated. See Simulation._advance_resource_trails:
+        # explicit request, "these are collectables that must be fetched and
+        # so trails/roads to them should be established naturally."
+        self.lumber_site: tuple[int, int] | None = None
+        self.quarry_site: tuple[int, int] | None = None
+        self.mine_site: tuple[int, int] | None = None
         # A discovered-but-unexcavated mine (see Simulation._advance_one_expedition),
         # same shape as quarry_sites/lumber_sites -- {"x", "y", "biome", "resource"}
         # dicts, most recent last. Scattered across any biome, not just mountains --
@@ -936,6 +962,7 @@ class Simulation:
             self._advance_water_supply(tribe)
             self._advance_fish_supply(tribe)
             self._advance_mine_yield(tribe)
+            self._advance_resource_trails(tribe)
             self._advance_farming(tribe)
             self._advance_flock(tribe)
             self._advance_city_growth(tribe)
@@ -1628,10 +1655,18 @@ class Simulation:
 
         if "BUILD_SAWMILL" in available_actions and not tribe.sawmill_built:
             if tribe.long_houses_built > 0 and tribe.fishing_learned:
-                visible_entities.append(
-                    "Farming and fishing are both established, and real shelter stands -- a sawmill "
-                    "would triple every future load of gathered wood."
-                )
+                if tribe.lumber_sites:
+                    lx, ly = tribe.lumber_sites[-1]
+                    visible_entities.append(
+                        f"A stand of trees is known at ({lx},{ly}) -- farming and fishing are both "
+                        "established and real shelter stands, so a sawmill built here at the "
+                        "settlement would triple every future load of gathered wood."
+                    )
+                else:
+                    visible_entities.append(
+                        "Farming and fishing are both established, and real shelter stands, but no "
+                        "stand of trees has been scouted yet -- a sawmill needs a real stand to work."
+                    )
         if "BUILD_KITCHEN" in available_actions and not tribe.kitchen_built:
             if tribe.cooking_learned and tribe.long_houses_built > 0:
                 visible_entities.append(
@@ -2682,6 +2717,24 @@ class Simulation:
             tribe.unique_resources[tribe.mine_resource_name] = (
                 tribe.unique_resources.get(tribe.mine_resource_name, 0) + config.MINE_YIELD_PER_CYCLE
             )
+
+    def _advance_resource_trails(self, tribe: Tribe) -> None:
+        """Explicit request: "if they have found a Quarry, Mine, Stand of Trees
+        to Harvest, these are collectables that must be fetched and so
+        trails/roads to them should be established naturally." None of
+        Sawmill/Quarry/Mine involve a discrete fetch action the model chooses
+        (see their own docstrings -- built at the settlement, working
+        passively from then on), so nothing else would ever wear a path to the
+        real site each one actually draws from. This does that automatically,
+        once per cycle, the same wear_trail mechanic RELOCATE/SCOUT already
+        use along the straight line between the settlement and each site --
+        heavily-used routes eventually evolve into real toll roads themselves
+        (see world.is_toll_road), exactly like any other trail would."""
+        for site in (tribe.lumber_site, tribe.quarry_site, tribe.mine_site):
+            if site is None:
+                continue
+            for px, py in _interpolated_path(tribe.x, tribe.y, site[0], site[1]):
+                self.world.wear_trail(px, py, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
 
     def _advance_farming(self, tribe: Tribe) -> None:
         """A planted crop plot (actions.py._plant_crop) grows on its own every cycle,

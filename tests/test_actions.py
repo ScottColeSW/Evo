@@ -521,8 +521,14 @@ def test_build_sawmill_requires_long_house_and_fishing_first():
     tribe.long_houses_built = 1
     tribe.fishing_learned = True
     result = ACTION_REGISTRY["BUILD_SAWMILL"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.sawmill_built is False
+    assert "no stand of trees has been scouted yet" in result
+
+    tribe.lumber_sites.append((7, 7))
+    result = ACTION_REGISTRY["BUILD_SAWMILL"](sim, tribe, "plains", _NO_TARGET)
 
     assert tribe.sawmill_built is True
+    assert tribe.lumber_site == (7, 7)
     assert "sawmill rises" in result
 
 

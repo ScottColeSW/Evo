@@ -385,6 +385,25 @@ def test_quarry_nudge_requires_a_scouted_site_not_just_the_other_prerequisites()
     assert "A stone-rich site is known at (12,34)" in request["prompt"]
 
 
+def test_sawmill_nudge_requires_a_scouted_site_not_just_the_other_prerequisites():
+    """Explicit correction: "if they have found a... Stand of Trees to
+    Harvest, these are collectables that must be fetched" -- mirrors the
+    quarry nudge above exactly, for lumber_sites instead of quarry_sites."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.has_ever_settled = True
+    tribe.long_houses_built = 1
+    tribe.fishing_learned = True
+
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "no stand of trees has been scouted yet" in request["prompt"]
+
+    tribe.lumber_sites.append((12, 34))
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "A stand of trees is known at (12,34)" in request["prompt"]
+
+
 def test_finished_wall_nudges_toward_a_long_house_then_reinforcement():
     from backend import config
 
@@ -450,6 +469,45 @@ def test_compass_direction_matches_the_map_convention():
     assert _compass_direction(-10, 0) == "west"
     assert _compass_direction(0, 10) == "south"  # y increases southward on this map
     assert _compass_direction(0, -10) == "north"
+
+
+def test_interpolated_path_covers_every_tile_between_two_points():
+    from backend.simulation import _interpolated_path
+
+    path = _interpolated_path(0, 0, 4, 0)
+
+    assert path == [(0, 0), (1, 0), (2, 0), (3, 0), (4, 0)]
+
+
+def test_interpolated_path_is_a_single_point_when_already_there():
+    from backend.simulation import _interpolated_path
+
+    assert _interpolated_path(5, 5, 5, 5) == [(5, 5)]
+
+
+def test_advance_resource_trails_wears_a_route_to_each_locked_in_site():
+    """Explicit request: "if they have found a Quarry, Mine, Stand of Trees to
+    Harvest, these are collectables that must be fetched and so trails/roads
+    to them should be established naturally.\""""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.quarry_site = (52, 50)
+
+    sim._advance_resource_trails(tribe)
+
+    assert (50, 50) in sim.world.trails
+    assert (51, 50) in sim.world.trails
+    assert (52, 50) in sim.world.trails
+    assert sim.world.trails[(52, 50)]["owner"] == tribe.id
+
+
+def test_advance_resource_trails_does_nothing_without_any_locked_in_sites():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    sim._advance_resource_trails(tribe)
+
+    assert sim.world.trails == {}
 
 
 def test_precise_rival_awareness_within_radius_gives_exact_coordinates():
