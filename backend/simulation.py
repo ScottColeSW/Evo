@@ -1246,6 +1246,18 @@ class Simulation:
                 a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "BUILD_DOCK")
             ]
 
+        # Explicit request: "they do not have to build_fire after they have it
+        # once. it should leave the action list after discovered and be known
+        # ubiquitously." Fire used to stay in available_actions forever, so a
+        # tribe that already knew how to make fire kept getting asked to
+        # re-decide it (and re-spend wood on it) at every new settlement. Same
+        # one-way "generalist narrows once proven" shape as COOK_FOOD just below:
+        # fire itself is retired from the choice set the moment it's ever been
+        # built, the real prerequisite (tribe.fire_ever_built) COOK_FOOD already
+        # reads for its own gate.
+        if tribe.fire_ever_built:
+            available_actions = [a for a in available_actions if a != "BUILD_FIRE"]
+
         # Explicit request: "if you learn to hunt successfully and you learn to
         # build fire successfully, you should get the chance to learn cooking...
         # this can happen early." COOK_FOOD is gated on these two real, proven

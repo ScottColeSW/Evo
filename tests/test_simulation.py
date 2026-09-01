@@ -655,6 +655,29 @@ def test_cook_food_retires_once_learned():
     assert "COOK_FOOD" not in ctx["available_actions"]
 
 
+def test_build_fire_available_before_it_is_ever_built():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_FIRE" in ctx["available_actions"]
+
+
+def test_build_fire_retires_once_ever_built():
+    """Explicit request: "they do not have to build_fire after they have it once.
+    it should leave the action list after discovered and be known ubiquitously.\""""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.fire_ever_built = True
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_FIRE" not in ctx["available_actions"]
+
+
 def test_farming_and_eggs_available_once_settled_next_to_real_water():
     from backend import config
 
