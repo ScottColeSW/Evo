@@ -41,6 +41,16 @@ def test_prompt_clarifies_only_relocate_moves_the_tribe():
     assert "SCOUT looks at target_vector without moving" in prompt
 
 
+def test_prompt_ties_target_vector_to_a_confirmed_site_coordinate():
+    """Bug report: the chief's RELOCATE rationale/target kept ignoring the nearest
+    confirmed water site even though it's named as a fact earlier in the prompt --
+    the JSON schema's target_vector field never explicitly told the model that a
+    site fact's coordinate belongs there, so small models weren't reliably
+    carrying it over on their own."""
+    prompt = compile_live_state_prompt("base", _world_state(), "", "")
+    assert "target_vector must be that exact coordinate" in prompt
+
+
 def test_system_prompt_includes_tribe_name_and_model():
     prompt = get_prime_consciousness_prompt("Forest Tribe", "gemma2:2b")
     assert "FOREST TRIBE" in prompt
