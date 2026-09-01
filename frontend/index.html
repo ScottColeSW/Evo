@@ -73,6 +73,15 @@
   .stat-card .resources { color: #c7c7d1; margin-top: 6px; }
   .chief-line { color: #fbbf24; font-size: 11px; }
   .intel-line { color: #93c5fd; font-size: 11px; }
+  .chief-decision {
+    display: inline-block;
+    color: #1a1a2e;
+    background: #fbbf24;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.02em;
+  }
   .stat-card.extinct { opacity: 0.55; filter: grayscale(0.6); }
   .speech { font-style: italic; color: #fbbf24; display: block; margin-top: 4px; }
   .survival-warning { color: #f87171; font-size: 11px; margin-top: 4px; }
@@ -1971,9 +1980,21 @@ function farmingPanel(t) {
     parts.push(`${t.farm_plots} plot${t.farm_plots > 1 ? "s" : ""} · ${stage} (${t.crop_growth}/100)`);
   }
   if (t.flock > 0) {
+    // Explicit request: "we should see an 'eggs hatching' line in the sidebar
+    // since these follow a similar pattern to the farm." A hatch resolves
+    // entirely within one backend cycle (GATHER_EGGS sets pending_hatch, the same
+    // step() call resolves it), so there's no real "in progress" state to show the
+    // way crop_growth has -- but flock_lineage already records which cycle each
+    // hatch happened on, which is enough to give the hatch MOMENT itself the same
+    // "ready to harvest" visual weight the farm gets, not just a buried stat.
     const lineage = t.flock_lineage || [];
-    const lastTrait = lineage.length ? lineage[lineage.length - 1].trait : "";
-    parts.push(`🐔 flock of ${t.flock}${lastTrait ? ` — latest: ${escapeHtml(lastTrait)}` : ""}`);
+    const last = lineage.length ? lineage[lineage.length - 1] : null;
+    const justHatched = last && (latestState.cycle - last.cycle) <= 3;
+    if (justHatched) {
+      parts.push(`🥚 An egg just hatched! — ${escapeHtml(last.trait)} (flock now ${t.flock})`);
+    } else {
+      parts.push(`🐔 flock of ${t.flock}${last ? ` — latest: ${escapeHtml(last.trait)}` : ""}`);
+    }
   }
   if (t.fishing_learned) {
     parts.push("🎣 fishing mastered — food flows in daily");
@@ -2013,6 +2034,23 @@ function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+}
+
+// Explicit request: the 🧠 line "still looks suspect as a choice to be made by the
+// Chief... it would be great to see highlighted his final decision for the days
+// work to be done by everyone." A turn's history entry is built server-side as
+// "[XXXms] ACTION_NAME: rationale..." (see Simulation._apply_turn) -- everything
+// else in that string is free-form model text, but the action name itself is the
+// one real, structured fact in it: literally what the Chief decided everyone will
+// do. Pulled out into its own highlighted chip so it reads as a decision, not just
+// more prose to skim past. System-generated lines (harvests, hatches, raids) don't
+// match this shape at all and render unchanged.
+function formatChiefDecision(entry) {
+  const escaped = escapeHtml(entry);
+  const match = escaped.match(/^(\[\d+ms\]\s+)([A-Z_]+)(:.*)$/s);
+  if (!match) return escaped;
+  const [, prefix, action, rest] = match;
+  return `${prefix}<span class="chief-decision">${action}</span>${rest}`;
 }
 
 function updateSidebar(state) {
@@ -2086,7 +2124,7 @@ function updateSidebar(state) {
             ${(t.expeditions || []).map(exp => `<br><span class="chief-line">${exp.kind === "hunt" ? "🏹" : "🧭"} ${exp.lead_scout}'s ${exp.kind === "hunt" ? "hunting party" : "party"} ${exp.phase}, day ${exp.day} at (${exp.pos[0]},${exp.pos[1]}) · 🍖${exp.food_gathered} 💧${exp.water_gathered} foraged</span>`).join("")}
             ${(t.trophies && t.trophies.length) ? `<br><span class="chief-line">🏆 ${t.trophies.map(tr => tr.name).join(", ")}</span>` : ""}
             <br><span class="intel-line">${settlementLine(t)}${landmarkCounts(t)}</span>
-            ${t.history && t.history.length ? `<br><span class="intel-line">🧠 ${escapeHtml(t.history[t.history.length - 1])}</span>` : ""}
+            ${t.history && t.history.length ? `<br><span class="intel-line">🧠 ${formatChiefDecision(t.history[t.history.length - 1])}</span>` : ""}
           </div>
           <span class="speech">"${t.last_broadcast || "..."}"</span>
           ${t.survival_warning ? `<div class="survival-warning">⚠️ ${t.survival_warning.replace("[SURVIVAL INSTINCT]: ", "")}</div>` : ""}
@@ -2095,7 +2133,7 @@ function updateSidebar(state) {
         </div>`;
     }
     (t.history || []).forEach(entry => {
-      log.innerHTML += `<div class="${chronicleEntryClass(entry)}">${chronicleEntryIcon(entry)}[${t.name}] ${entry}</div>`;
+      log.innerHTML += `<div class="${chronicleEntryClass(entry)}">${chronicleEntryIcon(entry)}[${t.name}] ${formatChiefDecision(entry)}</div>`;
     });
   });
 
