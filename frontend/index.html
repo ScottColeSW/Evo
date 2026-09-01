@@ -1623,6 +1623,15 @@ function drawTrails() {
     // guesswork against the green.
     ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${Math.min(0.8, 0.45 + w * 0.35)})`;
     ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
+    // Explicit request: a trail crossed enough times "automatically evolves
+    // into visible and owned roads that others may travel for a fee." A gold
+    // outline (the owner's own color would blend into the fill above) marks a
+    // tile as a real, permanent toll road rather than an ordinary worn path.
+    if (tr.is_toll_road) {
+      ctx.strokeStyle = "#fbbf24";
+      ctx.lineWidth = Math.max(1, TILE * 0.08);
+      ctx.strokeRect(cx - size / 2, cy - size / 2, size, size);
+    }
   });
 }
 
