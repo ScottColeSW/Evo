@@ -862,7 +862,33 @@ def test_raid_that_reduces_defender_to_zero_population_merges_into_the_attacker(
     assert defender.extinct is True
 
 
-def test_raid_loss_costs_the_attacker_without_stealing_anything():
+def test_repelled_raid_that_reduces_the_attacker_to_zero_population_merges_into_the_defender():
+    """Mirror of the win-side merge test, roles reversed: a repelled raid can fully
+    absorb the attacker into the defender."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    sim.cycle = 5
+    attacker = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    attacker.population = 3  # survives the flat attrition (2), then absorption finishes them
+    defender = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    defender.era = "tribal_synapse"
+    sim.tribes = {"tribe_0": attacker, "tribe_1": defender}
+
+    with mock.patch("backend.actions.random.random", return_value=0.999):  # forces a loss
+        note = ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 51))
+
+    assert "fully repelled and absorbed" in note
+    assert "tribe_0" not in sim.tribes
+    assert attacker.extinct is True
+    assert defender.era == "tribal_synapse"  # inherits the higher of the two eras
+
+
+def test_raid_loss_gives_the_defender_loot_and_captives():
+    """Explicit request: "Raids that fail give the winning Tribe people and
+    inventory" -- a repelled defense now mirrors a successful raid, roles
+    reversed: the defender loots the attacker and absorbs some of its population,
+    not just avoids loss."""
     from unittest import mock
 
     sim = _bare_simulation()
@@ -875,9 +901,33 @@ def test_raid_loss_costs_the_attacker_without_stealing_anything():
         note = ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 51))
 
     assert "repelled" in note
-    assert defender.wood == 20  # untouched
-    assert attacker.population == 6  # 8 - RAID_ATTACKER_POPULATION_LOSS_ON_LOSS (2)
-    assert defender.population == 8  # untouched
+    # attacker: 8 pop - 2 (RAID_ATTACKER_POPULATION_LOSS_ON_LOSS) = 6, then -1 absorbed (20% of 6) = 5
+    assert attacker.population == 5
+    assert defender.population == 9  # +1 absorbed
+    # attacker: 50 wood - 15 (30% stolen) = 35; defender: 20 + 15 = 35
+    assert attacker.wood == 35
+    assert defender.wood == 35
+    assert any(t["name"] == "Raid Breaker" for t in defender.trophies)
+
+
+def test_raid_loss_that_wipes_the_attacker_through_attrition_alone_does_not_also_absorb():
+    """Ordering regression guard: if the pre-existing small attrition cost alone
+    already kills the attacker, the new absorption logic must not also run on an
+    already-extinct tribe."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    attacker.population = 2  # exactly RAID_ATTACKER_POPULATION_LOSS_ON_LOSS
+    defender = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    sim.tribes = {"tribe_0": attacker, "tribe_1": defender}
+
+    with mock.patch("backend.actions.random.random", return_value=0.999):
+        note = ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 51))
+
+    assert attacker.extinct is True
+    assert attacker.population == 0
+    assert "wiped out" in note
 
 
 def test_strike_raider_camp_fails_with_no_known_sighting_at_that_location():

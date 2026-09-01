@@ -598,15 +598,52 @@ def _raid(sim, tribe, biome, target):
         defender.history.append(f"{tribe.name}'s raid carried off {absorbed} of {defender.name}'s people")
         return f"raided {defender.name}, seized supplies, and absorbed {absorbed} survivors"
     else:
+        # Explicit request: "Raids that fail give the winning Tribe people and
+        # inventory" -- the win branch above already lets the attacker loot and
+        # absorb population on success; a repelled defense used to only ever avoid
+        # loss, never actually gain anything beyond a counter. Mirrors the win
+        # branch, roles reversed: the defender is the one who just won.
+        #
+        # Ordering matters here: the pre-existing small attrition cost
+        # (_lose_population, below) runs FIRST and can itself mark the attacker
+        # extinct through its own normal channel (cause="failed_raid" -- they
+        # really did just die from the failed attempt). Only if they survive THAT
+        # does the new absorption apply on top, which can separately finish them
+        # off through _merge_tribes. Never both in the same pass -- an
+        # already-extinct tribe has nothing left to absorb.
         tribe.raids_lost += 1
         defender.raids_defended += 1
+        if defender.raids_defended == 1:
+            sim._award_trophy(defender, "Raid Breaker")
+        for resource in ("wood", "stone", "food", "water"):
+            stolen = round(getattr(tribe, resource) * config.RAID_STEAL_FRACTION)
+            setattr(tribe, resource, getattr(tribe, resource) - stolen)
+            setattr(defender, resource, getattr(defender, resource) + stolen)
+
         sim._lose_population(tribe, config.RAID_ATTACKER_POPULATION_LOSS_ON_LOSS, cause="failed_raid")
         sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
+        sim.trauma.radiate_event_wave(defender.x, defender.y, config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
         sim.recent_encounters.append({
             "x": defender.x, "y": defender.y, "kind": "tribe_raid",
             "label": f"{tribe.name} repelled by {defender.name}", "outcome": "lost",
         })
-        return f"attempted to raid {defender.name} and was repelled"
+
+        if tribe.extinct:
+            return f"attempted to raid {defender.name} and was wiped out in the failed attempt"
+
+        absorbed = min(tribe.population, max(1, round(tribe.population * config.RAID_POPULATION_ABSORB_FRACTION)))
+        tribe.population -= absorbed
+        defender.population += absorbed
+        defender.max_population = max(defender.max_population, defender.population)
+
+        if tribe.population <= 0:
+            old_name = defender.name
+            attacker_name = tribe.name
+            new_name = sim._merge_tribes(defender, tribe)
+            return f"attempted to raid {attacker_name}, but was fully repelled and absorbed -- {old_name} becomes {new_name}!"
+
+        defender.history.append(f"{defender.name} repelled {tribe.name}'s raid and carried off {absorbed} of its people")
+        return f"attempted to raid {defender.name} and was repelled, losing supplies and people in the process"
 
 
 def _strike_raider_camp(sim, tribe, biome, target):
