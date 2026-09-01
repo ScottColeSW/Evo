@@ -16,7 +16,7 @@ from .reflection import AWARD_CATEGORIES, reflect_on_history
 from .eras import ERAS, era_index, next_era, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
-from .instincts import survival_bias_string
+from .instincts import effective_food_upkeep, survival_bias_string
 from .wellbeing import compute_wellbeing
 from .leadership import elect_chief, name_settlement
 from .memory import TribeMemory
@@ -288,8 +288,15 @@ class Tribe:
         self.fishing_learned = False
         # See actions.py._cook_food -- one-way, like fishing_learned. Once true,
         # _celebration_cost charges less: real food contributed and prepared, not
-        # just handed over from the stockpile.
+        # just handed over from the stockpile, and Simulation._apply_upkeep makes
+        # stored food go further (config.COOKING_UPKEEP_DIVISOR).
         self.cooking_learned = False
+        # Real prerequisites for COOK_FOOD's own availability (see Simulation.
+        # _prepare_turn) -- a successful hunt (instant HUNT_DEER or a HUNTING_PARTY
+        # catch) and a successfully-built fire, ever. One-way, same shape as every
+        # other "proven once" flag here.
+        self.hunt_ever_succeeded = False
+        self.fire_ever_built = False
         # See actions.py._build_long_house -- one-way, gated on the wall already
         # being complete first.
         self.long_house_built = False
@@ -330,7 +337,7 @@ class Tribe:
 
     def to_dict(self) -> dict:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
-        survival_warning, _ = survival_bias_string(self.food, self.water, self.population)
+        survival_warning, _ = survival_bias_string(self.food, self.water, self.population, self.cooking_learned)
         nxt = next_era(self.era)
         next_era_info = None
         if nxt is not None:
@@ -367,6 +374,8 @@ class Tribe:
             "crop_growth": self.crop_growth,
             "fishing_learned": self.fishing_learned,
             "cooking_learned": self.cooking_learned,
+            "hunt_ever_succeeded": self.hunt_ever_succeeded,
+            "fire_ever_built": self.fire_ever_built,
             "long_house_built": self.long_house_built,
             "foraging_retired": self.foraging_retired,
             "watering_retired": self.watering_retired,
@@ -663,7 +672,7 @@ class Simulation:
             f"Population: {tribe.population}.",
             f"Resources on hand: {tribe.wood} wood, {tribe.stone} stone, {tribe.food} food, {tribe.water} water.",
         ]
-        survival_bias, _critical = survival_bias_string(tribe.food, tribe.water, tribe.population)
+        survival_bias, _critical = survival_bias_string(tribe.food, tribe.water, tribe.population, tribe.cooking_learned)
         if survival_bias:
             lines.append(survival_bias)
         if self._is_settled(tribe):
@@ -1126,7 +1135,7 @@ class Simulation:
         biome = self.world.biome(tribe.x, tribe.y)
         nearby = self.world.nearby_structures(tribe.x, tribe.y)
         ghost_bias = self.trauma.bias_string(tribe.x, tribe.y)
-        survival_bias, survival_critical = survival_bias_string(tribe.food, tribe.water, tribe.population)
+        survival_bias, survival_critical = survival_bias_string(tribe.food, tribe.water, tribe.population, tribe.cooking_learned)
         # NUDGE (2026-08-31, explicit request: "the warnings do not mention settling
         # as an alternative to low water"). A tribe already sitting on a chronic water
         # shortage may well already know exactly where real water is (a confirmed
@@ -1204,6 +1213,18 @@ class Simulation:
         # settling condition as GATHER_WOOD/STONE, not a stricter one layered on top.
         if not settled:
             available_actions = [a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH")]
+
+        # Explicit request: "if you learn to hunt successfully and you learn to
+        # build fire successfully, you should get the chance to learn cooking...
+        # this can happen early." COOK_FOOD is gated on these two real, proven
+        # prerequisites rather than era progression -- see Tribe.hunt_ever_succeeded/
+        # fire_ever_built. Retires once learned, the same one-way "generalist
+        # narrows/task is done" shape foraging_retired and watering_retired use --
+        # there's nothing left to decide once cooking is known forever.
+        if tribe.cooking_learned:
+            available_actions = [a for a in available_actions if a != "COOK_FOOD"]
+        elif not (tribe.hunt_ever_succeeded and tribe.fire_ever_built):
+            available_actions = [a for a in available_actions if a != "COOK_FOOD"]
 
         # Explicit request: GATHER_FOOD is too generic once a tribe has real
         # experience -- it kept acting as a catch-all "satisfy hunger" default even
@@ -1304,6 +1325,16 @@ class Simulation:
             visible_entities.append(
                 f"Confirmed game-rich ground at ({gx},{gy}) -- a hunting party sent there would "
                 "likely fare better than hunting blind."
+            )
+
+        if "COOK_FOOD" in available_actions:
+            # Explicit request: cooking's eligibility (a proven hunt + a proven
+            # fire, both real facts on the tribe) is otherwise silent -- same
+            # "nudge harder once the gate is actually met" category as the
+            # farm-plot/flock/fishing eligibility nudges just below.
+            visible_entities.append(
+                "The tribe has both hunted successfully and built a fire before -- learning to cook "
+                "would make stored food go much further from then on."
             )
 
         settlement_actions = ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH")
@@ -1962,6 +1993,7 @@ class Simulation:
             tribe.food += caught
             tribe.expeditions_succeeded += 1
             tribe.hunt_successes += 1
+            tribe.hunt_ever_succeeded = True  # see actions.py._cook_food's own prerequisite
             if tribe.hunt_successes == config.MILESTONE_HUNT_SUCCESSES:
                 self._award_trophy(tribe, "Master Hunter", individual=scout)
             self._check_custom_awards(tribe, "hunting", individual=scout)
@@ -1983,9 +2015,11 @@ class Simulation:
     def _apply_upkeep(self, tribe: Tribe) -> None:
         """Larger tribes cost more to sustain each tick. Left unpaid, someone dies --
         this is what makes hunger and thirst actual stakes rather than numbers that
-        only ever go up."""
+        only ever go up. Food's real drain is reduced once cooking is learned (see
+        instincts.effective_food_upkeep) -- "cooked food is worth 3 raw food."
+        Water is unaffected."""
         upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
-        tribe.food -= upkeep
+        tribe.food -= effective_food_upkeep(upkeep, tribe.cooking_learned)
         tribe.water -= upkeep
 
         if tribe.food < 0:

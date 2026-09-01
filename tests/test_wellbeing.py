@@ -31,6 +31,17 @@ def test_physiological_tier_drops_as_the_food_water_buffer_shrinks():
     assert starving["tiers"]["physiological"] < TIER_SATISFIED_THRESHOLD
 
 
+def test_physiological_tier_improves_once_cooking_is_learned_for_the_same_food():
+    """Explicit request: "cooked food is worth 3 raw food" -- the same stockpile
+    should read as a healthier buffer once cooking is learned, not just cost less
+    per cycle deep in Simulation._apply_upkeep."""
+    low_food = 6
+    not_cooking = compute_wellbeing(_tribe(food=low_food, water=30, population=50), wall_fraction=0.0)
+    cooking = compute_wellbeing(_tribe(food=low_food, water=30, population=50, cooking_learned=True), wall_fraction=0.0)
+
+    assert cooking["tiers"]["physiological"] > not_cooking["tiers"]["physiological"]
+
+
 def test_safety_tier_is_lower_for_a_nomadic_tribe_than_a_settled_undefended_one():
     nomadic = compute_wellbeing(_tribe(has_ever_settled=False), wall_fraction=0.0)
     settled_bare = compute_wellbeing(_tribe(has_ever_settled=True), wall_fraction=0.0)

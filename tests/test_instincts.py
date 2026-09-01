@@ -1,4 +1,4 @@
-from backend.instincts import survival_bias_string
+from backend.instincts import effective_food_upkeep, survival_bias_string
 
 # population=8 -> upkeep = max(1, 8//10) = 1/cycle -> critical <= 1, warning <= 4
 SMALL_TRIBE = 8
@@ -49,6 +49,38 @@ def test_both_critical_combines_into_one_message():
     assert "starving" in text
     assert "thirst" in text
     assert critical is True
+
+
+def test_effective_food_upkeep_unaffected_without_cooking():
+    assert effective_food_upkeep(5, cooking_learned=False) == 5
+
+
+def test_effective_food_upkeep_divided_once_cooking_is_learned():
+    """Explicit request: "cooked food is worth 3 raw food.\""""
+    from backend import config
+
+    assert effective_food_upkeep(6, cooking_learned=True) == max(1, round(6 / config.COOKING_UPKEEP_DIVISOR))
+
+
+def test_effective_food_upkeep_never_drops_below_one():
+    assert effective_food_upkeep(1, cooking_learned=True) == 1
+
+
+def test_cooking_learned_raises_the_real_hunger_threshold():
+    """A tribe that has learned to cook genuinely isn't as close to starving at the
+    same raw food number -- the threshold itself should reflect the real, reduced
+    drain, not just describe the old one more gently. LARGE_TRIBE's upkeep (5) is
+    high enough that the /3 cooking divisor actually changes the effective number
+    (unlike SMALL_TRIBE's upkeep=1, where max(1, round(1/3)) floors back to 1)."""
+    same_food_with_cooking, _ = survival_bias_string(
+        food=10, water=50, population=LARGE_TRIBE, cooking_learned=True
+    )
+    same_food_without_cooking, _ = survival_bias_string(
+        food=10, water=50, population=LARGE_TRIBE, cooking_learned=False
+    )
+
+    assert same_food_with_cooking == ""  # 10 food comfortably clears cooking's lower effective upkeep
+    assert "running low" in same_food_without_cooking  # but not the raw, uncooked rate
 
 
 def test_thresholds_scale_with_population_not_a_flat_stockpile_number():

@@ -286,12 +286,26 @@ CELEBRATION_SURPLUS_RETIREMENT_COUNT = 3
 
 # Explicit request: "Celebrations can even be cheaper if they learn how to cook
 # food... a pot luck event where they all go out and hunt and gather for a feast."
-# COOK_FOOD (backend/actions.py) requires an already-built fire at the tribe's own
-# tile -- a real prerequisite already in the game, not an invented one -- and once
-# learned (tribe.cooking_learned, the same "learn once, keep forever" shape
-# fishing_learned uses), every future celebration costs less: real food is being
-# contributed and prepared efficiently, not just handed over from the stockpile.
+# COOK_FOOD (backend/actions.py) is gated on real prerequisites (a successful hunt
+# and a successfully-built fire, ever -- see tribe.hunt_ever_succeeded/
+# fire_ever_built) rather than needing a fire currently standing at this exact
+# tile -- explicit correction: cooking is a skill learned once, not something tied
+# to a specific structure. Once learned (tribe.cooking_learned, the same "learn
+# once, keep forever" shape fishing_learned uses), every future celebration costs
+# less: real food is being contributed and prepared efficiently, not just handed
+# over from the stockpile.
 CELEBRATION_COOKING_COST_MULTIPLIER = 0.5
+
+# Explicit request: "cooked food is worth 3 raw food... so only the task of
+# cooking is needed to improve the meals and maslow stats." Applied at the single
+# point food is actually consumed (Simulation._apply_upkeep) rather than at every
+# scattered food-gain call site (GATHER_FOOD, HUNT_DEER, HUNTING_PARTY, CATCH_FISH,
+# farm harvest) -- economically equivalent (the same stockpile now covers 3x the
+# need) but one clean touch point instead of six. wellbeing.py's physiological tier
+# and instincts.py's hunger thresholds both read the same effective food-upkeep so
+# a tribe that's learned to cook doesn't get a false "starving" warning under the
+# old, harsher rate.
+COOKING_UPKEEP_DIVISOR = 3
 
 # Milestone trophies (backend/simulation.py._award_trophy's `individual` param): unlike
 # the chief-credited trophies above, these are earned by a specific named scout or

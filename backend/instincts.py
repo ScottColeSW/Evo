@@ -10,7 +10,23 @@ food/water actually had upkeep consumption (see Simulation._apply_upkeep).
 from . import config
 
 
-def survival_bias_string(food: int, water: int, population: int) -> tuple[str, bool]:
+def effective_food_upkeep(base_upkeep: int, cooking_learned: bool) -> int:
+    """Explicit request: "cooked food is worth 3 raw food." Applied at the single
+    point food is actually consumed (config.COOKING_UPKEEP_DIVISOR) rather than at
+    every scattered food-gain call site -- economically equivalent (the same
+    stockpile now covers 3x the need) but one shared calculation instead of six.
+    Shared by Simulation._apply_upkeep (the real drain), this module's own hunger
+    threshold below, and wellbeing.compute_wellbeing's physiological tier, so all
+    three agree on how far a cooking tribe's food actually goes. Water is
+    unaffected -- cooking doesn't change how much a tribe needs to drink."""
+    if not cooking_learned:
+        return base_upkeep
+    return max(1, round(base_upkeep / config.COOKING_UPKEEP_DIVISOR))
+
+
+def survival_bias_string(
+    food: int, water: int, population: int, cooking_learned: bool = False
+) -> tuple[str, bool]:
     """Returns (bias_text, is_critical). is_critical raises inference temperature the
     same way ancestral dread does -- panic should read as less predictable model
     output, not just differently worded prompt text.
@@ -19,8 +35,11 @@ def survival_bias_string(food: int, water: int, population: int) -> tuple[str, b
     same per-cycle upkeep formula _apply_upkeep actually charges (see config.
     UPKEEP_POPULATION_DIVISOR), so "warning"/"critical" mean the same thing (a
     consistent number of cycles of real buffer left) regardless of how large the tribe
-    has grown."""
+    has grown. `cooking_learned` adjusts the food-specific threshold the same way
+    _apply_upkeep's real drain is adjusted (see effective_food_upkeep) -- a cooking
+    tribe genuinely isn't as close to starving as the raw upkeep number would suggest."""
     upkeep = max(1, population // config.UPKEEP_POPULATION_DIVISOR)
+    food_upkeep = effective_food_upkeep(upkeep, cooking_learned)
     urgent: list[str] = []
     critical = False
 
@@ -32,10 +51,10 @@ def survival_bias_string(food: int, water: int, population: int) -> tuple[str, b
     # model's own choice are untouched -- but it no longer pretends not to know what
     # the tribe actually needs. Revisit if this proves too heavy-handed later --
     # grep "# NUDGE" across backend/ to find every place this line was crossed.
-    if food <= upkeep * config.HUNGER_CRITICAL_CYCLES_LEFT:
+    if food <= food_upkeep * config.HUNGER_CRITICAL_CYCLES_LEFT:
         urgent.append("Your people are starving -- gather food or send a hunting party now.")
         critical = True
-    elif food <= upkeep * config.HUNGER_WARNING_CYCLES_LEFT:
+    elif food <= food_upkeep * config.HUNGER_WARNING_CYCLES_LEFT:
         urgent.append("Food stores are running low -- gathering food or hunting soon would help.")
 
     if water <= upkeep * config.THIRST_CRITICAL_CYCLES_LEFT:

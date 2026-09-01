@@ -522,6 +522,57 @@ def test_farming_and_eggs_locked_before_any_settling():
     assert "GATHER_EGGS" not in ctx["available_actions"]
 
 
+def test_cook_food_unavailable_without_either_prerequisite():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True  # bypass the pre-settlement narrowing, unrelated gate
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "COOK_FOOD" not in ctx["available_actions"]
+
+
+def test_cook_food_unavailable_with_only_one_of_the_two_prerequisites():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.hunt_ever_succeeded = True
+    # fire_ever_built stays False
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "COOK_FOOD" not in ctx["available_actions"]
+
+
+def test_cook_food_available_once_hunted_and_fire_built():
+    """Explicit request: "if you learn to hunt successfully and you learn to build
+    fire successfully, you should get the chance to learn cooking... this can
+    happen early." """
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.hunt_ever_succeeded = True
+    tribe.fire_ever_built = True
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "COOK_FOOD" in ctx["available_actions"]
+    assert "learning to cook would make stored food go much further" in request["prompt"]
+
+
+def test_cook_food_retires_once_learned():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.hunt_ever_succeeded = True
+    tribe.fire_ever_built = True
+    tribe.cooking_learned = True
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "COOK_FOOD" not in ctx["available_actions"]
+
+
 def test_farming_and_eggs_available_once_settled_next_to_real_water():
     from backend import config
 
@@ -3716,6 +3767,24 @@ def test_upkeep_consumes_food_and_water_proportional_to_population():
 
     assert tribe.food == 38
     assert tribe.water == 38
+
+
+def test_upkeep_food_drain_reduced_once_cooking_is_learned():
+    """Explicit request: "cooked food is worth 3 raw food." Water is unaffected --
+    only the food side of upkeep is reduced."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 25  # upkeep = max(1, 25 // 10) = 2
+    tribe.food = 40
+    tribe.water = 40
+    tribe.cooking_learned = True
+
+    sim._apply_upkeep(tribe)
+
+    assert tribe.food == 40 - max(1, round(2 / config.COOKING_UPKEEP_DIVISOR))
+    assert tribe.water == 38  # unchanged formula
 
 
 def test_unpaid_food_upkeep_causes_starvation():

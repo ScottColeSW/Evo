@@ -15,6 +15,7 @@ Simulation._wall_fraction) to avoid a circular dependency with simulation.py.
 
 from . import config
 from .eras import ERAS, era_index
+from .instincts import effective_food_upkeep
 
 TIER_SATISFIED_THRESHOLD = 0.6
 
@@ -37,8 +38,12 @@ def compute_wellbeing(tribe, wall_fraction: float) -> dict:
     # Physiological: reuses instincts.py's own upkeep-buffer formula (the same "how
     # many cycles of food/water are actually left" this tribe's own survival-instinct
     # layer already alarms on) rather than a second, different notion of hunger.
+    # Food's real drain is reduced once cooking is learned (effective_food_upkeep,
+    # "cooked food is worth 3 raw food") -- water is unaffected, so the two need
+    # separate buffers rather than one shared upkeep divisor.
     upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
-    buffer_cycles = min(tribe.food, tribe.water) / upkeep
+    food_upkeep = effective_food_upkeep(upkeep, tribe.cooking_learned)
+    buffer_cycles = min(tribe.food / food_upkeep, tribe.water / upkeep)
     physiological = min(1.0, buffer_cycles / (config.HUNGER_WARNING_CYCLES_LEFT * 2))
 
     # Safety: a nomadic tribe has no fixed camp to defend at all (a real, if

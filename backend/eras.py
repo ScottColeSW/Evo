@@ -55,6 +55,13 @@ ERAS: tuple[Era, ...] = (
             # concept anywhere anymore, defensive fallback or otherwise.
             "GATHER_WOOD", "GATHER_STONE", "GATHER_WATER", "GATHER_FOOD", "HUNT_DEER",
             "BUILD_FIRE", "SCOUT", "HUNTING_PARTY", "RELOCATE", "RAID", "TRADE", "SEND_TRADE_EMISSARY", "BREED",
+            # Explicit request: "this can happen early" -- COOK_FOOD moved out of
+            # Tribal Synapse's era gate entirely. Its own real prerequisites (a
+            # successful hunt and a successfully-built fire, ever -- see
+            # Simulation._prepare_turn) are what actually gate it now, and both of
+            # those are only reachable post-settling anyway (see config.
+            # PRE_SETTLEMENT_ACTIONS), so this can't fire before a tribe has a camp.
+            "COOK_FOOD",
         ),
         announcement="{tribe} has awakened at the dawn of the Primitive Age.",
     ),
@@ -85,7 +92,7 @@ ERAS: tuple[Era, ...] = (
         advancement_cost={"wood": 30, "stone": 30, "water": 20},
         unlocks_actions=(
             "CONSTRUCT_WALL", "PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "STRIKE_RAIDER_CAMP",
-            "COOK_FOOD", "BUILD_LONG_HOUSE",
+            "BUILD_LONG_HOUSE",
         ),
         announcement="{tribe} has forged the Tribal Synapse -- true society begins!",
     ),

@@ -131,6 +131,7 @@ def _hunt_deer(sim, tribe, biome, target):
         sim._lose_population(tribe, config.HUNT_HAZARD_POPULATION_LOSS, cause="wolf_attack")
         return "a wolf pack struck the hunting party"
     tribe.food += _harvest(sim, tribe, "game", 15, biome)
+    tribe.hunt_ever_succeeded = True  # see actions.py._cook_food's own prerequisite
     return None
 
 
@@ -157,6 +158,7 @@ def _build_fire(sim, tribe, biome, target):
         return None
     tribe.wood -= 10
     sim.world.add_construction(tribe.x, tribe.y, "fire", sim.cycle)
+    tribe.fire_ever_built = True  # see actions.py._cook_food's own prerequisite
     sim.trauma.radiate_event_wave(
         tribe.x, tribe.y, config.BUILD_FIRE_PRIDE_MAGNITUDE, config.BUILD_FIRE_PRIDE_RADIUS
     )
@@ -164,19 +166,21 @@ def _build_fire(sim, tribe, biome, target):
 
 
 def _cook_food(sim, tribe, biome, target):
-    """Explicit request: "Celebrations can even be cheaper if they learn how to cook
-    food." Requires an already-built fire at the tribe's own tile -- a real
-    prerequisite already in the game, not an invented one. One-way, like
-    fishing_learned: once a tribe has genuinely figured out cooking, it isn't
-    unlearned. No further effect on its own here -- Simulation._celebration_cost is
-    what actually charges less from then on."""
+    """Explicit request: "if you learn to hunt successfully and you learn to build
+    fire successfully, you should get the chance to learn cooking... then you can
+    always cook and build fire anytime." Gated on real prerequisites (Simulation.
+    _prepare_turn only offers this action once tribe.hunt_ever_succeeded and
+    tribe.fire_ever_built are both true) rather than needing a fire currently
+    standing at this exact tile -- cooking is a skill learned once, not something
+    tied to a specific structure. One-way, like fishing_learned: once learned, it
+    isn't unlearned. No further effect on its own here -- Simulation._celebration_
+    cost charges less and Simulation._apply_upkeep makes stored food go further
+    (config.COOKING_UPKEEP_DIVISOR) from then on."""
     if tribe.cooking_learned:
         return None
-    if not _already_built(sim, tribe, "fire"):
-        return "no fire here to cook over"
     tribe.cooking_learned = True
     sim._award_trophy(tribe, "Master Chef")
-    return "the tribe learns to cook properly over the fire -- feasts will go further from now on"
+    return "the tribe learns to cook -- stored food will go much further from now on"
 
 
 def _construct_wall(sim, tribe, biome, target):
@@ -699,7 +703,7 @@ ACTION_DESCRIPTIONS = {
     "GATHER_FOOD": "Forage for berries, fruit, and wild plants at your current tile -- plains yields the most, forest some, mountains and ocean almost none. No hazard, unlike hunting, but a lower yield ceiling. Yield also drops the more this exact spot has been foraged recently.",
     "HUNT_DEER": "Attempt to harvest food at your current tile -- forest has the most game, plains and river tiles some, mountains and ocean almost none. Small risk of losing a hunter to a wolf pack, most likely in forest.",
     "BUILD_FIRE": "Build a fire at your current tile using stored wood. Does nothing if one is already built here.",
-    "COOK_FOOD": "Learn to cook properly over a fire at your current tile -- only possible where a fire is already built. A one-time skill: once learned, every future celebration feast goes further, costing the tribe less.",
+    "COOK_FOOD": "Learn to cook -- only possible once you've successfully hunted and successfully built a fire at some point. A one-time skill, usable anywhere from then on: once learned, stored food goes much further and every future celebration feast costs less.",
     "CONSTRUCT_WALL": "Work on a wall at your current tile using stored wood and stone -- a real defensive structure built up over several turns, not finished in one. Each turn spent on it adds real progress (more so with more people to put to the work), and a more complete wall meaningfully improves your odds of defending against a raider attack. Does nothing further once complete.",
     "BUILD_LONG_HOUSE": "Build a long house at your current tile using stored wood and stone -- only possible once your wall is fully complete. A one-time, permanent structure: real, lasting shelter for the tribe.",
     "PLANT_CROP": "Plant a farm plot at your current tile using stored wood -- only possible once the tribe has settled here. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",

@@ -366,20 +366,13 @@ def test_first_successful_catch_learns_fishing_and_celebrates():
     assert "first catch" in result
 
 
-def test_cook_food_requires_an_existing_fire():
+def test_cook_food_learns_cooking_unconditionally_once_chosen():
+    """Explicit correction: COOK_FOOD no longer checks for a fire currently standing
+    at this tile -- its real prerequisites (a proven hunt and a proven fire, ever)
+    are gated at the availability layer (Simulation._prepare_turn), not here. Once
+    the action is actually chosen, it always succeeds."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-
-    result = ACTION_REGISTRY["COOK_FOOD"](sim, tribe, "plains", _NO_TARGET)
-
-    assert tribe.cooking_learned is False
-    assert "no fire" in result
-
-
-def test_cook_food_learns_cooking_once_a_fire_exists():
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    sim.world.add_construction(50, 50, "fire", sim.cycle)
 
     result = ACTION_REGISTRY["COOK_FOOD"](sim, tribe, "plains", _NO_TARGET)
 
@@ -391,7 +384,6 @@ def test_cook_food_learns_cooking_once_a_fire_exists():
 def test_cook_food_is_a_no_op_once_already_learned():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    sim.world.add_construction(50, 50, "fire", sim.cycle)
     tribe.cooking_learned = True
     trophies_before = list(tribe.trophies)
 
@@ -399,6 +391,40 @@ def test_cook_food_is_a_no_op_once_already_learned():
 
     assert result is None
     assert tribe.trophies == trophies_before
+
+
+def test_build_fire_marks_fire_ever_built():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 50
+
+    ACTION_REGISTRY["BUILD_FIRE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.fire_ever_built is True
+
+
+def test_hunt_deer_success_marks_hunt_ever_succeeded():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    with mock.patch("backend.actions.random.random", return_value=0.99):  # miss the wolf hazard
+        ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "forest", _NO_TARGET)
+
+    assert tribe.hunt_ever_succeeded is True
+
+
+def test_hunt_deer_wolf_attack_does_not_mark_hunt_ever_succeeded():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # trigger the wolf hazard
+        ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "forest", _NO_TARGET)
+
+    assert tribe.hunt_ever_succeeded is False
 
 
 def test_later_catches_do_not_re_learn_or_re_celebrate():
@@ -801,11 +827,14 @@ def test_strike_raider_camp_unlocked_only_from_tribal_synapse():
     assert "STRIKE_RAIDER_CAMP" in unlocked_actions_through("tribal_synapse")
 
 
-def test_cook_food_unlocked_only_from_tribal_synapse():
+def test_cook_food_unlocked_from_primitive_dawn():
+    """Explicit request: "this can happen early." COOK_FOOD is no longer gated to a
+    later era at all -- its real prerequisites (a proven hunt and a proven fire) are
+    what gate it now (see Simulation._prepare_turn), and both are only reachable
+    post-settling anyway, so this can't fire before a tribe has a camp regardless."""
     from backend.eras import unlocked_actions_through
 
-    assert "COOK_FOOD" not in unlocked_actions_through("primitive_dawn")
-    assert "COOK_FOOD" in unlocked_actions_through("tribal_synapse")
+    assert "COOK_FOOD" in unlocked_actions_through("primitive_dawn")
 
 
 def test_raid_ignores_extinct_tribes_and_self():
