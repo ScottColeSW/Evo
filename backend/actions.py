@@ -564,27 +564,11 @@ def _strike_raider_camp(sim, tribe, biome, target):
     return f"the strike on the raider camp at {camp} failed -- they escaped into the wilds"
 
 
-def _trade(sim, tribe, biome, target):
-    """Attempt to open trade with a rival tribe found at target_vector -- the peaceful
-    counterpart to RAID, and the mechanical outlet for a cooperative/community-minded
-    chief philosophy that otherwise has nothing to act on. Both sides give up the same
-    fraction of what they're currently holding and receive the same fraction back --
-    a real, mutual exchange, unconditional once initiated (like RAID, this doesn't ask
-    the other side's permission; it's the tribe's own choice to reach out peacefully,
-    not something requiring the other model to also choose TRADE the same cycle,
-    which would make this nearly impossible to ever actually trigger)."""
-    tx, ty = target
-    partner = None
-    for other in sim.tribes.values():
-        if other.id == tribe.id or other.extinct:
-            continue
-        if (other.x - tx) ** 2 + (other.y - ty) ** 2 <= config.TRADE_PROXIMITY_RADIUS ** 2:
-            partner = other
-            break
-
-    if partner is None:
-        return "found no rival encampment there to trade with"
-
+def _execute_trade(sim, tribe, partner) -> str:
+    """The actual exchange, shared by instant TRADE and SEND_TRADE_EMISSARY once
+    either has found a real partner -- both sides give up the same fraction of what
+    they're currently holding and receive the same fraction back, unconditional
+    once initiated (like RAID, this doesn't ask the other side's permission)."""
     for resource in ("wood", "stone", "food", "water"):
         tribe_amount = getattr(tribe, resource)
         partner_amount = getattr(partner, resource)
@@ -606,6 +590,68 @@ def _trade(sim, tribe, biome, target):
     return f"opened trade with {partner.name} -- goods exchanged both ways"
 
 
+def _find_trade_partner(sim, tribe, x, y):
+    for other in sim.tribes.values():
+        if other.id == tribe.id or other.extinct:
+            continue
+        if (other.x - x) ** 2 + (other.y - y) ** 2 <= config.TRADE_PROXIMITY_RADIUS ** 2:
+            return other
+    return None
+
+
+def _trade(sim, tribe, biome, target):
+    """Attempt to open trade with a rival tribe found at target_vector -- the peaceful
+    counterpart to RAID, and the mechanical outlet for a cooperative/community-minded
+    chief philosophy that otherwise has nothing to act on. Instant: only works if a
+    rival already happens to be within TRADE_PROXIMITY_RADIUS of target_vector right
+    now -- SEND_TRADE_EMISSARY is the deliberate, patient alternative that actually
+    goes looking."""
+    tx, ty = target
+    partner = _find_trade_partner(sim, tribe, tx, ty)
+    if partner is None:
+        return "found no rival encampment there to trade with"
+    return _execute_trade(sim, tribe, partner)
+
+
+def _send_trade_emissary(sim, tribe, biome, target):
+    """A deliberate, patient search for a rival tribe to trade with -- unlike TRADE
+    (instant, only works if a rival already happens to be within
+    TRADE_PROXIMITY_RADIUS right now), this dispatches a real, multi-day expedition
+    that actively looks, sharing the exact day-by-day travel/give-up machinery
+    HUNTING_PARTY already uses (see Simulation._advance_trade_emissary_outbound) --
+    nearly the same mechanic, per explicit confirmation. Finding a rival executes
+    the exchange immediately, at the point of contact -- the emissary still has to
+    walk home to report it, the same "not real until you're home" rule as a hunting
+    party's catch, but only for this tribe's own knowledge of what happened; the
+    exchange itself already moved both sides' goods the moment contact was made."""
+    if len(tribe.expeditions) >= expedition_capacity(tribe):
+        fields = ", ".join(
+            f"{e['lead_scout']} (day {e['day']}/{e['max_days']}, {e['phase']})" for e in tribe.expeditions
+        )
+        return f"no one left to send -- every party is already out: {fields}"
+
+    tx, ty = target
+    tx = max(0, min(sim.world.grid_size - 1, tx))
+    ty = max(0, min(sim.world.grid_size - 1, ty))
+    scout = _generate_scout(tribe, sim.cycle, base_days=config.TRADE_EMISSARY_MAX_DAYS)
+    tribe.expeditions.append({
+        "kind": "trade",
+        "pos": [tribe.x, tribe.y],
+        "origin": [tribe.x, tribe.y],
+        "target": [tx, ty],
+        "day": 0,
+        "phase": "outbound",
+        "food_gathered": 0,
+        "water_gathered": 0,
+        "lead_scout": scout["name"],
+        "determination": scout["determination"],
+        "max_days": scout["max_days"],
+        "path": [[tribe.x, tribe.y]],
+    })
+    tribe.expeditions_launched += 1
+    return f"an emissary led by {scout['name']} departs camp toward ({tx},{ty}), seeking a tribe to trade with"
+
+
 ACTION_REGISTRY = {
     "GATHER_WOOD": _gather_wood,
     "GATHER_STONE": _gather_stone,
@@ -625,6 +671,7 @@ ACTION_REGISTRY = {
     "RAID": _raid,
     "STRIKE_RAIDER_CAMP": _strike_raider_camp,
     "TRADE": _trade,
+    "SEND_TRADE_EMISSARY": _send_trade_emissary,
     "IDLE": _idle,
 }
 
@@ -654,6 +701,7 @@ ACTION_DESCRIPTIONS = {
     "RAID": "Attempt to raid a rival tribe if one is near target_vector. A win steals some of their stockpile but still costs you people; a loss costs you more. Does nothing if no rival is there.",
     "STRIKE_RAIDER_CAMP": "Attack a raider camp your scouts have already found (see your raider sighting reports) -- only possible once you know where one is. Success destroys it and recovers some food; failure costs a life and leaves the camp standing.",
     "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. Does nothing if no rival is there.",
+    "SEND_TRADE_EMISSARY": "Dispatch an emissary toward target_vector to actively search for a rival tribe to trade with -- unlike TRADE, this doesn't need one nearby right now, only somewhere along the way over the next few days. Shares the same expedition capacity as SCOUT and HUNTING_PARTY. Finding a partner exchanges goods immediately; the emissary still has to walk home to report what happened.",
     # IDLE deliberately has no entry here -- it's never offered as a real choice (see
     # backend/actions.py._idle), so it has no description to show the model.
 }

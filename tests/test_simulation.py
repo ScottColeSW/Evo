@@ -1520,6 +1520,92 @@ def test_hunting_party_arrival_home_empty_handed_still_delivers_forage_and_clear
     assert any("nothing caught, though not empty-handed" in entry for entry in tribe.history)
 
 
+def test_trade_emissary_finds_a_partner_and_trades_immediately():
+    """Explicit request: build SEND_TRADE_EMISSARY like HUNTING_PARTY -- finding a
+    rival executes the exchange at the point of contact, not once the emissary
+    walks home."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 100
+    partner = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    partner.wood = 200
+    sim.tribes = {"tribe_0": tribe, "tribe_1": partner}
+    tribe.expeditions = [{
+        # target == pos/origin so the day's movement is a no-op -- isolates the
+        # partner-find check from needing to model movement math, same convention
+        # the wolf-hazard/catch-chance tests already use for HUNTING_PARTY.
+        "kind": "trade", "pos": [50, 50], "origin": [50, 50], "target": [50, 50],
+        "day": 0, "phase": "outbound", "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Emissary", "determination": 0.5, "max_days": 4, "path": [],
+    }]
+
+    sim._advance_expeditions(tribe)
+
+    assert tribe.expeditions[0]["phase"] == "returning"
+    assert tribe.expeditions[0]["trade_partner"] == "Mountain Tribe"
+    assert tribe.wood != 100 and partner.wood != 200  # goods already moved, not waiting on the walk home
+    assert any("finds Mountain Tribe and opens trade" in entry for entry in tribe.history)
+
+
+def test_trade_emissary_pushes_onward_then_gives_up_with_no_partner():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.expeditions = [{
+        # Already pushed onward once, with the (extended) target already reached
+        # (pos == target, well within a single day's reach on plains, not ocean) --
+        # this cycle should give up for good rather than push onward a second time.
+        "kind": "trade", "pos": [52, 50], "origin": [50, 50], "target": [52, 50],
+        "day": 5, "phase": "outbound", "food_gathered": 0, "water_gathered": 0,
+        "pushed_onward": True,
+        "lead_scout": "Test Emissary", "determination": 0.5, "max_days": 4, "path": [],
+    }]
+
+    sim._advance_expeditions(tribe)
+
+    assert tribe.expeditions[0]["phase"] == "returning"
+    assert any("no one to trade with" in entry for entry in tribe.history)
+
+
+def test_trade_emissary_arrival_home_reports_success():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 10
+    tribe.expeditions = [{
+        "kind": "trade", "pos": [50, 50], "origin": [50, 50], "target": [50, 50],
+        "day": 4, "phase": "returning", "food_gathered": 7, "water_gathered": 5,
+        "trade_partner": "Mountain Tribe",
+        "lead_scout": "Test Emissary", "determination": 0.5, "max_days": 4, "path": [],
+    }]
+
+    sim._advance_expeditions(tribe)
+
+    assert tribe.expeditions == []
+    assert any("traded with Mountain Tribe" in entry for entry in tribe.history)
+
+
+def test_trade_emissary_arrival_home_reports_failure():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 10
+    tribe.expeditions = [{
+        "kind": "trade", "pos": [50, 50], "origin": [50, 50], "target": [50, 50],
+        "day": 4, "phase": "returning", "food_gathered": 7, "water_gathered": 5,
+        "lead_scout": "Test Emissary", "determination": 0.5, "max_days": 4, "path": [],
+    }]
+
+    sim._advance_expeditions(tribe)
+
+    assert tribe.expeditions == []
+    assert any("found no one to trade with" in entry for entry in tribe.history)
+
+
+def test_send_trade_emissary_unlocked_from_stone_age():
+    from backend.eras import unlocked_actions_through
+
+    assert "SEND_TRADE_EMISSARY" in unlocked_actions_through("stone_age")
+
+
 def test_expedition_records_every_tile_it_walks_as_a_breadcrumb_path():
     """The persistent world-trail mechanic (Landscape.trails) only lights up once a
     route gets reused, so a single fresh journey barely shows anything even while it's

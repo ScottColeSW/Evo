@@ -7,7 +7,7 @@ import random
 from . import config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
-    _eligible_breeding_pair, _labor_multiplier, expedition_capacity,
+    _eligible_breeding_pair, _execute_trade, _find_trade_partner, _labor_multiplier, expedition_capacity,
 )
 from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
@@ -1526,6 +1526,9 @@ class Simulation:
             if exp.get("kind") == "hunt":
                 self._advance_hunting_party_outbound(tribe, exp, reached_biome, scout)
                 return False
+            if exp.get("kind") == "trade":
+                self._advance_trade_emissary_outbound(tribe, exp, scout)
+                return False
             sensed = self._sense_nearby_water(nx, ny, config.WATER_SENSING_RADIUS)
             if sensed:
                 wx, wy = sensed
@@ -1587,6 +1590,10 @@ class Simulation:
 
                 if exp.get("kind") == "hunt":
                     self._report_hunting_party_home(tribe, exp, scout, forage_note, recipient)
+                    return True
+
+                if exp.get("kind") == "trade":
+                    self._report_trade_emissary_home(tribe, exp, scout, forage_note, recipient)
                     return True
 
                 # Independent of whatever terrain/water was found this trip -- a
@@ -1780,6 +1787,54 @@ class Simulation:
                     f"{scout}'s hunting party reaches the edge of the hunting grounds after {exp['day']} days "
                     "with nothing caught -- they turn back"
                 )
+
+    def _advance_trade_emissary_outbound(self, tribe: Tribe, exp: dict, scout: str) -> None:
+        """One outbound day for a SEND_TRADE_EMISSARY expedition (see
+        actions.py._send_trade_emissary) -- nearly the same mechanic as
+        HUNTING_PARTY's own outbound advance, per explicit confirmation: same
+        day-by-day travel, same push-onward-then-give-up ending. Every day checks
+        for a rival tribe within the same proximity instant TRADE already requires;
+        finding one executes the exchange immediately, at the point of contact --
+        the emissary still has to walk home to report it, but the goods have
+        already moved for both sides."""
+        px, py = exp["pos"]
+        partner = _find_trade_partner(self, tribe, px, py)
+        if partner is not None:
+            _execute_trade(self, tribe, partner)
+            exp["trade_partner"] = partner.name
+            exp["phase"] = "returning"
+            tribe.history.append(f"{scout}'s emissary finds {partner.name} and opens trade -- heading home to report")
+            return
+
+        tx, ty = exp["target"]
+        if [px, py] == [tx, ty]:
+            if not exp.get("pushed_onward"):
+                exp["pushed_onward"] = True
+                ex, ey = physics.extend_ray_to_grid_edge(exp["origin"][0], exp["origin"][1], tx, ty, self.world.grid_size)
+                exp["target"] = [ex, ey]
+                tribe.history.append(f"{scout}'s emissary finds no one at ({px},{py}) and pushes onward")
+            else:
+                exp["phase"] = "returning"
+                tribe.history.append(
+                    f"{scout}'s emissary reaches the edge of explored land after {exp['day']} days "
+                    "with no one to trade with -- they turn back"
+                )
+
+    def _report_trade_emissary_home(self, tribe: Tribe, exp: dict, scout: str, forage_note: str, recipient: str) -> None:
+        """Arrival-home report for a SEND_TRADE_EMISSARY expedition -- the trade
+        itself (if any) already happened the moment the emissary found a partner
+        (see _advance_trade_emissary_outbound); this just tells the tribe what
+        happened, the same "not real until you're home" shape _report_hunting_
+        party_home uses for a catch."""
+        partner_name = exp.get("trade_partner")
+        if partner_name:
+            tribe.history.append(
+                f"{scout} is home and gives {recipient} a full report: traded with {partner_name}, {forage_note}"
+            )
+        else:
+            tribe.history.append(
+                f"{scout} is home and gives {recipient} a full report: found no one to trade with, {forage_note}"
+            )
 
     def _report_hunting_party_home(self, tribe: Tribe, exp: dict, scout: str, forage_note: str, recipient: str) -> None:
         caught = exp.get("food_caught", 0)

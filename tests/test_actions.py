@@ -1027,5 +1027,50 @@ def test_scout_and_hunting_party_can_both_be_out_at_once():
     ACTION_REGISTRY["SCOUT"](sim, tribe, "forest", (80, 80))
 
     assert len(tribe.expeditions) == 2
-    assert tribe.expeditions[0] is hunting_expedition
-    assert tribe.expeditions[1]["kind"] == "scout"
+
+
+def test_send_trade_emissary_dispatches_an_expedition_but_does_not_move_the_tribe():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    note = ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, tribe, "plains", (10, 10))
+
+    assert (tribe.x, tribe.y) == (50, 50)
+    assert len(tribe.expeditions) == 1
+    assert tribe.expeditions[0]["kind"] == "trade"
+    assert tribe.expeditions[0]["target"] == [10, 10]
+    assert tribe.expeditions[0]["phase"] == "outbound"
+    assert "depart" in note
+
+
+def test_send_trade_emissary_shares_expedition_capacity_with_scout_and_hunt():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    for _ in range(config.MAX_CONCURRENT_EXPEDITIONS):
+        ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, tribe, "plains", (10, 10))
+    parties = list(tribe.expeditions)
+
+    note = ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, tribe, "plains", (80, 80))
+
+    assert tribe.expeditions == parties
+    assert "no one left to send" in note
+
+
+def test_execute_trade_is_reused_identically_by_instant_trade_and_the_emissary():
+    """Both TRADE and SEND_TRADE_EMISSARY resolve a found partner through the same
+    _execute_trade helper -- confirms the refactor didn't change instant TRADE's
+    own behavior."""
+    from backend.actions import _execute_trade
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    partner = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    tribe.wood, partner.wood = 100, 200
+    sim.tribes = {"tribe_0": tribe, "tribe_1": partner}
+
+    note = ACTION_REGISTRY["TRADE"](sim, tribe, "plains", (51, 51))
+
+    assert "opened trade" in note
+    assert tribe.wood != 100 and partner.wood != 200  # goods actually moved

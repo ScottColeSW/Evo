@@ -43,7 +43,7 @@ ERAS: tuple[Era, ...] = (
             # dispatched when a decision genuinely can't be understood at all; that's
             # a defensive fallback, not something ever presented as an option here.
             "GATHER_WOOD", "GATHER_STONE", "GATHER_WATER", "GATHER_FOOD", "HUNT_DEER",
-            "BUILD_FIRE", "SCOUT", "HUNTING_PARTY", "RELOCATE", "RAID", "TRADE", "BREED",
+            "BUILD_FIRE", "SCOUT", "HUNTING_PARTY", "RELOCATE", "RAID", "TRADE", "SEND_TRADE_EMISSARY", "BREED",
         ),
         announcement="{tribe} has awakened as a Stone Age tribe.",
     ),
