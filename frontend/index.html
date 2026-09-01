@@ -1969,10 +1969,24 @@ const SETTLEMENT_STABILITY_CYCLES = 10;
 // Mirrors backend/config.py's FARMABLE_BIOMES -- Simulation._is_settled also requires
 // standing on ground a farm could actually work, not just having stayed put.
 const FARMABLE_BIOMES = ["plains", "river", "lake"];
+// Mirrors backend/config.py's SETTLEMENT_WATER_TERRITORY_RADIUS -- Simulation.
+// _near_confirmed_water. Bug report: "way too many cycles go by with the Tribe on
+// the Water and still unsettled" -- the tribe actually WAS settled per the backend
+// (has_ever_settled was already true, current tile within this radius of a
+// confirmed site), this sidebar label just never got the same territory-radius
+// fallback the backend gained, only ever checking the exact-biome-match case.
+const SETTLEMENT_WATER_TERRITORY_RADIUS = 6;
+
+function nearConfirmedWater(t) {
+  return (t.confirmed_water_sites || []).some(
+    ([wx, wy]) => Math.max(Math.abs(t.x - wx), Math.abs(t.y - wy)) <= SETTLEMENT_WATER_TERRITORY_RADIUS
+  );
+}
 
 function isSettled(t) {
   const n = t.cycles_since_relocate || 0;
-  return n >= SETTLEMENT_STABILITY_CYCLES && FARMABLE_BIOMES.includes(biomeNameAt(t.x, t.y));
+  if (n < SETTLEMENT_STABILITY_CYCLES) return false;
+  return FARMABLE_BIOMES.includes(biomeNameAt(t.x, t.y)) || nearConfirmedWater(t);
 }
 
 function settlementLine(t) {
