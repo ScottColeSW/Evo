@@ -209,6 +209,27 @@ def _construct_wall(sim, tribe, biome, target):
     return f"wall construction continues -- {new_progress}% complete"
 
 
+def _build_long_house(sim, tribe, biome, target):
+    """Explicit request, gated on the wall already being complete first -- defense
+    before shelter. Tracked as a one-time flag on the tribe (tribe.long_house_built,
+    same shape as fishing_learned/cooking_learned) rather than a second
+    world.constructions entry at the same tile the wall already occupies -- that
+    dict holds one record per tile, so layering a second type there would silently
+    overwrite the wall's own progress (see Landscape.add_construction)."""
+    if tribe.long_house_built:
+        return None
+    if sim._wall_fraction(tribe) < 1.0:
+        return "the wall must be finished before a long house is worth building here"
+    if tribe.wood < config.LONG_HOUSE_WOOD_COST or tribe.stone < config.LONG_HOUSE_STONE_COST:
+        return None
+    tribe.wood -= config.LONG_HOUSE_WOOD_COST
+    tribe.stone -= config.LONG_HOUSE_STONE_COST
+    tribe.long_house_built = True
+    sim._award_trophy(tribe, "Master Builder")
+    sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+    return "a long house rises -- the tribe has real, lasting shelter for the first time"
+
+
 def _plant_crop(sim, tribe, biome, target):
     """Only reachable at all once Simulation._prepare_turn's settled-near-water gate
     (Simulation._is_settled_near_water) allows it -- plains alone doesn't mean a tribe
@@ -240,14 +261,14 @@ def _gather_eggs(sim, tribe, biome, target):
     return "an egg is found and set aside to hatch"
 
 
-def _gather_fish(sim, tribe, biome, target):
-    """Only reachable once Simulation._prepare_turn's settled-near-water gate allows
-    it, same as PLANT_CROP/GATHER_EGGS. "Learning to fish" isn't a separate knowledge
-    system -- the first successful catch just flips tribe.fishing_learned, which is
-    all Simulation._advance_fish_supply checks to start a passive daily food supply
-    from then on, the same "action unlocks a passive system" shape crops and water
-    already use. Every catch (including the first) still pays out its own food too."""
-    if random.random() >= config.GATHER_FISH_SUCCESS_CHANCE:
+def _catch_fish(sim, tribe, biome, target):
+    """Only reachable once Simulation._prepare_turn's settled gate allows it, same as
+    PLANT_CROP/GATHER_EGGS. "Learning to fish" isn't a separate knowledge system --
+    the first successful catch just flips tribe.fishing_learned, which is all
+    Simulation._advance_fish_supply checks to start a passive daily food supply from
+    then on, the same "action unlocks a passive system" shape crops and water already
+    use. Every catch (including the first) still pays out its own food too."""
+    if random.random() >= config.CATCH_FISH_SUCCESS_CHANCE:
         return "no fish caught this time"
     caught = random.randint(config.FISHING_CATCH_FOOD_MIN, config.FISHING_CATCH_FOOD_MAX)
     tribe.food += caught
@@ -650,9 +671,10 @@ ACTION_REGISTRY = {
     "BUILD_FIRE": _build_fire,
     "COOK_FOOD": _cook_food,
     "CONSTRUCT_WALL": _construct_wall,
+    "BUILD_LONG_HOUSE": _build_long_house,
     "PLANT_CROP": _plant_crop,
     "GATHER_EGGS": _gather_eggs,
-    "GATHER_FISH": _gather_fish,
+    "CATCH_FISH": _catch_fish,
     "SCOUT": _scout,
     "HUNTING_PARTY": _hunting_party,
     "RELOCATE": _relocate,
@@ -679,9 +701,10 @@ ACTION_DESCRIPTIONS = {
     "BUILD_FIRE": "Build a fire at your current tile using stored wood. Does nothing if one is already built here.",
     "COOK_FOOD": "Learn to cook properly over a fire at your current tile -- only possible where a fire is already built. A one-time skill: once learned, every future celebration feast goes further, costing the tribe less.",
     "CONSTRUCT_WALL": "Work on a wall at your current tile using stored wood and stone -- a real defensive structure built up over several turns, not finished in one. Each turn spent on it adds real progress (more so with more people to put to the work), and a more complete wall meaningfully improves your odds of defending against a raider attack. Does nothing further once complete.",
-    "PLANT_CROP": "Plant a farm plot at your current tile using stored wood -- only possible once the tribe has settled somewhere with real water access. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
-    "GATHER_EGGS": "Search for wild fowl nests near your current tile -- only possible on the same settled ground with reliable water access that farming needs (fowl nest near water, not in it). A found egg is set aside and hatches on its own, growing the tribe's flock by one.",
-    "GATHER_FISH": "Fish the water at your current tile -- only possible on the same settled ground with reliable water access that farming needs. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",
+    "BUILD_LONG_HOUSE": "Build a long house at your current tile using stored wood and stone -- only possible once your wall is fully complete. A one-time, permanent structure: real, lasting shelter for the tribe.",
+    "PLANT_CROP": "Plant a farm plot at your current tile using stored wood -- only possible once the tribe has settled here. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
+    "GATHER_EGGS": "Search for wild fowl nests near your current tile -- only possible once the tribe has settled here. A found egg is set aside and hatches on its own, growing the tribe's flock by one.",
+    "CATCH_FISH": "Fish at your current tile -- only possible once the tribe has settled here. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",
     "SCOUT": "Dispatch an expedition toward target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home. Your tribe can have a couple of parties out at once (scouting or hunting, any mix) -- choosing SCOUT again sends another one if there's room, or just reports on whoever's already out once you're at capacity.",
     "HUNTING_PARTY": "Send a hunting party toward target_vector -- shares the same expedition capacity as SCOUT (a couple of parties, scouting or hunting in any mix, can be out at once). They travel and hunt on their own supply for up to several days, facing the same wolf-pack risk as an instant hunt on every day out, until they catch something or give up. Any food caught only becomes real, usable food once they've walked all the way home -- a hunt still in the field does nothing for hunger right now, no matter how promising.",
     "RELOCATE": "Move your whole tribe several tiles toward target_vector this cycle, possibly over several cycles for a far destination. Produces no resources while traveling and costs extra food and water for the effort.",

@@ -20,12 +20,17 @@ FARMABLE_BIOMES = ("plains", "river", "lake")
 # cycle one has no structural push toward the single most important early decision --
 # settling somewhere real. Before a tribe has EVER settled next to real water (see
 # Simulation.Tribe.has_ever_settled/Simulation._is_settled_near_water), its choices are
-# narrowed to just enough to survive and actually go find a home; everything else
-# (building, hunting parties, raiding, trading, breeding) unlocks permanently the first
+# narrowed to just enough to survive and actually go find a home; everything requiring
+# an actual camp (building, hunting parties, trading) unlocks permanently the first
 # time it genuinely settles, not re-locked if it later relocates again. Still the
 # model's own choice among what's offered, same gating principle as GATHER_WOOD/STONE
 # being locked pre-settlement -- just applied to the whole early action set at once.
-PRE_SETTLEMENT_ACTIONS = ("GATHER_WATER", "GATHER_FOOD", "SCOUT", "RELOCATE")
+#
+# Explicit correction: BREED and RAID are never locked behind settling -- neither
+# needs a fixed camp to happen (a nomadic band can still fight or start a family),
+# they're just naturally rare this early since eligibility (a trophy holder for
+# BREED, a rival tribe nearby for RAID) is harder to come by before settling down.
+PRE_SETTLEMENT_ACTIONS = ("GATHER_WATER", "GATHER_FOOD", "SCOUT", "RELOCATE", "BREED", "RAID")
 
 # Tiles moved per axis per cycle toward target_vector. At 1 (the original value), crossing
 # the 100-tile grid takes 100+ cycles minimum -- at roughly 2 seconds of real inference
@@ -215,21 +220,23 @@ FLOCK_UPKEEP_FOOD_PER_MEMBER = 1
 FLOCK_MIN_SIZE_TO_BREED = 2
 FLOCK_NATURAL_HATCH_CHANCE = 0.15
 
-# Fishing (backend/actions.py GATHER_FISH, Simulation._advance_fish_supply): gated the
-# same as farming/eggs (settled + real water access). "Learning to fish" isn't a
-# separate knowledge/skill system -- it's the same "an action unlocks a passive
-# system" shape crops and water already use. The first successful catch flips
-# Tribe.fishing_learned, which is all _advance_fish_supply checks; every GATHER_FISH
-# after that (including the first) still pays out its own immediate catch too.
+# Fishing (backend/actions.py CATCH_FISH, Simulation._advance_fish_supply): gated the
+# same as farming/eggs -- once settled, no separate real-water check (explicit
+# correction: that extra distinction was "bogus," just a settled gate like everything
+# else here). "Learning to fish" isn't a separate knowledge/skill system -- it's the
+# same "an action unlocks a passive system" shape crops and water already use. The
+# first successful catch flips Tribe.fishing_learned, which is all _advance_fish_
+# supply checks; every CATCH_FISH after that (including the first) still pays out
+# its own immediate catch too.
 #
-# Explicit request (2026-08-31): a settled tribe fishes right at its own water tile --
-# no expedition, no travel time, unlike HUNTING_PARTY's multi-day trip -- so fishing
+# Explicit request (2026-08-31): a settled tribe fishes right at its own tile -- no
+# expedition, no travel time, unlike HUNTING_PARTY's multi-day trip -- so fishing
 # should read as strictly the best food return once available: higher success odds
 # and a higher catch than HUNT_DEER's base_yield=15 (which also risks a wolf-pack
 # hazard) or GATHER_FOOD's base_yield=10 (both in actions.py), and it already carries
 # no resource cost the way PLANT_CROP spends wood. Expected value per attempt is now
 # 0.8 * 19 = 15.2, above both of those bases, with zero hazard risk.
-GATHER_FISH_SUCCESS_CHANCE = 0.8
+CATCH_FISH_SUCCESS_CHANCE = 0.8
 FISHING_CATCH_FOOD_MIN = 14
 FISHING_CATCH_FOOD_MAX = 24
 FISHING_SUPPLY_PER_CYCLE = 8
@@ -518,6 +525,16 @@ EXPEDITION_RAIDER_AMBUSH_POPULATION_LOSS = 1
 WALL_PROGRESS_PER_ACTION_BASE = 30
 WALL_WOOD_COST_TOTAL = 15
 WALL_STONE_COST_TOTAL = 15
+
+# BUILD_LONG_HOUSE (backend/actions.py._build_long_house): explicit request, gated on
+# the wall already being complete first -- defense before shelter. A one-time flag on
+# the tribe (tribe.long_house_built), not a second world.constructions entry at the
+# same tile the wall already occupies -- that dict holds one record per tile, so a
+# second type there would silently overwrite the wall's own progress (see
+# Landscape.add_construction). Costs more than the wall itself: a real communal
+# building, not another defensive structure.
+LONG_HOUSE_WOOD_COST = 25
+LONG_HOUSE_STONE_COST = 20
 
 # Bronze Age counter-offensive (backend/actions.py._strike_raider_camp): a tribe that
 # has scouted a raider camp (raider_sightings) can strike it directly once organized

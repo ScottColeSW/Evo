@@ -160,6 +160,76 @@ def test_larger_population_builds_wall_progress_faster():
     assert sim.world.constructions[(60, 60)]["progress"] > sim.world.constructions[(50, 50)]["progress"]
 
 
+def test_build_long_house_requires_the_wall_to_be_complete_first():
+    """Explicit request: BUILD_LONG_HOUSE is gated on the wall already being
+    complete -- defense before shelter."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 100
+    tribe.stone = 100
+    ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)  # partial wall only
+    assert 0 < sim.world.constructions[(50, 50)]["progress"] < 100
+
+    result = ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.long_house_built is False
+    assert "wall must be finished" in result
+
+
+def test_build_long_house_succeeds_once_wall_is_complete():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 200
+    tribe.stone = 200
+    for _ in range(6):  # comfortably enough to finish the wall
+        ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
+    assert sim.world.constructions[(50, 50)]["progress"] == 100
+    wood_before, stone_before = tribe.wood, tribe.stone
+
+    result = ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.long_house_built is True
+    assert tribe.wood < wood_before
+    assert tribe.stone < stone_before
+    assert any(t["name"] == "Master Builder" for t in tribe.trophies)
+    assert "long house rises" in result
+
+
+def test_build_long_house_no_op_when_cannot_afford_it():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 200
+    tribe.stone = 200
+    for _ in range(6):
+        ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
+    tribe.wood = config.LONG_HOUSE_WOOD_COST - 1
+    tribe.stone = config.LONG_HOUSE_STONE_COST
+
+    ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.long_house_built is False
+
+
+def test_build_long_house_is_a_no_op_once_already_built():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 200
+    tribe.stone = 200
+    for _ in range(6):
+        ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
+    ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
+    wood_after, stone_after = tribe.wood, tribe.stone
+    trophies_after = list(tribe.trophies)
+
+    result = ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert result is None
+    assert (tribe.wood, tribe.stone) == (wood_after, stone_after)
+    assert tribe.trophies == trophies_after
+
+
 def test_plant_crop_spends_wood_and_adds_a_plot():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
@@ -251,19 +321,19 @@ def test_gather_eggs_crosses_the_two_most_recent_flock_members_once_available():
     assert [p["trait"] for p in tribe.pending_hatch["parents"]] == ["second", "third"]
 
 
-def test_gather_fish_catches_food_on_a_successful_roll():
+def test_catch_fish_catches_food_on_a_successful_roll():
     from unittest import mock
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
 
     with mock.patch("backend.actions.random.random", return_value=0.0):
-        ACTION_REGISTRY["GATHER_FISH"](sim, tribe, "river", _NO_TARGET)
+        ACTION_REGISTRY["CATCH_FISH"](sim, tribe, "river", _NO_TARGET)
 
     assert tribe.food > 0
 
 
-def test_gather_fish_does_nothing_on_a_failed_roll():
+def test_catch_fish_does_nothing_on_a_failed_roll():
     from unittest import mock
 
     sim = _bare_simulation()
@@ -271,7 +341,7 @@ def test_gather_fish_does_nothing_on_a_failed_roll():
     tribe.food = 0
 
     with mock.patch("backend.actions.random.random", return_value=0.999):
-        ACTION_REGISTRY["GATHER_FISH"](sim, tribe, "river", _NO_TARGET)
+        ACTION_REGISTRY["CATCH_FISH"](sim, tribe, "river", _NO_TARGET)
 
     assert tribe.food == 0
     assert tribe.fishing_learned is False
@@ -288,7 +358,7 @@ def test_first_successful_catch_learns_fishing_and_celebrates():
     tribe.food = 100
 
     with mock.patch("backend.actions.random.random", return_value=0.0):
-        result = ACTION_REGISTRY["GATHER_FISH"](sim, tribe, "river", _NO_TARGET)
+        result = ACTION_REGISTRY["CATCH_FISH"](sim, tribe, "river", _NO_TARGET)
 
     assert tribe.fishing_learned is True
     assert any(t["name"] == "Angler" for t in tribe.trophies)
@@ -340,7 +410,7 @@ def test_later_catches_do_not_re_learn_or_re_celebrate():
     tribe.food = 100
 
     with mock.patch("backend.actions.random.random", return_value=0.0):
-        result = ACTION_REGISTRY["GATHER_FISH"](sim, tribe, "river", _NO_TARGET)
+        result = ACTION_REGISTRY["CATCH_FISH"](sim, tribe, "river", _NO_TARGET)
 
     assert len(tribe.trophies) == 0
     assert not any("celebrates learning to fish" in entry for entry in tribe.history)

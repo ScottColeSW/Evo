@@ -57,7 +57,10 @@ ERAS: tuple[Era, ...] = (
         # required vs. 30 spent -- advancing doesn't zero the tribe out).
         requires_resources={"water": 40, "stone": 40, "wood": 40},
         advancement_cost={"wood": 30, "stone": 30, "water": 20},
-        unlocks_actions=("CONSTRUCT_WALL", "PLANT_CROP", "GATHER_EGGS", "GATHER_FISH", "STRIKE_RAIDER_CAMP", "COOK_FOOD"),
+        unlocks_actions=(
+            "CONSTRUCT_WALL", "PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "STRIKE_RAIDER_CAMP",
+            "COOK_FOOD", "BUILD_LONG_HOUSE",
+        ),
         announcement="{tribe} has forged its way into the Bronze Age!",
     ),
     Era(

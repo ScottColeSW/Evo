@@ -493,24 +493,33 @@ def test_settled_long_enough_but_on_unfarmable_ground_still_cannot_gather():
     assert "GATHER_WOOD" not in ctx["available_actions"]
 
 
-def test_farming_and_eggs_need_real_water_access_not_just_any_farmable_ground():
-    """PLANT_CROP/GATHER_EGGS use a stricter gate (Simulation._is_settled_near_water)
-    than the general settlement check GATHER_WOOD/STONE use -- plains alone (farmable,
-    per config.FARMABLE_BIOMES) doesn't mean a tribe resettled somewhere with real
-    water access, per the original design spec for farming."""
+def test_farming_and_eggs_available_once_settled_even_away_from_water():
+    """Explicit correction: PLANT_CROP/GATHER_EGGS used to require the stricter
+    settled_near_water gate -- "the requirement of 'real' water is bogus, this is a
+    Settled gate," same general condition GATHER_WOOD/STONE already use."""
     from backend import config
 
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
     tribe = sim.tribes["tribe_0"]
     tribe.era = "bronze_age"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
-    tribe.has_ever_settled = True  # isolate this test from the pre-settlement gate
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "PLANT_CROP" in ctx["available_actions"]
+    assert "GATHER_EGGS" in ctx["available_actions"]
+
+
+def test_farming_and_eggs_locked_before_any_settling():
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "bronze_age"
+    assert tribe.cycles_since_relocate == 0  # freshly founded, not yet settled
 
     _request, ctx = sim._prepare_turn(tribe)
 
     assert "PLANT_CROP" not in ctx["available_actions"]
     assert "GATHER_EGGS" not in ctx["available_actions"]
-    assert "GATHER_WOOD" in ctx["available_actions"]  # the looser gate still passes
 
 
 def test_farming_and_eggs_available_once_settled_next_to_real_water():
@@ -597,7 +606,8 @@ def test_fresh_tribe_has_only_pre_settlement_actions_available():
     # yet for a brand-new tribe that hasn't scouted anything.
     assert set(ctx["available_actions"]) == set(config.PRE_SETTLEMENT_ACTIONS) - {"RELOCATE"}
     assert "HUNT_DEER" not in ctx["available_actions"]
-    assert "BREED" not in ctx["available_actions"]
+    # BREED and RAID are explicitly never locked behind settling -- see the set
+    # equality assertion above, which already accounts for both being present.
     assert "only survival and exploration actions are available" in request["prompt"]
 
 
@@ -906,8 +916,8 @@ def test_resolve_action_exact_and_normalized_and_out_of_context_cases():
 
 
 def test_guess_intended_action_is_display_only_and_best_effort():
-    avail = ["GATHER_FOOD", "GATHER_WATER", "SCOUT", "RELOCATE", "GATHER_FISH"]
-    assert _guess_intended_action("catch some fish", avail) == "GATHER_FISH"
+    avail = ["GATHER_FOOD", "GATHER_WATER", "SCOUT", "RELOCATE", "CATCH_FISH"]
+    assert _guess_intended_action("catch some fish", avail) == "CATCH_FISH"
     assert _guess_intended_action("xyzzy nonsense", avail) is None
 
 
@@ -3264,7 +3274,21 @@ def test_advance_fish_supply_does_nothing_before_settling_even_if_learned():
     assert tribe.food == 10
 
 
-def test_gather_fish_gated_the_same_as_farming_and_eggs():
+def test_catch_fish_gated_the_same_as_farming_and_eggs():
+    """Explicit correction: PLANT_CROP/GATHER_EGGS/CATCH_FISH used to require the
+    stricter settled_near_water check -- "the requirement of 'real' water is bogus,
+    this is a Settled gate," same general condition as GATHER_WOOD/STONE."""
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "bronze_age"
+    assert tribe.cycles_since_relocate == 0  # freshly founded, not yet settled
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "CATCH_FISH" not in ctx["available_actions"]
+
+
+def test_catch_fish_available_once_settled_even_away_from_water():
     from backend import config
 
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
@@ -3272,22 +3296,9 @@ def test_gather_fish_gated_the_same_as_farming_and_eggs():
     tribe.era = "bronze_age"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
 
-    _request, ctx = sim._prepare_turn(tribe)
-
-    assert "GATHER_FISH" not in ctx["available_actions"]
-
-
-def test_gather_fish_available_once_settled_next_to_real_water():
-    from backend import config
-
-    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
-    tribe = sim.tribes["tribe_0"]
-    tribe.era = "bronze_age"
-    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
-
     request, ctx = sim._prepare_turn(tribe)
 
-    assert "GATHER_FISH" in ctx["available_actions"]
+    assert "CATCH_FISH" in ctx["available_actions"]
     assert "a single successful catch would make fishing a permanent" in request["prompt"]
 
 

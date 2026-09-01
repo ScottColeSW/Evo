@@ -280,7 +280,7 @@ class Tribe:
         self.farm_plots = 0
         self.crop_growth = 0
         self.last_harvest_cycle = 0
-        # Fishing (backend/actions.py GATHER_FISH, Simulation._advance_fish_supply):
+        # Fishing (backend/actions.py CATCH_FISH, Simulation._advance_fish_supply):
         # not a separate knowledge/skill system -- the first successful catch just
         # flips this, and _advance_fish_supply checks nothing else to start a passive
         # daily food supply, the same "action unlocks a passive system" shape farming
@@ -290,6 +290,9 @@ class Tribe:
         # _celebration_cost charges less: real food contributed and prepared, not
         # just handed over from the stockpile.
         self.cooking_learned = False
+        # See actions.py._build_long_house -- one-way, gated on the wall already
+        # being complete first.
+        self.long_house_built = False
         # See Simulation._prepare_turn's GATHER_FOOD retirement -- one-way, like
         # has_ever_settled, once a genuinely proven passive food source exists.
         self.foraging_retired = False
@@ -364,6 +367,7 @@ class Tribe:
             "crop_growth": self.crop_growth,
             "fishing_learned": self.fishing_learned,
             "cooking_learned": self.cooking_learned,
+            "long_house_built": self.long_house_built,
             "foraging_retired": self.foraging_retired,
             "watering_retired": self.watering_retired,
             "last_harvest_cycle": self.last_harvest_cycle,
@@ -1137,7 +1141,16 @@ class Simulation:
         memories = tribe.memory.recall(f"{biome} at {tribe.x},{tribe.y}")
         settled = self._is_settled(tribe)
         settled_near_water = self._is_settled_near_water(tribe)
-        if settled_near_water:
+        # Explicit correction: has_ever_settled used to require settled_near_water
+        # specifically -- a tribe that settled on plains away from water would stay
+        # permanently stuck in the pre-settlement action set even after reaching
+        # Bronze Age, since PLANT_CROP/GATHER_EGGS/CATCH_FISH's own water-adjacency
+        # requirement was already dropped ("this is a Settled gate," not a real-water
+        # one) but the outer gate wrapping the whole unlocked_actions_through(era)
+        # branch still checked the stricter condition. FARMING_REQUIRES_ADJACENT_WATER
+        # is a strict subset of FARMABLE_BIOMES, so this is a pure expansion -- never
+        # fires later than before, only possibly sooner.
+        if settled:
             tribe.has_ever_settled = True
 
         if not tribe.has_ever_settled:
@@ -1185,13 +1198,17 @@ class Simulation:
                 )
             available_actions = [a for a in available_actions if a != "GATHER_WATER"]
 
-        if not settled_near_water:
-            available_actions = [a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS", "GATHER_FISH")]
+        # Explicit correction: PLANT_CROP/GATHER_EGGS/CATCH_FISH used to require the
+        # stricter settled_near_water check (a real adjacent water tile) -- "the
+        # requirement of 'real' water is bogus, this is a Settled gate," same general
+        # settling condition as GATHER_WOOD/STONE, not a stricter one layered on top.
+        if not settled:
+            available_actions = [a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH")]
 
         # Explicit request: GATHER_FOOD is too generic once a tribe has real
         # experience -- it kept acting as a catch-all "satisfy hunger" default even
         # after fishing was rebalanced to strictly outperform it (confirmed live:
-        # GATHER_FISH chosen once across 6 tribe-runs despite that). A generalist
+        # CATCH_FISH chosen once across 6 tribe-runs despite that). A generalist
         # narrows into a specialist once it has a genuinely proven, passive
         # replacement -- fishing_learned or a farm that has actually completed a
         # harvest (not just been planted -- crop_growth isn't food yet). One-way,
@@ -1289,13 +1306,13 @@ class Simulation:
                 "likely fare better than hunting blind."
             )
 
-        settlement_actions = ("PLANT_CROP", "GATHER_EGGS", "GATHER_FISH")
+        settlement_actions = ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH")
         if any(a in unlocked_actions_through(tribe.era) for a in settlement_actions):
-            if not settled_near_water:
+            if not settled:
                 visible_entities.append(
-                    "Crops, eggs, and fishing all need somewhere with real water access to work -- the "
-                    "tribe hasn't settled on ground like that yet (a river or lake tile, not just any "
-                    "farmable ground)."
+                    "Crops, eggs, and fishing all need the tribe to have settled here -- it hasn't put "
+                    f"down roots yet ({tribe.cycles_since_relocate}/{config.SETTLEMENT_STABILITY_CYCLES} "
+                    "cycles without relocating, on farmable ground)."
                 )
             else:
                 # NUDGE (2026-08-30/31, explicit "nudge harder" request): a plain,
@@ -1305,12 +1322,12 @@ class Simulation:
                 # the model chooses or ignores; this doesn't force any of them.
                 if tribe.farm_plots == 0:
                     visible_entities.append(
-                        "The tribe has settled near reliable water -- this ground could support a farm plot."
+                        "The tribe has settled here -- this ground could support a farm plot."
                     )
                 if tribe.flock == 0:
                     visible_entities.append(
-                        "No flock has been started yet -- wild fowl nest near settlements with reliable "
-                        "water like this, so gathering their eggs here could begin one."
+                        "No flock has been started yet -- wild fowl nest near settlements like this, so "
+                        "gathering their eggs here could begin one."
                     )
                 if not tribe.fishing_learned:
                     visible_entities.append(
@@ -2231,12 +2248,14 @@ class Simulation:
             tribe.water += config.SETTLED_WATER_SUPPLY_PER_CYCLE
 
     def _advance_fish_supply(self, tribe: Tribe) -> None:
-        """Once fishing is learned (the first successful GATHER_FISH), food flows in
+        """Once fishing is learned (the first successful CATCH_FISH), food flows in
         daily the same way water already does once settled -- not a second knowledge
         subsystem, just the same "action unlocks a passive system" shape applied to a
-        different resource. GATHER_FISH still works and still pays out its own catch
-        on top of this."""
-        if tribe.fishing_learned and self._is_settled_near_water(tribe):
+        different resource. CATCH_FISH still works and still pays out its own catch
+        on top of this. Gated on the same general settled check CATCH_FISH's own
+        availability uses (see _prepare_turn), not the stricter settled_near_water --
+        explicit correction that the extra water-adjacency distinction was bogus."""
+        if tribe.fishing_learned and self._is_settled(tribe):
             tribe.food += config.FISHING_SUPPLY_PER_CYCLE
 
     def _advance_farming(self, tribe: Tribe) -> None:
@@ -2522,7 +2541,7 @@ class Simulation:
                 tribe.history.append(f"amid the celebration, {parent_a} and {parent_b} decide to start a family together")
 
     def _celebrate_fishing_learned(self, tribe: Tribe) -> None:
-        """The first successful GATHER_FISH is its own real milestone -- same "you
+        """The first successful CATCH_FISH is its own real milestone -- same "you
         learned something! now we party!" treatment as _celebrate_water_discovery/
         _celebrate_game_discovery, just for fishing instead of a scouted site."""
         tribe.last_celebration_cycle = self.cycle
