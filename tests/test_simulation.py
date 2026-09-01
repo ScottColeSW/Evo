@@ -177,6 +177,44 @@ def test_wall_fraction_helper_reused_by_wellbeing_matches_raider_defense_lookup(
     assert sim._wall_fraction(tribe) == 0.5
 
 
+def test_unfinished_wall_nudges_against_a_premature_long_house():
+    """Explicit bug report: live logs showed the chief repeatedly choosing
+    BUILD_LONG_HOUSE against an unfinished wall, over and over, each attempt
+    silently rejected inside _build_long_house -- CONSTRUCT_WALL and
+    BUILD_LONG_HOUSE both unlock at the same era, so nothing ever told the chief
+    the wall wasn't done."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, farmable
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    sim.world.add_construction(tribe.x, tribe.y, "wall", sim.cycle, progress=40)
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "CONSTRUCT_WALL" in ctx["available_actions"]
+    assert "40% complete" in request["prompt"]
+    assert "a long house is not worth attempting until the wall is finished" in request["prompt"]
+
+
+def test_finished_wall_nudges_toward_a_long_house_then_a_castle():
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, farmable
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    sim.world.add_construction(tribe.x, tribe.y, "wall", sim.cycle, progress=100)
+
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "a long house is now worth building for real, lasting shelter" in request["prompt"]
+
+    tribe.long_house_built = True
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "a castle is now worth building for a further defense bonus" in request["prompt"]
+
+
 def test_compass_direction_matches_the_map_convention():
     from backend.simulation import _compass_direction
 

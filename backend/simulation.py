@@ -1369,6 +1369,32 @@ class Simulation:
                 "would make stored food go much further from then on."
             )
 
+        if "CONSTRUCT_WALL" in available_actions:
+            # NUDGE (2026-09-01, explicit request: live logs showed the chief
+            # repeatedly choosing BUILD_LONG_HOUSE against a wall that wasn't
+            # finished yet, over and over, each attempt silently rejected inside
+            # _build_long_house -- CONSTRUCT_WALL and BUILD_LONG_HOUSE both unlock at
+            # the same era, so the chief had no way to know the wall wasn't done
+            # without this being stated as a fact. Same category as the COOK_FOOD
+            # eligibility nudge above: a real gate the tribe couldn't otherwise see.
+            wall_fraction = self._wall_fraction(tribe)
+            if wall_fraction >= 1.0:
+                if not tribe.long_house_built:
+                    visible_entities.append(
+                        "The wall here is complete -- a long house is now worth building for real, "
+                        "lasting shelter."
+                    )
+                elif not tribe.castle_built:
+                    visible_entities.append(
+                        "The wall and long house both stand complete -- a castle is now worth building "
+                        "for a further defense bonus."
+                    )
+            elif not tribe.long_house_built:
+                visible_entities.append(
+                    f"The wall here is only {wall_fraction:.0%} complete -- a long house is not worth "
+                    "attempting until the wall is finished."
+                )
+
         settlement_actions = ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH")
         if any(a in unlocked_actions_through(tribe.era) for a in settlement_actions):
             if not settled:
