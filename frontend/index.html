@@ -1969,15 +1969,25 @@ function landmarkCounts(t) {
   return counts.length ? " · " + counts.join(" ") : "";
 }
 
-// A dedicated mini-panel for farming/flock state, per explicit request -- separate
-// from the general intel-line so plot growth and flock lineage read as their own
-// distinct system on the map, not another buried stat.
+// Mirrors backend/config.py's FISHING_SUPPLY_PER_CYCLE -- the real, passive daily
+// yield _advance_fish_supply pays out once fishing is learned, same number the
+// Fishery line below reports rather than a vaguer "mastered" label.
+const FISHING_SUPPLY_PER_CYCLE = 8;
+
+// A dedicated mini-panel for each real production system a tribe has stood up --
+// per explicit request, each one gets its own named line with a real yield/stage,
+// the same visual weight the farm's growth stage already had, not a buried stat.
+// Explicit request: "when they build a Sawmill it will be here, and when they
+// build a Quarry it will be here, and Mines too as they find and excavate them" --
+// Sawmill/Quarry/Mine don't exist as mechanics yet (still queued backend work), so
+// they're not listed below; add each one's own `if` block here, following the
+// Fishery line's shape, the same day its backend mechanic lands.
 function farmingPanel(t) {
   if (!t.farm_plots && !t.flock && !t.fishing_learned) return "";
   const parts = [];
   if (t.farm_plots > 0) {
     const stage = t.crop_growth < 33 ? "🌱 sprouting" : t.crop_growth < 66 ? "🌿 growing" : "🌾 ready to harvest";
-    parts.push(`${t.farm_plots} plot${t.farm_plots > 1 ? "s" : ""} · ${stage} (${t.crop_growth}/100)`);
+    parts.push(`🌾 Farm — ${t.farm_plots} plot${t.farm_plots > 1 ? "s" : ""} · ${stage} (${t.crop_growth}/100)`);
   }
   if (t.flock > 0) {
     // Explicit request: "we should see an 'eggs hatching' line in the sidebar
@@ -1993,13 +2003,14 @@ function farmingPanel(t) {
     if (justHatched) {
       parts.push(`🥚 An egg just hatched! — ${escapeHtml(last.trait)} (flock now ${t.flock})`);
     } else {
-      parts.push(`🐔 flock of ${t.flock}${last ? ` — latest: ${escapeHtml(last.trait)}` : ""}`);
+      parts.push(`🐔 Flock — ${t.flock}${last ? ` · latest: ${escapeHtml(last.trait)}` : ""}`);
     }
   }
   if (t.fishing_learned) {
-    parts.push("🎣 fishing mastered — food flows in daily");
+    const dockNote = t.dock_built ? " · dock boosts every manual catch further" : "";
+    parts.push(`🎣 Fishery — ${FISHING_SUPPLY_PER_CYCLE} food/day flows in automatically${dockNote}`);
   }
-  return `<div class="farming-panel"><span class="farming-title">🌾 Farm</span><br>${parts.join("<br>")}</div>`;
+  return `<div class="farming-panel"><span class="farming-title">🏘️ Establishments</span><br>${parts.join("<br>")}</div>`;
 }
 
 // Maslow's-hierarchy read on the tribe's overall condition (see backend/wellbeing.py
