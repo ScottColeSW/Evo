@@ -1470,11 +1470,31 @@ class Simulation:
                     "toward. Sending scouts out is how a real destination gets found."
                 )
         if not settled:
-            visible_entities.append(
-                "Wood and stone are not yet being gathered here -- the tribe hasn't settled anywhere "
-                f"farmable long enough yet ({tribe.cycles_since_relocate}/{config.SETTLEMENT_STABILITY_CYCLES} "
-                "cycles without relocating, on farmable ground)."
+            # Bug report: "look at the Mountain Tribe and tell me why they
+            # aren't Settled." This used to always say "on farmable ground"
+            # regardless of whether the tribe's current tile actually
+            # qualifies -- true once already there, but easy to misread as
+            # still needing to relocate somewhere else. Now states plainly
+            # when the ground already qualifies and the only thing left is
+            # time, versus the tribe genuinely standing somewhere that
+            # doesn't count at all.
+            already_good_ground = (
+                self.world.biome(tribe.x, tribe.y) in config.FARMABLE_BIOMES or self._near_confirmed_water(tribe)
             )
+            if already_good_ground:
+                visible_entities.append(
+                    f"This ground already qualifies for settling -- {tribe.cycles_since_relocate}/"
+                    f"{config.SETTLEMENT_STABILITY_CYCLES} cycles without relocating so far. Staying here "
+                    "without choosing RELOCATE again will finish settling; relocating again resets this "
+                    "progress back to 0."
+                )
+            else:
+                visible_entities.append(
+                    "Wood and stone are not yet being gathered here -- this ground doesn't qualify for "
+                    "settling at all, and the tribe would need to relocate somewhere farmable "
+                    f"({tribe.cycles_since_relocate}/{config.SETTLEMENT_STABILITY_CYCLES} cycles without "
+                    "relocating so far, but that alone won't be enough here)."
+                )
         if settled_near_water:
             visible_entities.append(
                 "The tribe has settled here, next to real water, and is no longer considering relocating. "

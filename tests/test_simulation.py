@@ -207,6 +207,38 @@ def test_settling_near_water_still_fails_outside_the_territory_radius():
     assert sim._is_settled_near_water(tribe) is False
 
 
+def test_not_settled_yet_names_ground_already_qualifying_and_warns_against_relocating():
+    """Bug report: "look at the Mountain Tribe and tell me why they aren't
+    Settled and fix it." They were standing on a lake tile (real, qualifying
+    ground) only 3/10 cycles into the stability window -- the old fact always
+    said "on farmable ground" regardless of whether the current tile actually
+    qualified, easy to misread as needing to move somewhere else rather than
+    just wait it out without relocating again."""
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, qualifies
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = 3
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "This ground already qualifies for settling -- 3/10 cycles" in request["prompt"]
+    assert "relocating again resets this progress back to 0" in request["prompt"]
+
+
+def test_not_settled_yet_names_ground_that_doesnt_qualify_at_all():
+    from backend import config
+
+    sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 5, "y": 55}])  # mountains, doesn't qualify
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = 3
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "this ground doesn't qualify for settling at all" in request["prompt"]
+    assert "This ground already qualifies" not in request["prompt"]
+
+
 def test_resolve_toll_ignores_a_tile_that_isnt_a_toll_road_yet():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]

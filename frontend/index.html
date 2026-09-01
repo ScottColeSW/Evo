@@ -41,7 +41,7 @@
 
   #theater-body { flex: 1; display: flex; min-height: 0; }
   #canvas-container { flex: 1; display: flex; justify-content: center; align-items: center; background: #0b0b0f; position: relative; padding: 12px; min-width: 0; }
-  #era-banner { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); background: rgba(67,56,202,0.95); color: #fff; padding: 14px 28px; border-radius: 8px; font-weight: bold; font-size: 15px; opacity: 0; pointer-events: none; transition: opacity 0.5s ease; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,0.4); white-space: nowrap; }
+  #era-banner { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); background: rgba(67,56,202,0.95); color: #fff; padding: 14px 28px; border-radius: 8px; font-weight: bold; font-size: 15px; opacity: 0; pointer-events: none; transition: opacity 0.5s ease; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,0.4); max-width: min(90vw, 640px); white-space: normal; text-align: center; }
   #era-banner.show { opacity: 1; }
   #era-banner.danger { background: rgba(127,29,29,0.95); }
   #era-banner.chief { background: rgba(180,131,10,0.95); }
