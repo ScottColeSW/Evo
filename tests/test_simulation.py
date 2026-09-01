@@ -216,6 +216,42 @@ def test_no_wall_started_yet_nudges_toward_construct_wall():
     assert "No wall has been started here yet" in request["prompt"]
 
 
+def test_confirmed_water_nudge_says_scouting_for_it_is_no_longer_needed():
+    """Bug report: "they still search for water even after they found it." The
+    fact used to only name the benefit of relocating -- never said outright that
+    further scouting for water specifically was pointless once already found."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # forest, not water
+    tribe = sim.tribes["tribe_0"]
+    tribe.confirmed_water_sites = [(40, 37)]
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Water has already been found at (40,37)" in request["prompt"]
+    assert "no further scouting is needed to search for it" in request["prompt"]
+
+
+def test_quarry_nudge_requires_a_scouted_site_not_just_the_other_prerequisites():
+    """Explicit correction: "once they know where a quarry is, they need to just
+    use it to get stone... they might consider building one closer to their
+    establishment." A quarry is only worth building once a real stone-rich site
+    has actually been scouted (tribe.quarry_sites), the same real-discovery gate
+    _build_mine already used -- built at the settlement, not requiring travel to
+    the exact discovered tile."""
+    sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.has_ever_settled = True
+    tribe.long_houses_built = 1
+    tribe.fishing_learned = True
+
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "no stone-rich site has been scouted yet" in request["prompt"]
+
+    tribe.quarry_sites.append((12, 34))
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "A stone-rich site is known at (12,34)" in request["prompt"]
+
+
 def test_finished_wall_nudges_toward_a_long_house_then_reinforcement():
     from backend import config
 

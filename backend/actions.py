@@ -399,9 +399,18 @@ def _build_sawmill(sim, tribe, biome, target):
 
 
 def _build_quarry(sim, tribe, biome, target):
-    """Mirrors _build_sawmill exactly, for stone instead of wood."""
+    """Mirrors _build_sawmill, for stone instead of wood -- plus one further real
+    gate _build_sawmill has no equivalent of: explicit correction, "once they
+    know where a quarry is, they need to just use it to get stone... they might
+    consider building one closer to their establishment." A quarry is only
+    worth building once a real stone-rich site has actually been scouted
+    (tribe.quarry_sites), same real-discovery gate _build_mine already uses --
+    built at the settlement itself (the "closer to their establishment" choice),
+    not requiring the tribe to relocate to the exact discovered tile."""
     if tribe.quarry_built or not (tribe.long_houses_built > 0 and tribe.fishing_learned):
         return None
+    if not tribe.quarry_sites:
+        return "no stone-rich site has been scouted yet -- a quarry needs a real deposit to work"
     if tribe.wood < config.QUARRY_WOOD_COST or tribe.stone < config.QUARRY_STONE_COST:
         return None
     tribe.wood -= config.QUARRY_WOOD_COST
@@ -1035,7 +1044,7 @@ ACTION_DESCRIPTIONS = {
     "EXPAND_TERRITORY": "Push your city's growth beyond its normal limit using stored wood and stone -- only possible once your city has already finished growing on its own. Adds more buildings, up to double the usual cap.",
     "BUILD_DOCK": "Build a dock at your current tile using stored wood -- only possible once the tribe has settled here. A one-time, permanent structure: every future fish caught here pays out more from then on.",
     "BUILD_SAWMILL": "Build a sawmill using stored wood and stone -- only possible once a long house stands and fishing is mastered. A one-time, permanent structure: every future load of gathered wood is worth three times as much from then on.",
-    "BUILD_QUARRY": "Build a quarry using stored wood and stone -- only possible once a long house stands and fishing is mastered. A one-time, permanent structure: every future load of harvested stone is worth three times as much from then on.",
+    "BUILD_QUARRY": "Build a quarry using stored wood and stone -- only possible once a long house stands, fishing is mastered, and a stone-rich site has actually been scouted. A one-time, permanent structure at your settlement: every future load of harvested stone is worth three times as much from then on.",
     "BUILD_MINE": "Excavate a mine at a vein your scouts have already found, using stored wood and stone -- only possible once a quarry stands and at least one vein is known. A one-time, permanent structure: its unique resource flows in steadily from then on.",
     "BUILD_KITCHEN": "Build a kitchen using stored wood and stone -- only possible once cooking is known and a long house stands. A one-time, permanent structure: cooked meals become excellent food, stretching stores even further from then on.",
     "BUILD_MOAT": "Dig a moat using stored wood and stone -- only possible once the wall has been reinforced with a second layer. A one-time, permanent structure, cheaper than another wall layer: a further defense bonus.",

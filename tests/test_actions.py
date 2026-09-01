@@ -540,6 +540,11 @@ def test_build_quarry_requires_long_house_and_fishing_first():
     tribe.long_houses_built = 1
     tribe.fishing_learned = True
     result = ACTION_REGISTRY["BUILD_QUARRY"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.quarry_built is False
+    assert "no stone-rich site has been scouted yet" in result
+
+    tribe.quarry_sites.append((10, 10))
+    result = ACTION_REGISTRY["BUILD_QUARRY"](sim, tribe, "plains", _NO_TARGET)
 
     assert tribe.quarry_built is True
     assert "quarry opens" in result

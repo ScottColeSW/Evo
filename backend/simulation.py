@@ -1414,10 +1414,18 @@ class Simulation:
             # the connection to "confirmed water source at (x,y)" implicit; RELOCATE
             # is still the tribe's own choice to make, this just states plainly what
             # settling there would unlock.
+            #
+            # Strengthened (bug report: "they still search for water even after
+            # they found it") -- naming the benefit alone wasn't stopping the
+            # tribe from sending yet another scout after water it already knows
+            # about. Now states outright that searching for water specifically is
+            # done; SCOUT still has real, separate uses (lumber/wildlife/quarry/
+            # mine/raiders), so this doesn't retire it, just closes off the one
+            # already-answered reason to use it.
             wx, wy = tribe.confirmed_water_sites[-1]
             visible_entities.append(
-                f"Confirmed water at ({wx},{wy}) -- relocating the whole tribe there would let it "
-                "finally settle and begin farming and raising a flock."
+                f"Water has already been found at ({wx},{wy}) -- no further scouting is needed to "
+                "search for it. RELOCATE there to finally settle and begin farming and raising a flock."
             )
 
         if "HUNTING_PARTY" in available_actions and tribe.wildlife_sites:
@@ -1527,10 +1535,18 @@ class Simulation:
                 )
         if "BUILD_QUARRY" in available_actions and not tribe.quarry_built:
             if tribe.long_houses_built > 0 and tribe.fishing_learned:
-                visible_entities.append(
-                    "Farming and fishing are both established, and real shelter stands -- a quarry "
-                    "would triple the value of every future load of harvested stone."
-                )
+                if tribe.quarry_sites:
+                    qx, qy = tribe.quarry_sites[-1]
+                    visible_entities.append(
+                        f"A stone-rich site is known at ({qx},{qy}) -- farming and fishing are both "
+                        "established and real shelter stands, so a quarry built here at the "
+                        "settlement would triple the value of every future load of harvested stone."
+                    )
+                else:
+                    visible_entities.append(
+                        "Farming and fishing are both established, and real shelter stands, but no "
+                        "stone-rich site has been scouted yet -- a quarry needs a real deposit to work."
+                    )
         if "BUILD_MINE" in available_actions and not tribe.mine_built:
             if tribe.quarry_built and tribe.mine_sites:
                 site = tribe.mine_sites[-1]
