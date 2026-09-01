@@ -230,6 +230,133 @@ def test_build_long_house_is_a_no_op_once_already_built():
     assert tribe.trophies == trophies_after
 
 
+def test_build_castle_requires_the_long_house_first():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 200
+    tribe.stone = 200
+
+    result = ACTION_REGISTRY["BUILD_CASTLE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.castle_built is False
+    assert "long house must be built" in result
+
+
+def test_build_castle_succeeds_once_long_house_exists():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 300
+    tribe.stone = 300
+    for _ in range(6):
+        ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
+    ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
+    wood_before, stone_before = tribe.wood, tribe.stone
+
+    result = ACTION_REGISTRY["BUILD_CASTLE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.castle_built is True
+    assert tribe.wood < wood_before
+    assert tribe.stone < stone_before
+    assert any(t["name"] == "Castle Builder" for t in tribe.trophies)
+    assert "castle rises" in result
+
+
+def test_build_road_grants_a_flat_expedition_speed_bonus():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 100
+    tribe.stone = 100
+
+    result = ACTION_REGISTRY["BUILD_ROAD"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.road_built is True
+    assert "road is built" in result
+    assert config.ROAD_SPEED_BONUS > 0
+
+
+def test_build_road_is_a_no_op_once_already_built():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 100
+    tribe.stone = 100
+    tribe.road_built = True
+    wood_before = tribe.wood
+
+    result = ACTION_REGISTRY["BUILD_ROAD"](sim, tribe, "plains", _NO_TARGET)
+
+    assert result is None
+    assert tribe.wood == wood_before
+
+
+def test_expand_territory_requires_the_city_to_have_already_maxed_out():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 200
+    tribe.stone = 200
+    tribe.city_buildings = config.MAX_CITY_BUILDINGS - 1
+
+    result = ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
+
+    assert "hasn't finished growing" in result
+    assert tribe.city_buildings == config.MAX_CITY_BUILDINGS - 1
+
+
+def test_expand_territory_pushes_past_the_normal_cap():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 200
+    tribe.stone = 200
+    tribe.city_buildings = config.MAX_CITY_BUILDINGS
+
+    result = ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.city_buildings == config.MAX_CITY_BUILDINGS + config.TERRITORY_EXPANSION_BUILDINGS_BONUS
+    assert any(t["name"] == "Territory Expander" for t in tribe.trophies)
+    assert "territory expands" in result
+
+
+def test_expand_territory_caps_at_double_the_normal_max():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 200
+    tribe.stone = 200
+    tribe.city_buildings = config.MAX_CITY_BUILDINGS * 2
+
+    result = ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
+
+    assert result is None
+    assert tribe.city_buildings == config.MAX_CITY_BUILDINGS * 2
+
+
+def test_build_dock_boosts_future_fish_catches():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 50
+    tribe.food = 0
+    tribe.fishing_learned = True  # isolate the catch-amount math from the first-catch/celebration path
+
+    dock_result = ACTION_REGISTRY["BUILD_DOCK"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.dock_built is True
+    assert "dock rises" in dock_result
+
+    with mock.patch("backend.actions.random.random", return_value=0.0), \
+         mock.patch("backend.actions.random.randint", return_value=20):
+        catch_result = ACTION_REGISTRY["CATCH_FISH"](sim, tribe, "river", _NO_TARGET)
+
+    assert tribe.food == 30  # 20 * 1.5 (DOCK_FISH_CATCH_BONUS_FRACTION = 0.5)
+    assert "30 food" in catch_result
+
+
 def test_plant_crop_spends_wood_and_adds_a_plot():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")

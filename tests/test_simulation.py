@@ -1277,6 +1277,36 @@ def test_expedition_does_not_give_up_from_day_count_alone():
     assert tribe.expeditions[0]["phase"] == "outbound"
 
 
+def test_build_road_speeds_up_expeditions():
+    """See actions.py._build_road -- a flat, always-on version of the same trail
+    bonus a well-worn path already grants, since a deliberately-built road doesn't
+    need to wear in from repeated travel."""
+    import math
+
+    def _expedition(tribe):
+        return {
+            "pos": [tribe.x, tribe.y], "origin": [tribe.x, tribe.y], "target": [tribe.x + 40, tribe.y],
+            "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+            "food_gathered": 0, "water_gathered": 0,
+            "lead_scout": "Test Scout", "determination": 0.5, "max_days": 10, "path": [[tribe.x, tribe.y]],
+        }
+
+    sim = _bare_simulation()
+    plain_tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 60, 10, "#c084fc")
+    exp = _expedition(plain_tribe)
+    sim._advance_one_expedition(plain_tribe, exp)
+    plain_distance = math.hypot(exp["pos"][0] - 60, exp["pos"][1] - 10)
+
+    sim2 = _bare_simulation()
+    road_tribe = Tribe("tribe_1", "Road Tribe", "gemma2:2b", 60, 10, "#fb923c")
+    road_tribe.road_built = True
+    exp2 = _expedition(road_tribe)
+    sim2._advance_one_expedition(road_tribe, exp2)
+    road_distance = math.hypot(exp2["pos"][0] - 60, exp2["pos"][1] - 10)
+
+    assert road_distance > plain_distance
+
+
 def test_expedition_gives_up_when_physically_boxed_in_by_ocean():
     """Regression: a live run caught a scouting party stuck at the same tile for 400+
     days. physics.terrain_aware_step falls back to "stay put" when every candidate step

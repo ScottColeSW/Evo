@@ -569,6 +569,38 @@ WALL_STONE_COST_TOTAL = 15
 LONG_HOUSE_WOOD_COST = 25
 LONG_HOUSE_STONE_COST = 20
 
+# BUILD_CASTLE (backend/actions.py._build_castle): the construction tier after
+# BUILD_LONG_HOUSE, gated on the long house already standing -- a real, additional
+# defense bonus stacked on top of the wall's own (Simulation._resolve_raider_attack's
+# RAIDER_DEFENSE_WALL_BONUS_AT_FULL_PROGRESS), not just a bigger cosmetic building.
+CASTLE_WOOD_COST = 40
+CASTLE_STONE_COST = 50
+CASTLE_DEFENSE_BONUS = 0.15
+
+# BUILD_ROAD (backend/actions.py._build_road): a permanent, tribe-built version of
+# the same trail_speed_bonus a well-worn path already grants expeditions (World.
+# trail_speed_bonus) -- flat, not distance-decayed like a trail, since a road exists
+# deliberately rather than wearing in from repeated travel.
+ROAD_WOOD_COST = 30
+ROAD_STONE_COST = 15
+ROAD_SPEED_BONUS = 2
+
+# EXPAND_TERRITORY (backend/actions.py._expand_territory): only meaningful once
+# automatic city growth (Simulation._advance_city_growth) has already reached its
+# normal ceiling -- a deliberate push past MAX_CITY_BUILDINGS, not redundant with
+# growth that already happens on its own. Capped at double the normal max so the
+# territory visual (frontend's drawTerritory, which scales off city_buildings)
+# doesn't grow without bound.
+TERRITORY_EXPANSION_WOOD_COST = 60
+TERRITORY_EXPANSION_STONE_COST = 60
+TERRITORY_EXPANSION_BUILDINGS_BONUS = 2
+
+# BUILD_DOCK (backend/actions.py._build_dock): explicit request, "once they have
+# Settled in hopes they will figure out fishing" -- a real fishing yield bonus once
+# built, not just flavor, to actually reward betting on fishing early.
+DOCK_WOOD_COST = 20
+DOCK_FISH_CATCH_BONUS_FRACTION = 0.5
+
 # Bronze Age counter-offensive (backend/actions.py._strike_raider_camp): a tribe that
 # has scouted a raider camp (raider_sightings) can strike it directly once organized
 # enough -- turning a warning into an actionable target instead of only ever

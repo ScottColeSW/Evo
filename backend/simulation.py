@@ -306,6 +306,17 @@ class Tribe:
         # See actions.py._build_long_house -- one-way, gated on the wall already
         # being complete first.
         self.long_house_built = False
+        # See actions.py._build_castle -- one-way, gated on the long house already
+        # standing. Adds a real defense bonus on top of the wall's own (Simulation.
+        # _resolve_raider_attack).
+        self.castle_built = False
+        # See actions.py._build_road -- one-way. Adds a flat speed bonus to every
+        # future expedition (Simulation._advance_one_expedition), the same shape a
+        # well-worn trail already grants.
+        self.road_built = False
+        # See actions.py._build_dock -- one-way, gated on general settling.
+        # Boosts every future CATCH_FISH catch.
+        self.dock_built = False
         # See Simulation._prepare_turn's GATHER_FOOD retirement -- one-way, like
         # has_ever_settled, once a genuinely proven passive food source exists.
         self.foraging_retired = False
@@ -383,6 +394,9 @@ class Tribe:
             "hunt_ever_succeeded": self.hunt_ever_succeeded,
             "fire_ever_built": self.fire_ever_built,
             "long_house_built": self.long_house_built,
+            "castle_built": self.castle_built,
+            "road_built": self.road_built,
+            "dock_built": self.dock_built,
             "foraging_retired": self.foraging_retired,
             "watering_retired": self.watering_retired,
             "last_harvest_cycle": self.last_harvest_cycle,
@@ -1228,7 +1242,9 @@ class Simulation:
         # requirement of 'real' water is bogus, this is a Settled gate," same general
         # settling condition as GATHER_WOOD/STONE, not a stricter one layered on top.
         if not settled:
-            available_actions = [a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH")]
+            available_actions = [
+                a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "BUILD_DOCK")
+            ]
 
         # Explicit request: "if you learn to hunt successfully and you learn to
         # build fire successfully, you should get the chance to learn cooking...
@@ -1660,7 +1676,10 @@ class Simulation:
             px, py = exp["pos"]
             tx, ty = exp["target"]
             bonus = self.world.trail_speed_bonus(px, py, config.MAX_TRAIL_BONUS_SPEED)
-            base_speed = config.EXPEDITION_SPEED + bonus
+            # See actions.py._build_road -- a flat, always-on version of the same
+            # trail bonus above, since a deliberately-built road doesn't need to
+            # wear in from repeated travel the way a trail does.
+            base_speed = config.EXPEDITION_SPEED + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
             nx, ny = physics.terrain_aware_step(px, py, tx, ty, base_speed=base_speed)
             self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color)
             exp["pos"] = [nx, ny]
@@ -1738,7 +1757,7 @@ class Simulation:
             px, py = exp["pos"]
             ox, oy = exp["origin"]
             bonus = self.world.trail_speed_bonus(px, py, config.MAX_TRAIL_BONUS_SPEED)
-            base_speed = config.EXPEDITION_SPEED + bonus
+            base_speed = config.EXPEDITION_SPEED + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
             nx, ny = physics.terrain_aware_step(px, py, ox, oy, base_speed=base_speed)
             self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color)
             exp["pos"] = [nx, ny]
@@ -2147,6 +2166,9 @@ class Simulation:
             + (tribe.population // 10) * config.RAIDER_DEFENSE_POPULATION_BONUS_PER_10
             + config.RAIDER_DEFENSE_WALL_BONUS_AT_FULL_PROGRESS * wall_fraction
             + (config.RAIDER_DEFENSE_WATER_BONUS if self._is_settled_near_water(tribe) else 0.0)
+            # See actions.py._build_castle -- a real bonus stacked on top of the
+            # wall's own, not another way to reach the same ceiling faster.
+            + (config.CASTLE_DEFENSE_BONUS if tribe.castle_built else 0.0)
             - config.RAIDER_STRENGTH_DEFENSE_PENALTY_AT_MAX * raider_strength
         ))
         if random.random() < defense_chance:

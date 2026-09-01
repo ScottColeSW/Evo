@@ -234,6 +234,69 @@ def _build_long_house(sim, tribe, biome, target):
     return "a long house rises -- the tribe has real, lasting shelter for the first time"
 
 
+def _build_castle(sim, tribe, biome, target):
+    """The construction tier after BUILD_LONG_HOUSE -- gated on the long house
+    already standing, a real additional defense bonus stacked on top of the wall's
+    own (Simulation._resolve_raider_attack), not just a bigger cosmetic building."""
+    if tribe.castle_built:
+        return None
+    if not tribe.long_house_built:
+        return "a long house must be built before a castle is worth building here"
+    if tribe.wood < config.CASTLE_WOOD_COST or tribe.stone < config.CASTLE_STONE_COST:
+        return None
+    tribe.wood -= config.CASTLE_WOOD_COST
+    tribe.stone -= config.CASTLE_STONE_COST
+    tribe.castle_built = True
+    sim._award_trophy(tribe, "Castle Builder")
+    sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.ERA_ADVANCE_PRIDE_MAGNITUDE, config.ERA_ADVANCE_PRIDE_RADIUS)
+    return "a castle rises -- the tribe's defenses are stronger than any wall alone could offer"
+
+
+def _build_road(sim, tribe, biome, target):
+    """A permanent, tribe-built version of the same trail_speed_bonus a well-worn
+    path already grants expeditions (World.trail_speed_bonus, Simulation.
+    _advance_one_expedition) -- flat, not distance-decayed like a trail, since a
+    road exists deliberately rather than wearing in from repeated travel."""
+    if tribe.road_built or tribe.wood < config.ROAD_WOOD_COST or tribe.stone < config.ROAD_STONE_COST:
+        return None
+    tribe.wood -= config.ROAD_WOOD_COST
+    tribe.stone -= config.ROAD_STONE_COST
+    tribe.road_built = True
+    return "a road is built -- every future expedition will travel faster from here on"
+
+
+def _expand_territory(sim, tribe, biome, target):
+    """Only meaningful once automatic city growth (Simulation._advance_city_growth)
+    has already reached its normal ceiling -- a deliberate push past
+    MAX_CITY_BUILDINGS, not redundant with growth that already happens on its own.
+    Repeatable up to double the normal max (see config.TERRITORY_EXPANSION_
+    BUILDINGS_BONUS) so the territory visual doesn't grow without bound."""
+    if tribe.city_buildings < config.MAX_CITY_BUILDINGS:
+        return "the city hasn't finished growing on its own yet -- nothing more to expand"
+    if tribe.city_buildings >= config.MAX_CITY_BUILDINGS * 2:
+        return None
+    if tribe.wood < config.TERRITORY_EXPANSION_WOOD_COST or tribe.stone < config.TERRITORY_EXPANSION_STONE_COST:
+        return None
+    tribe.wood -= config.TERRITORY_EXPANSION_WOOD_COST
+    tribe.stone -= config.TERRITORY_EXPANSION_STONE_COST
+    tribe.city_buildings += config.TERRITORY_EXPANSION_BUILDINGS_BONUS
+    sim._award_trophy(tribe, "Territory Expander")
+    return f"the tribe's territory expands beyond its old borders -- {tribe.city_buildings} buildings now stand"
+
+
+def _build_dock(sim, tribe, biome, target):
+    """Explicit request: "once they have Settled in hopes they will figure out
+    fishing." A real fishing yield bonus once built (config.
+    DOCK_FISH_CATCH_BONUS_FRACTION applied in _catch_fish), not just flavor --
+    rewards betting on fishing early rather than only narrating the hope."""
+    if tribe.dock_built or tribe.wood < config.DOCK_WOOD_COST:
+        return None
+    tribe.wood -= config.DOCK_WOOD_COST
+    tribe.dock_built = True
+    sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.BUILD_FIRE_PRIDE_MAGNITUDE, config.BUILD_FIRE_PRIDE_RADIUS)
+    return "a dock rises at the water's edge -- fishing here will pay out more from now on"
+
+
 def _plant_crop(sim, tribe, biome, target):
     """Only reachable at all once Simulation._prepare_turn's settled-near-water gate
     (Simulation._is_settled_near_water) allows it -- plains alone doesn't mean a tribe
@@ -275,6 +338,10 @@ def _catch_fish(sim, tribe, biome, target):
     if random.random() >= config.CATCH_FISH_SUCCESS_CHANCE:
         return "no fish caught this time"
     caught = random.randint(config.FISHING_CATCH_FOOD_MIN, config.FISHING_CATCH_FOOD_MAX)
+    # See actions.py._build_dock -- a real yield bonus for having bet on fishing
+    # early enough to build one, not just flavor text.
+    if tribe.dock_built:
+        caught = round(caught * (1 + config.DOCK_FISH_CATCH_BONUS_FRACTION))
     tribe.food += caught
     if not tribe.fishing_learned:
         tribe.fishing_learned = True
@@ -731,6 +798,10 @@ ACTION_REGISTRY = {
     "COOK_FOOD": _cook_food,
     "CONSTRUCT_WALL": _construct_wall,
     "BUILD_LONG_HOUSE": _build_long_house,
+    "BUILD_CASTLE": _build_castle,
+    "BUILD_ROAD": _build_road,
+    "EXPAND_TERRITORY": _expand_territory,
+    "BUILD_DOCK": _build_dock,
     "PLANT_CROP": _plant_crop,
     "GATHER_EGGS": _gather_eggs,
     "CATCH_FISH": _catch_fish,
@@ -763,6 +834,10 @@ ACTION_DESCRIPTIONS = {
     "COOK_FOOD": "Learn to cook -- only possible once you've successfully hunted and successfully built a fire at some point. A one-time skill, usable anywhere from then on: once learned, stored food goes much further and every future celebration feast costs less.",
     "CONSTRUCT_WALL": "Work on a wall at your current tile using stored wood and stone -- a real defensive structure built up over several turns, not finished in one. Each turn spent on it adds real progress (more so with more people to put to the work), and a more complete wall meaningfully improves your odds of defending against a raider attack. Does nothing further once complete.",
     "BUILD_LONG_HOUSE": "Build a long house at your current tile using stored wood and stone -- only possible once your wall is fully complete. A one-time, permanent structure: real, lasting shelter for the tribe.",
+    "BUILD_CASTLE": "Build a castle at your current tile using stored wood and stone -- only possible once your long house is built. A one-time, permanent structure that adds real defense on top of whatever your wall already provides.",
+    "BUILD_ROAD": "Build a road at your current tile using stored wood and stone. A one-time, permanent improvement: every future scouting party, hunting party, or trade emissary you send out travels faster from then on.",
+    "EXPAND_TERRITORY": "Push your city's growth beyond its normal limit using stored wood and stone -- only possible once your city has already finished growing on its own. Adds more buildings, up to double the usual cap.",
+    "BUILD_DOCK": "Build a dock at your current tile using stored wood -- only possible once the tribe has settled here. A one-time, permanent structure: every future fish caught here pays out more from then on.",
     "PLANT_CROP": "Plant a farm plot at your current tile using stored wood -- only possible once the tribe has settled here. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
     "GATHER_EGGS": "Search for wild fowl nests near your current tile -- only possible once the tribe has settled here. A found egg is set aside and hatches on its own, growing the tribe's flock by one.",
     "CATCH_FISH": "Fish at your current tile -- only possible once the tribe has settled here. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",
