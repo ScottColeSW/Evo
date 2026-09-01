@@ -68,6 +68,17 @@ NIGHT_CYCLE_EVERY_N_CYCLES = 30
 NIGHT_CYCLE_REVIEWER_MODEL = "mistral:7b"
 NIGHT_CYCLE_HISTORY_WINDOW = 20
 
+# Explicit request: "can we have some random breeding in the over-night cycle?" Every
+# existing breeding side-effect (Simulation._celebrate_*) fires off a specific
+# milestone -- a tribe that never crosses one of those particular triggers had no path
+# to a family besides the model explicitly choosing BREED itself, which this session's
+# live data shows these models almost never reach for on their own. Night is the one
+# recurring beat every settled tribe passes regardless of what else happened that day,
+# so it's a natural home for an occasional chance encounter -- same eligibility rule
+# and $0 cost as every other breeding path (see BREED_FOOD_COST below), just
+# probabilistic instead of tied to a specific milestone.
+NIGHT_CYCLE_RANDOM_BREED_CHANCE = 0.25
+
 # An innate tradition, not a chief's choice (see Simulation._hold_tribal_gathering):
 # every tribe gathers once per in-game day to take stock, whatever its philosophy or
 # model. Mirrors frontend/index.html's own DAY_LENGTH_CYCLES for the sun/moon arc --

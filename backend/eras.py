@@ -37,11 +37,10 @@ ERAS: tuple[Era, ...] = (
         requires_resources={},
         advancement_cost={},
         unlocks_actions=(
-            # Explicit request: IDLE isn't offered as a real choice -- a tribe always
-            # has something worth doing. It still exists internally (see
-            # backend/simulation.py._resolve_action) purely as the safe no-op
-            # dispatched when a decision genuinely can't be understood at all; that's
-            # a defensive fallback, not something ever presented as an option here.
+            # Explicit request: a tribe always has something worth doing, and a
+            # parse failure now falls back to a real available action instead of a
+            # no-op (see backend/simulation.py._resolve_action) -- there's no IDLE
+            # concept anywhere anymore, defensive fallback or otherwise.
             "GATHER_WOOD", "GATHER_STONE", "GATHER_WATER", "GATHER_FOOD", "HUNT_DEER",
             "BUILD_FIRE", "SCOUT", "HUNTING_PARTY", "RELOCATE", "RAID", "TRADE", "SEND_TRADE_EMISSARY", "BREED",
         ),

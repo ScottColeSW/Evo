@@ -499,7 +499,7 @@ def test_other_actions_never_move_the_tribe():
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     sim.tribes = {"tribe_0": tribe}
 
-    for action in ("GATHER_WOOD", "GATHER_STONE", "HUNT_DEER", "BUILD_FIRE", "CONSTRUCT_WALL", "RAID", "TRADE", "IDLE"):
+    for action in ("GATHER_WOOD", "GATHER_STONE", "HUNT_DEER", "BUILD_FIRE", "CONSTRUCT_WALL", "RAID", "TRADE"):
         ACTION_REGISTRY[action](sim, tribe, "plains", (80, 80))
         assert (tribe.x, tribe.y) == (50, 50), f"{action} should not move the tribe"
 

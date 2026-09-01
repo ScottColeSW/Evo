@@ -450,17 +450,6 @@ def _breed(sim, tribe, biome, target):
     return f"{parent_a} and {parent_b} decide to start a family together"
 
 
-# Explicit request: IDLE isn't offered as a real choice anymore (see eras.py's
-# stone_age.unlocks_actions and config.PRE_SETTLEMENT_ACTIONS) -- a tribe always has
-# something worth doing. This handler stays registered purely as the internal safe
-# no-op Simulation._resolve_action dispatches to when a decision genuinely can't be
-# understood at all, or when a syntactically real action name just isn't unlocked
-# right now (wrong era, not settled, etc.) -- never something a model is told it can
-# pick.
-def _idle(sim, tribe, biome, target):
-    return None
-
-
 def _raid(sim, tribe, biome, target):
     """Attempt to raid a rival tribe found at target_vector -- the mechanical outlet
     for an aggressive/warlord chief philosophy (leadership.py can already generate one)
@@ -672,7 +661,6 @@ ACTION_REGISTRY = {
     "STRIKE_RAIDER_CAMP": _strike_raider_camp,
     "TRADE": _trade,
     "SEND_TRADE_EMISSARY": _send_trade_emissary,
-    "IDLE": _idle,
 }
 
 # Plain mechanical facts about what each verb does, handed to the model in the prompt
@@ -702,6 +690,4 @@ ACTION_DESCRIPTIONS = {
     "STRIKE_RAIDER_CAMP": "Attack a raider camp your scouts have already found (see your raider sighting reports) -- only possible once you know where one is. Success destroys it and recovers some food; failure costs a life and leaves the camp standing.",
     "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. Does nothing if no rival is there.",
     "SEND_TRADE_EMISSARY": "Dispatch an emissary toward target_vector to actively search for a rival tribe to trade with -- unlike TRADE, this doesn't need one nearby right now, only somewhere along the way over the next few days. Shares the same expedition capacity as SCOUT and HUNTING_PARTY. Finding a partner exchanges goods immediately; the emissary still has to walk home to report what happened.",
-    # IDLE deliberately has no entry here -- it's never offered as a real choice (see
-    # backend/actions.py._idle), so it has no description to show the model.
 }

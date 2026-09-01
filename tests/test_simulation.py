@@ -592,7 +592,10 @@ def test_fresh_tribe_has_only_pre_settlement_actions_available():
 
     request, ctx = sim._prepare_turn(tribe)
 
-    assert set(ctx["available_actions"]) == set(config.PRE_SETTLEMENT_ACTIONS)
+    # RELOCATE is further gated behind having confirmed a real water source (see
+    # test_unsettled_tribe_cannot_relocate_without_confirmed_water) -- not offered
+    # yet for a brand-new tribe that hasn't scouted anything.
+    assert set(ctx["available_actions"]) == set(config.PRE_SETTLEMENT_ACTIONS) - {"RELOCATE"}
     assert "HUNT_DEER" not in ctx["available_actions"]
     assert "BREED" not in ctx["available_actions"]
     assert "only survival and exploration actions are available" in request["prompt"]
@@ -626,10 +629,23 @@ def test_has_ever_settled_does_not_relock_after_relocating_away_again():
     assert "HUNT_DEER" in ctx["available_actions"]
 
 
-def test_unsettled_tribe_can_still_relocate():
+def test_unsettled_tribe_cannot_relocate_without_confirmed_water():
+    """Explicit request: "RELOCATE should not show until they find water and the
+    place to settle" -- relocating with no known destination wasn't meaningfully
+    different from wandering at random."""
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
-    assert tribe.cycles_since_relocate == 0  # freshly founded, hasn't settled anywhere
+    assert tribe.confirmed_water_sites == []
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "RELOCATE" not in ctx["available_actions"]
+
+
+def test_unsettled_tribe_can_relocate_once_water_is_confirmed():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.confirmed_water_sites.append((40, 37))
 
     _request, ctx = sim._prepare_turn(tribe)
 
@@ -709,7 +725,7 @@ def test_choosing_a_non_relocate_action_advances_settlement_progress():
     tribe = sim.tribes["tribe_0"]
     tribe.cycles_since_relocate = 3
 
-    sim._apply_turn(tribe, {"visual_action": "IDLE"}, 100.0, {"biome": "plains", "available_actions": ["IDLE"]})
+    sim._apply_turn(tribe, {"visual_action": "GATHER_FOOD"}, 100.0, {"biome": "plains", "available_actions": ["GATHER_FOOD"]})
 
     assert tribe.cycles_since_relocate == 4
 
@@ -729,9 +745,9 @@ def test_apply_turn_records_the_full_rationale_not_a_60_char_fragment():
 
     sim._apply_turn(
         tribe,
-        {"visual_action": "IDLE", "metacognitive_rationale": rationale},
+        {"visual_action": "GATHER_FOOD", "metacognitive_rationale": rationale},
         100.0,
-        {"biome": "plains", "available_actions": ["IDLE"]},
+        {"biome": "plains", "available_actions": ["GATHER_FOOD"]},
     )
 
     assert rationale in tribe.history[-1]
@@ -744,9 +760,9 @@ def test_apply_turn_still_caps_an_extremely_long_rationale():
 
     sim._apply_turn(
         tribe,
-        {"visual_action": "IDLE", "metacognitive_rationale": rationale},
+        {"visual_action": "GATHER_FOOD", "metacognitive_rationale": rationale},
         100.0,
-        {"biome": "plains", "available_actions": ["IDLE"]},
+        {"biome": "plains", "available_actions": ["GATHER_FOOD"]},
     )
 
     assert tribe.history[-1].endswith("…")
@@ -799,7 +815,7 @@ def test_translation_matrix_is_updated_on_apply_turn():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
     tribe_a = sim.tribes["tribe_0"]
     tribe_b = sim.tribes["tribe_1"]
-    ctx = {"biome": "forest", "available_actions": ["BUILD_FIRE", "IDLE"]}
+    ctx = {"biome": "forest", "available_actions": ["BUILD_FIRE"]}
 
     sim._apply_turn(tribe_a, {"visual_action": "BUILD_FIRE", "synthetic_language_broadcast": "VASH-TA"}, 100.0, ctx)
     sim._apply_turn(tribe_b, {"visual_action": "BUILD_FIRE", "synthetic_language_broadcast": "VASH-TA"}, 100.0, ctx)
@@ -835,7 +851,12 @@ def test_gather_water_on_a_lake_matches_river_yield_with_no_drowning_risk():
     assert lake_tribe.water > config.STARTING_WATER  # river-level yield, not the off-water rate
 
 
-def test_action_outside_current_era_is_rejected_to_idle():
+def test_action_outside_current_era_falls_back_to_a_real_available_action():
+    """A real, well-formed action name that's just not unlocked yet (wrong era) is a
+    legitimate "can't do that here" case, not a parse failure -- IDLE's removal means
+    this now falls back to a genuinely available action (the turn still does
+    something real) rather than a no-op, and still gets no confusion nudge since the
+    tribe wasn't actually confused."""
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
     assert tribe.era == "stone_age"
@@ -844,18 +865,17 @@ def test_action_outside_current_era_is_rejected_to_idle():
     assert "CONSTRUCT_WALL" not in ctx["available_actions"]
 
     sim._apply_turn(tribe, {"visual_action": "CONSTRUCT_WALL"}, 50.0, ctx)
-    assert "IDLE" in tribe.history[-1]
-    # A real, well-formed action name that's just not unlocked yet (wrong era) is a
-    # legitimate "can't do that here" case, not a parse failure -- no confusion nudge.
+    assert ctx["available_actions"][0] in tribe.history[-1]
     assert tribe.last_confusion is None
 
 
-def test_idle_is_never_offered_as_a_real_choice():
-    """Explicit request: IDLE isn't a valid or valuable option -- a tribe always has
-    something worth doing. It must not appear in any era's unlocked actions or in
-    the pre-settlement action set, even though it still exists internally as the
-    safe no-op _resolve_action falls back to."""
+def test_idle_does_not_exist_anywhere_in_the_action_system():
+    """Explicit request: "IDLE needs to be removed altogether, we should never need
+    this." Not just absent from what a tribe is offered (that was already true) --
+    ACTION_REGISTRY itself no longer has an IDLE entry at all, and _resolve_action
+    can no longer return it under any circumstance."""
     from backend import config
+    from backend.actions import ACTION_REGISTRY
     from backend.eras import ERAS
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
@@ -863,6 +883,7 @@ def test_idle_is_never_offered_as_a_real_choice():
     _, ctx = sim._prepare_turn(tribe)
     assert "IDLE" not in ctx["available_actions"]
     assert "IDLE" not in config.PRE_SETTLEMENT_ACTIONS
+    assert "IDLE" not in ACTION_REGISTRY
     for era in ERAS:
         assert "IDLE" not in era.unlocks_actions
 
@@ -873,11 +894,14 @@ def test_resolve_action_exact_and_normalized_and_out_of_context_cases():
     assert _resolve_action("gather-food", avail) == ("GATHER_FOOD", None)
     assert _resolve_action("gather food", avail) == ("GATHER_FOOD", None)
     # A real, globally-known action that's simply not in this tribe's current
-    # available_actions (wrong era/context) -- not a parse failure.
-    assert _resolve_action("PLANT_CROP", avail) == ("IDLE", None)
-    # Nothing recognizable at all -- a genuine confusion case.
+    # available_actions (wrong era/context) -- not a parse failure. Falls back to
+    # the first available action rather than a no-op (see IDLE's removal).
+    assert _resolve_action("PLANT_CROP", avail) == (avail[0], None)
+    # Nothing recognizable at all -- a genuine confusion case. Still falls back to a
+    # real action (no fuzzy guess matches this gibberish, so the first available
+    # one), but the raw text is preserved so a correction nudge can fire.
     action, unresolved = _resolve_action("xyzzy nonsense", avail)
-    assert action == "IDLE"
+    assert action == avail[0]
     assert unresolved == "xyzzy nonsense"
 
 
@@ -887,10 +911,12 @@ def test_guess_intended_action_is_display_only_and_best_effort():
     assert _guess_intended_action("xyzzy nonsense", avail) is None
 
 
-def test_gibberish_action_text_falls_back_to_idle_and_records_confusion():
+def test_gibberish_action_text_falls_back_to_a_real_action_and_records_confusion():
     """A decision that matches nothing real at all -- not even a formatting variant
-    of a real action -- is a genuine parse failure. It still resolves to the safe
-    IDLE no-op mechanically, but is recorded distinctly from a deliberate choice so
+    of a real action -- is a genuine parse failure. It still resolves to a real,
+    currently-available action (never a no-op, see IDLE's removal) -- here, the
+    loose display-only fuzzy guess actually lands on GATHER_WATER given the raw
+    text's own wording -- and is recorded distinctly from a deliberate choice so
     _prepare_turn can surface a correction fact next cycle."""
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
@@ -898,7 +924,7 @@ def test_gibberish_action_text_falls_back_to_idle_and_records_confusion():
 
     sim._apply_turn(tribe, {"visual_action": "PONDER THE MEANING OF WATER"}, 50.0, ctx)
 
-    assert tribe.last_action == "IDLE"
+    assert tribe.last_action == "GATHER_WATER"
     assert tribe.last_confusion is not None
     assert tribe.last_confusion["raw"] == "PONDER THE MEANING OF WATER"
     assert "unrecognized decision text" in tribe.history[-1]
@@ -923,12 +949,13 @@ def test_confusion_nudge_appears_once_then_clears():
     cycle's facts after a genuine parse failure, then not repeat once addressed."""
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
-    tribe.last_confusion = {"raw": "PONDER THE MEANING OF WATER", "guess": None}
+    tribe.last_confusion = {"raw": "PONDER THE MEANING OF WATER", "guess": None, "fallback": "GATHER_FOOD"}
 
     request, ctx = sim._prepare_turn(tribe)
 
     assert "PONDER THE MEANING OF WATER" in request["prompt"]
     assert "did not match any valid action" in request["prompt"]
+    assert "GATHER_FOOD was taken instead" in request["prompt"]
     assert tribe.last_confusion is None  # cleared after being surfaced once
 
     request2, _ = sim._prepare_turn(tribe)
@@ -938,7 +965,7 @@ def test_confusion_nudge_appears_once_then_clears():
 def test_apply_turn_records_last_target_only_for_relocate():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
-    ctx = {"biome": "forest", "available_actions": ["RELOCATE", "IDLE"]}
+    ctx = {"biome": "forest", "available_actions": ["RELOCATE"]}
 
     sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [20, 30]}, 10.0, ctx)
 
@@ -950,9 +977,9 @@ def test_apply_turn_does_not_record_last_target_for_non_relocate_actions():
     create a phantom "journey" reminder for a trip the tribe never intended to take."""
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
-    ctx = {"biome": "forest", "available_actions": ["IDLE"]}
+    ctx = {"biome": "forest", "available_actions": ["GATHER_FOOD"]}
 
-    sim._apply_turn(tribe, {"visual_action": "IDLE", "target_vector": [20, 30]}, 10.0, ctx)
+    sim._apply_turn(tribe, {"visual_action": "GATHER_FOOD", "target_vector": [20, 30]}, 10.0, ctx)
 
     assert tribe.last_target is None
 
@@ -2715,6 +2742,87 @@ async def test_night_cycle_ignores_a_proposed_award_outside_the_real_categories(
     assert tribe.custom_awards == []
 
 
+async def _night_cycle_no_change(sim, tribe):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
+        return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": ""}
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+
+@run_async
+async def test_night_cycle_can_start_a_family_when_the_roll_succeeds_and_a_pair_is_eligible():
+    """Explicit request: "can we have some random breeding in the over-night cycle?"
+    -- an occasional chance encounter, independent of any specific celebration
+    milestone, using the same $0-cost eligibility rule every other breeding path
+    already uses."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.trophies.append({"name": "Growing Legacy", "chief": "Mira", "cycle": 1})
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        await _night_cycle_no_change(sim, tribe)
+
+    assert tribe.pending_birth == {"parent_a": "Ashgar", "parent_b": "Mira"}
+    assert any("in the quiet of the night" in e and "Ashgar" in e and "Mira" in e for e in tribe.history)
+
+
+@run_async
+async def test_night_cycle_breeding_roll_failing_starts_no_family():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.trophies.append({"name": "Growing Legacy", "chief": "Mira", "cycle": 1})
+
+    with mock.patch("backend.simulation.random.random", return_value=0.99):
+        await _night_cycle_no_change(sim, tribe)
+
+    assert tribe.pending_birth is None
+
+
+@run_async
+async def test_night_cycle_breeding_skipped_without_an_eligible_pair():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"  # only one named individual -- no trophy holder yet
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        await _night_cycle_no_change(sim, tribe)
+
+    assert tribe.pending_birth is None
+
+
+@run_async
+async def test_night_cycle_breeding_skipped_at_population_cap():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.trophies.append({"name": "Growing Legacy", "chief": "Mira", "cycle": 1})
+    tribe.population = config.POPULATION_GROWTH_CAP
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        await _night_cycle_no_change(sim, tribe)
+
+    assert tribe.pending_birth is None
+
+
+@run_async
+async def test_night_cycle_breeding_does_not_override_an_already_pending_birth():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.trophies.append({"name": "Growing Legacy", "chief": "Mira", "cycle": 1})
+    tribe.pending_birth = {"parent_a": "Someone", "parent_b": "Else"}
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        await _night_cycle_no_change(sim, tribe)
+
+    assert tribe.pending_birth == {"parent_a": "Someone", "parent_b": "Else"}
+
+
 def test_well_fed_and_growing_legacy_trophies_have_their_own_thresholds():
     from backend import config
 
@@ -3246,6 +3354,44 @@ def test_gather_food_retirement_is_not_re_archived_every_cycle():
     assert sum("GATHER_FOOD is retired" in e for e in tribe.history) == 1
 
 
+def test_gather_water_stays_available_before_settling_near_water():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True  # bypass the pre-settlement narrowing, unrelated gate
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_WATER" in ctx["available_actions"]
+    assert tribe.watering_retired is False
+
+
+def test_gather_water_retires_once_settled_near_water():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_WATER" not in ctx["available_actions"]
+    assert tribe.watering_retired is True
+    assert any("GATHER_WATER is retired" in e for e in tribe.history)
+
+
+def test_gather_water_retirement_is_not_re_archived_every_cycle():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+
+    sim._prepare_turn(tribe)
+    sim._prepare_turn(tribe)
+
+    assert sum("GATHER_WATER is retired" in e for e in tribe.history) == 1
+
+
 def test_gather_food_retirement_survives_fishing_being_learned_later_checked():
     """A tribe that already planted a farm plot before ever fishing shouldn't need to
     wait on fishing specifically -- either real experience retires it."""
@@ -3759,7 +3905,7 @@ async def test_step_skips_extinct_tribes_entirely():
     async def fake_run_batch(requests):
         # only the living tribe ("B") should ever be asked for a turn
         assert [r["id"] for r in requests] == ["tribe_1"]
-        return {"tribe_1": {"intent": {"visual_action": "IDLE"}, "latency_ms": 0.0}}
+        return {"tribe_1": {"intent": {"visual_action": "GATHER_FOOD"}, "latency_ms": 0.0}}
 
     with mock.patch.object(sim.scheduler, "run_batch", fake_run_batch):
         await sim.step()
@@ -3822,9 +3968,14 @@ async def test_step_does_not_run_the_night_cycle_for_a_chiefless_tribe():
 @run_async
 async def test_step_triggers_game_over_and_unloads_models_when_all_tribes_die():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    # Set directly rather than relying on a starvation tick: IDLE's removal means an
+    # unresolved turn now always applies a real fallback action (see
+    # Simulation._resolve_action), which could itself add resources back before
+    # upkeep runs -- this test only cares about the all-extinct game-over/unload
+    # behavior, not the starvation mechanic that used to get it there.
     for tribe in sim.tribes.values():
-        tribe.population = 1
-        tribe.food = 0  # starves to extinction on this tick's upkeep
+        tribe.population = 0
+        tribe.extinct = True
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
          mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
@@ -3833,6 +3984,62 @@ async def test_step_triggers_game_over_and_unloads_models_when_all_tribes_die():
     assert sim.game_over is True
     assert sim.status == "GAME OVER"
     assert {c.args[0] for c in mock_unload.call_args_list} == {"gemma2:2b", "qwen2.5:3b"}
+
+
+@run_async
+async def test_step_unloads_a_single_tribes_model_when_it_alone_goes_extinct():
+    """Explicit request: "when a tribe dies off are we unloading the model" --
+    previously only the ALL-tribes-extinct case (_trigger_game_over) ever unloaded
+    anything; a lone tribe going extinct while another tribe (on a different model)
+    plays on left its model resident in Ollama's VRAM for no reason."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    dying, surviving = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    dying.population = 1
+    dying.food = 0  # starves to extinction on this tick's upkeep
+
+    async def fake_run_batch(requests):
+        # SCOUT dispatches on the expedition's own separate supply -- "no drain on
+        # the tribe's stockpile" per its own docstring -- keeping the starvation path
+        # below deterministic regardless of IDLE's removal (a fallback action now
+        # always does something real, see _resolve_action). Both tribes are still
+        # pre-settlement here, so this also has to be one of config.
+        # PRE_SETTLEMENT_ACTIONS or _resolve_action would substitute something else.
+        return {
+            r["id"]: {"intent": {"visual_action": "SCOUT", "target_vector": [55, 55]}, "latency_ms": 0.0}
+            for r in requests
+        }
+
+    with mock.patch.object(sim.scheduler, "run_batch", fake_run_batch), \
+         mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
+        await sim.step()
+
+    assert dying.extinct is True
+    assert surviving.extinct is False
+    assert sim.game_over is False
+    mock_unload.assert_called_once_with("gemma2:2b")
+
+
+@run_async
+async def test_step_does_not_unload_a_model_still_used_by_a_surviving_tribe():
+    """Two tribes sharing the same model -- one going extinct shouldn't unload it out
+    from under the tribe still using it."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "gemma2:2b"}])
+    dying = sim.tribes["tribe_0"]
+    dying.population = 1
+    dying.food = 0
+
+    async def fake_run_batch(requests):
+        return {
+            r["id"]: {"intent": {"visual_action": "SCOUT", "target_vector": [55, 55]}, "latency_ms": 0.0}
+            for r in requests
+        }
+
+    with mock.patch.object(sim.scheduler, "run_batch", fake_run_batch), \
+         mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
+        await sim.step()
+
+    assert dying.extinct is True
+    mock_unload.assert_not_called()
 
 
 @run_async

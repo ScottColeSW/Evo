@@ -70,7 +70,7 @@ def _compass_direction(dx: float, dy: float) -> str:
 # already succeeds the overwhelming majority of the time, so this stays a cheap,
 # free-in-the-common-case ladder (no second LLM call): exact match, then a
 # normalization pass for case/spacing/hyphen variance, then a fuzzy close-match for
-# typos. Only a genuine miss falls through to IDLE, and even then a looser fuzzy pass
+# typos. Only a genuine miss falls through further, and even then a looser fuzzy pass
 # records a best-guess for the correction nudge (_prepare_turn's last_confusion
 # block) to name -- "Instant Enlightenment" for next cycle, not a forced action now.
 def _resolve_action(raw: str, available_actions: list[str]) -> tuple[str, str | None]:
@@ -79,8 +79,14 @@ def _resolve_action(raw: str, available_actions: list[str]) -> tuple[str, str | 
     real action name that just isn't unlocked/available right now (wrong era, not
     settled, etc.), which is a legitimate "can't do that here" case, not a parse
     failure, and gets no correction nudge. unresolved_raw is only the original raw
-    text when nothing recognizable was said at all; action_to_apply is "IDLE" as the
-    safe no-op fallback in both no-match cases."""
+    text when nothing recognizable was said at all.
+
+    Explicit request: "IDLE needs to be removed altogether, we should never need
+    this" -- action_to_apply is now always a real, currently-available action, never
+    a no-op; several seconds of real inference time doing nothing on a parse miss
+    wasted the turn for no reason. Falls back to the same fuzzy guess already used
+    for the correction fact (_guess_intended_action) at a looser cutoff, and only
+    picks the first available action if even that finds nothing."""
     raw = str(raw)
     if raw in available_actions:
         return raw, None
@@ -88,11 +94,16 @@ def _resolve_action(raw: str, available_actions: list[str]) -> tuple[str, str | 
     if normalized in available_actions:
         return normalized, None
     if normalized in ACTION_REGISTRY:
-        return "IDLE", None
+        # A real action name, just not unlocked/available right now -- a legitimate
+        # "can't do that here," not confusion, so no correction nudge fires.
+        return available_actions[0], None
     close = difflib.get_close_matches(normalized, available_actions, n=1, cutoff=0.6)
     if close:
         return close[0], None
-    return "IDLE", raw
+    guess = _guess_intended_action(normalized, available_actions)
+    if guess:
+        return guess, raw
+    return available_actions[0], raw
 
 
 def _guess_intended_action(raw: str, available_actions: list[str]) -> str | None:
@@ -152,8 +163,8 @@ class Tribe:
         self.last_action = ""
         # Set by _apply_turn whenever _resolve_action couldn't match the model's raw
         # visual_action text to anything real; surfaced once as a correction fact by
-        # _prepare_turn next cycle, then cleared. None means last cycle's answer was
-        # understood (whether or not IDLE was the actual chosen/resolved action).
+        # _prepare_turn next cycle, then cleared. {"raw", "guess", "fallback"} or None
+        # -- None means last cycle's answer was understood as a real action.
         self.last_confusion: dict | None = None
         self.last_target: list[int] | None = None
         self.history: list[str] = TribeHistory(name, event_log)
@@ -282,6 +293,10 @@ class Tribe:
         # See Simulation._prepare_turn's GATHER_FOOD retirement -- one-way, like
         # has_ever_settled, once a genuinely proven passive food source exists.
         self.foraging_retired = False
+        # Same one-way retirement shape as foraging_retired, for GATHER_WATER once
+        # _advance_water_supply's passive income exists (settled_near_water) -- see
+        # Simulation._prepare_turn.
+        self.watering_retired = False
         # City growth (Simulation._advance_city_growth): founded_city stays the
         # one-time era-advancement flag it always was; this is the separate, growing
         # count of buildings that appear afterward as population climbs.
@@ -350,6 +365,7 @@ class Tribe:
             "fishing_learned": self.fishing_learned,
             "cooking_learned": self.cooking_learned,
             "foraging_retired": self.foraging_retired,
+            "watering_retired": self.watering_retired,
             "last_harvest_cycle": self.last_harvest_cycle,
             "flock": self.flock,
             "flock_lineage": self.flock_lineage,
@@ -709,6 +725,20 @@ class Simulation:
                     f"for excellence in {proposed['category']} -- not yet awarded to anyone."
                 )
 
+        # See config.NIGHT_CYCLE_RANDOM_BREED_CHANCE -- a chance encounter independent
+        # of any specific celebration milestone, using the exact same eligibility rule
+        # and $0 cost every other breeding path already uses (_eligible_breeding_pair,
+        # BREED_FOOD_COST/WATER_COST).
+        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+            if random.random() < config.NIGHT_CYCLE_RANDOM_BREED_CHANCE:
+                pair = _eligible_breeding_pair(tribe)
+                if pair is not None:
+                    parent_a, parent_b = pair
+                    tribe.pending_birth = {"parent_a": parent_a, "parent_b": parent_b}
+                    tribe.history.append(
+                        f"in the quiet of the night, {parent_a} and {parent_b} decide to start a family together"
+                    )
+
     async def add_tribe(self, name: str, model: str, x: int | None = None, y: int | None = None) -> str | None:
         """Injects a new tribe into an already-running simulation. Returns an error
         message on failure (max tribes reached), or None on success. Runs the same
@@ -768,6 +798,12 @@ class Simulation:
     async def step(self) -> None:
         if self.paused or self.game_over:
             return
+        # See the per-tribe unload check near the end of this method -- a tribe can
+        # go extinct mid-cycle from several different sources (upkeep starvation, a
+        # raider attack, a lost raid...), so this snapshot is how "newly extinct
+        # this cycle" gets detected without hooking every one of those call sites
+        # individually.
+        previously_extinct = {tid for tid, tribe in self.tribes.items() if tribe.extinct}
         self.cycle += 1
         self.event_log.current_cycle = self.cycle
         self.translation.decay()
@@ -842,6 +878,20 @@ class Simulation:
             for tribe in self.tribes.values():
                 if not tribe.extinct and tribe.chief_name:
                     await self._run_night_cycle(tribe)
+
+        # Explicit request: "when a tribe dies off are we unloading the model" --
+        # previously only the ALL-tribes-extinct game-over case (_trigger_game_over)
+        # ever unloaded anything; a single tribe going extinct while others played on
+        # left its model sitting resident in Ollama's VRAM for no reason (nothing will
+        # ever call it again unless a fresh ADD_TRIBE reuses the same model choice).
+        # Only unloads a model no other still-living tribe is also using.
+        newly_extinct = {tid for tid, tribe in self.tribes.items() if tribe.extinct and tid not in previously_extinct}
+        if newly_extinct:
+            still_used = {t.model for t in self.tribes.values() if not t.extinct}
+            for tid in newly_extinct:
+                model = self.tribes[tid].model
+                if model not in still_used:
+                    await self.client.unload_model(model)
 
         if self.tribes and all(tribe.extinct for tribe in self.tribes.values()):
             await self._trigger_game_over()
@@ -1095,6 +1145,13 @@ class Simulation:
             # it can settle properly -- see config.PRE_SETTLEMENT_ACTIONS. A one-way
             # unlock (has_ever_settled never clears again) once it does.
             available_actions = sorted(set(unlocked_actions_through(tribe.era)) & set(config.PRE_SETTLEMENT_ACTIONS))
+            if not tribe.confirmed_water_sites:
+                # Explicit request: "RELOCATE should not show until they find water
+                # and the place to settle" -- relocating without a known destination
+                # wasn't meaningfully different from wandering at random. Forces
+                # SCOUT first: RELOCATE only becomes a real, informed choice once a
+                # scout has actually confirmed somewhere worth moving toward.
+                available_actions = [a for a in available_actions if a != "RELOCATE"]
         else:
             available_actions = sorted(unlocked_actions_through(tribe.era))
         if not settled:
@@ -1113,6 +1170,20 @@ class Simulation:
             # a whim. A real constraint on the choice set, not a scripted override of
             # whatever the tribe would otherwise decide.
             available_actions = [a for a in available_actions if a != "RELOCATE"]
+
+            # Live-run finding: the fact-only nudge ("manually gathering more here is
+            # no longer necessary," below) didn't stop models from still picking
+            # GATHER_WATER after settling near real water -- the same reflexive-default
+            # failure mode GATHER_FOOD showed before it got the same one-way
+            # retirement treatment. Explicit follow-up request confirmed doing the
+            # same thing here. One-way, like foraging_retired -- see Tribe.__init__.
+            if not tribe.watering_retired:
+                tribe.watering_retired = True
+                tribe.history.append(
+                    f"\U0001f4dc {tribe.name} no longer needs to manually gather water -- GATHER_WATER "
+                    "is retired now that settling here keeps it flowing in on its own"
+                )
+            available_actions = [a for a in available_actions if a != "GATHER_WATER"]
 
         if not settled_near_water:
             available_actions = [a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS", "GATHER_FISH")]
@@ -1148,10 +1219,12 @@ class Simulation:
         if tribe.last_confusion:
             raw = tribe.last_confusion["raw"]
             guess = tribe.last_confusion["guess"]
+            fallback = tribe.last_confusion["fallback"]
             guess_clause = f" You most likely meant {guess} -- consider it strongly now." if guess else ""
             visible_entities.append(
-                f"Last cycle's answer ('{raw}') did not match any valid action, so nothing happened. "
-                f"Your visual_action must be copied exactly from the list below, nothing else.{guess_clause}"
+                f"Last cycle's answer ('{raw}') did not match any valid action, so {fallback} was taken "
+                f"instead. Your visual_action must be copied exactly from the list below, nothing "
+                f"else.{guess_clause}"
             )
             tribe.last_confusion = None
         if not tribe.has_ever_settled:
@@ -1160,6 +1233,11 @@ class Simulation:
                 "actions are available right now. Settling properly, next to real water, will open up "
                 "building, hunting parties, trade, raiding, and starting families."
             )
+            if not tribe.confirmed_water_sites:
+                visible_entities.append(
+                    "RELOCATE is not available yet -- no real water source has been confirmed to move "
+                    "toward. Sending scouts out is how a real destination gets found."
+                )
         if not settled:
             visible_entities.append(
                 "Wood and stone are not yet being gathered here -- the tribe hasn't settled anywhere "
@@ -1382,11 +1460,14 @@ class Simulation:
         return request, {"biome": biome, "available_actions": available_actions}
 
     def _apply_turn(self, tribe: Tribe, intent: dict, latency_ms: float, ctx: dict) -> None:
-        raw_action = intent.get("visual_action", "IDLE")
+        raw_action = intent.get("visual_action", "(no action provided)")
         action, unresolved_raw = _resolve_action(raw_action, ctx["available_actions"])
         if unresolved_raw is not None:
             guess = _guess_intended_action(unresolved_raw, ctx["available_actions"])
-            tribe.last_confusion = {"raw": unresolved_raw[:80], "guess": guess}
+            # Records the actual fallback taken (action) alongside raw/guess so next
+            # cycle's correction fact can say what really happened, since IDLE's
+            # removal means it's never accurate to say "nothing happened" anymore.
+            tribe.last_confusion = {"raw": unresolved_raw[:80], "guess": guess, "fallback": action}
         else:
             tribe.last_confusion = None
         broadcast = intent.get("synthetic_language_broadcast") or ""
@@ -1434,9 +1515,8 @@ class Simulation:
             rationale = rationale[:240].rstrip() + "…"
         entry = f"[{latency_ms:.0f}ms] {action}: {rationale}"
         if unresolved_raw is not None:
-            # Distinguishes a genuine parse miss from a deliberate IDLE in the
-            # chronicle -- both apply the same no-op mechanically, but only one of
-            # them is the tribe actually choosing to rest.
+            # Marks the chronicle entry as a fallback substitution (action was
+            # chosen by _resolve_action, not the tribe) rather than a real decision.
             entry += f" (unrecognized decision text: '{unresolved_raw[:60]}')"
         if hazard_note:
             entry += f" | {hazard_note}"
@@ -1879,8 +1959,9 @@ class Simulation:
             )
 
     def _apply_action(self, tribe: Tribe, action: str, biome: str, target: tuple[int, int]) -> str | None:
-        handler = ACTION_REGISTRY.get(action, ACTION_REGISTRY["IDLE"])
-        return handler(self, tribe, biome, target)
+        # action always comes from _resolve_action, which now guarantees a real,
+        # currently-available action -- no IDLE fallback needed here anymore.
+        return ACTION_REGISTRY[action](self, tribe, biome, target)
 
     def _apply_upkeep(self, tribe: Tribe) -> None:
         """Larger tribes cost more to sustain each tick. Left unpaid, someone dies --

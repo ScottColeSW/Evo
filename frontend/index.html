@@ -194,6 +194,15 @@ let tribeCount = 0;
 let socket = null;
 let latestState = null;
 let animFrame = 0;
+// Bug report (live playtest): a raid resolving flashed by "but didn't do anything I
+// can see... one long line and don't stay around." Root cause: recent_encounters is
+// cleared and rebuilt fresh every backend cycle (Simulation.step's reset, matching
+// lightning_strike's own one-tick lifetime), so the map label was only ever on
+// screen for a single ~1s tick -- effectively unreadable. Held here client-side with
+// its own expiry so a raid/strike marker actually stays legible, independent of how
+// long the backend's own copy lives.
+let heldEncounters = [];
+const ENCOUNTER_DISPLAY_MS = 4000;
 // Every thought/speech bubble drawn so far this frame ({x, y, w, h} in canvas pixels),
 // so a second tribe's bubble can be nudged clear of one that already claimed the same
 // space -- see claimBubbleSlot, reset once per frame in drawFrame.
@@ -269,6 +278,7 @@ document.getElementById("btn-start").addEventListener("click", () => {
   lastExtinctByTribe = {};
   lastChiefByTribe = {};
   lastRaiderAttackCycleByTribe = {};
+  heldEncounters = [];
   firstStateReceived = false;
   showSpawnSplash();
 
@@ -279,6 +289,11 @@ document.getElementById("btn-start").addEventListener("click", () => {
   socket.onopen = () => socket.send(JSON.stringify({ command: "START", tribes, immortality_cycles: immortalCycles }));
   socket.onmessage = (event) => {
     latestState = JSON.parse(event.data);
+    // See heldEncounters above -- the backend's own copy is empty on every cycle
+    // except the one it just happened on, so anything present here is always new.
+    (latestState.recent_encounters || []).forEach(e => {
+      heldEncounters.push({ ...e, expiresAt: Date.now() + ENCOUNTER_DISPLAY_MS });
+    });
     if (!firstStateReceived) {
       firstStateReceived = true;
       hideSpawnSplash();
@@ -1608,17 +1623,21 @@ function drawDayNightOverlay(cycle) {
 // next real state update anyway (each cycle is several seconds of real inference time).
 function drawWeather() {
   if (latestState.storm_cloud) {
+    // Explicit request: "I'd like to see the storm cloud bigger by 3x" -- a single
+    // scale factor on top of every dimension below rather than hand-tuning each
+    // radius/offset separately, so the puffs' relative layout stays proportional.
+    const STORM_SCALE = 3;
     const { x, y } = latestState.storm_cloud;
     const cx = x * TILE + TILE / 2, cy = y * TILE + TILE / 2;
-    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, TILE * 4);
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, TILE * 4 * STORM_SCALE);
     glow.addColorStop(0, "rgba(120,130,150,0.5)");
     glow.addColorStop(1, "rgba(120,130,150,0)");
     ctx.fillStyle = glow;
-    ctx.beginPath(); ctx.arc(cx, cy, TILE * 4, 0, 2 * Math.PI); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, TILE * 4 * STORM_SCALE, 0, 2 * Math.PI); ctx.fill();
     ctx.fillStyle = "rgba(148,163,184,0.5)";
     [[-0.5, 0], [0.3, -0.2], [0.5, 0.15], [-0.1, 0.25]].forEach(([ox, oy]) => {
       ctx.beginPath();
-      ctx.arc(cx + ox * TILE * 3, cy + oy * TILE * 3, TILE * 1.6, 0, 2 * Math.PI);
+      ctx.arc(cx + ox * TILE * 3 * STORM_SCALE, cy + oy * TILE * 3 * STORM_SCALE, TILE * 1.6 * STORM_SCALE, 0, 2 * Math.PI);
       ctx.fill();
     });
   }
@@ -1678,9 +1697,17 @@ function drawFrame() {
     });
 
     drawLandmarks();
-    (latestState.recent_encounters || []).forEach(e => {
+    heldEncounters = heldEncounters.filter(e => e.expiresAt > Date.now());
+    heldEncounters.forEach(e => {
       const cx = e.x * TILE + TILE / 2;
       const cy = e.y * TILE + TILE / 2 - TILE * 1.2;
+      ctx.font = `bold ${Math.max(8, TILE * 0.35)}px sans-serif`;
+      const labelWidth = ctx.measureText(e.label).width;
+      // A readable backing panel, same idea as the thought bubble -- plain fillText
+      // straight onto busy terrain is exactly how this became "one long line and
+      // don't stay around" (unreadable, no contrast) in the first place.
+      ctx.fillStyle = "rgba(18,22,42,0.85)";
+      ctx.fillRect(cx - labelWidth / 2 - 5, cy + TILE * 0.3, labelWidth + 10, TILE * 0.5);
       ctx.font = `${Math.max(10, TILE * 0.9)}px sans-serif`;
       ctx.textAlign = "center";
       ctx.fillText(e.kind === "raider_attack" ? "⚔️" : "\u{1F3F4}", cx, cy);
