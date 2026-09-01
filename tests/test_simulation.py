@@ -106,6 +106,25 @@ def test_broadcast_not_overheard_beyond_hearing_radius():
     assert "overheard" not in request["prompt"]
 
 
+def test_declared_stance_is_surfaced_as_a_fact_regardless_of_distance():
+    """Explicit follow-up from the Agentic Evolution spec reconciliation: a declared
+    geopolitical stance is known policy, not something that needs proximity to
+    remember -- unlike overheard broadcasts/sightings, which do."""
+    sim = Simulation(
+        [
+            {"name": "Forest Tribe", "model": "gemma2:2b"},
+            {"name": "Mountain Tribe", "model": "qwen2.5:3b"},
+        ]
+    )
+    forest = sim.tribes["tribe_0"]
+    mountain = sim.tribes["tribe_1"]  # default spawns are far apart (different biomes)
+    forest.stance_toward["tribe_1"] = "WAR"
+
+    request, _ctx = sim._prepare_turn(forest)
+
+    assert f"Currently war with {mountain.name}." in request["prompt"]
+
+
 def test_prepare_turn_caches_wellbeing_on_the_tribe_and_injects_its_summary_into_the_prompt():
     """See backend/wellbeing.py -- per explicit design decision, the Maslow's-ladder
     read isn't viewer-only: _prepare_turn must both cache it on the tribe (so the

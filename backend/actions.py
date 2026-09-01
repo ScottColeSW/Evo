@@ -627,6 +627,61 @@ def _trade(sim, tribe, biome, target):
     return _execute_trade(sim, tribe, partner)
 
 
+def _nearest_rival(sim, tribe, x, y):
+    """Unlike TRADE/RAID's proximity search, a geopolitical stance is a policy
+    declaration, not a physical encounter -- no radius cutoff, just whichever real
+    rival is closest to target_vector. Returns None only if no living rival exists
+    at all."""
+    best, best_dist = None, None
+    for other in sim.tribes.values():
+        if other.id == tribe.id or other.extinct:
+            continue
+        dist = (other.x - x) ** 2 + (other.y - y) ** 2
+        if best is None or dist < best_dist:
+            best, best_dist = other, dist
+    return best
+
+
+def _declare_alliance(sim, tribe, biome, target):
+    """Explicit follow-up from the Agentic Evolution spec reconciliation (Age 4's
+    Declare_Geopolitical_Posture): a persistent, per-rival relationship a tribe can
+    actually declare, unlike instant RAID/TRADE which resolve once and leave no
+    lasting record of how two tribes feel about each other. Symmetric -- a real
+    declaration both sides now live under, not a private opinion only one side
+    holds, since only one side ever gets to "choose" this in a given cycle. Also
+    doubles as suing for peace out of a declared war (the same action either way,
+    simpler than a separate CEASEFIRE verb for what's mechanically the same state
+    change). State-only: this doesn't itself change RAID/TRADE odds, just gives the
+    tribe (and its rival) a real, persistent fact to reason from."""
+    tx, ty = target
+    rival = _nearest_rival(sim, tribe, tx, ty)
+    if rival is None:
+        return "no rival tribe exists to declare a stance toward"
+    was_war = tribe.stance_toward.get(rival.id) == "WAR"
+    tribe.stance_toward[rival.id] = "ALLIED"
+    rival.stance_toward[tribe.id] = "ALLIED"
+    sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.NEGOTIATE_PRIDE_MAGNITUDE, config.NEGOTIATE_PRIDE_RADIUS)
+    sim.trauma.radiate_event_wave(rival.x, rival.y, config.NEGOTIATE_PRIDE_MAGNITUDE, config.NEGOTIATE_PRIDE_RADIUS)
+    if was_war:
+        return f"{tribe.name} sues for peace with {rival.name} -- the war ends, both now allied"
+    return f"{tribe.name} declares an alliance with {rival.name}"
+
+
+def _declare_war(sim, tribe, biome, target):
+    """The hostile counterpart to _declare_alliance -- same symmetric, state-only
+    shape."""
+    tx, ty = target
+    rival = _nearest_rival(sim, tribe, tx, ty)
+    if rival is None:
+        return "no rival tribe exists to declare a stance toward"
+    if tribe.stance_toward.get(rival.id) == "WAR":
+        return f"{tribe.name} is already at war with {rival.name}"
+    tribe.stance_toward[rival.id] = "WAR"
+    rival.stance_toward[tribe.id] = "WAR"
+    sim.trauma.radiate_event_wave(rival.x, rival.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
+    return f"{tribe.name} declares war on {rival.name}"
+
+
 def _send_trade_emissary(sim, tribe, biome, target):
     """A deliberate, patient search for a rival tribe to trade with -- unlike TRADE
     (instant, only works if a rival already happens to be within
@@ -686,6 +741,8 @@ ACTION_REGISTRY = {
     "RAID": _raid,
     "STRIKE_RAIDER_CAMP": _strike_raider_camp,
     "TRADE": _trade,
+    "DECLARE_ALLIANCE": _declare_alliance,
+    "DECLARE_WAR": _declare_war,
     "SEND_TRADE_EMISSARY": _send_trade_emissary,
 }
 
@@ -716,5 +773,7 @@ ACTION_DESCRIPTIONS = {
     "RAID": "Attempt to raid a rival tribe if one is near target_vector. A win steals some of their stockpile but still costs you people; a loss costs you more. Does nothing if no rival is there.",
     "STRIKE_RAIDER_CAMP": "Attack a raider camp your scouts have already found (see your raider sighting reports) -- only possible once you know where one is. Success destroys it and recovers some food; failure costs a life and leaves the camp standing.",
     "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. Does nothing if no rival is there.",
+    "DECLARE_ALLIANCE": "Declare a lasting alliance with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember, not a one-time exchange. Also ends a war you'd previously declared with that same rival. Does nothing if no rival tribe exists.",
+    "DECLARE_WAR": "Declare a lasting state of war with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember. Does not attack them directly (see RAID for that); this only sets how the two tribes now stand. Does nothing if no rival tribe exists, or if already at war with them.",
     "SEND_TRADE_EMISSARY": "Dispatch an emissary toward target_vector to actively search for a rival tribe to trade with -- unlike TRADE, this doesn't need one nearby right now, only somewhere along the way over the next few days. Shares the same expedition capacity as SCOUT and HUNTING_PARTY. Finding a partner exchanges goods immediately; the emissary still has to walk home to report what happened.",
 }

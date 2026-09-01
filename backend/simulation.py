@@ -194,6 +194,11 @@ class Tribe:
         self.raids_lost = 0
         self.raids_defended = 0
         self.trades_completed = 0
+        # See actions.py._declare_alliance/_declare_war -- keyed by the other
+        # tribe's id, value in {"ALLIED", "WAR"}. Absent = implicitly NEUTRAL.
+        # Symmetric: set on both tribes at once, since only one side ever "chooses"
+        # this in a given cycle but the declaration is real for both.
+        self.stance_toward: dict[str, str] = {}
         # Credited to whichever chief is in power the moment each is first earned --
         # see Simulation._check_chief_trophies. [{"name", "chief", "cycle"}, ...]
         self.trophies: list[dict] = []
@@ -400,6 +405,7 @@ class Tribe:
             "raider_sightings": self.raider_sightings,
             "last_raider_attack_cycle": self.last_raider_attack_cycle,
             "raiders_approaching": self.raiders_approaching,
+            "stance_toward": self.stance_toward,
             "wellbeing": self.wellbeing,
             "next_era": next_era_info,
             "expeditions": [
@@ -1069,6 +1075,15 @@ class Simulation:
                 visible_entities.append(
                     f"overheard: {other.name} broadcasted '{other.last_broadcast}' while performing {other.last_action}"
                 )
+
+        # Explicit follow-up from the Agentic Evolution spec reconciliation (Age 4's
+        # Declare_Geopolitical_Posture): a declared stance is known policy, not
+        # something that needs proximity to remember -- surfaced regardless of
+        # distance, unlike the broadcast/sighting facts above.
+        for other_id, stance in tribe.stance_toward.items():
+            other = self.tribes.get(other_id)
+            if other is not None and not other.extinct:
+                visible_entities.append(f"Currently {stance.lower()} with {other.name}.")
         # The spectator UI's own "Path to the Next Era" panel already computes exactly
         # this (Tribe.to_dict's next_era block) -- it just never made it back into the
         # tribe's own reasoning. Naming the *specific* still-short resource(s) is the

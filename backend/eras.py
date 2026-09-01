@@ -92,7 +92,7 @@ ERAS: tuple[Era, ...] = (
         advancement_cost={"wood": 30, "stone": 30, "water": 20},
         unlocks_actions=(
             "CONSTRUCT_WALL", "PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "STRIKE_RAIDER_CAMP",
-            "BUILD_LONG_HOUSE",
+            "BUILD_LONG_HOUSE", "DECLARE_ALLIANCE", "DECLARE_WAR",
         ),
         announcement="{tribe} has forged the Tribal Synapse -- true society begins!",
     ),

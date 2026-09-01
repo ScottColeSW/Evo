@@ -837,6 +837,84 @@ def test_cook_food_unlocked_from_primitive_dawn():
     assert "COOK_FOOD" in unlocked_actions_through("primitive_dawn")
 
 
+def test_declare_alliance_sets_symmetric_stance():
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    result = ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
+
+    assert a.stance_toward["tribe_1"] == "ALLIED"
+    assert b.stance_toward["tribe_0"] == "ALLIED"
+    assert "declares an alliance" in result
+
+
+def test_declare_war_sets_symmetric_stance():
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    result = ACTION_REGISTRY["DECLARE_WAR"](sim, a, "plains", (51, 51))
+
+    assert a.stance_toward["tribe_1"] == "WAR"
+    assert b.stance_toward["tribe_0"] == "WAR"
+    assert "declares war" in result
+
+
+def test_declare_war_is_a_no_op_if_already_at_war():
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.stance_toward["tribe_1"] = "WAR"
+    b.stance_toward["tribe_0"] = "WAR"
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    result = ACTION_REGISTRY["DECLARE_WAR"](sim, a, "plains", (51, 51))
+
+    assert "already at war" in result
+
+
+def test_declare_alliance_ends_a_previously_declared_war():
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.stance_toward["tribe_1"] = "WAR"
+    b.stance_toward["tribe_0"] = "WAR"
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    result = ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
+
+    assert a.stance_toward["tribe_1"] == "ALLIED"
+    assert b.stance_toward["tribe_0"] == "ALLIED"
+    assert "sues for peace" in result
+
+
+def test_declare_alliance_with_no_rival_tribe():
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": a}
+
+    result = ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
+
+    assert "no rival tribe exists" in result
+    assert a.stance_toward == {}
+
+
+def test_declare_stance_picks_the_nearest_rival_not_the_first():
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    far = Tribe("tribe_1", "Far Tribe", "gemma2:2b", 90, 90, "#fb923c")
+    near = Tribe("tribe_2", "Near Tribe", "gemma2:2b", 52, 52, "#34d399")
+    sim.tribes = {"tribe_0": a, "tribe_1": far, "tribe_2": near}
+
+    ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (52, 52))
+
+    assert "tribe_2" in a.stance_toward
+    assert "tribe_1" not in a.stance_toward
+
+
 def test_raid_ignores_extinct_tribes_and_self():
     sim = _bare_simulation()
     attacker = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")

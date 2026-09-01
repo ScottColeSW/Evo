@@ -437,6 +437,15 @@ TRADE_GIFT_FRACTION = 0.15
 TRADE_PRIDE_MAGNITUDE = 0.3
 TRADE_PRIDE_RADIUS = 4
 
+# DECLARE_ALLIANCE/DECLARE_WAR (backend/actions.py): a persistent, per-rival
+# geopolitical stance (Age 4's Declare_Geopolitical_Posture from the Agentic
+# Evolution spec reconciliation) -- unlike instant RAID/TRADE, this leaves a real,
+# lasting record of how two tribes stand, surfaced back as a fact each tribe can
+# reason from. No proximity gate (see actions.py._nearest_rival) -- a policy
+# declaration isn't a physical encounter the way RAID/TRADE are.
+NEGOTIATE_PRIDE_MAGNITUDE = 0.3
+NEGOTIATE_PRIDE_RADIUS = 4
+
 # SEND_TRADE_EMISSARY (backend/actions.py): TRADE itself is instant and only works if
 # a rival already happens to be within TRADE_PROXIMITY_RADIUS right now -- a tribe can
 # never deliberately reach out to a rival it merely knows the rough direction of. This
