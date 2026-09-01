@@ -279,6 +279,8 @@ document.getElementById("btn-start").addEventListener("click", () => {
   lastChiefByTribe = {};
   lastRaiderAttackCycleByTribe = {};
   heldEncounters = [];
+  previousLandmarkKeys = {};
+  newLandmarks = [];
   firstStateReceived = false;
   showSpawnSplash();
 
@@ -295,6 +297,7 @@ document.getElementById("btn-start").addEventListener("click", () => {
       const now = Date.now();
       heldEncounters.push({ ...e, startedAt: now, expiresAt: now + ENCOUNTER_DISPLAY_MS });
     });
+    trackNewLandmarks(latestState);
     if (!firstStateReceived) {
       firstStateReceived = true;
       hideSpawnSplash();
@@ -1314,12 +1317,43 @@ function hexToRgb(hex) {
 // offset nudges same-tile markers apart (a forest terrain report logs both a lumber and
 // a wildlife landmark at the identical coordinate) so they don't fully overlap.
 const LANDMARK_TYPES = [
-  ["confirmed_water_sites", "\u{1F4A7}", [0, 0]],       // droplet, centered
-  ["lumber_sites", "\u{1F332}", [-0.55, -0.4]],          // evergreen, upper-left
-  ["wildlife_sites", "\u{1F43E}", [0.55, -0.4]],         // paw prints, upper-right
-  ["quarry_sites", "⛏️", [0, 0.55]],           // pick, lower-center
-  ["raider_sightings", "\u{2694}\u{FE0F}", [-0.55, 0.55]], // crossed swords, lower-left
+  ["confirmed_water_sites", "\u{1F4A7}", [0, 0], "Water"],       // droplet, centered
+  ["lumber_sites", "\u{1F332}", [-0.55, -0.4], "Timber"],          // evergreen, upper-left
+  ["wildlife_sites", "\u{1F43E}", [0.55, -0.4], "Game"],         // paw prints, upper-right
+  ["quarry_sites", "⛏️", [0, 0.55], "Quarry"],           // pick, lower-center
+  ["raider_sightings", "\u{2694}\u{FE0F}", [-0.55, 0.55], "Raiders"], // crossed swords, lower-left
 ];
+
+// Explicit request: "we have to name the 'discovery' when it is celebrated so
+// viewers can relate it to the landmark on the map... I need to see them." A
+// landmark's own type was only ever legible from its bare emoji, and nothing tied
+// a just-celebrated discovery banner to which pin on the map it actually was.
+// Diffed here (comparing each tribe's site lists against their previous state on
+// every message) rather than backend-tracked, since the site lists themselves
+// carry no discovery timestamp -- a newly-appeared (x,y) this message is, by
+// construction, new since the last one.
+let previousLandmarkKeys = {}; // tribeId -> field -> Set("x,y")
+let newLandmarks = []; // {x, y, label, color, expiresAt}
+const LANDMARK_HIGHLIGHT_MS = 6000;
+
+function trackNewLandmarks(state) {
+  Object.entries(state.tribes || {}).forEach(([tid, t]) => {
+    if (!previousLandmarkKeys[tid]) previousLandmarkKeys[tid] = {};
+    LANDMARK_TYPES.forEach(([field, , , label]) => {
+      const prevSet = previousLandmarkKeys[tid][field];
+      const currentList = t[field] || [];
+      const currentSet = new Set(currentList.map(([x, y]) => `${x},${y}`));
+      if (prevSet) {
+        currentList.forEach(([x, y]) => {
+          if (!prevSet.has(`${x},${y}`)) {
+            newLandmarks.push({ x, y, label, color: t.color, expiresAt: Date.now() + LANDMARK_HIGHLIGHT_MS });
+          }
+        });
+      }
+      previousLandmarkKeys[tid][field] = currentSet;
+    });
+  });
+}
 
 function drawLandmarks() {
   // Bug report (live playtest): "I'm not sure what landmarks are on the map, I'd
@@ -1331,7 +1365,7 @@ function drawLandmarks() {
   // (not translucent) backing disc and a heavier ring so a landmark reads as a real,
   // deliberate marker at a glance, not a stray pixel.
   Object.values(latestState.tribes || {}).forEach(t => {
-    LANDMARK_TYPES.forEach(([field, emoji, [ox, oy]]) => {
+    LANDMARK_TYPES.forEach(([field, emoji, [ox, oy], label]) => {
       (t[field] || []).forEach(([x, y]) => {
         const cx = x * TILE + TILE / 2 + ox * TILE;
         const cy = y * TILE + TILE / 2 + oy * TILE;
@@ -1347,8 +1381,41 @@ function drawLandmarks() {
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(emoji, cx, cy + 1);
+
+        // A persistent, always-on name tag -- not just legible in the instant a
+        // discovery is celebrated, so a landmark found long ago still identifies
+        // itself to a viewer looking at the map cold.
+        ctx.font = `bold ${Math.max(9, TILE * 0.5)}px sans-serif`;
+        const tagWidth = ctx.measureText(label).width + 6;
+        const tagY = cy + r + 2;
+        ctx.fillStyle = "rgba(10,14,26,0.85)";
+        ctx.fillRect(cx - tagWidth / 2, tagY, tagWidth, Math.max(11, TILE * 0.6));
+        ctx.fillStyle = "#e2e8f0";
+        ctx.textBaseline = "top";
+        ctx.fillText(label, cx, tagY + 1);
       });
     });
+  });
+
+  const now = Date.now();
+  newLandmarks = newLandmarks.filter(n => n.expiresAt > now);
+  newLandmarks.forEach(n => {
+    const cx = n.x * TILE + TILE / 2;
+    const cy = n.y * TILE + TILE / 2;
+    const progress = 1 - (n.expiresAt - now) / LANDMARK_HIGHLIGHT_MS;
+    // A pulsing ring that expands and fades over its own hold duration -- the same
+    // "here, right here" callout a raid marker gets, so a fresh discovery is
+    // impossible to miss right when its celebration banner names it.
+    const pulse = (progress * 3) % 1;
+    const ringRadius = TILE * 1.2 + pulse * TILE * 1.8;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, (1 - pulse) * (1 - progress * 0.5));
+    ctx.strokeStyle = n.color;
+    ctx.lineWidth = Math.max(1.5, TILE * 0.15);
+    ctx.beginPath();
+    ctx.arc(cx, cy, ringRadius, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.restore();
   });
 }
 
