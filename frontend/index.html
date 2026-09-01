@@ -1505,7 +1505,7 @@ function drawSettlementWall(t) {
   ctx.globalAlpha = 0.35 + 0.65 * (progress / 100);
   if (progress < 100) ctx.setLineDash([4, 3]);
   for (let i = 0; i < layerCount; i++) {
-    const layerHalf = half + i * TILE * 1.6;
+    const layerHalf = half + i * WALL_LAYER_SPACING;
     ctx.strokeRect(cx - layerHalf, cy - layerHalf, layerHalf * 2, layerHalf * 2);
   }
   ctx.restore();
@@ -1554,6 +1554,13 @@ function drawFarmPlot(t) {
 // ring/square/partial square," not all buildings bunched at one fixed radius
 // regardless of how many wall layers exist.
 const BUILDINGS_PER_LAYER = 2;
+// Explicit feedback: "when they built walls, they didn't leave a lot of room
+// for growth between the sections. it needs to be more space." Shared by
+// drawSettlementWall (ring spacing) and drawCityBuildings (housing radius) so
+// the buildings always sit inside their own ring band, never touching the next
+// one out -- was TILE * 1.6, too tight for a ring's housing to read as its own
+// distinct band once a couple of buildings occupied it.
+const WALL_LAYER_SPACING = TILE * 2.4;
 
 function drawCityBuildings(t) {
   if (t.city_buildings <= 0) return;
@@ -1571,7 +1578,7 @@ function drawCityBuildings(t) {
     const layer = Math.floor(i / BUILDINGS_PER_LAYER);
     const posInLayer = i % BUILDINGS_PER_LAYER;
     const countInLayer = Math.min(BUILDINGS_PER_LAYER, t.city_buildings - layer * BUILDINGS_PER_LAYER);
-    const layerWallHalf = wallHalf + layer * TILE * 1.6;
+    const layerWallHalf = wallHalf + layer * WALL_LAYER_SPACING;
     const housingRadius = Math.max(10, layerWallHalf - TILE * 0.9);
     const angle = (posInLayer / countInLayer) * Math.PI * 2 + layer * 0.6;
     const bx = baseX + Math.cos(angle) * housingRadius;
