@@ -2072,7 +2072,25 @@ class Simulation:
             # otherwise report from the same trip. Once genuinely settled near
             # water, a party now passes water by and keeps searching, the same
             # as if there were none nearby at all.
-            sensed = None if self._is_settled_near_water(tribe) else self._sense_nearby_water(nx, ny, config.WATER_SENSING_RADIUS)
+            #
+            # Bug report: "clearly they see water, the scout walked right
+            # through it." A single EXPEDITION_SPEED step can cover more
+            # ground (up to 10 tiles) than WATER_SENSING_RADIUS (6) -- sensing
+            # only at the step's final landing tile let a party leap clean
+            # over a river narrower than the step itself without ever
+            # registering it. Now checks every whole tile actually crossed
+            # this step (_interpolated_path, the same helper the resource-
+            # trail mechanic uses) -- in reverse, destination first, so an
+            # arrival directly on/right next to water is still what's
+            # reported (preserving the existing on-tile drowning-risk
+            # mechanic below), falling back to an earlier point along the
+            # same step only if the destination itself didn't sense anything.
+            sensed = None
+            if not self._is_settled_near_water(tribe):
+                for ix, iy in reversed(_interpolated_path(px, py, nx, ny)):
+                    sensed = self._sense_nearby_water(ix, iy, config.WATER_SENSING_RADIUS)
+                    if sensed:
+                        break
             if sensed:
                 wx, wy = sensed
                 on_water_now = (wx, wy) == (nx, ny)

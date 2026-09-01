@@ -1621,6 +1621,36 @@ def test_expedition_can_drown_reaching_river_water_but_still_reports_the_find():
     assert any("drowned one of our own" in m["text"] for m in tribe.memory.entries)
 
 
+def test_expedition_senses_water_crossed_mid_step_even_if_the_landing_tile_misses_it():
+    """Bug report: "clearly they see water, the scout walked right through
+    it." A single EXPEDITION_SPEED step (up to 10 tiles) can be wider than
+    WATER_SENSING_RADIUS (6) -- sensing only at the final landing tile let a
+    party leap clean over water narrower than the step itself. Mocks
+    terrain_aware_step directly so this doesn't depend on exactly where the
+    procedural river happens to run: (40,25) and (40,50) are both real,
+    confirmed-dry tiles more than WATER_SENSING_RADIUS from the river, but the
+    straight line between them crosses it (see backend.world._river_center_y)
+    -- before this fix, only the destination (40,50) would ever be checked,
+    and this trip would have come home with nothing found."""
+    from backend.world import biome_at
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 40, 25, "#c084fc")
+    tribe.expeditions = [{
+        "pos": [40, 25], "origin": [40, 25], "target": [40, 60],
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+
+    with mock.patch("backend.physics.terrain_aware_step", return_value=(40, 50)):
+        sim._advance_expeditions(tribe)
+
+    found = tribe.expeditions[0]["found"]
+    assert found is not None
+    assert biome_at(*found) in ("river", "lake")
+
+
 def test_expedition_reaching_its_target_without_water_pushes_onward_if_days_remain():
     """Regression test: a model's own target_vector is usually close (one
     EXPEDITION_SPEED step away), so treating "arrived at the declared spot" as "search
