@@ -1934,7 +1934,17 @@ class Simulation:
             if exp.get("kind") == "trade":
                 self._advance_trade_emissary_outbound(tribe, exp, scout)
                 return False
-            sensed = self._sense_nearby_water(nx, ny, config.WATER_SENSING_RADIUS)
+            # Explicit request: "the find water scouting needs to be removed
+            # from available actions after they Settle. The scouts can still
+            # explore and report sightings and discoveries." Water-sensing used
+            # to unconditionally cut every expedition short the moment it
+            # passed near any water, even for an already-settled tribe with
+            # nothing left to gain from finding more -- crowding out the
+            # lumber/wildlife/quarry/mine/raider discoveries a scout could
+            # otherwise report from the same trip. Once genuinely settled near
+            # water, a party now passes water by and keeps searching, the same
+            # as if there were none nearby at all.
+            sensed = None if self._is_settled_near_water(tribe) else self._sense_nearby_water(nx, ny, config.WATER_SENSING_RADIUS)
             if sensed:
                 wx, wy = sensed
                 on_water_now = (wx, wy) == (nx, ny)

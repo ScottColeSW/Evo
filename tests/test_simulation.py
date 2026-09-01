@@ -1393,6 +1393,34 @@ def test_expedition_senses_nearby_water_without_stepping_onto_it():
     assert any("hears water nearby" in entry for entry in tribe.history)
 
 
+def test_settled_tribe_scouts_no_longer_turn_back_for_more_water():
+    """Explicit request: "the find water scouting needs to be removed from
+    available actions after they Settle. The scouts can still explore and
+    report sightings and discoveries." Once already settled near water,
+    sensing more water nearby should no longer cut a scouting trip short --
+    the same step should instead fall through to the ordinary
+    arrived-at-target/push-onward handling, the same as if no water were
+    nearby at all."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 25, 44, "#c084fc")
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.confirmed_water_sites = [(25, 44)]  # already settled near water, right here
+    tribe.expeditions = [{
+        "pos": [25, 44], "origin": [25, 44], "target": [25, 65],  # the lake, far off yet
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+
+    sim._advance_expeditions(tribe)
+
+    assert tribe.expeditions[0]["phase"] == "outbound"  # kept going, not turned back for water
+    assert tribe.expeditions[0]["found"] is None
+    assert not any("hears water nearby" in entry for entry in tribe.history)
+
+
 def test_expedition_can_drown_reaching_river_water_but_still_reports_the_find():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 40, 30, "#c084fc")
