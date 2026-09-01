@@ -16,6 +16,17 @@ MAX_TRIBES = 4
 SETTLEMENT_STABILITY_CYCLES = 10
 FARMABLE_BIOMES = ("plains", "river", "lake")
 
+# Explicit request: "the proposed settlement sites, water found, are making it
+# hard to Settle. I think we can make this an initial territory with a bounding
+# area around it that is larger than the Discovery." A single confirmed water
+# tile was too fragile a RELOCATE target -- landing one tile off onto
+# non-qualifying ground (a riverbank's cliff edge, a mountain slope) meant
+# never actually settling despite being right next to real water. Any tile
+# within this Chebyshev radius of a confirmed water site now counts as good
+# enough ground too (see Simulation._near_confirmed_water), on top of the
+# existing exact-biome-match check, not instead of it.
+SETTLEMENT_WATER_TERRITORY_RADIUS = 6
+
 # Explicit request: a weak model faced with the full ~13-action Stone Age list from
 # cycle one has no structural push toward the single most important early decision --
 # settling somewhere real. Before a tribe has EVER settled next to real water (see

@@ -1075,14 +1075,24 @@ class Simulation:
         # recently learned facts are shown instead, so new knowledge isn't permanently
         # buried by old.
         visible_entities += [f"taboo: {t}" for t in tribe.memory.taboos[-3:]]
-        visible_entities += [f"confirmed water source at ({x},{y})" for x, y in tribe.confirmed_water_sites[-3:]]
-        visible_entities += [f"confirmed lumber-rich area at ({x},{y})" for x, y in tribe.lumber_sites[-3:]]
-        visible_entities += [f"confirmed wildlife-rich area at ({x},{y})" for x, y in tribe.wildlife_sites[-3:]]
-        visible_entities += [f"confirmed stone-rich area at ({x},{y})" for x, y in tribe.quarry_sites[-3:]]
+        # Explicit request: "make sure they remember all the important discover
+        # sites when they are making decisions. those locations are important
+        # to the progress of the Tribe and civilization." These six lists used
+        # to be sliced to the 3 most recent, same "new knowledge buries old"
+        # trap the taboo slice above was already fixed for once -- a tribe that
+        # scouted 5 quarry sites over a long run would silently lose the first
+        # 2 from its own facts, however valuable. Every confirmed site is a
+        # one-time, deduplicated discovery (see _advance_one_expedition), so
+        # these lists only grow as large as genuinely distinct real finds --
+        # not the unbounded, ever-repeating kind of list slicing exists to cap.
+        visible_entities += [f"confirmed water source at ({x},{y})" for x, y in tribe.confirmed_water_sites]
+        visible_entities += [f"confirmed lumber-rich area at ({x},{y})" for x, y in tribe.lumber_sites]
+        visible_entities += [f"confirmed wildlife-rich area at ({x},{y})" for x, y in tribe.wildlife_sites]
+        visible_entities += [f"confirmed stone-rich area at ({x},{y})" for x, y in tribe.quarry_sites]
         visible_entities += [
-            f"a vein of {site['resource']} was found at ({site['x']},{site['y']})" for site in tribe.mine_sites[-3:]
+            f"a vein of {site['resource']} was found at ({site['x']},{site['y']})" for site in tribe.mine_sites
         ]
-        visible_entities += [f"raiders reported near ({x},{y})" for x, y in tribe.raider_sightings[-3:]]
+        visible_entities += [f"raiders reported near ({x},{y})" for x, y in tribe.raider_sightings]
         if tribe.raiders_approaching:
             ax, ay = tribe.raiders_approaching["x"], tribe.raiders_approaching["y"]
             cycles_left = tribe.raiders_approaching["cycles_left"]
@@ -1193,25 +1203,39 @@ class Simulation:
             visible_entities = ["none"]
         return visible_entities, era_gap_note
 
+    def _near_confirmed_water(self, tribe: Tribe) -> bool:
+        """Explicit request: "make this an initial territory with a bounding area
+        around it that is larger than the Discovery." A single confirmed water
+        tile was too fragile a RELOCATE target -- landing one tile off onto
+        non-qualifying ground meant never actually settling despite being right
+        next to real water. Used by both settlement checks below as an
+        additional way to qualify, on top of the exact-biome-match check, not a
+        replacement for it."""
+        return any(
+            max(abs(tribe.x - wx), abs(tribe.y - wy)) <= config.SETTLEMENT_WATER_TERRITORY_RADIUS
+            for wx, wy in tribe.confirmed_water_sites
+        )
+
     def _is_settled(self, tribe: Tribe) -> bool:
         """Whether this tribe has actually put down roots -- see config.
         SETTLEMENT_STABILITY_CYCLES/FARMABLE_BIOMES. GATHER_WOOD/GATHER_STONE are
         gated on this: a nomadic band stockpiling timber and quarried stone before
         it's even chosen a home never made sense, but it took no real fact to notice
         that until now."""
-        return (
-            tribe.cycles_since_relocate >= config.SETTLEMENT_STABILITY_CYCLES
-            and self.world.biome(tribe.x, tribe.y) in config.FARMABLE_BIOMES
-        )
+        if tribe.cycles_since_relocate < config.SETTLEMENT_STABILITY_CYCLES:
+            return False
+        return self.world.biome(tribe.x, tribe.y) in config.FARMABLE_BIOMES or self._near_confirmed_water(tribe)
 
     def _is_settled_near_water(self, tribe: Tribe) -> bool:
         """Stricter than _is_settled: PLANT_CROP/GATHER_EGGS need a tribe that actually
         resettled somewhere with real, easily accessible water -- "plains" alone (which
         counts for the general settlement/GATHER_WOOD gate) doesn't mean that, per the
         original design spec for farming."""
+        if tribe.cycles_since_relocate < config.SETTLEMENT_STABILITY_CYCLES:
+            return False
         return (
-            tribe.cycles_since_relocate >= config.SETTLEMENT_STABILITY_CYCLES
-            and self.world.biome(tribe.x, tribe.y) in config.FARMING_REQUIRES_ADJACENT_WATER
+            self.world.biome(tribe.x, tribe.y) in config.FARMING_REQUIRES_ADJACENT_WATER
+            or self._near_confirmed_water(tribe)
         )
 
     def _wall_fraction(self, tribe: Tribe) -> float:

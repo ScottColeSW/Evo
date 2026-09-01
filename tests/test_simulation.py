@@ -177,6 +177,36 @@ def test_wall_fraction_helper_reused_by_wellbeing_matches_raider_defense_lookup(
     assert sim._wall_fraction(tribe) == 0.5
 
 
+def test_settling_near_water_succeeds_within_a_confirmed_sites_territory_radius():
+    """Explicit request: "the proposed settlement sites, water found, are making
+    it hard to Settle. I think we can make this an initial territory with a
+    bounding area around it that is larger than the Discovery." A single
+    confirmed water tile was too fragile a RELOCATE target -- one tile off onto
+    non-qualifying ground meant never settling despite being right next to real
+    water."""
+    from backend import config
+
+    sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 5, "y": 55}])  # mountains, not farmable
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.confirmed_water_sites = [(5, 55)]  # exactly on the tribe's own tile
+
+    assert sim._is_settled(tribe) is True
+    assert sim._is_settled_near_water(tribe) is True
+
+
+def test_settling_near_water_still_fails_outside_the_territory_radius():
+    from backend import config
+
+    sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 5, "y": 55}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    far = config.SETTLEMENT_WATER_TERRITORY_RADIUS + 1
+    tribe.confirmed_water_sites = [(5 + far, 55)]
+
+    assert sim._is_settled_near_water(tribe) is False
+
+
 def test_unfinished_wall_nudges_against_a_premature_long_house():
     """Explicit bug report: live logs showed the chief repeatedly choosing
     BUILD_LONG_HOUSE against an unfinished wall, over and over, each attempt
@@ -2149,6 +2179,25 @@ def test_confirmed_water_sites_are_surfaced_as_a_durable_fact():
 
     assert "confirmed water source at (12,34)" in entities
     assert "confirmed water source at (40,37)" in entities
+
+
+def test_all_confirmed_sites_are_remembered_not_just_the_most_recent_three():
+    """Explicit request: "make sure they remember all the important discover
+    sites when they are making decisions." These lists used to be sliced to
+    the 3 most recent, so a 4th+ genuinely distinct discovery silently
+    disappeared from the tribe's own facts."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.confirmed_water_sites = [(1, 1), (2, 2), (3, 3), (4, 4)]
+    tribe.quarry_sites = [(5, 5), (6, 6), (7, 7), (8, 8)]
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert "confirmed water source at (1,1)" in entities
+    assert "confirmed water source at (4,4)" in entities
+    assert "confirmed stone-rich area at (5,5)" in entities
+    assert "confirmed stone-rich area at (8,8)" in entities
 
 
 def test_confirmed_water_sites_are_exposed_to_the_frontend_as_landmarks():
