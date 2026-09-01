@@ -1,4 +1,4 @@
-from backend.actions import ACTION_REGISTRY
+from backend.actions import ACTION_REGISTRY, _execute_trade
 from backend.ancestral_matrix import AncestralTraumaMatrix
 from backend.simulation import Simulation, Tribe
 from backend.world import Landscape
@@ -591,6 +591,56 @@ def test_build_mine_locks_in_the_most_recently_discovered_site():
     ACTION_REGISTRY["BUILD_MINE"](sim, tribe, "mountains", _NO_TARGET)
 
     assert tribe.mine_resource_name == "Whisperwood Amber"
+
+
+def test_build_tannery_requires_a_scouted_rabbit_warren():
+    """Explicit request: "maybe some hunters want a Tannery and they can trade
+    furs too." Mirrors _build_mine's real-discovery gate."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = config.TANNERY_WOOD_COST
+    tribe.stone = config.TANNERY_STONE_COST
+    tribe.long_houses_built = 1
+    tribe.fishing_learned = True
+
+    result = ACTION_REGISTRY["BUILD_TANNERY"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.tannery_built is False
+    assert "no rabbit warren has been scouted yet" in result
+
+    # A Deer Stand alone doesn't count -- only a Rabbit Warren produces fur.
+    tribe.wildlife_sites.append({"x": 5, "y": 5, "type": "Deer Stand"})
+    result = ACTION_REGISTRY["BUILD_TANNERY"](sim, tribe, "plains", _NO_TARGET)
+    assert "no rabbit warren has been scouted yet" in result
+    assert tribe.tannery_built is False
+
+    tribe.wildlife_sites.append({"x": 10, "y": 12, "type": "Rabbit Warren"})
+    result = ACTION_REGISTRY["BUILD_TANNERY"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.tannery_built is True
+    assert tribe.tannery_site == (10, 12)
+    assert "tannery is built" in result
+
+
+def test_trade_exchanges_unique_resources_too():
+    """Explicit request confirms the original "Mine & unique resource" design
+    gap: "maybe some hunters want a Tannery and they can trade furs too." Trade
+    used to only ever swap the same four generic resources."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    partner = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 60, 60, "#fb923c")
+    tribe.unique_resources = {"Fur": 100}
+    partner.unique_resources = {"Orosite Ore": 50}
+
+    _execute_trade(sim, tribe, partner)
+
+    assert tribe.unique_resources["Fur"] == 100 - round(100 * config.TRADE_GIFT_FRACTION)
+    assert tribe.unique_resources["Orosite Ore"] == round(50 * config.TRADE_GIFT_FRACTION)
+    assert partner.unique_resources["Orosite Ore"] == 50 - round(50 * config.TRADE_GIFT_FRACTION)
+    assert partner.unique_resources["Fur"] == round(100 * config.TRADE_GIFT_FRACTION)
 
 
 def test_build_kitchen_requires_cooking_and_long_house_first():

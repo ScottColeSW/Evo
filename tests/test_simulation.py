@@ -990,12 +990,12 @@ def test_hunting_party_nudge_names_a_confirmed_wildlife_site():
     sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
     tribe = sim.tribes["tribe_0"]
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES  # HUNTING_PARTY needs has_ever_settled
-    tribe.wildlife_sites = [(60, 60)]
+    tribe.wildlife_sites = [{"x": 60, "y": 60, "type": "Deer Stand"}]
 
     request, ctx = sim._prepare_turn(tribe)
 
     assert "HUNTING_PARTY" in ctx["available_actions"]
-    assert "Confirmed game-rich ground at (60,60)" in request["prompt"]
+    assert "A deer stand was confirmed at (60,60)" in request["prompt"]
 
 
 def test_no_hunting_party_nudge_before_settling():
@@ -1004,12 +1004,12 @@ def test_no_hunting_party_nudge_before_settling():
     couldn't actually take yet."""
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
-    tribe.wildlife_sites = [(60, 60)]
+    tribe.wildlife_sites = [{"x": 60, "y": 60, "type": "Deer Stand"}]
 
     request, ctx = sim._prepare_turn(tribe)
 
     assert "HUNTING_PARTY" not in ctx["available_actions"]
-    assert "Confirmed game-rich ground" not in request["prompt"]
+    assert "was confirmed at (60,60)" not in request["prompt"]
 
 
 def test_no_farming_nudge_once_a_plot_and_flock_already_exist():
@@ -2466,7 +2466,7 @@ def test_discoveries_spread_across_directions_dont_trigger_the_one_direction_fac
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     sim.tribes = {"tribe_0": tribe}
     tribe.lumber_sites = [(60, 50)]  # east
-    tribe.wildlife_sites = [(50, 40)]  # north
+    tribe.wildlife_sites = [{"x": 50, "y": 40, "type": "Deer Stand"}]  # north
     tribe.quarry_sites = [(40, 50)]  # west
 
     entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
@@ -2492,6 +2492,8 @@ def _returning_scout_exp(target, terrain_report, lead_scout="Ashgar"):
 
 
 def test_forest_terrain_report_confirms_both_a_lumber_and_a_wildlife_site():
+    from backend.world import WILDLIFE_SITE_TYPES
+
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     exp = _returning_scout_exp((60, 60), "forest")
@@ -2500,7 +2502,10 @@ def test_forest_terrain_report_confirms_both_a_lumber_and_a_wildlife_site():
     sim._advance_one_expedition(tribe, exp)
 
     assert tribe.lumber_sites == [(60, 60)]
-    assert tribe.wildlife_sites == [(60, 60)]
+    assert len(tribe.wildlife_sites) == 1
+    site = tribe.wildlife_sites[0]
+    assert (site["x"], site["y"]) == (60, 60)
+    assert site["type"] in WILDLIFE_SITE_TYPES
     assert tribe.quarry_sites == []
 
 
@@ -2552,7 +2557,7 @@ def test_revisiting_an_already_known_wildlife_site_does_not_re_celebrate():
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.wildlife_sites = [(60, 60)]
+    tribe.wildlife_sites = [{"x": 60, "y": 60, "type": "Deer Stand"}]
     tribe.food = 100
     exp = _returning_scout_exp((60, 60), "forest")
     tribe.expeditions = [exp]
@@ -2593,17 +2598,17 @@ def test_resource_landmarks_are_surfaced_as_durable_facts_and_exposed_to_the_fro
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     sim.tribes = {"tribe_0": tribe}
     tribe.lumber_sites = [(60, 60)]
-    tribe.wildlife_sites = [(60, 60)]
+    tribe.wildlife_sites = [{"x": 60, "y": 60, "type": "Deer Stand"}]
     tribe.quarry_sites = [(15, 20)]
 
     entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
 
     assert "confirmed lumber-rich area at (60,60)" in entities
-    assert "confirmed wildlife-rich area at (60,60)" in entities
+    assert "a Deer Stand was found at (60,60)" in entities
     assert "confirmed stone-rich area at (15,20)" in entities
     d = tribe.to_dict()
     assert d["lumber_sites"] == [(60, 60)]
-    assert d["wildlife_sites"] == [(60, 60)]
+    assert d["wildlife_sites"] == [{"x": 60, "y": 60, "type": "Deer Stand"}]
     assert d["quarry_sites"] == [(15, 20)]
 
 

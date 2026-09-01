@@ -96,7 +96,7 @@ ERAS: tuple[Era, ...] = (
         unlocks_actions=(
             "CONSTRUCT_WALL", "PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "STRIKE_RAIDER_CAMP",
             "BUILD_LONG_HOUSE", "DECLARE_ALLIANCE", "DECLARE_WAR", "BUILD_DOCK",
-            "BUILD_SAWMILL", "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_MOAT", "BUILD_KEEP",
+            "BUILD_SAWMILL", "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_MOAT", "BUILD_KEEP", "BUILD_TANNERY",
         ),
         announcement="{tribe} has forged the Tribal Synapse -- true society begins!",
     ),

@@ -27,7 +27,7 @@ from .scheduler import ModelBatchScheduler
 from .self_mod import SelfModEngine
 from .translation_matrix import TranslationConfidenceMatrix
 from .vram_guard import HardwareVRAMBoundaryGuard
-from .world import BIOME_LABELS, UNIQUE_RESOURCE_BY_BIOME, Landscape, biome_at
+from .world import BIOME_LABELS, UNIQUE_RESOURCE_BY_BIOME, WILDLIFE_SITE_TYPES, Landscape, biome_at
 
 # One spawn per land biome (forest, mountains, plains, river -- not ocean, nothing spawns
 # at sea) so the default picker order (Forest Tribe, Mountain Tribe, ...) actually starts
@@ -282,7 +282,11 @@ class Tribe:
         self.last_reflection = ""
         self.last_reflection_cycle = 0
         self.lumber_sites: list[tuple[int, int]] = []
-        self.wildlife_sites: list[tuple[int, int]] = []
+        # Explicit request: "are the scouts finding Wolves Dens and Bear Caves
+        # and Deer Stands? if not, they should be." {"x", "y", "type"} dicts,
+        # most recent last -- type is one of world.WILDLIFE_SITE_TYPES, chosen
+        # at random per discovery (see Simulation._advance_one_expedition).
+        self.wildlife_sites: list[dict] = []
         self.quarry_sites: list[tuple[int, int]] = []
         self.raider_sightings: list[tuple[int, int]] = []
         # A fact for the next chief election to reason about, set when something more
@@ -392,6 +396,12 @@ class Tribe:
         # long_house_built. Stacks config.KITCHEN_UPKEEP_MULTIPLIER on top of the
         # cooking divisor (see instincts.effective_food_upkeep).
         self.kitchen_built = False
+        # See actions.py._build_tannery -- one-way, gated on a discovered Rabbit
+        # Warren (tribe.wildlife_sites). Mirrors mine_built/mine_site/
+        # mine_resource_name exactly, paying "Fur" into the same
+        # unique_resources dict rather than a second parallel system.
+        self.tannery_built = False
+        self.tannery_site: tuple[int, int] | None = None
         # See Simulation._prepare_turn's GATHER_FOOD retirement -- one-way, like
         # has_ever_settled, once a genuinely proven passive food source exists.
         self.foraging_retired = False
@@ -486,6 +496,7 @@ class Tribe:
             "unique_resources": self.unique_resources,
             "scout_rotation_index": self.scout_rotation_index,
             "kitchen_built": self.kitchen_built,
+            "tannery_built": self.tannery_built,
             "foraging_retired": self.foraging_retired,
             "watering_retired": self.watering_retired,
             "last_harvest_cycle": self.last_harvest_cycle,
@@ -969,6 +980,7 @@ class Simulation:
             self._advance_water_supply(tribe)
             self._advance_fish_supply(tribe)
             self._advance_mine_yield(tribe)
+            self._advance_tannery_yield(tribe)
             self._advance_resource_trails(tribe)
             self._advance_farming(tribe)
             self._advance_flock(tribe)
@@ -1125,7 +1137,9 @@ class Simulation:
         # not the unbounded, ever-repeating kind of list slicing exists to cap.
         visible_entities += [f"confirmed water source at ({x},{y})" for x, y in tribe.confirmed_water_sites]
         visible_entities += [f"confirmed lumber-rich area at ({x},{y})" for x, y in tribe.lumber_sites]
-        visible_entities += [f"confirmed wildlife-rich area at ({x},{y})" for x, y in tribe.wildlife_sites]
+        visible_entities += [
+            f"a {site['type']} was found at ({site['x']},{site['y']})" for site in tribe.wildlife_sites
+        ]
         visible_entities += [f"confirmed stone-rich area at ({x},{y})" for x, y in tribe.quarry_sites]
         visible_entities += [
             f"a vein of {site['resource']} was found at ({site['x']},{site['y']})" for site in tribe.mine_sites
@@ -1140,7 +1154,8 @@ class Simulation:
         # see the site-list facts above) actually show about where it's
         # already looked versus never looked at all.
         all_known_sites = (
-            tribe.confirmed_water_sites + tribe.lumber_sites + tribe.wildlife_sites
+            tribe.confirmed_water_sites + tribe.lumber_sites
+            + [(s["x"], s["y"]) for s in tribe.wildlife_sites]
             + tribe.quarry_sites + [(s["x"], s["y"]) for s in tribe.mine_sites] + tribe.raider_sightings
         )
         if not all_known_sites:
@@ -1576,11 +1591,23 @@ class Simulation:
             # actually use it. HUNTING_PARTY only appears in available_actions once
             # settled (see PRE_SETTLEMENT_ACTIONS), so this can't suggest an action a
             # still-nomadic tribe couldn't take anyway.
-            gx, gy = tribe.wildlife_sites[-1]
-            visible_entities.append(
-                f"Confirmed game-rich ground at ({gx},{gy}) -- a hunting party sent there would "
-                "likely fare better than hunting blind."
-            )
+            site = tribe.wildlife_sites[-1]
+            gx, gy, site_type = site["x"], site["y"], site["type"]
+            if site_type == "Wolf Den":
+                # Explicit request: naming the real site type is what makes a
+                # Wolf Den mean something different from a Deer Stand -- this
+                # is the same wolf-pack hazard HUNT_DEER/HUNTING_PARTY already
+                # carry in forest (config.HUNT_HAZARD_CHANCE), just named as a
+                # known location instead of a blind, biome-wide risk.
+                visible_entities.append(
+                    f"A wolf den was confirmed at ({gx},{gy}) -- a real hunting risk known to be "
+                    "there, not just a blind chance."
+                )
+            else:
+                visible_entities.append(
+                    f"A {site_type.lower()} was confirmed at ({gx},{gy}) -- a hunting party sent "
+                    "there would likely fare better than hunting blind."
+                )
 
         if "COOK_FOOD" in available_actions:
             # Explicit request: cooking's eligibility (a proven hunt + a proven
@@ -1673,6 +1700,21 @@ class Simulation:
                     visible_entities.append(
                         "Farming and fishing are both established, and real shelter stands, but no "
                         "stand of trees has been scouted yet -- a sawmill needs a real stand to work."
+                    )
+        if "BUILD_TANNERY" in available_actions and not tribe.tannery_built:
+            if tribe.long_houses_built > 0 and tribe.fishing_learned:
+                warren_sites = [s for s in tribe.wildlife_sites if s["type"] == "Rabbit Warren"]
+                if warren_sites:
+                    wx, wy = warren_sites[-1]["x"], warren_sites[-1]["y"]
+                    visible_entities.append(
+                        f"A rabbit warren is known at ({wx},{wy}) -- farming and fishing are both "
+                        "established and real shelter stands, so a tannery built here at the "
+                        "settlement would bring in a steady supply of Fur."
+                    )
+                else:
+                    visible_entities.append(
+                        "Farming and fishing are both established, and real shelter stands, but no "
+                        "rabbit warren has been scouted yet -- a tannery needs real pelts to work."
                     )
         if "BUILD_KITCHEN" in available_actions and not tribe.kitchen_built:
             if tribe.cooking_learned and tribe.long_houses_built > 0:
@@ -2240,9 +2282,10 @@ class Simulation:
                     if exp["terrain_report"] == "forest":
                         if (tx, ty) not in tribe.lumber_sites:
                             tribe.lumber_sites.append((tx, ty))
-                        is_new_game_site = (tx, ty) not in tribe.wildlife_sites
+                        is_new_game_site = not any(s["x"] == tx and s["y"] == ty for s in tribe.wildlife_sites)
                         if is_new_game_site:
-                            tribe.wildlife_sites.append((tx, ty))
+                            site_type = random.choice(WILDLIFE_SITE_TYPES)
+                            tribe.wildlife_sites.append({"x": tx, "y": ty, "type": site_type})
                             if tribe.last_celebration_cycle != self.cycle:
                                 self._celebrate_game_discovery(tribe, tx, ty)
                     elif exp["terrain_report"] == "mountains":
@@ -2766,6 +2809,13 @@ class Simulation:
                 tribe.unique_resources.get(tribe.mine_resource_name, 0) + config.MINE_YIELD_PER_CYCLE
             )
 
+    def _advance_tannery_yield(self, tribe: Tribe) -> None:
+        """Once a tannery is built (actions.py._build_tannery), Fur flows in
+        daily -- mirrors _advance_mine_yield exactly, into the same
+        unique_resources dict."""
+        if tribe.tannery_built and self._is_settled(tribe):
+            tribe.unique_resources["Fur"] = tribe.unique_resources.get("Fur", 0) + config.TANNERY_YIELD_PER_CYCLE
+
     def _advance_resource_trails(self, tribe: Tribe) -> None:
         """Explicit request: "if they have found a Quarry, Mine, Stand of Trees
         to Harvest, these are collectables that must be fetched and so
@@ -2778,7 +2828,7 @@ class Simulation:
         use along the straight line between the settlement and each site --
         heavily-used routes eventually evolve into real toll roads themselves
         (see world.is_toll_road), exactly like any other trail would."""
-        for site in (tribe.lumber_site, tribe.quarry_site, tribe.mine_site):
+        for site in (tribe.lumber_site, tribe.quarry_site, tribe.mine_site, tribe.tannery_site):
             if site is None:
                 continue
             for px, py in _interpolated_path(tribe.x, tribe.y, site[0], site[1]):

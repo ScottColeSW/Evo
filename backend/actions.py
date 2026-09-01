@@ -472,6 +472,29 @@ def _build_mine(sim, tribe, biome, target):
     return f"a mine is excavated -- {tribe.mine_resource_name} will flow in steadily from now on"
 
 
+def _build_tannery(sim, tribe, biome, target):
+    """Explicit request: "maybe some hunters want a Tannery and they can trade
+    furs too." Mirrors _build_mine exactly -- gated on a real discovered site,
+    here a Rabbit Warren from tribe.wildlife_sites, rather than era alone.
+    Locks in the exact site used (tribe.tannery_site) and pays Fur into the
+    same tribe.unique_resources dict mines already use, not a second parallel
+    resource system."""
+    if tribe.tannery_built or not (tribe.long_houses_built > 0 and tribe.fishing_learned):
+        return None
+    warren_sites = [s for s in tribe.wildlife_sites if s["type"] == "Rabbit Warren"]
+    if not warren_sites:
+        return "no rabbit warren has been scouted yet -- a tannery needs real pelts to work"
+    if tribe.wood < config.TANNERY_WOOD_COST or tribe.stone < config.TANNERY_STONE_COST:
+        return None
+    tribe.wood -= config.TANNERY_WOOD_COST
+    tribe.stone -= config.TANNERY_STONE_COST
+    tribe.tannery_built = True
+    chosen_site = warren_sites[-1]
+    tribe.tannery_site = (chosen_site["x"], chosen_site["y"])
+    sim._award_trophy(tribe, "Tanner")
+    return "a tannery is built -- Fur will flow in steadily from now on"
+
+
 def _plant_crop(sim, tribe, biome, target):
     """Only reachable at all once Simulation._prepare_turn's settled-near-water gate
     (Simulation._is_settled_near_water) allows it -- plains alone doesn't mean a tribe
@@ -897,6 +920,20 @@ def _execute_trade(sim, tribe, partner) -> str:
         setattr(tribe, resource, tribe_amount - tribe_gift + partner_gift)
         setattr(partner, resource, partner_amount - partner_gift + tribe_gift)
 
+    # Explicit request: "maybe some hunters want a Tannery and they can trade
+    # furs too." A Mine/Tannery's named resource (Fur, Orosite Ore, ...) used
+    # to have nowhere to go -- trade only ever swapped the same four generic
+    # resources, the exact gap the original "Mine & unique resource" design
+    # note called out. Same fractional-gift shape as the loop above, over
+    # whichever named resources either side actually holds.
+    for resource in set(tribe.unique_resources) | set(partner.unique_resources):
+        tribe_amount = tribe.unique_resources.get(resource, 0)
+        partner_amount = partner.unique_resources.get(resource, 0)
+        tribe_gift = round(tribe_amount * config.TRADE_GIFT_FRACTION)
+        partner_gift = round(partner_amount * config.TRADE_GIFT_FRACTION)
+        tribe.unique_resources[resource] = tribe_amount - tribe_gift + partner_gift
+        partner.unique_resources[resource] = partner_amount - partner_gift + tribe_gift
+
     tribe.trades_completed += 1
     partner.trades_completed += 1
     if tribe.trades_completed == 1:
@@ -1044,6 +1081,7 @@ ACTION_REGISTRY = {
     "BUILD_SAWMILL": _build_sawmill,
     "BUILD_QUARRY": _build_quarry,
     "BUILD_MINE": _build_mine,
+    "BUILD_TANNERY": _build_tannery,
     "BUILD_KITCHEN": _build_kitchen,
     "BUILD_MOAT": _build_moat,
     "BUILD_KEEP": _build_keep,
@@ -1087,6 +1125,7 @@ ACTION_DESCRIPTIONS = {
     "BUILD_SAWMILL": "Build a sawmill using stored wood and stone -- only possible once a long house stands, fishing is mastered, and a stand of trees has actually been scouted. A one-time, permanent structure at your settlement: every future load of gathered wood is worth three times as much from then on.",
     "BUILD_QUARRY": "Build a quarry using stored wood and stone -- only possible once a long house stands, fishing is mastered, and a stone-rich site has actually been scouted. A one-time, permanent structure at your settlement: every future load of harvested stone is worth three times as much from then on.",
     "BUILD_MINE": "Excavate a mine at a vein your scouts have already found, using stored wood and stone -- only possible once a quarry stands and at least one vein is known. A one-time, permanent structure: its unique resource flows in steadily from then on.",
+    "BUILD_TANNERY": "Build a tannery using stored wood and stone -- only possible once a long house stands, fishing is mastered, and a rabbit warren has actually been scouted. A one-time, permanent structure at your settlement: Fur flows in steadily from then on.",
     "BUILD_KITCHEN": "Build a kitchen using stored wood and stone -- only possible once cooking is known and a long house stands. A one-time, permanent structure: cooked meals become excellent food, stretching stores even further from then on.",
     "BUILD_MOAT": "Dig a moat using stored wood and stone -- only possible once the wall has been reinforced with a second layer. A one-time, permanent structure, cheaper than another wall layer: a further defense bonus.",
     "BUILD_KEEP": "Build a keep using stored wood and stone -- only possible once enough long houses stand. A one-time, permanent structure: a further defense bonus for the settlement.",

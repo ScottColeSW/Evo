@@ -1342,6 +1342,7 @@ const LANDMARK_TYPES = [
   ["lumber_sites", "\u{1F332}", [-0.55, -0.4], "Timber"],          // evergreen, upper-left
   ["wildlife_sites", "\u{1F43E}", [0.55, -0.4], "Game"],         // paw prints, upper-right
   ["quarry_sites", "⛏️", [0, 0.55], "Quarry"],           // pick, lower-center
+  ["mine_sites", "\u{1F48E}", [0.55, 0.55], "Mine"],       // gem, lower-right
   ["raider_sightings", "\u{2694}\u{FE0F}", [-0.55, 0.55], "Raiders"], // crossed swords, lower-left
 ];
 
@@ -1363,11 +1364,16 @@ function trackNewLandmarks(state) {
     LANDMARK_TYPES.forEach(([field, , , label]) => {
       const prevSet = previousLandmarkKeys[tid][field];
       const currentList = t[field] || [];
-      const currentSet = new Set(currentList.map(([x, y]) => `${x},${y}`));
+      // wildlife_sites/mine_sites entries are {x, y, ...} objects, not [x, y]
+      // tuples -- see drawLandmarks' own version of this same normalization.
+      const coordsOf = entry => Array.isArray(entry) ? entry : [entry.x, entry.y];
+      const currentSet = new Set(currentList.map(entry => coordsOf(entry).join(",")));
       if (prevSet) {
-        currentList.forEach(([x, y]) => {
+        currentList.forEach(entry => {
+          const [x, y] = coordsOf(entry);
           if (!prevSet.has(`${x},${y}`)) {
-            newLandmarks.push({ x, y, label, color: t.color, expiresAt: Date.now() + LANDMARK_HIGHLIGHT_MS });
+            const entryLabel = entry && (entry.type || entry.resource) ? (entry.type || entry.resource) : label;
+            newLandmarks.push({ x, y, label: entryLabel, color: t.color, expiresAt: Date.now() + LANDMARK_HIGHLIGHT_MS });
           }
         });
       }
@@ -1387,7 +1393,12 @@ function drawLandmarks() {
   // deliberate marker at a glance, not a stray pixel.
   Object.values(latestState.tribes || {}).forEach(t => {
     LANDMARK_TYPES.forEach(([field, emoji, [ox, oy], label]) => {
-      (t[field] || []).forEach(([x, y]) => {
+      // wildlife_sites/mine_sites entries are {x, y, ...} objects (they carry a
+      // real type/resource name), everything else is a plain [x, y] tuple --
+      // handle both without needing every list to share one shape.
+      (t[field] || []).forEach(entry => {
+        const [x, y] = Array.isArray(entry) ? entry : [entry.x, entry.y];
+        const entryLabel = entry && (entry.type || entry.resource) ? (entry.type || entry.resource) : label;
         const cx = x * TILE + TILE / 2 + ox * TILE;
         const cy = y * TILE + TILE / 2 + oy * TILE;
         const r = Math.max(8, TILE * 0.55);
@@ -1407,13 +1418,13 @@ function drawLandmarks() {
         // discovery is celebrated, so a landmark found long ago still identifies
         // itself to a viewer looking at the map cold.
         ctx.font = `bold ${Math.max(9, TILE * 0.5)}px sans-serif`;
-        const tagWidth = ctx.measureText(label).width + 6;
+        const tagWidth = ctx.measureText(entryLabel).width + 6;
         const tagY = cy + r + 2;
         ctx.fillStyle = "rgba(10,14,26,0.85)";
         ctx.fillRect(cx - tagWidth / 2, tagY, tagWidth, Math.max(11, TILE * 0.6));
         ctx.fillStyle = "#e2e8f0";
         ctx.textBaseline = "top";
-        ctx.fillText(label, cx, tagY + 1);
+        ctx.fillText(entryLabel, cx, tagY + 1);
       });
     });
   });
@@ -2016,6 +2027,7 @@ function landmarkCounts(t) {
 // numbers the lines below report rather than a vaguer "mastered" label.
 const FISHING_SUPPLY_PER_CYCLE = 8;
 const MINE_YIELD_PER_CYCLE = 5;
+const TANNERY_YIELD_PER_CYCLE = 4;
 
 // A dedicated mini-panel for each real production system or structure a tribe has
 // stood up -- per explicit request ("you might as well show the rest, like Fire and
@@ -2027,7 +2039,7 @@ function farmingPanel(t) {
   const hasAny = t.farm_plots || t.flock || t.fishing_learned || t.fire_ever_built || wall
     || t.long_houses_built || t.keep_built || t.fortress_built || t.castle_built
     || t.moat_built || t.road_built || t.dock_built
-    || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built
+    || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built || t.tannery_built
     || t.founded_city || (t.cooking_learned && !t.kitchen_built);
   if (!hasAny) return "";
   const parts = [];
@@ -2080,6 +2092,10 @@ function farmingPanel(t) {
   if (t.mine_built) {
     const amount = (t.unique_resources || {})[t.mine_resource_name] || 0;
     parts.push(`💎 Mine — ${MINE_YIELD_PER_CYCLE} ${escapeHtml(t.mine_resource_name)}/day (${amount} stored)`);
+  }
+  if (t.tannery_built) {
+    const amount = (t.unique_resources || {})["Fur"] || 0;
+    parts.push(`🦫 Tannery — ${TANNERY_YIELD_PER_CYCLE} Fur/day (${amount} stored)`);
   }
   return `<div class="farming-panel"><span class="farming-title">🏘️ Establishments</span><br>${parts.join("<br>")}</div>`;
 }

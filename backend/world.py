@@ -20,6 +20,16 @@ BIOME_LABELS = {
 # actions.py._build_mine (excavation). Trade finally has something a tribe would
 # actually want to hold onto or offer, not just the same four generic resources
 # (see the "Mine & unique resource" design note this was scoped from).
+# Explicit request: "are the scouts finding Wolves Dens and Bear Caves and Deer
+# Stands? if not, they should be... be creative. We might add Rabbit Warrens
+# (for food and fur) etc." A forest wildlife discovery used to only ever be one
+# generic "confirmed wildlife-rich area" -- now it's one of these three, chosen
+# at random each time (see Simulation._advance_one_expedition). Bear Caves
+# deliberately left out for now, per direct confirmation -- there's no bear
+# encounter/hazard anywhere in the game yet to hang one on, unlike Deer Stand
+# (HUNT_DEER's own prey) and Wolf Den (the existing wolf-pack hunting hazard).
+WILDLIFE_SITE_TYPES = ("Deer Stand", "Wolf Den", "Rabbit Warren")
+
 UNIQUE_RESOURCE_BY_BIOME = {
     "forest": "Whisperwood Amber",
     "mountains": "Orosite Ore",

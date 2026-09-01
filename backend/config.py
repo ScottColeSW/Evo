@@ -719,6 +719,16 @@ MINE_WOOD_COST = 20
 MINE_STONE_COST = 30
 MINE_YIELD_PER_CYCLE = 5
 
+# BUILD_TANNERY (backend/actions.py): explicit request -- "maybe some hunters
+# want a Tannery and they can trade furs too." Mirrors _build_mine exactly:
+# gated on a real discovered site (a Rabbit Warren, from tribe.wildlife_sites),
+# locks in the exact site used, and pays out its named resource ("Fur") into
+# the same tribe.unique_resources dict mines already use -- one shared pool,
+# not a second parallel resource system.
+TANNERY_WOOD_COST = 15
+TANNERY_STONE_COST = 15
+TANNERY_YIELD_PER_CYCLE = 4
+
 # BUILD_KITCHEN (backend/actions.py): explicit follow-up -- "we might have to let
 # them build a kitchen which improves cooked food to excellent food yielding 3
 # per cooked item." Stacks on top of COOKING_UPKEEP_DIVISOR (see instincts.py.
