@@ -292,7 +292,8 @@ document.getElementById("btn-start").addEventListener("click", () => {
     // See heldEncounters above -- the backend's own copy is empty on every cycle
     // except the one it just happened on, so anything present here is always new.
     (latestState.recent_encounters || []).forEach(e => {
-      heldEncounters.push({ ...e, expiresAt: Date.now() + ENCOUNTER_DISPLAY_MS });
+      const now = Date.now();
+      heldEncounters.push({ ...e, startedAt: now, expiresAt: now + ENCOUNTER_DISPLAY_MS });
     });
     if (!firstStateReceived) {
       firstStateReceived = true;
@@ -1658,6 +1659,48 @@ function drawWeather() {
   }
 }
 
+// Explicit request: "there needs to be some theater here. a dust-up cloud and
+// ruckus during the battle." The raider-attack/strike marker (heldEncounters,
+// below) was a readable label but a raid resolving deserved more than text --
+// a real dust cloud kicked up around the camp, and the emoji itself shaking with
+// the scuffle. Seeded per-encounter (stringSeed on its own x/y/expiresAt/puff
+// index) rather than true Math.random() each frame -- an unseeded jitter would
+// flicker like static instead of reading as one coherent, moving cloud.
+const RAID_THEATER_PUFF_COUNT = 7;
+function drawBattleTheater(e, cx, cy, progress) {
+  // Fades in fast (dust doesn't take long to kick up), holds, then settles out
+  // over the back third as the scuffle winds down.
+  const alpha = Math.min(1, progress / 0.12, (1 - progress) / 0.35);
+  if (alpha <= 0) return { shakeX: 0, shakeY: 0 };
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = e.outcome === "struck" || e.outcome === "lost" ? "rgba(120,53,15,0.55)" : "rgba(120,113,108,0.5)";
+  for (let i = 0; i < RAID_THEATER_PUFF_COUNT; i++) {
+    const seed = stringSeed(`${e.x},${e.y},${e.expiresAt}:${i}`);
+    const angle = hashUnit(seed) * 2 * Math.PI;
+    // Puffs drift slowly outward over the encounter's own lifetime, like real
+    // kicked-up dust settling rather than a static ring.
+    const radius = TILE * (0.3 + 0.9 * progress) * (0.6 + 0.4 * hashUnit(seed + 1));
+    const wobble = Math.sin(animFrame * 0.15 + seed) * TILE * 0.08;
+    const px = cx + Math.cos(angle) * radius + wobble;
+    const py = cy + Math.sin(angle) * radius * 0.6 + wobble;
+    const r = TILE * (0.22 + 0.18 * hashUnit(seed + 2));
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // A small, fast shake applied to whatever's drawn on top (the marker emoji) --
+  // intense while the dust is thick, settling out as the cloud fades.
+  const shakeAmount = TILE * 0.12 * alpha;
+  return {
+    shakeX: Math.sin(animFrame * 1.7 + cx) * shakeAmount,
+    shakeY: Math.cos(animFrame * 2.1 + cy) * shakeAmount,
+  };
+}
+
 function drawFrame() {
   animFrame++;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1697,10 +1740,16 @@ function drawFrame() {
     });
 
     drawLandmarks();
-    heldEncounters = heldEncounters.filter(e => e.expiresAt > Date.now());
+    const now = Date.now();
+    heldEncounters = heldEncounters.filter(e => e.expiresAt > now);
     heldEncounters.forEach(e => {
-      const cx = e.x * TILE + TILE / 2;
-      const cy = e.y * TILE + TILE / 2 - TILE * 1.2;
+      const tileCx = e.x * TILE + TILE / 2;
+      const tileCy = e.y * TILE + TILE / 2;
+      const progress = Math.min(1, Math.max(0, (now - e.startedAt) / ENCOUNTER_DISPLAY_MS));
+      const { shakeX, shakeY } = drawBattleTheater(e, tileCx, tileCy, progress);
+
+      const cx = tileCx;
+      const cy = tileCy - TILE * 1.2;
       ctx.font = `bold ${Math.max(8, TILE * 0.35)}px sans-serif`;
       const labelWidth = ctx.measureText(e.label).width;
       // A readable backing panel, same idea as the thought bubble -- plain fillText
@@ -1710,7 +1759,9 @@ function drawFrame() {
       ctx.fillRect(cx - labelWidth / 2 - 5, cy + TILE * 0.3, labelWidth + 10, TILE * 0.5);
       ctx.font = `${Math.max(10, TILE * 0.9)}px sans-serif`;
       ctx.textAlign = "center";
-      ctx.fillText(e.kind === "raider_attack" ? "⚔️" : "\u{1F3F4}", cx, cy);
+      // The emoji shakes with the scuffle; the label stays put underneath so it's
+      // still readable while the dust is flying.
+      ctx.fillText(e.kind === "raider_attack" ? "⚔️" : "\u{1F3F4}", cx + shakeX, cy + shakeY);
       ctx.font = `bold ${Math.max(8, TILE * 0.35)}px sans-serif`;
       ctx.fillStyle = "#fecaca";
       ctx.fillText(e.label, cx, cy + TILE * 0.6);
