@@ -501,7 +501,7 @@ def test_farming_and_eggs_available_once_settled_even_away_from_water():
 
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
     tribe = sim.tribes["tribe_0"]
-    tribe.era = "bronze_age"
+    tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
 
     _request, ctx = sim._prepare_turn(tribe)
@@ -513,7 +513,7 @@ def test_farming_and_eggs_available_once_settled_even_away_from_water():
 def test_farming_and_eggs_locked_before_any_settling():
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
     tribe = sim.tribes["tribe_0"]
-    tribe.era = "bronze_age"
+    tribe.era = "tribal_synapse"
     assert tribe.cycles_since_relocate == 0  # freshly founded, not yet settled
 
     _request, ctx = sim._prepare_turn(tribe)
@@ -527,7 +527,7 @@ def test_farming_and_eggs_available_once_settled_next_to_real_water():
 
     sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
     tribe = sim.tribes["tribe_0"]
-    tribe.era = "bronze_age"
+    tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
 
     request, ctx = sim._prepare_turn(tribe)
@@ -575,7 +575,7 @@ def test_no_farming_nudge_once_a_plot_and_flock_already_exist():
 
     sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
     tribe = sim.tribes["tribe_0"]
-    tribe.era = "bronze_age"
+    tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.farm_plots = 1
     tribe.flock = 3
@@ -794,18 +794,19 @@ def test_unsettled_fact_reports_real_progress():
 def test_era_progress_fact_names_the_specific_shortfalls():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
+    tribe.era = "cognitive_horizon"  # so the gap fact names Tribal Synapse specifically
     tribe.population = 15
     tribe.water = 10
-    tribe.stone = 50  # already meets the bronze_age stone requirement
+    tribe.stone = 50  # already meets the tribal_synapse stone requirement
     tribe.wood = 5
 
     request, _ctx = sim._prepare_turn(tribe)
 
-    assert "To reach Bronze Age, still short on:" in request["prompt"]
+    assert "To reach Tribal Synapse, still short on:" in request["prompt"]
     assert "population 15/20" in request["prompt"]
     assert "water 10/40" in request["prompt"]
     assert "wood 5/40" in request["prompt"]
-    assert "stone" not in request["prompt"].split("To reach Bronze Age, still short on:")[1].split(".")[0]
+    assert "stone" not in request["prompt"].split("To reach Tribal Synapse, still short on:")[1].split(".")[0]
 
 
 def test_era_progress_fact_absent_once_the_next_era_is_fully_met():
@@ -818,7 +819,7 @@ def test_era_progress_fact_absent_once_the_next_era_is_fully_met():
 
     request, _ctx = sim._prepare_turn(tribe)
 
-    assert "To reach Bronze Age" not in request["prompt"]
+    assert "To reach Cognitive Horizon" not in request["prompt"]
 
 
 def test_translation_matrix_is_updated_on_apply_turn():
@@ -869,7 +870,7 @@ def test_action_outside_current_era_falls_back_to_a_real_available_action():
     tribe wasn't actually confused."""
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
-    assert tribe.era == "stone_age"
+    assert tribe.era == "primitive_dawn"
 
     request, ctx = sim._prepare_turn(tribe)
     assert "CONSTRUCT_WALL" not in ctx["available_actions"]
@@ -1664,10 +1665,10 @@ def test_trade_emissary_arrival_home_reports_failure():
     assert any("found no one to trade with" in entry for entry in tribe.history)
 
 
-def test_send_trade_emissary_unlocked_from_stone_age():
+def test_send_trade_emissary_unlocked_from_primitive_dawn():
     from backend.eras import unlocked_actions_through
 
-    assert "SEND_TRADE_EMISSARY" in unlocked_actions_through("stone_age")
+    assert "SEND_TRADE_EMISSARY" in unlocked_actions_through("primitive_dawn")
 
 
 def test_expedition_records_every_tile_it_walks_as_a_breadcrumb_path():
@@ -3022,6 +3023,7 @@ def test_celebration_does_not_start_a_second_family_while_one_is_already_pending
 def test_era_advances_once_population_and_resources_are_met():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.era = "cognitive_horizon"  # one step below tribal_synapse
     tribe.population = 20
     tribe.water = 40
     tribe.stone = 40
@@ -3029,11 +3031,26 @@ def test_era_advances_once_population_and_resources_are_met():
 
     sim._advance_era_if_ready(tribe)
 
-    assert tribe.era == "bronze_age"
+    assert tribe.era == "tribal_synapse"
     assert tribe.wood == 20  # 50 - 30 advancement cost
     assert tribe.stone == 10  # 40 - 30 advancement cost
-    assert tribe.water == 20  # 40 - 20 advancement cost
-    assert "Bronze Age" in tribe.history[-1]
+
+
+def test_era_advances_one_step_at_a_time_even_if_stats_clear_a_later_era_too():
+    """_advance_era_if_ready only ever checks next_era(tribe.era) -- meeting a later
+    era's thresholds too doesn't let a tribe skip the one immediately ahead."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 20
+    tribe.water = 40
+    tribe.stone = 40
+    tribe.wood = 50
+
+    sim._advance_era_if_ready(tribe)
+
+    assert tribe.era == "cognitive_horizon"
+    assert tribe.water == 30  # 40 - 10 advancement cost
+    assert "Cognitive Horizon" in tribe.history[-1]
     assert "PRIDE" in sim.trauma.bias_string(50, 50)
 
 
@@ -3041,11 +3058,11 @@ def test_era_does_not_advance_without_meeting_resource_requirements():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.population = 20
-    tribe.water = 5  # below the bronze_age requirement
+    tribe.water = 5  # below the tribal_synapse requirement
 
     sim._advance_era_if_ready(tribe)
 
-    assert tribe.era == "stone_age"
+    assert tribe.era == "primitive_dawn"
 
 
 def test_snapshot_includes_worn_trails_for_the_frontend_to_render():
@@ -3280,7 +3297,7 @@ def test_catch_fish_gated_the_same_as_farming_and_eggs():
     this is a Settled gate," same general condition as GATHER_WOOD/STONE."""
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
     tribe = sim.tribes["tribe_0"]
-    tribe.era = "bronze_age"
+    tribe.era = "tribal_synapse"
     assert tribe.cycles_since_relocate == 0  # freshly founded, not yet settled
 
     _request, ctx = sim._prepare_turn(tribe)
@@ -3293,7 +3310,7 @@ def test_catch_fish_available_once_settled_even_away_from_water():
 
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
     tribe = sim.tribes["tribe_0"]
-    tribe.era = "bronze_age"
+    tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
 
     request, ctx = sim._prepare_turn(tribe)
@@ -3307,7 +3324,7 @@ def test_no_fishing_nudge_once_already_learned():
 
     sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
     tribe = sim.tribes["tribe_0"]
-    tribe.era = "bronze_age"
+    tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.fishing_learned = True
 
@@ -3422,7 +3439,7 @@ def test_diversification_note_suggests_farming_once_fishing_alone_is_proven():
 
     sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
     tribe = sim.tribes["tribe_0"]
-    tribe.era = "bronze_age"
+    tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.fishing_learned = True
 
@@ -3436,7 +3453,7 @@ def test_diversification_note_suggests_fishing_once_farming_alone_is_proven():
 
     sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
     tribe = sim.tribes["tribe_0"]
-    tribe.era = "bronze_age"
+    tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.last_harvest_cycle = 5
 
@@ -3450,7 +3467,7 @@ def test_diversification_note_absent_once_both_are_proven():
 
     sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
     tribe = sim.tribes["tribe_0"]
-    tribe.era = "bronze_age"
+    tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.fishing_learned = True
     tribe.last_harvest_cycle = 5
@@ -4127,10 +4144,10 @@ def test_drowning_hazard_never_fires_off_river():
     assert tribe.water == 34  # 30 + round(3 * 1.25 labor multiplier at population 10)
 
 
-def test_reaching_classical_age_marks_founded_city():
+def test_reaching_monolithic_era_marks_founded_city():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.era = "bronze_age"
+    tribe.era = "tribal_synapse"
     tribe.population = 40
     tribe.water = 60
     tribe.stone = 40
@@ -4138,7 +4155,7 @@ def test_reaching_classical_age_marks_founded_city():
 
     sim._advance_era_if_ready(tribe)
 
-    assert tribe.era == "classical_age"
+    assert tribe.era == "monolithic_era"
     assert tribe.founded_city is True
 
 

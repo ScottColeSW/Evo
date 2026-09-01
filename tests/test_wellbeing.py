@@ -69,13 +69,22 @@ def test_esteem_tier_scales_with_trophy_count_and_caps_at_one():
 
 
 def test_self_actualization_tier_rises_with_era_and_city_growth():
-    stone_age = compute_wellbeing(_tribe(era="stone_age", founded_city=False), wall_fraction=0.0)
-    classical = compute_wellbeing(_tribe(era="classical_age", founded_city=False), wall_fraction=0.0)
-    built_up_city = compute_wellbeing(_tribe(era="classical_age", founded_city=True, city_buildings=6), wall_fraction=0.0)
+    # Reworked to a 7-era ladder -- reaching monolithic_era (index 3 of 7) and maxing
+    # out the city no longer alone maxes this tier out; the full climb to the top
+    # era matters too now. See test_self_actualization_maxes_out_at_the_top_era.
+    primitive_dawn = compute_wellbeing(_tribe(era="primitive_dawn", founded_city=False), wall_fraction=0.0)
+    monolithic = compute_wellbeing(_tribe(era="monolithic_era", founded_city=False), wall_fraction=0.0)
+    built_up_city = compute_wellbeing(_tribe(era="monolithic_era", founded_city=True, city_buildings=6), wall_fraction=0.0)
 
-    assert stone_age["tiers"]["self_actualization"] < classical["tiers"]["self_actualization"]
-    assert classical["tiers"]["self_actualization"] < built_up_city["tiers"]["self_actualization"]
-    assert built_up_city["tiers"]["self_actualization"] == 1.0
+    assert primitive_dawn["tiers"]["self_actualization"] < monolithic["tiers"]["self_actualization"]
+    assert monolithic["tiers"]["self_actualization"] < built_up_city["tiers"]["self_actualization"]
+    assert built_up_city["tiers"]["self_actualization"] < 1.0
+
+
+def test_self_actualization_maxes_out_at_the_top_era():
+    top = compute_wellbeing(_tribe(era="cosmic_post_human", founded_city=True, city_buildings=6), wall_fraction=0.0)
+
+    assert top["tiers"]["self_actualization"] == 1.0
 
 
 def test_focus_is_the_lowest_unmet_tier_bottom_up_not_just_the_lowest_score():
@@ -100,7 +109,7 @@ def test_focus_is_self_actualization_once_every_lower_tier_is_satisfied():
         has_ever_settled=True, raids_defended=5,
         trades_completed=3, last_broadcast="KRA-ZUL",
         trophies=[{"name": str(i), "chief": "x", "cycle": 1} for i in range(5)],
-        era="stone_age", founded_city=False,
+        era="primitive_dawn", founded_city=False,
     )
 
     result = compute_wellbeing(tribe, wall_fraction=1.0)

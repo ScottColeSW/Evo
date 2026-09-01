@@ -694,7 +694,7 @@ def test_raid_that_reduces_defender_to_zero_population_merges_into_the_attacker(
     attacker = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     defender = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
     defender.population = 1  # a single raid at 20% (rounded up to a minimum of 1) finishes them
-    defender.era = "bronze_age"
+    defender.era = "tribal_synapse"
     defender.wood, defender.stone, defender.food, defender.water = 5, 5, 5, 5
     sim.tribes = {"tribe_0": attacker, "tribe_1": defender}
 
@@ -703,7 +703,7 @@ def test_raid_that_reduces_defender_to_zero_population_merges_into_the_attacker(
 
     assert note == "raided Mountain Tribe, fully absorbing its survivors -- Forest Tribe becomes Forest Tribe (Advanced)!"
     assert attacker.name == "Forest Tribe (Advanced)"
-    assert attacker.era == "bronze_age"  # inherits the higher of the two eras
+    assert attacker.era == "tribal_synapse"  # inherits the higher of the two eras
     assert attacker.chief_name == ""  # chief-less, awaiting the next cycle's succession
     assert "tribe_1" not in sim.tribes
     assert defender.extinct is True
@@ -794,18 +794,18 @@ def test_strike_raider_camp_win_chance_scales_with_population():
     assert "destroyed" in high_note
 
 
-def test_strike_raider_camp_unlocked_only_from_bronze_age():
+def test_strike_raider_camp_unlocked_only_from_tribal_synapse():
     from backend.eras import unlocked_actions_through
 
-    assert "STRIKE_RAIDER_CAMP" not in unlocked_actions_through("stone_age")
-    assert "STRIKE_RAIDER_CAMP" in unlocked_actions_through("bronze_age")
+    assert "STRIKE_RAIDER_CAMP" not in unlocked_actions_through("primitive_dawn")
+    assert "STRIKE_RAIDER_CAMP" in unlocked_actions_through("tribal_synapse")
 
 
-def test_cook_food_unlocked_only_from_bronze_age():
+def test_cook_food_unlocked_only_from_tribal_synapse():
     from backend.eras import unlocked_actions_through
 
-    assert "COOK_FOOD" not in unlocked_actions_through("stone_age")
-    assert "COOK_FOOD" in unlocked_actions_through("bronze_age")
+    assert "COOK_FOOD" not in unlocked_actions_through("primitive_dawn")
+    assert "COOK_FOOD" in unlocked_actions_through("tribal_synapse")
 
 
 def test_raid_ignores_extinct_tribes_and_self():

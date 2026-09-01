@@ -4,7 +4,7 @@ from backend.prompts import _growth_pressure_text, compile_live_state_prompt, ge
 def _world_state(**overrides):
     base = {
         "cycle": 1, "x": 50, "y": 60, "biome": "plains", "population": 8,
-        "wood": 50, "stone": 50, "food": 40, "water": 30, "era": "stone_age",
+        "wood": 50, "stone": 50, "food": 40, "water": 30, "era": "primitive_dawn",
         "available_actions": ["GATHER_WOOD", "IDLE"],
         "visible_entities": ["none"],
     }

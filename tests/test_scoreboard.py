@@ -11,7 +11,7 @@ def _tribe(model="gemma2:2b", **overrides):
 
 def test_record_and_read_round_trips(tmp_path):
     path = str(tmp_path / "scoreboard.jsonl")
-    tribe = _tribe(era="bronze_age", max_population=15, chiefs_elected=2)
+    tribe = _tribe(era="tribal_synapse", max_population=15, chiefs_elected=2)
 
     record_tribe_result(tribe, cause="starvation", cycles_survived=42, path=path)
     results = read_all_results(path)
@@ -20,7 +20,7 @@ def test_record_and_read_round_trips(tmp_path):
     assert results[0]["model"] == "gemma2:2b"
     assert results[0]["cause_of_death"] == "starvation"
     assert results[0]["cycles_survived"] == 42
-    assert results[0]["era_reached"] == "bronze_age"
+    assert results[0]["era_reached"] == "tribal_synapse"
     assert results[0]["max_population"] == 15
     assert results[0]["chiefs_elected"] == 2
 
@@ -41,13 +41,13 @@ def test_record_appends_rather_than_overwrites(tmp_path):
 
 def test_summarize_by_model_groups_and_averages():
     results = [
-        {"model": "gemma2:2b", "cycles_survived": 30, "era_reached": "stone_age", "max_population": 8,
+        {"model": "gemma2:2b", "cycles_survived": 30, "era_reached": "primitive_dawn", "max_population": 8,
          "chiefs_elected": 1, "chief_deaths": 0, "expeditions_launched": 2, "expeditions_succeeded": 1,
          "raids_won": 0, "raids_lost": 0, "raids_defended": 0, "trades_completed": 0},
-        {"model": "gemma2:2b", "cycles_survived": 50, "era_reached": "stone_age", "max_population": 9,
+        {"model": "gemma2:2b", "cycles_survived": 50, "era_reached": "primitive_dawn", "max_population": 9,
          "chiefs_elected": 2, "chief_deaths": 1, "expeditions_launched": 3, "expeditions_succeeded": 2,
          "raids_won": 1, "raids_lost": 0, "raids_defended": 0, "trades_completed": 1},
-        {"model": "qwen2.5:3b", "cycles_survived": 100, "era_reached": "bronze_age", "max_population": 20,
+        {"model": "qwen2.5:3b", "cycles_survived": 100, "era_reached": "tribal_synapse", "max_population": 20,
          "chiefs_elected": 1, "chief_deaths": 0, "expeditions_launched": 4, "expeditions_succeeded": 3,
          "raids_won": 0, "raids_lost": 1, "raids_defended": 2, "trades_completed": 3},
     ]
