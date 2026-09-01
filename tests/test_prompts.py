@@ -38,7 +38,7 @@ def test_prompt_clarifies_only_relocate_moves_the_tribe():
     regardless of the action chosen. Both were architecture bugs, not model failures."""
     prompt = compile_live_state_prompt("base", _world_state(), "", "")
     assert "Only RELOCATE moves your tribe" in prompt
-    assert "SCOUT looks at target_vector without moving" in prompt
+    assert "SCOUT dispatches a party to explore without moving anyone here" in prompt
 
 
 def test_prompt_ties_target_vector_to_a_confirmed_site_coordinate():

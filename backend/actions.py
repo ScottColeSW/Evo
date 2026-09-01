@@ -13,6 +13,7 @@ point: real settlements explore via scouts before the whole body relocates, they
 drift a little every time someone chops wood.
 """
 
+import math
 import random
 
 from . import config, physics
@@ -560,18 +561,33 @@ def _generate_scout(tribe, cycle: int, base_days: int = None) -> dict:
 
 
 def _scout(sim, tribe, biome, target):
-    """Dispatches an expedition toward target_vector -- your most capable people, out
-    searching, not an instant look. They travel and camp under their own supply (no
-    drain on the tribe's stockpile), for up to config.EXPEDITION_MAX_DAYS before turning
-    back empty-handed if they've found nothing. If they reach real fresh water or their
+    """Dispatches an expedition -- your most capable people, out searching, not an
+    instant look. They travel and camp under their own supply (no drain on the
+    tribe's stockpile), for up to config.EXPEDITION_MAX_DAYS before turning back
+    empty-handed if they've found nothing. If they reach real fresh water or their
     intended destination first, they turn back immediately to report it -- but the
-    finding only becomes real, actionable knowledge once they've walked all the way home
-    (Simulation._advance_expeditions runs the day-by-day travel; this handler only
-    launches or no-ops one). Only after that can the tribe's own reasoning choose to
-    RELOCATE the whole camp there. This replaced an instant per-turn terrain check and,
-    before that, handing a newly-elected chief water's exact coordinates outright (see
-    leadership.py) -- water and distant terrain should be things a tribe discovers by
-    actually sending people to go look, not facts the simulation gifts for free.
+    finding only becomes real, actionable knowledge once they've walked all the way
+    home (Simulation._advance_expeditions runs the day-by-day travel; this handler
+    only launches or no-ops one). Only after that can the tribe's own reasoning
+    choose to RELOCATE the whole camp there. This replaced an instant per-turn
+    terrain check and, before that, handing a newly-elected chief water's exact
+    coordinates outright (see leadership.py) -- water and distant terrain should be
+    things a tribe discovers by actually sending people to go look, not facts the
+    simulation gifts for free.
+
+    Explicit request: "they can't reason about closeness to the discover, they
+    have to get to a pre-assigned location and explore along the way... scout
+    directions rotate on a 20 degree angle starting with the South East."
+    target_vector is deliberately NOT read here anymore -- live runs showed two
+    scouts launched back to back heading the exact same direction, since small
+    models repeatedly failed to turn compass-direction facts (or even their own
+    prior choices) into coordinates that actually covered new ground. Each real
+    dispatch advances tribe.scout_rotation_index by one step
+    (config.SCOUT_ROTATION_STEP_DEGREES), so coverage spreads out over time
+    regardless of what the model reasons about geometry -- projected out to the
+    grid edge along that heading (physics.extend_ray_to_grid_edge), the same
+    "keep walking this direction" logic an ordinary search already pushes onward
+    with once it reaches its own original target.
 
     A tribe can have up to expedition_capacity(tribe) parties out at once (scaling with
     population past config.MAX_CONCURRENT_EXPEDITIONS' floor -- see that function), any
@@ -583,7 +599,15 @@ def _scout(sim, tribe, biome, target):
         )
         return f"no one left to send -- every party is already out: {fields}"
 
-    tx, ty = target
+    angle_degrees = (
+        config.SCOUT_ROTATION_START_ANGLE_DEGREES
+        + config.SCOUT_ROTATION_STEP_DEGREES * tribe.scout_rotation_index
+    ) % 360
+    tribe.scout_rotation_index += 1
+    angle_radians = math.radians(angle_degrees)
+    through_x = tribe.x + round(math.cos(angle_radians) * 10)
+    through_y = tribe.y + round(math.sin(angle_radians) * 10)
+    tx, ty = physics.extend_ray_to_grid_edge(tribe.x, tribe.y, through_x, through_y, sim.world.grid_size)
     tx = max(0, min(sim.world.grid_size - 1, tx))
     ty = max(0, min(sim.world.grid_size - 1, ty))
     scout = _generate_scout(tribe, sim.cycle)
@@ -1070,7 +1094,7 @@ ACTION_DESCRIPTIONS = {
     "PLANT_CROP": "Plant a farm plot at your current tile using stored wood -- only possible once the tribe has settled here. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
     "GATHER_EGGS": "Search for wild fowl nests near your current tile -- only possible once the tribe has settled here. A found egg is set aside and hatches on its own, growing the tribe's flock by one.",
     "CATCH_FISH": "Fish at your current tile -- only possible once the tribe has settled here. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",
-    "SCOUT": "Dispatch an expedition toward target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home. Your tribe can have a couple of parties out at once (scouting or hunting, any mix) -- choosing SCOUT again sends another one if there's room, or just reports on whoever's already out once you're at capacity.",
+    "SCOUT": "Dispatch an expedition to explore -- the direction is chosen automatically to spread coverage out over time, not from target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home. Your tribe can have a couple of parties out at once (scouting or hunting, any mix) -- choosing SCOUT again sends another one if there's room, or just reports on whoever's already out once you're at capacity.",
     "HUNTING_PARTY": "Send a hunting party toward target_vector -- shares the same expedition capacity as SCOUT (a couple of parties, scouting or hunting in any mix, can be out at once). They travel and hunt on their own supply for up to several days, facing the same wolf-pack risk as an instant hunt on every day out, until they catch something or give up. Any food caught only becomes real, usable food once they've walked all the way home -- a hunt still in the field does nothing for hunger right now, no matter how promising.",
     "RELOCATE": "Move your whole tribe several tiles toward target_vector this cycle, possibly over several cycles for a far destination. Produces no resources while traveling and costs extra food and water for the effort.",
     "BREED": "Your chief and whoever currently holds a trophy start a family together, costing food and water and growing your population by one child if it succeeds. Does nothing if fewer than two named individuals (a chief plus at least one trophy-holder) exist yet, or if food/water can't cover the cost.",

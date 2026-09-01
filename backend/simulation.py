@@ -296,6 +296,12 @@ class Tribe:
         # tribe can run more than one party at once (up to config.MAX_CONCURRENT_
         # EXPEDITIONS), any mix of scouting and hunting.
         self.expeditions: list[dict] = []
+        # See actions.py._scout -- explicit request: "scout directions rotate
+        # on a 20 degree angle starting with the South East." Advances by one
+        # step (config.SCOUT_ROTATION_STEP_DEGREES) every real SCOUT dispatch,
+        # guaranteeing coverage spreads out over time regardless of the
+        # model's own (frequently unreliable) sense of direction.
+        self.scout_rotation_index = 0
         # Farming (backend/actions.py PLANT_CROP, Simulation._advance_farming). Growth
         # is a passive per-cycle tick once at least one plot exists, not a discrete
         # action -- same category as upkeep/population growth.
@@ -478,6 +484,7 @@ class Tribe:
             "mine_built": self.mine_built,
             "mine_resource_name": self.mine_resource_name,
             "unique_resources": self.unique_resources,
+            "scout_rotation_index": self.scout_rotation_index,
             "kitchen_built": self.kitchen_built,
             "foraging_retired": self.foraging_retired,
             "watering_retired": self.watering_retired,

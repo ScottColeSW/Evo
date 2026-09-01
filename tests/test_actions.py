@@ -1003,6 +1003,10 @@ def test_other_actions_never_move_the_tribe():
 
 
 def test_scout_does_not_move_the_tribe_but_launches_an_expedition():
+    """Explicit request: "scout directions rotate on a 20 degree angle
+    starting with the South East" -- target_vector (here, (10,10)) is
+    deliberately ignored for SCOUT specifically; the real heading comes from
+    tribe.scout_rotation_index instead (see test_scout_rotation_* below)."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
 
@@ -1010,10 +1014,44 @@ def test_scout_does_not_move_the_tribe_but_launches_an_expedition():
 
     assert (tribe.x, tribe.y) == (50, 50)  # scouting doesn't relocate the tribe
     assert len(tribe.expeditions) == 1
-    assert tribe.expeditions[0]["target"] == [10, 10]
+    assert tribe.expeditions[0]["target"] != [10, 10]
     assert tribe.expeditions[0]["day"] == 0
     assert tribe.expeditions[0]["phase"] == "outbound"
     assert "depart" in note
+
+
+def test_scout_rotation_starts_southeast_and_advances_by_a_fixed_step():
+    """Explicit request: "scout directions rotate on a 20 degree angle
+    starting with the South East.\""""
+    from backend.simulation import _compass_direction
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (0, 0))
+    first_target = tribe.expeditions[0]["target"]
+    assert _compass_direction(first_target[0] - 50, first_target[1] - 50) == "southeast"
+    assert tribe.scout_rotation_index == 1
+
+    tribe.expeditions.clear()  # room for a second party
+    ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (0, 0))
+    second_target = tribe.expeditions[0]["target"]
+
+    assert tribe.scout_rotation_index == 2
+    assert second_target != first_target
+
+
+def test_scout_rotation_ignores_target_vector_entirely():
+    sim = _bare_simulation()
+    same_target = (77, 3)
+    headings = []
+    for _ in range(3):
+        tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+        ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", same_target)
+        headings.append(tuple(tribe.expeditions[0]["target"]))
+
+    assert len(set(headings)) == 1  # same tribe.scout_rotation_index (0) each time -> same heading
+    assert same_target not in headings
 
 
 def test_scout_launch_gives_the_expedition_a_named_lead_and_determination_trait():

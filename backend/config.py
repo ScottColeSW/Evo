@@ -402,6 +402,22 @@ DROWNING_TRAUMA_RADIUS = 6
 # carries DROWNING_HAZARD_CHANCE -- hearing water from a safe distance carries no risk.
 WATER_SENSING_RADIUS = 6
 
+# SCOUT's actual heading (backend/actions.py._scout): explicit request --
+# "they can't reason about closeness to the discover, they have to get to a
+# pre-assigned location and explore along the way. let's say for now, scout
+# directions rotate on a 20 degree angle starting with the South East." Small
+# models repeatedly failed to translate compass-direction facts (or even their
+# own prior targets) into coordinates that actually covered new ground -- live
+# runs showed two scouts launched back to back heading the exact same
+# direction. target_vector is no longer read for SCOUT specifically (still
+# used for RELOCATE/HUNTING_PARTY/RAID/TRADE/etc, all of which have a real
+# reason to point somewhere the model actually chose): each dispatch advances
+# to the next angle in a fixed rotation instead, guaranteeing coverage spreads
+# out over time regardless of what the model reasons about geometry. 45
+# degrees matches _compass_direction's own convention for southeast.
+SCOUT_ROTATION_START_ANGLE_DEGREES = 45
+SCOUT_ROTATION_STEP_DEGREES = 20
+
 # A wandering storm cloud (Simulation._advance_weather) -- weather that exists whether
 # or not any tribe is watching, not triggered by or aimed at anyone. Rare to spawn
 # (checked once per cycle only while no storm is active), rare to strike once present,
