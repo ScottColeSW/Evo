@@ -3107,6 +3107,27 @@ def test_failed_wall_defense_destroys_the_wall_forcing_a_rebuild():
     assert (50, 50) not in sim.world.constructions
 
 
+def test_failed_wall_defense_also_resets_reinforcement_layers():
+    """Live bug report: "the forest tribe has built walls and then they got
+    destroyed? and they built them again" -- a breach deleted the wall construction
+    but left tribe.wall_layers at whatever it was (e.g. 2, after a reinforcement),
+    out of sync with "no wall actually stands." Rebuilding the base wall from
+    scratch then unconditionally reset wall_layers to 1 on completion
+    (actions._construct_wall), silently discarding the earlier reinforcement instead
+    of reflecting a genuine breach down to nothing."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    tribe.food = tribe.water = tribe.wood = tribe.stone = 100
+    tribe.wall_layers = 2  # already reinforced once
+    sim.world.constructions[(50, 50)] = {"type": "wall", "cycle": 0, "progress": 100}
+
+    with mock.patch("backend.simulation.random.random", return_value=0.99):  # defense fails
+        sim._resolve_raider_attack(tribe)
+
+    assert tribe.wall_layers == 0
+
+
 def test_successful_wall_defense_leaves_the_wall_standing():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")

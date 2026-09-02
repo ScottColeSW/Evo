@@ -2310,7 +2310,17 @@ class Simulation:
                 # branches below). Radiates dread AT THE SIGHTING COORDINATE, not the
                 # tribe's own camp -- a place now known to be dangerous, not
                 # something that happened at home.
-                if random.random() < config.RAIDER_SIGHTING_CHANCE:
+                # Bug report: "there is a raider in the ocean." exp["target"] is
+                # wherever this leg was AIMED, not necessarily anywhere the party
+                # actually set foot -- a target that lands in open water (deflected
+                # around, per physics.terrain_aware_step, or just never reached)
+                # still got reported as a raider sighting with no land check at all.
+                # "Not biome-matched" (see this constant's own comment) means no
+                # specific biome is required, not that literally underwater counts.
+                if (
+                    random.random() < config.RAIDER_SIGHTING_CHANCE
+                    and biome_at(*exp["target"]) not in config.UNBUILDABLE_BIOMES
+                ):
                     rx, ry = exp["target"]
                     if (rx, ry) not in tribe.raider_sightings:
                         tribe.raider_sightings.append((rx, ry))
@@ -2750,8 +2760,19 @@ class Simulation:
         # other real defensive structure that gets breached. Only removed on an
         # actual failed defense, not on a successful repel (wall_fraction > 0 branch
         # above returns before reaching here).
+        #
+        # Bug report: "the forest tribe has built walls and then they got destroyed?
+        # and they built them again" -- this deleted the construction but left
+        # tribe.wall_layers at whatever it was (e.g. 2, after a reinforcement),
+        # silently out of sync with "no wall actually stands." Rebuilding the base
+        # wall from scratch (actions._construct_wall) then unconditionally set
+        # wall_layers back to 1 on completion, quietly discarding the earlier
+        # reinforcement instead of reflecting that it was genuinely breached down to
+        # nothing. Reset here so the two stay consistent: a breach takes the whole
+        # wall down, reinforcement layers included.
         if wall_fraction > 0:
             del self.world.constructions[(tribe.x, tribe.y)]
+            tribe.wall_layers = 0
         tribe.history.append(
             "raiders struck the camp -- the wall blunted the worst of it, but was breached and must be rebuilt" if wall_fraction > 0.3 else
             "raiders struck the camp -- defenses failed, supplies stolen"
