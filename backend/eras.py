@@ -72,8 +72,16 @@ ERAS: tuple[Era, ...] = (
         key="cognitive_horizon",
         label="Cognitive Horizon",
         requires_population=12,
-        requires_resources={"water": 20, "stone": 20, "wood": 20},
-        advancement_cost={"wood": 15, "stone": 15, "water": 10},
+        # Live-run correction (2026-09-02): "some later game options are coming up
+        # too early... they don't even have food under control." No era, at any
+        # tier, ever required food -- a tribe could clear every threshold here
+        # while genuinely food-fragile. Food gets water's own buffer ratio (2x
+        # required vs. spent), not wood/stone's looser 1.33x -- food actually
+        # drains on its own via upkeep between now and whenever it's spent, the
+        # same real risk water carries, unlike wood/stone which only move when a
+        # tribe chooses to spend them.
+        requires_resources={"water": 20, "stone": 20, "wood": 20, "food": 20},
+        advancement_cost={"wood": 15, "stone": 15, "water": 10, "food": 10},
         # No new discrete action -- small models essentially never reach for a newly
         # unlocked one anyway (see _check_for_celebration's own docstring on this
         # exact finding). This era's real content is a passive system, not an
@@ -91,8 +99,11 @@ ERAS: tuple[Era, ...] = (
         # just floored at 0 instead of actually paying the cost. Real requirement now,
         # with the same buffer-above-cost pattern stone/water already use (40
         # required vs. 30 spent -- advancing doesn't zero the tribe out).
-        requires_resources={"water": 40, "stone": 40, "wood": 40},
-        advancement_cost={"wood": 30, "stone": 30, "water": 20},
+        # Food added for the same reason as Cognitive Horizon above -- water's 2x
+        # buffer ratio, not wood/stone's 1.33x, since food keeps draining via
+        # upkeep on its own.
+        requires_resources={"water": 40, "stone": 40, "wood": 40, "food": 40},
+        advancement_cost={"wood": 30, "stone": 30, "water": 20, "food": 20},
         unlocks_actions=(
             "CONSTRUCT_WALL", "EXPAND_TERRITORY", "PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "STRIKE_RAIDER_CAMP",
             "BUILD_LONG_HOUSE", "DECLARE_ALLIANCE", "DECLARE_WAR", "BUILD_DOCK", "BUILD_FISHERY",

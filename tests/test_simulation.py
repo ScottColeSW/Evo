@@ -4120,12 +4120,14 @@ def test_era_advances_once_population_and_resources_are_met():
     tribe.water = 40
     tribe.stone = 40
     tribe.wood = 50
+    tribe.food = 40
 
     sim._advance_era_if_ready(tribe)
 
     assert tribe.era == "tribal_synapse"
     assert tribe.wood == 20  # 50 - 30 advancement cost
     assert tribe.stone == 10  # 40 - 30 advancement cost
+    assert tribe.food == 20  # 40 - 20 advancement cost
 
 
 def test_era_advances_one_step_at_a_time_even_if_stats_clear_a_later_era_too():
@@ -4137,13 +4139,31 @@ def test_era_advances_one_step_at_a_time_even_if_stats_clear_a_later_era_too():
     tribe.water = 40
     tribe.stone = 40
     tribe.wood = 50
+    tribe.food = 40
 
     sim._advance_era_if_ready(tribe)
 
     assert tribe.era == "cognitive_horizon"
     assert tribe.water == 30  # 40 - 10 advancement cost
+    assert tribe.food == 30  # 40 - 10 advancement cost
     assert "Cognitive Horizon" in tribe.history[-1]
     assert "PRIDE" in sim.trauma.bias_string(50, 50)
+
+
+def test_era_does_not_advance_without_meeting_the_food_requirement():
+    """Live-run correction (2026-09-02): no era used to require food at all -- a
+    tribe could clear population/water/stone/wood while genuinely food-fragile."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 20
+    tribe.water = 40
+    tribe.stone = 40
+    tribe.wood = 40
+    tribe.food = 5  # below the cognitive_horizon requirement
+
+    sim._advance_era_if_ready(tribe)
+
+    assert tribe.era == "primitive_dawn"
 
 
 def test_era_does_not_advance_without_meeting_resource_requirements():

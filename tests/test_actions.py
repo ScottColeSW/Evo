@@ -2150,11 +2150,33 @@ def test_breed_deducts_its_solo_cost():
     assert tribe.water == config.STARTING_WATER - config.BREED_WATER_COST
 
 
-def test_breed_is_free_and_succeeds_even_with_almost_no_food_or_water():
-    """BREED costs nothing (see config.BREED_FOOD_COST/WATER_COST) -- the two real
-    eligible windows watched live were both inside a full starvation spiral, so
-    affordability can't be a second gate stacked on top of the real constraint
-    (two distinct named individuals)."""
+def test_breed_now_costs_real_food_and_water():
+    """Live-run correction (2026-09-02): BREED used to be free (config.
+    BREED_FOOD_COST/WATER_COST = 0) -- a weaker model latched onto it as a
+    reflexive default with nothing weighing against it (63.8% of turns in one
+    run). Costs roughly one gathering action's worth of each resource now."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+    tribe.trophies = [{"name": "Water Bringer", "chief": "BriMir", "cycle": 1}]
+    tribe.food = 100
+    tribe.water = 100
+
+    note = ACTION_REGISTRY["BREED"](sim, tribe, "plains", (0, 0))
+
+    assert "Ashgar and BriMir decide to start a family" in note
+    assert tribe.pending_birth == {"parent_a": "Ashgar", "parent_b": "BriMir"}
+    assert tribe.food == 100 - config.BREED_FOOD_COST
+    assert tribe.water == 100 - config.BREED_WATER_COST
+
+
+def test_breed_fails_during_a_real_starvation_crisis_now_that_it_has_a_cost():
+    """The reversal of the test above: a positive cost means BREED can genuinely be
+    blocked during a 0-food/0-water crisis now -- the exact scenario the original
+    zero-cost design was built to avoid, deliberately accepted as the tradeoff for
+    stopping reflexive BREED spam outside a crisis."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.chief_name = "Ashgar"
@@ -2164,10 +2186,8 @@ def test_breed_is_free_and_succeeds_even_with_almost_no_food_or_water():
 
     note = ACTION_REGISTRY["BREED"](sim, tribe, "plains", (0, 0))
 
-    assert "Ashgar and BriMir decide to start a family" in note
-    assert tribe.pending_birth == {"parent_a": "Ashgar", "parent_b": "BriMir"}
-    assert tribe.food == 0
-    assert tribe.water == 0
+    assert tribe.pending_birth is None
+    assert "too little food and water" in note
 
 
 def test_breed_refuses_at_the_population_cap():

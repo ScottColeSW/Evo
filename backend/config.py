@@ -445,14 +445,19 @@ COOKING_FOOD_MULTIPLIER = 3
 MILESTONE_SCOUT_SUCCESSES = 5
 MILESTONE_HUNT_SUCCESSES = 5
 
-# BREED (backend/actions.py._breed, backend/breeding.py). Free -- the two real eligible
-# windows watched live this session both landed inside a full starvation death spiral
-# (0 food/water), meaning the tribe couldn't have afforded any positive cost even if it
-# had chosen BREED. The eligibility gate (two distinct named individuals) is still the
-# real constraint; this just stops affordability from being a second one stacked on top
-# of it during the exact moments eligibility is most likely to appear.
-BREED_FOOD_COST = 0
-BREED_WATER_COST = 0
+# BREED (backend/actions.py._breed, backend/breeding.py). Was free (0/0) -- the two
+# real eligible windows watched in an early session both landed inside a full
+# starvation death spiral (0 food/water), so a positive cost would have blocked BREED
+# during the exact moments eligibility was most likely to appear. Live-run correction
+# (2026-09-02): "BREEDing is free after all. it should cost" -- a weaker model
+# (llama3.2:1b) latched onto BREED as its reflexive default with nothing weighing
+# against it (63.8% of turns in one run), the same lexical-fixation pattern already
+# seen with GATHER_FOOD, just on a different verb. Costs roughly one gathering
+# action's worth of each resource now -- real friction against reflexive spam, but
+# still affordable outside an actual crisis, unlike a cost scaled to feel
+# "significant" against a healthy stockpile.
+BREED_FOOD_COST = 8
+BREED_WATER_COST = 5
 
 # Survival instinct thresholds (backend/instincts.py), expressed as cycles of upkeep
 # remaining rather than a flat stockpile number -- a flat "food <= 20" meant wildly
@@ -787,7 +792,10 @@ MOAT_DEFENSE_BONUS = 0.08
 # complete first -- defense before shelter.
 LONG_HOUSE_WOOD_COST = 25
 LONG_HOUSE_STONE_COST = 20
-HOUSING_POPULATION_PER_LONG_HOUSE = 8
+# Raised 8 -> 30 (explicit request: "how many people to a Long House? 30 maybe at
+# most") -- a real, human-scale capacity per building rather than a small number
+# that mostly just controlled how fast Long Houses accumulated.
+HOUSING_POPULATION_PER_LONG_HOUSE = 30
 
 # The defensive tier ladder after Long House (backend/actions.py._build_keep/
 # _build_fortress/_build_castle): explicit request -- "they can have 10 houses

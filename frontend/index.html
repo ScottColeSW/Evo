@@ -1248,16 +1248,45 @@ function drawTribeIndividuals(tribeId, t) {
     // deserves to read as speech, not a flat label -- a rounded bubble with a small
     // tail pointing down at the tribe it came from, bordered in that tribe's own color
     // so whose voice this is is legible even before reading the text.
+    // Bug report ("daytime dialogs are long again -- fully horizontal, not wrapped"):
+    // broadcasts are usually a short invented word, but a smaller/less disciplined
+    // model can still emit a long sentence, and this used to size the bubble to the
+    // whole string's own width with no wrapping at all -- one very wide horizontal
+    // box. Same word-wrap approach drawThoughtBubble already uses, just a tighter
+    // wrapWidth/line cap befitting a spoken bubble rather than a multi-sentence
+    // reflection.
+    const wrapWidth = 140;
+    const maxLines = 6;
     ctx.font = "bold 10px monospace";
-    const w = ctx.measureText(t.last_broadcast).width;
+    const fullWidth = ctx.measureText(t.last_broadcast).width;
+    let lines;
+    if (fullWidth <= wrapWidth) {
+      lines = [t.last_broadcast];
+    } else {
+      const words = t.last_broadcast.split(" ");
+      lines = [];
+      let current = "";
+      for (const w of words) {
+        const test = current ? current + " " + w : w;
+        if (ctx.measureText(test).width > wrapWidth && current) {
+          lines.push(current);
+          current = w;
+        } else {
+          current = test;
+        }
+      }
+      if (current) lines.push(current);
+      if (lines.length > maxLines) {
+        lines.length = maxLines;
+        lines[maxLines - 1] = lines[maxLines - 1].replace(/\s*\S*$/, "") + "…";
+      }
+    }
+
+    const lineHeight = 12;
     const padX = 6, padY = 4, tailH = 6;
-    const bw = w + padX * 2, bh = 14 + padY * 2;
-    // Bug report ("day time dialog boxes are not shaped correctly"): bh used to be
-    // `14 + padY` -- only one padY instead of the symmetric padY*2 every other
-    // dimension here uses (bw, and drawThoughtBubble's own bh right above), making the
-    // box shorter than its own padding math intended. Also never clamped to the
-    // canvas like drawThoughtBubble already does, so a tribe near the map edge could
-    // push most of the bubble off-screen.
+    const contentWidth = Math.min(wrapWidth, Math.max(20, ...lines.map(l => ctx.measureText(l).width)));
+    const bw = contentWidth + padX * 2;
+    const bh = lines.length * lineHeight + padY * 2;
     const bx = Math.max(4, Math.min(canvas.width - bw - 4, centerX - bw / 2));
     const by = claimBubbleSlot(bx, centerY - topClearance - bh, bw, bh);
     const r = 5;
@@ -1291,7 +1320,9 @@ function drawTribeIndividuals(tribeId, t) {
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.fillStyle = "#fbbf24";
-    ctx.fillText(t.last_broadcast, bx + padX, by + bh - padY - 2);
+    lines.forEach((line, i) => {
+      ctx.fillText(line, bx + padX, by + padY + (i + 1) * lineHeight - 2);
+    });
   }
 
   (t.expeditions || []).forEach((exp, i) => drawExpedition(t, tribeId, exp, i));
