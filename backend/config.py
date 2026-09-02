@@ -260,8 +260,16 @@ UNBUILDABLE_BIOMES = ("ocean", "river", "lake", "cliffs", "shoals")
 # architect.py) inside a real owned territory (backend/city_layout.py). Granted the
 # instant tribe.has_ever_settled becomes True -- the earlier "Settled" milestone, not
 # the later, stricter founded_city (Monolithic Era + a real Long House).
-TERRITORY_FOUNDING_REGION = 10  # base radius = SETTLEMENT_WATER_TERRITORY_RADIUS * this = 40 tiles
-WALL_RING_RADIUS_STEP = SETTLEMENT_WATER_TERRITORY_RADIUS * TERRITORY_FOUNDING_REGION  # 40; ring i sits at 40*(i+1)
+#
+# Live-run correction (2026-09-02, same day): the original TERRITORY_FOUNDING_REGION=10
+# (radius 40 on a GRID_SIZE=100 map) was way too big in practice -- a single tribe's
+# starting territory spanned 80% of the map's width, guaranteeing overlap with every
+# other tribe's before either side ever took an EXPAND_TERRITORY action. Dropped to the
+# smallest value that still respects WALL_MIN_RING_RADIUS below (the real geometric
+# floor for 8 wall sections to stay properly spaced) rather than picking an arbitrary
+# smaller number.
+TERRITORY_FOUNDING_REGION = 3  # base radius = SETTLEMENT_WATER_TERRITORY_RADIUS * this = 12 tiles
+WALL_RING_RADIUS_STEP = SETTLEMENT_WATER_TERRITORY_RADIUS * TERRITORY_FOUNDING_REGION  # 12; ring i sits at 12*(i+1)
 
 # EXPAND_TERRITORY grows the real territory radius (scaled down on cramped land via
 # _local_buildable_fraction, same idea the old MIN_CITY_BUILDINGS_ON_CRAMPED_LAND
@@ -271,12 +279,12 @@ TERRITORY_EXPANSION_RADIUS_INCREMENT_BASE = 12
 TERRITORY_EXPANSION_RADIUS_MIN_INCREMENT = 3  # floor even on badly cramped land
 
 # The wall is a real polygon of positioned sections around the territory, not one
-# progress-bar tile. WALL_RING_SECTION_COUNT=8 (a compass octagon) at radius >= 40
-# gives ~30+ tiles of chord spacing between adjacent sections -- comfortably past
-# WALL_MIN_SECTION_SPACING (3 long-house-widths, 3*3=9), so the spacing rule is
-# satisfied by construction; WALL_MIN_RING_RADIUS documents the real floor (solves
-# 2*R*sin(pi/8) >= 9) as a tripwire against a future radius change violating it, not
-# a runtime path that's ever expected to fire.
+# progress-bar tile. WALL_RING_SECTION_COUNT=8 (a compass octagon) needs
+# 2*radius*sin(pi/8) >= WALL_MIN_SECTION_SPACING (3 long-house-widths, 3*3=9) --
+# WALL_MIN_RING_RADIUS=12 is that real floor, solved from the same formula, and
+# WALL_RING_RADIUS_STEP is now set exactly at it (chord spacing ~9.2) rather than
+# comfortably past it -- the tightest radius that's still provably correct, not a
+# runtime path expected to ever violate the tripwire below.
 WALL_RING_SECTION_COUNT = 8
 WALL_SECTION_LENGTH = 5
 WALL_SECTION_WIDTH = 1
@@ -306,7 +314,8 @@ BUILDING_PLACEMENT_PADDING = 1
 BUILDING_FOOTPRINTS = {
     "town_hall": (5, 5), "long_house": (3, 2), "wall_section": (5, 1),
     "keep": (4, 4), "fortress": (6, 6), "castle": (8, 8),
-    "sawmill": (3, 3), "quarry": (3, 3), "mine": (3, 3),
+    "sawmill": (3, 3), "quarry": (3, 3), "mine": (3, 3), "forge": (2, 2),
+    "warehouse": (3, 3),
     "kitchen": (2, 2), "tannery": (2, 2), "dock": (2, 2), "fishery": (2, 4),
     "farm_plot": (3, 3), "flock_pen": (2, 2), "fire": (1, 1),
 }
@@ -594,6 +603,24 @@ TRADE_GIFT_FRACTION = 0.15
 TRADE_PRIDE_MAGNITUDE = 0.3
 TRADE_PRIDE_RADIUS = 4
 
+# Minor settlements (backend/simulation.py._spawn_minor_settlements, backend/
+# actions.py._raid/_trade): explicit request -- neutral, non-AI raid/trade targets
+# scattered on the map, distinct from tribe-vs-tribe RAID/TRADE. "Quick and dirty":
+# no population, no chief, no LLM call, no battle roll -- RAID against one always
+# succeeds (there's no defense to lose to), at no population risk either way.
+# Snapshot-based, not simulated: each one's stockpile mirrors whichever real
+# tribe currently has the highest population at the moment it spawns/respawns, so
+# its loot scales with how developed the world actually is instead of a flat
+# invented number.
+MINOR_SETTLEMENT_COUNT = 3
+MINOR_SETTLEMENT_MAX_RAIDS = 3
+MINOR_SETTLEMENT_RESPAWN_CYCLES = 7
+# Raiding empties it out fast (only 3 uses before it's exhausted); trading is the
+# smaller, repeatable, risk-free alternative to raiding the same target -- reuses
+# RAID/TRADE's own existing proximity radii, not a separate search distance.
+MINOR_SETTLEMENT_RAID_STEAL_FRACTION = 0.4
+MINOR_SETTLEMENT_TRADE_FRACTION = 0.1
+
 # DECLARE_ALLIANCE/DECLARE_WAR (backend/actions.py): a persistent, per-rival
 # geopolitical stance (Age 4's Declare_Geopolitical_Posture from the Agentic
 # Evolution spec reconciliation) -- unlike instant RAID/TRADE, this leaves a real,
@@ -670,13 +697,15 @@ RAIDER_STEAL_FRACTION = 0.25
 RAIDER_DEFEAT_LOOT_FRACTION = 0.2
 
 # Scout early-warning (Simulation._advance_one_expedition's arrival-home branch): an
-# independent roll, NOT tied to the biome of whatever terrain_report was rolled --
-# unlike lumber/wildlife/quarry sites, raiders aren't a biome feature, so a party can
-# plausibly spot both a resource site and raider sign on the same trip. Radiates a
-# small dread event AT THE SIGHTING COORDINATE, not the tribe's camp -- a genuinely
-# new pattern: this is about a place now known to be dangerous, not something that
-# happened at home.
-RAIDER_SIGHTING_CHANCE = 0.1
+# independent roll, rolled separately from every resource-site chance above, so a
+# party can plausibly spot both a resource site and raider sign on the same trip.
+# Radiates a small dread event AT THE SIGHTING COORDINATE, not the tribe's camp -- a
+# genuinely new pattern: this is about a place now known to be dangerous, not
+# something that happened at home.
+# Live-run feedback (2026-09-02): "tone down a little the Raider sites, the Raids
+# are fine" -- this is only the map-marker/rumor rate, not RAIDER_APPROACH_CYCLES or
+# any actual attack odds, both left untouched. Halved from 0.1.
+RAIDER_SIGHTING_CHANCE = 0.05
 RAIDER_SIGHTING_TRAUMA_MAGNITUDE = -0.4
 RAIDER_SIGHTING_TRAUMA_RADIUS = 4
 # Bug report: "we have a lot of Raider camps right on top of a resource." Both the
@@ -819,6 +848,43 @@ QUARRY_WOOD_COST = 15
 QUARRY_STONE_COST = 30
 QUARRY_STONE_MULTIPLIER = 3
 
+# BUILD_WAREHOUSE + storage caps (backend/actions.py): explicit request, after a
+# live run showed Forest Tribe pile wood up to 200+ while permanently starved on
+# stone -- unlimited storage meant nothing ever pushed a tribe to reconsider what
+# it was gathering. STORAGE_CAP_BASE alone (150) already clears every era's own
+# resource requirement (the highest, Cosmic Post-Human, needs at most 120), so a
+# tribe is never blocked by this before ever building a Warehouse -- it only ever
+# catches genuinely excessive hoarding. Repeatable, like Long House
+# (HOUSING_POPULATION_PER_LONG_HOUSE) -- "expansion of the tribe will allow that to
+# scale storage with building needs" -- each Warehouse adds a further flat bonus,
+# same shape, same fixed footprint every time (see config.BUILDING_FOOTPRINTS --
+# explicit request: "a building that never changes its footprint regardless of how
+# much it is holding").
+STORAGE_CAP_BASE = 150
+WAREHOUSE_STORAGE_BONUS_PER_BUILDING = 100
+WAREHOUSE_WOOD_COST = 25
+WAREHOUSE_STONE_COST = 20
+
+# Live-run correction (2026-09-02): lumber/wildlife sites used to be *guaranteed*
+# whenever a scout's terrain_report happened to be "forest," and quarry sites the
+# same for "mountains" -- a tribe that never happened to scout toward the right
+# biome was structurally locked out of that resource forever (a real bug report: a
+# Forest Tribe stuck at Cognitive Horizon because no mountains were ever within
+# scouting range, so it could never discover a quarry site). Explicit request: "it
+# should be an even distribution, without overlap. the exception is the Biome
+# unique Ore in some Mines." Reworked to the same shape UNIQUE_RESOURCE_BY_BIOME
+# already uses -- an independent chance roll on ANY scouted terrain, regardless of
+# biome -- so every tribe eventually finds every resource type no matter where it
+# happens to scout, just not deterministically from one specific biome.
+LUMBER_SITE_DISCOVERY_CHANCE = 0.35
+WILDLIFE_SITE_DISCOVERY_CHANCE = 0.35
+QUARRY_SITE_DISCOVERY_CHANCE = 0.35
+# "Without overlap": if an independent roll lands on a tile another site type
+# already occupies for this tribe, nudge it to a nearby free tile instead of
+# stacking two different resource sites on the identical coordinate -- same
+# "spotted nearby, not literally on it" idea RAIDER_SIGHTING_OFFSET already uses.
+RESOURCE_SITE_OVERLAP_OFFSET = 5
+
 # BUILD_MINE + the per-biome unique resource (backend/actions.py): explicit
 # request -- "Mines can [also] contain the Unique Resource of the Biome (these
 # locations are scattered about the map)." A mine site is discovered the same way
@@ -851,6 +917,30 @@ TANNERY_YIELD_PER_CYCLE = 4
 KITCHEN_WOOD_COST = 20
 KITCHEN_STONE_COST = 10
 KITCHEN_FOOD_MULTIPLIER = 3
+
+# BUILD_FORGE/FORGE_ITEM/USE_ITEM (backend/actions.py): explicit request -- a Mine's
+# named ore had nowhere real to go once excavated ("we skipped a beat" between mining
+# and doing anything with it). Gated on tribe.mine_built plus at least one unit of
+# that mine's own resource already in stock ("built after they get 1 Ore"), not a
+# separate discovery mechanic like Mine/Tannery's own site-scouting gate. Deliberately
+# simple per explicit request: "We do not need to track durability, but they can
+# provide value" -- each crafted item just carries a flat, type-based value, no wear.
+FORGE_WOOD_COST = 25
+FORGE_STONE_COST = 20
+FORGE_ITEM_ORE_COST = 1
+FORGE_ITEM_WOOD_COST = 10
+ITEM_TYPES = ("tool", "weapon", "innovation")
+ITEM_NAMES_BY_TYPE = {
+    "tool": ("Iron Plow", "Whetstone", "Forged Hoe", "Tempered Chisel"),
+    "weapon": ("Iron Spearhead", "Bronze Axe", "Reinforced Bow", "War Hammer"),
+    # Explicit steer: flavorful, not sci-fi -- no Joby eVTOLs or spaceships, just
+    # small mechanical curiosities a forge could plausibly produce.
+    "innovation": ("Geared Wheel", "Pressure Valve", "Tempered Spring", "Balanced Hinge"),
+}
+ITEM_VALUE_BY_TYPE = {"tool": 8, "weapon": 12, "innovation": 15}
+# USE_ITEM redeems a crafted item for its value, split across wood/stone -- the
+# straightforward cash-out for a value that otherwise just sits on the tribe.
+USE_ITEM_STONE_SHARE = 0.5
 
 # Bronze Age counter-offensive (backend/actions.py._strike_raider_camp): a tribe that
 # has scouted a raider camp (raider_sightings) can strike it directly once organized

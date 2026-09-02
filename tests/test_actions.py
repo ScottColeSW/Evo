@@ -15,6 +15,7 @@ def _bare_simulation():
     sim.cycle = 1
     sim.immortality_cycles = 0
     sim.recent_encounters = []
+    sim.minor_settlements = []
     return sim
 
 
@@ -111,6 +112,99 @@ def test_stone_yield_is_reduced_outside_mountains():
     assert tribe.stone == 2  # round(10 * 0.25)
 
 
+def test_storage_cap_is_the_base_amount_with_no_warehouses():
+    from backend.actions import _storage_cap
+    from backend import config
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    assert _storage_cap(tribe) == config.STORAGE_CAP_BASE
+
+
+def test_storage_cap_rises_with_each_warehouse_built():
+    from backend.actions import _storage_cap
+    from backend import config
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.warehouses_built = 2
+
+    assert _storage_cap(tribe) == config.STORAGE_CAP_BASE + 2 * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+
+
+def test_gather_wood_is_wasted_once_storage_is_already_full():
+    """Explicit design goal: the tribe should be *told*, as the real result of the
+    turn it just took, not have the overflow silently vanish."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = config.STORAGE_CAP_BASE
+
+    result = ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "forest", _NO_TARGET)
+
+    assert tribe.wood == config.STORAGE_CAP_BASE  # unchanged, nothing fit
+    assert "wood stores are already full" in result
+
+
+def test_gather_wood_partially_fits_right_at_the_edge_of_the_cap():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = config.STORAGE_CAP_BASE - 3  # first harvest at this tile yields 10
+
+    result = ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "forest", _NO_TARGET)
+
+    assert tribe.wood == config.STORAGE_CAP_BASE
+    assert "wood stores are nearly full" in result
+    assert "only 3 of 10 fits" in result
+
+
+def test_gather_wood_below_the_cap_is_unaffected():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 0
+
+    result = ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "forest", _NO_TARGET)
+
+    assert tribe.wood == 10
+    assert result is None
+
+
+def test_build_warehouse_is_repeatable_and_raises_the_storage_cap():
+    from backend.actions import _storage_cap
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = config.WAREHOUSE_WOOD_COST * 3
+    tribe.stone = config.WAREHOUSE_STONE_COST * 3
+    cap_before = _storage_cap(tribe)
+
+    result = ACTION_REGISTRY["BUILD_WAREHOUSE"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.warehouses_built == 1
+    assert _storage_cap(tribe) == cap_before + config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+    assert "warehouse rises" in result
+
+    ACTION_REGISTRY["BUILD_WAREHOUSE"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.warehouses_built == 2
+    assert _storage_cap(tribe) == cap_before + 2 * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+
+
+def test_build_warehouse_no_op_when_cannot_afford_it():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = config.WAREHOUSE_WOOD_COST - 1
+    tribe.stone = config.WAREHOUSE_STONE_COST
+
+    assert ACTION_REGISTRY["BUILD_WAREHOUSE"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.warehouses_built == 0
+
+
 def test_second_fire_at_the_same_tile_costs_nothing_and_gains_no_pride():
     """Regression test: a real 8-cycle live run showed a model spamming BUILD_FIRE at
     the same tile every cycle, each one radiating more ancestral pride at zero
@@ -141,9 +235,11 @@ def test_construct_wall_adds_progress_and_costs_proportional_resources():
     tribe.wood = 50
     tribe.stone = 50
 
+    from backend import city_layout
+
+    ring_i, sec_i = city_layout.next_wall_work_section(tribe)  # first real (non-natural) section in compass order
     ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
 
-    ring_i, sec_i = 0, 0  # fixed compass order -- section 0 ("N") is worked first
     section = tribe.wall_rings[ring_i]["sections"][sec_i]
     assert 0 < section["progress"] < 100
     assert tribe.wood < 50
@@ -220,14 +316,17 @@ def test_larger_population_builds_wall_progress_faster():
 def test_build_long_house_requires_the_wall_to_be_complete_first():
     """Explicit request: BUILD_LONG_HOUSE is gated on the first wall ring already
     being complete -- defense before shelter."""
+    from backend import city_layout
+
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     _settle(sim, tribe)
     _unlock_all_ring0_sections(sim, tribe)
     tribe.wood = 100
     tribe.stone = 100
+    ring_i, sec_i = city_layout.next_wall_work_section(tribe)
     ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)  # one section, partial only
-    assert 0 < tribe.wall_rings[0]["sections"][0]["progress"] < 100
+    assert 0 < tribe.wall_rings[ring_i]["sections"][sec_i]["progress"] < 100
 
     result = ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
 
@@ -378,6 +477,11 @@ def test_build_castle_succeeds_once_fortress_and_seventy_long_houses_exist():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     _settle(sim, tribe)
+    # A Castle's 8x8 footprint doesn't fit inside a freshly-founded (radius-12)
+    # territory alongside the wall ring sitting right at that same boundary -- by the
+    # time CASTLE_LONG_HOUSES_REQUIRED long houses and a Fortress are real, EXPAND_
+    # TERRITORY would have grown real territory well past this in actual play.
+    tribe.territory_radius = 40
     tribe.wood = 300
     tribe.stone = 300
     tribe.fortress_built = True
@@ -394,7 +498,7 @@ def test_build_castle_succeeds_once_fortress_and_seventy_long_houses_exist():
 
 
 def test_wall_can_be_reinforced_with_a_second_layer_once_complete():
-    from backend import config
+    from backend import city_layout, config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
@@ -402,10 +506,11 @@ def test_wall_can_be_reinforced_with_a_second_layer_once_complete():
     _complete_ring0(sim, tribe, tier=1)  # every section already built, one reinforcement tier already applied
     tribe.wood = 300
     tribe.stone = 300
+    ring_i, sec_i = city_layout.next_wall_work_section(tribe)
 
     ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
 
-    assert tribe.wall_rings[0]["sections"][0]["tier"] == config.WALL_MAX_LAYERS
+    assert tribe.wall_rings[ring_i]["sections"][sec_i]["tier"] == config.WALL_MAX_LAYERS
 
 
 def test_wall_reinforcement_stops_at_the_layer_cap():
@@ -805,6 +910,111 @@ def test_build_tannery_requires_a_scouted_rabbit_warren():
     assert "tannery is built" in result
 
 
+def test_build_forge_requires_mine_and_at_least_one_ore():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Mountain Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = config.FORGE_WOOD_COST
+    tribe.stone = config.FORGE_STONE_COST
+
+    # No mine at all yet.
+    assert ACTION_REGISTRY["BUILD_FORGE"](sim, tribe, "plains", _NO_TARGET) is None
+
+    tribe.mine_built = True
+    tribe.mine_resource_name = "Orosite Ore"
+    tribe.unique_resources["Orosite Ore"] = 0
+
+    # A mine exists, but nothing's actually been produced yet.
+    result = ACTION_REGISTRY["BUILD_FORGE"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.forge_built is False
+    assert "not enough ore" in result
+
+    tribe.unique_resources["Orosite Ore"] = 1
+    result = ACTION_REGISTRY["BUILD_FORGE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.forge_built is True
+    assert tribe.wood == 0
+    assert tribe.stone == 0
+    assert any(t["name"] == "Blacksmith" for t in tribe.trophies)
+    assert "forge is built" in result
+
+
+def test_forge_item_requires_forge_built_and_consumes_ore_and_wood():
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Mountain Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.mine_resource_name = "Orosite Ore"
+    tribe.unique_resources["Orosite Ore"] = 5
+    tribe.wood = config.FORGE_ITEM_WOOD_COST
+
+    # No forge yet -- ore/wood in stock isn't enough on its own.
+    assert ACTION_REGISTRY["FORGE_ITEM"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.items == []
+
+    tribe.forge_built = True
+    with mock.patch("backend.actions.random.choice", side_effect=["tool", "Whetstone"]):
+        result = ACTION_REGISTRY["FORGE_ITEM"](sim, tribe, "plains", _NO_TARGET)
+
+    assert len(tribe.items) == 1
+    item = tribe.items[0]
+    assert item == {"name": "Whetstone", "type": "tool", "value": config.ITEM_VALUE_BY_TYPE["tool"], "cycle_made": sim.cycle}
+    assert tribe.unique_resources["Orosite Ore"] == 5 - config.FORGE_ITEM_ORE_COST
+    assert tribe.wood == 0
+    assert "Whetstone" in result
+    assert any(t["name"] == "Artisan" for t in tribe.trophies)
+
+
+def test_forge_item_is_a_no_op_without_enough_ore_or_wood():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Mountain Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.forge_built = True
+    tribe.mine_resource_name = "Orosite Ore"
+    tribe.unique_resources["Orosite Ore"] = 0
+    tribe.wood = config.FORGE_ITEM_WOOD_COST
+
+    assert ACTION_REGISTRY["FORGE_ITEM"](sim, tribe, "plains", _NO_TARGET) is None
+
+    tribe.unique_resources["Orosite Ore"] = config.FORGE_ITEM_ORE_COST
+    tribe.wood = 0
+
+    assert ACTION_REGISTRY["FORGE_ITEM"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.items == []
+
+
+def test_use_item_converts_value_to_wood_and_stone():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Mountain Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.items = [{"name": "War Hammer", "type": "weapon", "value": config.ITEM_VALUE_BY_TYPE["weapon"], "cycle_made": 1}]
+    wood_before, stone_before = tribe.wood, tribe.stone
+
+    result = ACTION_REGISTRY["USE_ITEM"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.items == []
+    stone_gain = round(config.ITEM_VALUE_BY_TYPE["weapon"] * config.USE_ITEM_STONE_SHARE)
+    wood_gain = config.ITEM_VALUE_BY_TYPE["weapon"] - stone_gain
+    assert tribe.wood == wood_before + wood_gain
+    assert tribe.stone == stone_before + stone_gain
+    assert "War Hammer" in result
+
+
+def test_use_item_is_a_no_op_with_no_items():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Mountain Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    wood_before, stone_before = tribe.wood, tribe.stone
+
+    assert ACTION_REGISTRY["USE_ITEM"](sim, tribe, "plains", _NO_TARGET) is None
+    assert (tribe.wood, tribe.stone) == (wood_before, stone_before)
+
+
 def test_trade_exchanges_unique_resources_too():
     """Explicit request confirms the original "Mine & unique resource" design
     gap: "maybe some hunters want a Tannery and they can trade furs too." Trade
@@ -823,6 +1033,38 @@ def test_trade_exchanges_unique_resources_too():
     assert tribe.unique_resources["Orosite Ore"] == round(50 * config.TRADE_GIFT_FRACTION)
     assert partner.unique_resources["Orosite Ore"] == 50 - round(50 * config.TRADE_GIFT_FRACTION)
     assert partner.unique_resources["Fur"] == round(100 * config.TRADE_GIFT_FRACTION)
+
+
+def test_trade_exchanges_one_crafted_item_each_way_when_either_side_has_any():
+    """A forged item is discrete, unlike the fractional resource gifts above -- each
+    side that has any items gives up its oldest one. Also guards against a tribe
+    with zero items immediately receiving back the very item it was just given."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    partner = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 60, 60, "#fb923c")
+    tribe_item = {"name": "Whetstone", "type": "tool", "value": 8, "cycle_made": 1}
+    tribe.items = [tribe_item]
+    partner.items = []  # partner starts with nothing to give back
+
+    _execute_trade(sim, tribe, partner)
+
+    assert tribe.items == []
+    assert partner.items == [tribe_item]
+
+
+def test_trade_swaps_one_item_each_way_when_both_sides_have_some():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    partner = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 60, 60, "#fb923c")
+    tribe_item = {"name": "Whetstone", "type": "tool", "value": 8, "cycle_made": 1}
+    partner_item = {"name": "War Hammer", "type": "weapon", "value": 12, "cycle_made": 2}
+    tribe.items = [tribe_item]
+    partner.items = [partner_item]
+
+    _execute_trade(sim, tribe, partner)
+
+    assert tribe.items == [partner_item]
+    assert partner.items == [tribe_item]
 
 
 def test_build_kitchen_requires_cooking_and_long_house_first():
@@ -1360,6 +1602,79 @@ def test_scout_launch_is_deterministic_per_tribe_and_cycle():
 
     assert tribe_a.expeditions[0]["lead_scout"] == tribe_b.expeditions[0]["lead_scout"]
     assert tribe_a.expeditions[0]["determination"] == tribe_b.expeditions[0]["determination"]
+
+
+def _minor_settlement(x=10, y=10, raids_remaining=None):
+    from backend import config
+
+    return {
+        "x": x, "y": y, "wood": 100, "stone": 100, "food": 100, "water": 100,
+        "raids_remaining": config.MINOR_SETTLEMENT_MAX_RAIDS if raids_remaining is None else raids_remaining,
+        "depleted_at_cycle": None,
+    }
+
+
+def test_raid_always_succeeds_against_a_nearby_minor_settlement():
+    """Explicit request: 'no llm or advanced logic like battle... stealing only.'
+    No population risk either way, unlike a real rival tribe -- a minor settlement
+    has no people to fight back with."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    settlement = _minor_settlement(x=10, y=10)
+    sim.minor_settlements = [settlement]
+    pop_before = tribe.population
+    wood_before = tribe.wood
+
+    result = ACTION_REGISTRY["RAID"](sim, tribe, "plains", (10, 10))
+
+    stolen = round(100 * config.MINOR_SETTLEMENT_RAID_STEAL_FRACTION)
+    assert tribe.wood == wood_before + stolen
+    assert settlement["wood"] == 100 - stolen
+    assert settlement["raids_remaining"] == config.MINOR_SETTLEMENT_MAX_RAIDS - 1
+    assert tribe.population == pop_before  # no risk to the raiding tribe
+    assert "raided an outlying settlement" in result
+
+
+def test_minor_settlement_is_depleted_after_max_raids_and_stops_being_a_target():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    settlement = _minor_settlement(x=10, y=10, raids_remaining=1)
+    sim.minor_settlements = [settlement]
+
+    ACTION_REGISTRY["RAID"](sim, tribe, "plains", (10, 10))
+
+    assert settlement["raids_remaining"] == 0
+    assert settlement["depleted_at_cycle"] == sim.cycle
+
+    # Depleted -- no longer found as a raid target until it respawns.
+    note = ACTION_REGISTRY["RAID"](sim, tribe, "plains", (10, 10))
+    assert "no rival" in note
+
+
+def test_trade_with_a_minor_settlement_is_smaller_and_does_not_deplete_it():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    settlement = _minor_settlement(x=10, y=10)
+    sim.minor_settlements = [settlement]
+    wood_before = tribe.wood
+
+    result = ACTION_REGISTRY["TRADE"](sim, tribe, "plains", (10, 10))
+
+    gained = round(100 * config.MINOR_SETTLEMENT_TRADE_FRACTION)
+    assert tribe.wood == wood_before + gained
+    assert gained < round(100 * config.MINOR_SETTLEMENT_RAID_STEAL_FRACTION)  # smaller than a raid's take
+    assert settlement["raids_remaining"] == config.MINOR_SETTLEMENT_MAX_RAIDS  # untouched by trading
+    assert tribe.trades_completed == 1
+    assert "traded peacefully with an outlying settlement" in result
 
 
 def test_raid_with_no_rival_nearby_does_nothing():

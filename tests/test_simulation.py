@@ -17,6 +17,7 @@ def _bare_simulation():
     sim.storm_cloud = None
     sim.lightning_strike = None
     sim.recent_encounters = []
+    sim.minor_settlements = []
     return sim
 
 
@@ -187,7 +188,7 @@ def test_wall_fraction_helper_reused_by_wellbeing_matches_raider_defense_lookup(
             sec["tier"] = 2
 
     fraction = city_layout.wall_defense_fraction(tribe)
-    assert fraction > 0.9  # 7/8 real sections maxed, 1 natural barrier at 0.5
+    assert fraction > 0.75  # every real section maxed, remaining sections are natural barriers at 0.5
 
     wellbeing = compute_wellbeing(tribe, fraction)
     unwalled = compute_wellbeing(tribe, 0.0)
@@ -2690,7 +2691,16 @@ def _returning_scout_exp(target, terrain_report, lead_scout="Ashgar"):
     }
 
 
-def test_forest_terrain_report_confirms_both_a_lumber_and_a_wildlife_site():
+def test_forest_terrain_report_can_discover_lumber_and_wildlife_without_stacking():
+    """2026-09-02 rework: site discovery is now an independent chance roll per type
+    (LUMBER/WILDLIFE/QUARRY_SITE_DISCOVERY_CHANCE), not a biome-exclusive guarantee
+    -- explicit bug report: a tribe that never scouted toward the right biome was
+    structurally locked out of that resource forever. Forcing both rolls to succeed
+    here also confirms the "without overlap" fix: lumber and wildlife used to always
+    land on the identical forest tile together; now the second one gets nudged off
+    a tile the first already claimed."""
+    from unittest import mock
+
     from backend.world import WILDLIFE_SITE_TYPES
 
     sim = _bare_simulation()
@@ -2698,13 +2708,15 @@ def test_forest_terrain_report_confirms_both_a_lumber_and_a_wildlife_site():
     exp = _returning_scout_exp((60, 60), "forest")
     tribe.expeditions = [exp]
 
-    sim._advance_one_expedition(tribe, exp)
+    # Call order per arrival: raider sighting, lumber, wildlife, quarry, mine.
+    with mock.patch("backend.simulation.random.random", side_effect=[1.0, 0.0, 0.0, 1.0, 1.0]):
+        sim._advance_one_expedition(tribe, exp)
 
     assert tribe.lumber_sites == [(60, 60)]
     assert len(tribe.wildlife_sites) == 1
     site = tribe.wildlife_sites[0]
-    assert (site["x"], site["y"]) == (60, 60)
     assert site["type"] in WILDLIFE_SITE_TYPES
+    assert (site["x"], site["y"]) != (60, 60)  # nudged off the lumber site, not stacked
     assert tribe.quarry_sites == []
 
 
@@ -2738,13 +2750,18 @@ def test_new_wildlife_site_throws_a_game_discovery_celebration():
     discovery of a small-game site." Terrain reports only ever carry memory weight
     0.6, below CELEBRATION_DISCOVERY_WEIGHT, so this would otherwise never trigger
     the generic _check_for_celebration path at all."""
+    from unittest import mock
+
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.food = 100
     exp = _returning_scout_exp((60, 60), "forest")
     tribe.expeditions = [exp]
 
-    sim._advance_one_expedition(tribe, exp)
+    # Lumber fails so it doesn't claim (60,60) first and push the wildlife site
+    # somewhere else -- call order: raider sighting, lumber, wildlife, quarry, mine.
+    with mock.patch("backend.simulation.random.random", side_effect=[1.0, 1.0, 0.0, 1.0, 1.0]):
+        sim._advance_one_expedition(tribe, exp)
 
     assert any("celebrates the discovery of a game-rich site at (60,60)" in entry for entry in tribe.history)
     assert tribe.food < 100
@@ -2768,28 +2785,114 @@ def test_revisiting_an_already_known_wildlife_site_does_not_re_celebrate():
     assert not any("celebrates the discovery of a game-rich site" in entry for entry in tribe.history)
 
 
-def test_mountains_terrain_report_confirms_a_quarry_site():
+def test_mountains_terrain_report_can_confirm_a_quarry_site():
+    from unittest import mock
+
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Mountain Tribe", "qwen2.5:3b", 50, 50, "#fb923c")
     exp = _returning_scout_exp((15, 20), "mountains")
     tribe.expeditions = [exp]
 
-    sim._advance_one_expedition(tribe, exp)
+    # Call order: raider sighting, lumber, wildlife, quarry, mine.
+    with mock.patch("backend.simulation.random.random", side_effect=[1.0, 1.0, 1.0, 0.0, 1.0]):
+        sim._advance_one_expedition(tribe, exp)
 
     assert tribe.quarry_sites == [(15, 20)]
     assert tribe.lumber_sites == []
     assert tribe.wildlife_sites == []
 
 
-def test_plains_terrain_report_confirms_no_resource_landmark():
+def test_quarry_site_can_be_discovered_on_a_non_mountain_biome():
+    """The actual bug fix: quarry sites used to be guaranteed on 'mountains' and
+    impossible everywhere else -- a tribe with no mountains anywhere in scouting
+    range was structurally locked out of ever building a quarry. Independent chance
+    roll now, on any biome."""
+    from unittest import mock
+
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     exp = _returning_scout_exp((60, 60), "plains")
     tribe.expeditions = [exp]
 
-    sim._advance_one_expedition(tribe, exp)
+    with mock.patch("backend.simulation.random.random", side_effect=[1.0, 1.0, 1.0, 0.0, 1.0]):
+        sim._advance_one_expedition(tribe, exp)
+
+    assert tribe.quarry_sites == [(60, 60)]
+
+
+def test_no_resource_landmark_is_found_when_every_discovery_roll_fails():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    exp = _returning_scout_exp((60, 60), "plains")
+    tribe.expeditions = [exp]
+
+    from unittest import mock
+    with mock.patch("backend.simulation.random.random", return_value=1.0):
+        sim._advance_one_expedition(tribe, exp)
 
     assert tribe.lumber_sites == tribe.wildlife_sites == tribe.quarry_sites == []
+
+
+def test_spawn_minor_settlements_creates_the_configured_count_snapshotting_the_biggest_tribe():
+    from backend import config
+
+    sim = _bare_simulation()
+    small = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 20, 20, "#c084fc")
+    big = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 80, 80, "#fb923c")
+    small.population, big.population = 8, 50
+    big.wood, big.stone, big.food, big.water = 200, 150, 90, 300
+    sim.tribes = {"tribe_0": small, "tribe_1": big}
+    sim.minor_settlements = []
+
+    sim._spawn_minor_settlements()
+
+    assert len(sim.minor_settlements) == config.MINOR_SETTLEMENT_COUNT
+    for ms in sim.minor_settlements:
+        assert ms["raids_remaining"] == config.MINOR_SETTLEMENT_MAX_RAIDS
+        assert ms["depleted_at_cycle"] is None
+        # Snapshot of the biggest (highest-population) tribe, not an invented number.
+        assert (ms["wood"], ms["stone"], ms["food"], ms["water"]) == (200, 150, 90, 300)
+        assert 0 <= ms["x"] < config.GRID_SIZE and 0 <= ms["y"] < config.GRID_SIZE
+
+
+def test_advance_minor_settlements_respawns_once_the_cycle_count_elapses():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population, tribe.wood, tribe.stone, tribe.food, tribe.water = 30, 10, 10, 10, 10
+    sim.tribes = {"tribe_0": tribe}
+    sim.cycle = 100
+    depleted = {
+        "x": 5, "y": 5, "wood": 0, "stone": 0, "food": 0, "water": 0,
+        "raids_remaining": 0, "depleted_at_cycle": 100 - config.MINOR_SETTLEMENT_RESPAWN_CYCLES,
+    }
+    sim.minor_settlements = [depleted]
+
+    sim._advance_minor_settlements()
+
+    assert depleted["raids_remaining"] == config.MINOR_SETTLEMENT_MAX_RAIDS
+    assert depleted["depleted_at_cycle"] is None
+    assert (depleted["wood"], depleted["stone"], depleted["food"], depleted["water"]) == (10, 10, 10, 10)
+
+
+def test_advance_minor_settlements_does_not_respawn_before_the_cycle_count_elapses():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    sim.cycle = 100
+    depleted = {
+        "x": 5, "y": 5, "wood": 0, "stone": 0, "food": 0, "water": 0,
+        "raids_remaining": 0, "depleted_at_cycle": 100 - config.MINOR_SETTLEMENT_RESPAWN_CYCLES + 1,
+    }
+    sim.minor_settlements = [depleted]
+
+    sim._advance_minor_settlements()
+
+    assert depleted["raids_remaining"] == 0
+    assert depleted["depleted_at_cycle"] is not None
 
 
 def test_resource_landmarks_are_surfaced_as_durable_facts_and_exposed_to_the_frontend():

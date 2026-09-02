@@ -39,6 +39,17 @@
   #btn-pause { background: #4338ca; color: white; padding: 8px 16px; font-size: 12px; margin-left: auto; }
   #btn-quit { background: #7f1d1d; color: #fecaca; padding: 8px 16px; font-size: 12px; }
 
+  /* Explicit request: "an information section near the day... that lists each of
+     the decided Chief's orders for the day and night" -- a viewer watching a run
+     had no way to see what every tribe is currently doing/why without switching to
+     the Tribes tab (or worse, scrolling the Chronicle) per tribe. Always-visible
+     strip right under the header, one compact line per living tribe. */
+  #orders-banner { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 18px; background: #15151d; border-bottom: 1px solid #2a2a3a; flex-shrink: 0; font-size: 11px; }
+  #orders-banner:empty { display: none; }
+  .orders-chip { display: flex; align-items: baseline; gap: 5px; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .orders-chip .orders-tribe { font-weight: 700; flex-shrink: 0; }
+  .orders-chip .orders-reflection { color: #a5b4fc; font-style: italic; flex-shrink: 0; cursor: help; }
+
   #theater-body { flex: 1; display: flex; min-height: 0; }
   #canvas-container { flex: 1; display: flex; justify-content: center; align-items: center; background: #0b0b0f; position: relative; padding: 12px; min-width: 0; }
   #era-banner { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); background: rgba(67,56,202,0.95); color: #fff; padding: 14px 28px; border-radius: 8px; font-weight: bold; font-size: 15px; opacity: 0; pointer-events: none; transition: opacity 0.5s ease; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,0.4); max-width: min(90vw, 640px); white-space: normal; text-align: center; }
@@ -153,6 +164,7 @@
     <button id="btn-pause">PAUSE</button>
     <button id="btn-quit">QUIT</button>
   </div>
+  <div id="orders-banner"></div>
   <div id="theater-body">
     <div id="canvas-container">
       <div id="era-banner"></div>
@@ -1440,6 +1452,45 @@ function trackNewLandmarks(state) {
   });
 }
 
+// Neutral, non-AI raid/trade targets (backend/simulation.py._spawn_minor_
+// settlements) -- unowned, so no tribe color to borrow; a dim, terracotta-ish
+// stroke instead so it reads as a real place, not a landmark someone found.
+// Depleted (raided out, mid-respawn) reads as dim/hollow rather than vanishing
+// outright, so it's still visible on the map while it recovers.
+function drawMinorSettlements() {
+  (latestState.minor_settlements || []).forEach(ms => {
+    const cx = ms.x * TILE + TILE / 2;
+    const cy = ms.y * TILE + TILE / 2;
+    const r = Math.max(8, TILE * 0.55);
+    const depleted = ms.raids_remaining <= 0;
+    ctx.save();
+    ctx.globalAlpha = depleted ? 0.4 : 1.0;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+    ctx.fillStyle = "rgba(10,14,26,0.92)";
+    ctx.fill();
+    ctx.strokeStyle = "#c2703d";
+    ctx.lineWidth = Math.max(1.5, TILE * 0.14);
+    if (depleted) ctx.setLineDash([2, 2]);
+    ctx.stroke();
+    ctx.font = `${Math.max(13, TILE * 0.95)}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("🏚️", cx, cy + 1);
+
+    ctx.font = `bold ${Math.max(9, TILE * 0.5)}px sans-serif`;
+    const label = depleted ? "recovering" : `${ms.raids_remaining} raid(s) left`;
+    const tagWidth = ctx.measureText(label).width + 6;
+    const tagY = cy + r + 2;
+    ctx.fillStyle = "rgba(10,14,26,0.85)";
+    ctx.fillRect(cx - tagWidth / 2, tagY, tagWidth, Math.max(11, TILE * 0.6));
+    ctx.fillStyle = "#e2e8f0";
+    ctx.textBaseline = "top";
+    ctx.fillText(label, cx, tagY + 1);
+    ctx.restore();
+  });
+}
+
 function drawLandmarks() {
   // Bug report (live playtest): "I'm not sure what landmarks are on the map, I'd
   // like to see those clearly depicted." The old Math.max(3.5, ...) / Math.max(7, ...)
@@ -1631,7 +1682,8 @@ function drawFarmPlot(t) {
 // wherever the City Architect actually placed them.
 const BUILDING_ICONS = {
   town_hall: "🏛️", long_house: "🏠", keep: "🏯", fortress: "🏰", castle: "🏯",
-  sawmill: "🪵", quarry: "⛏️", mine: "💎", kitchen: "🍲", tannery: "🦫",
+  sawmill: "🪵", quarry: "⛏️", mine: "💎", kitchen: "🍲", tannery: "🦫", forge: "🔨",
+  warehouse: "🏬",
   dock: "⚓", fishery: "🎣", farm_plot: "🌾", flock_pen: "🐔", fire: "🔥",
 };
 
@@ -1906,6 +1958,7 @@ function drawFrame() {
     });
 
     drawLandmarks();
+    drawMinorSettlements();
     const now = Date.now();
     heldEncounters = heldEncounters.filter(e => e.expiresAt > now);
     heldEncounters.forEach(e => {
@@ -2067,6 +2120,11 @@ function landmarkCounts(t) {
 // same numbers the lines below report rather than a vaguer "mastered" label.
 const MINE_YIELD_PER_CYCLE = 5;
 const TANNERY_YIELD_PER_CYCLE = 4;
+// Mirrors backend/config.py's STORAGE_CAP_BASE/WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+// -- explicit request, after a live run showed unbounded hoarding (200+ wood while
+// starved on stone): a real ceiling per resource, raised by each Warehouse built.
+const STORAGE_CAP_BASE = 150;
+const WAREHOUSE_STORAGE_BONUS_PER_BUILDING = 100;
 // Mirrors backend/config.py's UPKEEP_POPULATION_DIVISOR/FISHING_SUPPLY_MULTIPLIER
 // -- fishing's passive supply scales with population the same way upkeep does
 // (bug report: "we have hit a food and water scaling problem"), not a flat number.
@@ -2093,7 +2151,7 @@ function farmingPanel(t) {
     || t.long_houses_built || t.keep_built || t.fortress_built || t.castle_built
     || t.moat_built || t.road_built || t.dock_built
     || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built || t.tannery_built
-    || t.founded_city || (t.cooking_learned && !t.kitchen_built);
+    || t.forge_built || t.warehouses_built || t.founded_city || (t.cooking_learned && !t.kitchen_built);
   if (!hasAny) return "";
   const parts = [];
   if (t.farm_plots > 0) {
@@ -2158,6 +2216,15 @@ function farmingPanel(t) {
   if (t.tannery_built) {
     const amount = (t.unique_resources || {})["Fur"] || 0;
     parts.push(`🦫 Tannery — ${TANNERY_YIELD_PER_CYCLE} Fur/day (${amount} stored)`);
+  }
+  if (t.forge_built) {
+    const items = t.items || [];
+    const detail = items.length ? items.map(i => escapeHtml(i.name)).join(", ") : "no items crafted yet";
+    parts.push(`🔨 Forge — ${items.length} item(s) on hand (${detail})`);
+  }
+  if (t.warehouses_built > 0) {
+    const cap = STORAGE_CAP_BASE + t.warehouses_built * WAREHOUSE_STORAGE_BONUS_PER_BUILDING;
+    parts.push(`🏬 Warehouse — ${t.warehouses_built} built, storage capacity ${cap} per resource`);
   }
   return `<div class="farming-panel"><span class="farming-title">🏘️ Establishments</span><br>${parts.join("<br>")}</div>`;
 }
@@ -2231,6 +2298,25 @@ function formatChiefDecision(entry) {
   return html;
 }
 
+// Explicit request: "an information section near the day... that lists each of
+// the decided Chief's orders... for the day and night if there are any." Reuses
+// the exact same "most recent history entry" + formatChiefDecision the Tribes tab's
+// own intel-line already renders (see the 🧠 line above) -- same real data, just
+// always visible instead of one click/tab away. Night's reflection (t.last_reflection,
+// the same text drawThoughtBubble already shows over a tribe at night) is appended
+// as a small hover-only indicator since the banner has no room for both in full.
+function updateOrdersBanner(state) {
+  const el = document.getElementById("orders-banner");
+  const tribes = Object.values(state.tribes || {}).filter(t => !t.extinct);
+  el.innerHTML = tribes.map(t => {
+    const order = (t.history && t.history.length) ? formatChiefDecision(t.history[t.history.length - 1]) : "no decision yet";
+    const reflection = t.last_reflection
+      ? ` <span class="orders-reflection" title="${escapeHtml(t.last_reflection)}">🌙 reflecting</span>`
+      : "";
+    return `<div class="orders-chip"><span class="orders-tribe" style="color:${t.color}">${escapeHtml(t.name)}:</span> ${order}${reflection}</div>`;
+  }).join("");
+}
+
 function updateSidebar(state) {
   const banner = document.getElementById("status-banner");
   if (state.status === "REFACTORING") {
@@ -2251,6 +2337,7 @@ function updateSidebar(state) {
   const dayNumber = Math.floor((state.cycle || 0) / DAY_LENGTH_CYCLES) + 1;
   const dayProgress = (((state.cycle || 0) % DAY_LENGTH_CYCLES) + DAY_LENGTH_CYCLES) % DAY_LENGTH_CYCLES / DAY_LENGTH_CYCLES;
   document.getElementById("day-banner").textContent = `${dayProgress < 0.5 ? "☀️" : "🌙"} Day ${dayNumber}`;
+  updateOrdersBanner(state);
 
   // Immortality suppresses extinction on the backend only (see Simulation.
   // _lose_population) -- a tribe's own prompt never learns it's protected, but the

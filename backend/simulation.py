@@ -409,6 +409,21 @@ class Tribe:
         # unique_resources dict rather than a second parallel system.
         self.tannery_built = False
         self.tannery_site: tuple[int, int] | None = None
+        # See actions.py._build_forge/_forge_item/_use_item -- the natural next step
+        # once a Mine actually produces something (explicit request: "we skipped a
+        # beat" between mining ore and doing anything with it). Gated on mine_built
+        # plus at least one unit of the tribe's own mine_resource_name already in
+        # stock, not a separate discovery mechanic. items holds crafted goods --
+        # {"name", "type" (tool/weapon/innovation), "value", "cycle_made"} -- no
+        # durability tracked, per explicit request; a flat value is all each one
+        # carries, redeemable via USE_ITEM or handed over in a TRADE.
+        self.forge_built = False
+        self.items: list[dict] = []
+        # See actions.py._build_warehouse/_storage_cap -- explicit request after a
+        # live run showed unbounded hoarding (200+ wood while starved on stone).
+        # Repeatable, same shape as long_houses_built -- each one raises every
+        # resource's storage cap by a further flat amount.
+        self.warehouses_built = 0
         # See Simulation._prepare_turn's GATHER_FOOD retirement -- one-way, like
         # has_ever_settled, once a genuinely proven passive food source exists.
         self.foraging_retired = False
@@ -519,6 +534,9 @@ class Tribe:
             "scout_rotation_index": self.scout_rotation_index,
             "kitchen_built": self.kitchen_built,
             "tannery_built": self.tannery_built,
+            "forge_built": self.forge_built,
+            "items": self.items,
+            "warehouses_built": self.warehouses_built,
             "foraging_retired": self.foraging_retired,
             "watering_retired": self.watering_retired,
             "last_harvest_cycle": self.last_harvest_cycle,
@@ -606,6 +624,10 @@ class Simulation:
                 x, y = SPAWN_POINTS[i % len(SPAWN_POINTS)]
             tid = f"tribe_{i}"
             self.tribes[tid] = Tribe(tid, cfg["name"], cfg["model"], x, y, COLORS[i % len(COLORS)], self.event_log)
+        # Neutral, non-AI raid/trade targets (backend/actions.py._raid/_trade) --
+        # see config.MINOR_SETTLEMENT_COUNT's own comment for the full design note.
+        self.minor_settlements: list[dict] = []
+        self._spawn_minor_settlements()
         self.cycle = 0
         self.paused = False
         self.status = "OPERATIONAL"
@@ -985,6 +1007,7 @@ class Simulation:
             "lightning_strike": list(self.lightning_strike) if self.lightning_strike else None,
             "recent_encounters": self.recent_encounters,
             "tribes": {tid: t.to_dict() for tid, t in self.tribes.items()},
+            "minor_settlements": self.minor_settlements,
             "structures": [{"x": x, "y": y, **info} for (x, y), info in self.world.constructions.items()],
             "trails": [
                 {
@@ -1015,6 +1038,7 @@ class Simulation:
         self.world.regenerate(config.DEPLETION_REGEN_PER_CYCLE)
         self.world.decay_trails(config.TRAIL_DECAY_PER_CYCLE)
         self._advance_weather()
+        self._advance_minor_settlements()
         # One-cycle-lifetime, same as lightning_strike -- repopulated fresh below by
         # _check_raider_attack/_raid/_strike_raider_camp, whichever fire this cycle.
         self.recent_encounters = []
@@ -1864,6 +1888,18 @@ class Simulation:
                     "Quarrying is mastered, but no vein of a unique resource has been found yet -- "
                     "scouting may turn one up."
                 )
+        if "BUILD_FORGE" in available_actions and not tribe.forge_built and tribe.mine_built:
+            ore_in_stock = tribe.unique_resources.get(tribe.mine_resource_name, 0)
+            if ore_in_stock >= config.FORGE_ITEM_ORE_COST:
+                visible_entities.append(
+                    f"The mine has produced {tribe.mine_resource_name} -- a forge would let it be worked "
+                    "into real tools, weapons, and inventions instead of just sitting in storage."
+                )
+        if "FORGE_ITEM" in available_actions and tribe.forge_built and tribe.items:
+            visible_entities.append(
+                f"{len(tribe.items)} crafted item(s) are on hand -- each can be redeemed for its stored "
+                "value (USE_ITEM) or handed over in a future trade."
+            )
 
         settlement_actions = ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH")
         if any(a in unlocked_actions_through(tribe.era) for a in settlement_actions):
@@ -2199,6 +2235,71 @@ class Simulation:
         for model in models:
             await self.client.unload_model(model)
 
+    def _resolve_site_overlap(self, x: int, y: int, occupied: set[tuple[int, int]]) -> tuple[int, int]:
+        """Explicit request: resource-site discovery should not stack two different
+        site types on the identical tile (lumber and wildlife used to always land on
+        the same forest tile together). If (x, y) is already used by a different
+        site type this tribe already knows about, nudge to a nearby free tile
+        instead -- same "spotted nearby, not literally on it" idea RAIDER_SIGHTING_
+        OFFSET already uses for raider sightings vs. resource sites."""
+        if (x, y) not in occupied:
+            return x, y
+        off = config.RESOURCE_SITE_OVERLAP_OFFSET
+        for _ in range(8):
+            nx = max(0, min(self.world.grid_size - 1, x + random.randint(-off, off)))
+            ny = max(0, min(self.world.grid_size - 1, y + random.randint(-off, off)))
+            if (nx, ny) not in occupied and biome_at(nx, ny) not in config.UNBUILDABLE_BIOMES:
+                return nx, ny
+        return x, y  # rare fallback -- accept the overlap rather than loop forever
+
+    def _biggest_tribe_snapshot(self) -> dict[str, int]:
+        """The stockpile a minor settlement spawns/respawns with -- a snapshot of
+        whichever real tribe currently has the highest population, not a flat
+        invented number, so loot scales with how developed the world actually is.
+        Falls back to zero if every tribe is extinct (a settlement just sits there
+        with nothing until the next respawn check finds a living tribe again)."""
+        living = [t for t in self.tribes.values() if not t.extinct]
+        if not living:
+            return {"wood": 0, "stone": 0, "food": 0, "water": 0}
+        biggest = max(living, key=lambda t: t.population)
+        return {resource: getattr(biggest, resource) for resource in ("wood", "stone", "food", "water")}
+
+    def _spawn_minor_settlements(self) -> None:
+        """Neutral, non-AI raid/trade targets -- see config.MINOR_SETTLEMENT_COUNT's
+        own comment. Placed on real buildable ground, kept clear of every tribe's own
+        starting camp so a settlement doesn't spawn right on top of one."""
+        occupied = [(t.x, t.y) for t in self.tribes.values()]
+        for _ in range(config.MINOR_SETTLEMENT_COUNT):
+            x, y = self._find_minor_settlement_site(occupied)
+            occupied.append((x, y))
+            self.minor_settlements.append({
+                "x": x, "y": y, "raids_remaining": config.MINOR_SETTLEMENT_MAX_RAIDS,
+                "depleted_at_cycle": None, **self._biggest_tribe_snapshot(),
+            })
+
+    def _find_minor_settlement_site(self, occupied: list[tuple[int, int]]) -> tuple[int, int]:
+        min_spacing = config.GRID_SIZE // (config.MINOR_SETTLEMENT_COUNT + len(self.tribes) + 1)
+        for _ in range(200):
+            x = random.randint(0, self.world.grid_size - 1)
+            y = random.randint(0, self.world.grid_size - 1)
+            if biome_at(x, y) in config.UNBUILDABLE_BIOMES:
+                continue
+            if all(max(abs(x - ox), abs(y - oy)) >= min_spacing for ox, oy in occupied):
+                return x, y
+        return x, y  # rare fallback on a very crowded/small map -- accept the last try
+
+    def _advance_minor_settlements(self) -> None:
+        """Respawns any settlement that's sat depleted (raided out 3 times) for
+        MINOR_SETTLEMENT_RESPAWN_CYCLES -- in place, fresh stock re-snapshotted from
+        whichever tribe is currently biggest, raid count reset."""
+        for ms in self.minor_settlements:
+            if ms["depleted_at_cycle"] is None:
+                continue
+            if self.cycle - ms["depleted_at_cycle"] >= config.MINOR_SETTLEMENT_RESPAWN_CYCLES:
+                ms.update(self._biggest_tribe_snapshot())
+                ms["raids_remaining"] = config.MINOR_SETTLEMENT_MAX_RAIDS
+                ms["depleted_at_cycle"] = None
+
     def _advance_expeditions(self, tribe: Tribe) -> None:
         """Advances every one of a tribe's in-field parties by one day (see
         actions.py._scout/_hunting_party) -- a tribe can have up to
@@ -2442,18 +2543,36 @@ class Simulation:
                     label = BIOME_LABELS.get(exp["terrain_report"], exp["terrain_report"])
                     tx, ty = exp["target"]
                     tribe.memory.remember(f"Scouts explored toward ({tx},{ty}) and found {label} terrain.", self.cycle, weight=0.6)
-                    if exp["terrain_report"] == "forest":
-                        if (tx, ty) not in tribe.lumber_sites:
-                            tribe.lumber_sites.append((tx, ty))
+                    # Live-run correction (2026-09-02): lumber/wildlife/quarry sites
+                    # used to be guaranteed from one specific biome each (forest,
+                    # forest, mountains) -- a tribe that never scouted toward the
+                    # right biome was structurally locked out of that resource
+                    # forever. Independent chance rolls now, on ANY terrain_report,
+                    # the same shape the unique mine resource below already uses.
+                    occupied = set(tribe.lumber_sites) | {(s["x"], s["y"]) for s in tribe.wildlife_sites} | set(tribe.quarry_sites)
+                    # "Already known at this exact tile" is checked BEFORE nudging --
+                    # revisiting a tile that's already a known site of that same type
+                    # is just a re-confirmation (no-op), not a reason to place a new
+                    # site nearby. Nudging only ever applies when a fresh discovery
+                    # would otherwise land on a tile a DIFFERENT site type already
+                    # occupies.
+                    if random.random() < config.LUMBER_SITE_DISCOVERY_CHANCE and (tx, ty) not in tribe.lumber_sites:
+                        lx, ly = self._resolve_site_overlap(tx, ty, occupied)
+                        tribe.lumber_sites.append((lx, ly))
+                        occupied.add((lx, ly))
+                    if random.random() < config.WILDLIFE_SITE_DISCOVERY_CHANCE:
                         is_new_game_site = not any(s["x"] == tx and s["y"] == ty for s in tribe.wildlife_sites)
                         if is_new_game_site:
+                            wx, wy = self._resolve_site_overlap(tx, ty, occupied)
                             site_type = random.choice(WILDLIFE_SITE_TYPES)
-                            tribe.wildlife_sites.append({"x": tx, "y": ty, "type": site_type})
+                            tribe.wildlife_sites.append({"x": wx, "y": wy, "type": site_type})
+                            occupied.add((wx, wy))
                             if tribe.last_celebration_cycle != self.cycle:
-                                self._celebrate_game_discovery(tribe, tx, ty)
-                    elif exp["terrain_report"] == "mountains":
-                        if (tx, ty) not in tribe.quarry_sites:
-                            tribe.quarry_sites.append((tx, ty))
+                                self._celebrate_game_discovery(tribe, wx, wy)
+                    if random.random() < config.QUARRY_SITE_DISCOVERY_CHANCE and (tx, ty) not in tribe.quarry_sites:
+                        qx, qy = self._resolve_site_overlap(tx, ty, occupied)
+                        tribe.quarry_sites.append((qx, qy))
+                        occupied.add((qx, qy))
                     # Explicit request: "Mines can [also] contain the Unique
                     # Resource of the Biome (these locations are scattered about
                     # the map)." A rarer find layered on top of whatever else

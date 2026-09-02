@@ -126,6 +126,32 @@ def expedition_capacity(tribe) -> int:
     return max(config.MAX_CONCURRENT_EXPEDITIONS, tribe.population // config.EXPEDITION_SLOT_POPULATION_DIVISOR)
 
 
+def _storage_cap(tribe) -> int:
+    """A generous ceiling, not a tight one -- STORAGE_CAP_BASE alone already clears
+    every era's own resource requirement, so this is never the reason a tribe can't
+    advance. It only ever catches genuinely excessive hoarding (explicit request,
+    after a live run showed a tribe pile wood up to 200+ while permanently starved
+    on stone). Repeatable Warehouses raise it further -- 'expansion of the tribe
+    will allow that to scale storage with building needs.'"""
+    return config.STORAGE_CAP_BASE + tribe.warehouses_built * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+
+
+def _add_capped(tribe, resource: str, amount: int, label: str) -> str | None:
+    """Adds `amount` of `resource` up to _storage_cap, returning a real in-fiction
+    outcome (like any other action's own result) instead of silently discarding the
+    overflow -- explicit design goal: the tribe should be *told*, as the actual
+    result of the turn it just took, not have it vanish with no explanation."""
+    cap = _storage_cap(tribe)
+    current = getattr(tribe, resource)
+    if current >= cap:
+        return f"the {label} stores are already full -- nothing more fits"
+    added = min(amount, cap - current)
+    setattr(tribe, resource, current + added)
+    if added < amount:
+        return f"the {label} stores are nearly full -- only {added} of {amount} fits"
+    return None
+
+
 def _gather_wood(sim, tribe, biome, target):
     # Explicit request: "saw mill turns 1 wood into 3 wood" -- a permanent
     # multiplier on every future harvest once built (config.SAWMILL_WOOD_MULTIPLIER),
@@ -134,8 +160,7 @@ def _gather_wood(sim, tribe, biome, target):
     amount = _harvest(sim, tribe, "wood", 10, biome)
     if tribe.sawmill_built:
         amount *= config.SAWMILL_WOOD_MULTIPLIER
-    tribe.wood += amount
-    return None
+    return _add_capped(tribe, "wood", amount, "wood")
 
 
 def _gather_stone(sim, tribe, biome, target):
@@ -144,8 +169,7 @@ def _gather_stone(sim, tribe, biome, target):
     amount = _harvest(sim, tribe, "stone", 10, biome)
     if tribe.quarry_built:
         amount *= config.QUARRY_STONE_MULTIPLIER
-    tribe.stone += amount
-    return None
+    return _add_capped(tribe, "stone", amount, "stone")
 
 
 def _gather_water(sim, tribe, biome, target):
@@ -158,8 +182,7 @@ def _gather_water(sim, tribe, biome, target):
         sim._lose_population(tribe, config.DROWNING_HAZARD_POPULATION_LOSS, cause="drowning")
         return "the river's current pulled someone under"
     base = config.WATER_YIELD_RIVER if biome in ("river", "lake") else config.WATER_YIELD_OFF_RIVER
-    tribe.water += _harvest(sim, tribe, "water", base, biome)
-    return None
+    return _add_capped(tribe, "water", _harvest(sim, tribe, "water", base, biome), "water")
 
 
 def _hunt_deer(sim, tribe, biome, target):
@@ -170,9 +193,9 @@ def _hunt_deer(sim, tribe, biome, target):
         )
         sim._lose_population(tribe, config.HUNT_HAZARD_POPULATION_LOSS, cause="wolf_attack")
         return "a wolf pack struck the hunting party"
-    tribe.food += round(_harvest(sim, tribe, "game", 15, biome) * _food_multiplier(tribe))
+    amount = round(_harvest(sim, tribe, "game", 15, biome) * _food_multiplier(tribe))
     tribe.hunt_ever_succeeded = True  # see actions.py._cook_food's own prerequisite
-    return None
+    return _add_capped(tribe, "food", amount, "food")
 
 
 def _forage(sim, tribe, biome, target):
@@ -180,8 +203,8 @@ def _forage(sim, tribe, biome, target):
     HUNT_DEER/HUNTING_PARTY which both carry wolf-pack risk. Lower base yield than
     hunting (10 vs. 15) since safety is the whole point: foraging trades hunting's
     higher ceiling for a guaranteed, no-hazard return."""
-    tribe.food += round(_harvest(sim, tribe, "forage", 10, biome) * _food_multiplier(tribe))
-    return None
+    amount = round(_harvest(sim, tribe, "forage", 10, biome) * _food_multiplier(tribe))
+    return _add_capped(tribe, "food", amount, "food")
 
 
 def _already_built(sim, tribe, kind):
@@ -550,6 +573,27 @@ def _build_quarry(sim, tribe, biome, target):
     return "a quarry opens -- every load of stone harvested from here on is worth three times as much"
 
 
+def _build_warehouse(sim, tribe, biome, target):
+    """Explicit request, after a live run showed unbounded hoarding (200+ wood
+    while starved on stone): repeatable, like Long House -- each one raises
+    _storage_cap further. No prerequisite beyond affordability, same as Dock --
+    storage is infrastructure every tribe can use from the moment it's unlocked,
+    not gated behind some other milestone. Same fixed footprint every time
+    (config.BUILDING_FOOTPRINTS) regardless of how much it ends up holding."""
+    if tribe.wood < config.WAREHOUSE_WOOD_COST or tribe.stone < config.WAREHOUSE_STONE_COST:
+        return None
+    slot = architect.find_free_slot(sim.world, tribe, "warehouse")
+    if slot is None:
+        return None
+    tribe.wood -= config.WAREHOUSE_WOOD_COST
+    tribe.stone -= config.WAREHOUSE_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["warehouse"]
+    architect.record_building(tribe, "warehouse", slot[0], slot[1], w, h, sim.cycle)
+    tribe.warehouses_built += 1
+    sim._award_trophy(tribe, "Quartermaster")
+    return f"a warehouse rises -- storage capacity grows to {_storage_cap(tribe)} per resource"
+
+
 def _build_kitchen(sim, tribe, biome, target):
     """Explicit follow-up: "we might have to let them build a kitchen which
     improves cooked food to excellent food yielding 3 per cooked item." Only
@@ -627,6 +671,71 @@ def _build_tannery(sim, tribe, biome, target):
     tribe.tannery_site = (chosen_site["x"], chosen_site["y"])
     sim._award_trophy(tribe, "Tanner")
     return "a tannery is built -- Fur will flow in steadily from now on"
+
+
+def _build_forge(sim, tribe, biome, target):
+    """Explicit request: a Mine's named ore had nowhere real to go once excavated --
+    "we skipped a beat" between production and doing anything with it. Gated on
+    tribe.mine_built plus at least one unit of that mine's own resource already in
+    stock ("built after they get 1 Ore"), proof the mine is real and working rather
+    than a second parallel discovery mechanic."""
+    if tribe.forge_built or not tribe.mine_built:
+        return None
+    if tribe.unique_resources.get(tribe.mine_resource_name, 0) < config.FORGE_ITEM_ORE_COST:
+        return "not enough ore has been mined yet to justify a forge"
+    if tribe.wood < config.FORGE_WOOD_COST or tribe.stone < config.FORGE_STONE_COST:
+        return None
+    slot = architect.find_free_slot(sim.world, tribe, "forge")
+    if slot is None:
+        return None
+    tribe.wood -= config.FORGE_WOOD_COST
+    tribe.stone -= config.FORGE_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["forge"]
+    architect.record_building(tribe, "forge", slot[0], slot[1], w, h, sim.cycle)
+    tribe.forge_built = True
+    sim._award_trophy(tribe, "Blacksmith")
+    return f"a forge is built -- {tribe.mine_resource_name} can now be worked into real tools, weapons, and inventions"
+
+
+def _forge_item(sim, tribe, biome, target):
+    """Turns stored ore into a real, permanent item -- a tool, a weapon, or a small
+    innovation, picked at random each time (like a mine site's own resource name,
+    this isn't something the tribe gets to choose directly). No durability tracked
+    per explicit request; each item just carries a flat, type-based value, redeemable
+    later via USE_ITEM or handed over in a TRADE."""
+    if not tribe.forge_built:
+        return None
+    if tribe.unique_resources.get(tribe.mine_resource_name, 0) < config.FORGE_ITEM_ORE_COST:
+        return None
+    if tribe.wood < config.FORGE_ITEM_WOOD_COST:
+        return None
+    tribe.unique_resources[tribe.mine_resource_name] -= config.FORGE_ITEM_ORE_COST
+    tribe.wood -= config.FORGE_ITEM_WOOD_COST
+    item_type = random.choice(config.ITEM_TYPES)
+    item_name = random.choice(config.ITEM_NAMES_BY_TYPE[item_type])
+    item = {
+        "name": item_name, "type": item_type,
+        "value": config.ITEM_VALUE_BY_TYPE[item_type], "cycle_made": sim.cycle,
+    }
+    tribe.items.append(item)
+    if len(tribe.items) == 1:
+        sim._award_trophy(tribe, "Artisan")
+    return f"the forge produces a {item_name} ({item_type}) -- {tribe.mine_resource_name} well spent"
+
+
+def _use_item(sim, tribe, biome, target):
+    """Redeems the oldest crafted item for its stored value -- split across wood and
+    stone, the straightforward cash-out for a value that would otherwise just sit on
+    the tribe forever. No durability/degradation to model, so using an item is a
+    one-shot conversion, not a repeatable wear-down."""
+    if not tribe.items:
+        return None
+    item = tribe.items.pop(0)
+    stone_gain = round(item["value"] * config.USE_ITEM_STONE_SHARE)
+    wood_gain = item["value"] - stone_gain
+    tribe.wood += wood_gain
+    tribe.stone += stone_gain
+    return f"the {item['name']} is put to use -- {wood_gain} wood and {stone_gain} stone recovered from its worth"
 
 
 def _plant_crop(sim, tribe, biome, target):
@@ -931,14 +1040,58 @@ def _breed(sim, tribe, biome, target):
     return f"{parent_a} and {parent_b} decide to start a family together"
 
 
+def _find_minor_settlement(sim, x, y):
+    """Shared by RAID and TRADE -- a settlement mid-respawn (raids_remaining <= 0)
+    isn't a valid target for either until it's back. Reuses RAID_PROXIMITY_RADIUS
+    as the search distance, same as a rival tribe -- not a separate, wider net."""
+    for ms in sim.minor_settlements:
+        if ms["raids_remaining"] <= 0:
+            continue
+        if (ms["x"] - x) ** 2 + (ms["y"] - y) ** 2 <= config.RAID_PROXIMITY_RADIUS ** 2:
+            return ms
+    return None
+
+
+def _raid_minor_settlement(sim, tribe, settlement):
+    """No people, no chief, no LLM on the other side -- explicit request: 'no
+    advanced logic like battle... stealing only.' A raid here always succeeds, at
+    no population risk, unlike raiding a real rival tribe. Only 3 uses
+    (config.MINOR_SETTLEMENT_MAX_RAIDS) before it's exhausted and needs to
+    respawn (Simulation._advance_minor_settlements)."""
+    looted = {}
+    for resource in ("wood", "stone", "food", "water"):
+        stolen = round(settlement[resource] * config.MINOR_SETTLEMENT_RAID_STEAL_FRACTION)
+        settlement[resource] -= stolen
+        setattr(tribe, resource, getattr(tribe, resource) + stolen)
+        looted[resource] = stolen
+    settlement["raids_remaining"] -= 1
+    if settlement["raids_remaining"] <= 0:
+        settlement["depleted_at_cycle"] = sim.cycle
+    sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
+    sim.recent_encounters.append({
+        "x": settlement["x"], "y": settlement["y"], "kind": "minor_settlement_raid",
+        "label": "Settlement raided", "outcome": "won",
+    })
+    return (
+        f"raided an outlying settlement -- {looted['wood']} wood, {looted['stone']} stone, "
+        f"{looted['food']} food, and {looted['water']} water taken"
+    )
+
+
 def _raid(sim, tribe, biome, target):
     """Attempt to raid a rival tribe found at target_vector -- the mechanical outlet
     for an aggressive/warlord chief philosophy (leadership.py can already generate one)
     that otherwise has nothing to act on. Real risk on both sides: win chance is just
     the attacker's share of the two tribes' combined population, so a smaller raiding
     party can still lose to a larger defender, and even a winning raid costs the
-    attacker people -- violence isn't a free lever here."""
+    attacker people -- violence isn't a free lever here. Also checks for an
+    unaffiliated minor settlement first (Simulation._spawn_minor_settlements) -- a
+    much safer, weaker target than a real rival, guaranteed to succeed."""
     tx, ty = target
+    settlement = _find_minor_settlement(sim, tx, ty)
+    if settlement is not None:
+        return _raid_minor_settlement(sim, tribe, settlement)
+
     defender = None
     for other in sim.tribes.values():
         if other.id == tribe.id or other.extinct:
@@ -1098,6 +1251,18 @@ def _execute_trade(sim, tribe, partner) -> str:
         tribe.unique_resources[resource] = tribe_amount - tribe_gift + partner_gift
         partner.unique_resources[resource] = partner_amount - partner_gift + tribe_gift
 
+    # A forged item is a discrete, indivisible thing -- can't hand over a "fraction"
+    # of one the way the fractional gifts above work, so each side that actually has
+    # any items gives up its oldest one. Snapshot both gifts before appending either,
+    # so a tribe that had zero items doesn't immediately hand back the very item it
+    # was just given.
+    tribe_item_gift = tribe.items.pop(0) if tribe.items else None
+    partner_item_gift = partner.items.pop(0) if partner.items else None
+    if tribe_item_gift is not None:
+        partner.items.append(tribe_item_gift)
+    if partner_item_gift is not None:
+        tribe.items.append(partner_item_gift)
+
     tribe.trades_completed += 1
     partner.trades_completed += 1
     if tribe.trades_completed == 1:
@@ -1120,14 +1285,42 @@ def _find_trade_partner(sim, tribe, x, y):
     return None
 
 
+def _trade_with_minor_settlement(sim, tribe, settlement):
+    """The peaceful, repeatable alternative to raiding the same target -- explicit
+    idea: 'we can reuse some code and make it raid or trade independently on
+    occurrence.' Smaller and safer than a raid (MINOR_SETTLEMENT_TRADE_FRACTION <<
+    MINOR_SETTLEMENT_RAID_STEAL_FRACTION) and doesn't touch raids_remaining -- there's
+    no one on the other side to actually negotiate with or give anything back, so
+    this is a one-way, guaranteed-safe take, not a real two-way exchange."""
+    gained = {}
+    for resource in ("wood", "stone", "food", "water"):
+        taken = round(settlement[resource] * config.MINOR_SETTLEMENT_TRADE_FRACTION)
+        settlement[resource] -= taken
+        setattr(tribe, resource, getattr(tribe, resource) + taken)
+        gained[resource] = taken
+    tribe.trades_completed += 1
+    if tribe.trades_completed == 1:
+        sim._award_trophy(tribe, "First Contact")
+    sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.TRADE_PRIDE_MAGNITUDE, config.TRADE_PRIDE_RADIUS)
+    return (
+        f"traded peacefully with an outlying settlement -- {gained['wood']} wood, {gained['stone']} stone, "
+        f"{gained['food']} food, and {gained['water']} water received"
+    )
+
+
 def _trade(sim, tribe, biome, target):
     """Attempt to open trade with a rival tribe found at target_vector -- the peaceful
     counterpart to RAID, and the mechanical outlet for a cooperative/community-minded
     chief philosophy that otherwise has nothing to act on. Instant: only works if a
     rival already happens to be within TRADE_PROXIMITY_RADIUS of target_vector right
     now -- SEND_TRADE_EMISSARY is the deliberate, patient alternative that actually
-    goes looking."""
+    goes looking. Also checks for an unaffiliated minor settlement first, the same
+    way RAID does -- a safer, smaller, one-sided exchange rather than a real trade."""
     tx, ty = target
+    settlement = _find_minor_settlement(sim, tx, ty)
+    if settlement is not None:
+        return _trade_with_minor_settlement(sim, tribe, settlement)
+
     partner = _find_trade_partner(sim, tribe, tx, ty)
     if partner is None:
         return "found no rival encampment there to trade with"
@@ -1247,6 +1440,10 @@ ACTION_REGISTRY = {
     "BUILD_QUARRY": _build_quarry,
     "BUILD_MINE": _build_mine,
     "BUILD_TANNERY": _build_tannery,
+    "BUILD_WAREHOUSE": _build_warehouse,
+    "BUILD_FORGE": _build_forge,
+    "FORGE_ITEM": _forge_item,
+    "USE_ITEM": _use_item,
     "BUILD_KITCHEN": _build_kitchen,
     "BUILD_MOAT": _build_moat,
     "BUILD_KEEP": _build_keep,
@@ -1292,6 +1489,10 @@ ACTION_DESCRIPTIONS = {
     "BUILD_QUARRY": "Build a quarry using stored wood and stone -- only possible once a long house stands, fishing is mastered, and a stone-rich site has actually been scouted. A one-time, permanent structure at your settlement: every future load of harvested stone is worth three times as much from then on.",
     "BUILD_MINE": "Excavate a mine at a vein your scouts have already found, using stored wood and stone -- only possible once a quarry stands and at least one vein is known. A one-time, permanent structure: its unique resource flows in steadily from then on.",
     "BUILD_TANNERY": "Build a tannery using stored wood and stone -- only possible once a long house stands, fishing is mastered, and a rabbit warren has actually been scouted. A one-time, permanent structure at your settlement: Fur flows in steadily from then on.",
+    "BUILD_WAREHOUSE": "Build a warehouse using stored wood and stone. Raises how much of every resource can be stored at once -- gathering more than storage allows is wasted. Repeatable: each one raises the limit further.",
+    "BUILD_FORGE": "Build a forge using stored wood and stone -- only possible once a mine stands and at least one unit of its ore is already in stock. A one-time, permanent structure: from then on, ore can be worked into real tools, weapons, and inventions.",
+    "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. No durability to track: each item just carries a flat value, usable later or given away in a trade.",
+    "USE_ITEM": "Redeem your oldest crafted item for its stored value, converted into wood and stone. Does nothing if you have no items.",
     "BUILD_KITCHEN": "Build a kitchen using stored wood and stone -- only possible once cooking is known and a long house stands. A one-time, permanent structure: cooked meals become excellent food, stretching stores even further from then on.",
     "BUILD_MOAT": "Dig a moat using stored wood and stone -- only possible once the wall has been reinforced with a second layer. A one-time, permanent structure, cheaper than another wall layer: a further defense bonus.",
     "BUILD_KEEP": "Build a keep using stored wood and stone -- only possible once enough long houses stand. A one-time, permanent structure: a further defense bonus for the settlement.",
@@ -1303,9 +1504,9 @@ ACTION_DESCRIPTIONS = {
     "HUNTING_PARTY": "Send a hunting party toward target_vector -- shares the same expedition capacity as SCOUT (a couple of parties, scouting or hunting in any mix, can be out at once). They travel and hunt on their own supply for up to several days, facing the same wolf-pack risk as an instant hunt on every day out, until they catch something or give up. Any food caught only becomes real, usable food once they've walked all the way home -- a hunt still in the field does nothing for hunger right now, no matter how promising.",
     "RELOCATE": "Move your whole tribe several tiles toward target_vector this cycle, possibly over several cycles for a far destination. Produces no resources while traveling and costs extra food and water for the effort.",
     "BREED": "Your chief and whoever currently holds a trophy start a family together, costing food and water and growing your population by one child if it succeeds. Does nothing if fewer than two named individuals (a chief plus at least one trophy-holder) exist yet, or if food/water can't cover the cost.",
-    "RAID": "Attempt to raid a rival tribe if one is near target_vector. A win steals some of their stockpile but still costs you people; a loss costs you more. Does nothing if no rival is there.",
+    "RAID": "Attempt to raid a rival tribe if one is near target_vector. A win steals some of their stockpile but still costs you people; a loss costs you more. An unaffiliated minor settlement near target_vector is a much safer alternative -- no people of its own, so a raid there always succeeds with no risk, though it can only be raided a few times before it's exhausted and needs time to recover. Does nothing if neither is there.",
     "STRIKE_RAIDER_CAMP": "Attack a raider camp your scouts have already found (see your raider sighting reports) -- only possible once you know where one is. Success destroys it and recovers some food; failure costs a life and leaves the camp standing.",
-    "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. Does nothing if no rival is there.",
+    "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. An unaffiliated minor settlement near target_vector can also be traded with -- smaller and one-sided (nothing is given up), but it never depletes the way raiding one does. Does nothing if neither is there.",
     "DECLARE_ALLIANCE": "Declare a lasting alliance with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember, not a one-time exchange. Also ends a war you'd previously declared with that same rival. Does nothing if no rival tribe exists.",
     "DECLARE_WAR": "Declare a lasting state of war with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember. Does not attack them directly (see RAID for that); this only sets how the two tribes now stand. Does nothing if no rival tribe exists, or if already at war with them.",
     "SEND_TRADE_EMISSARY": "Dispatch an emissary toward target_vector to actively search for a rival tribe to trade with -- unlike TRADE, this doesn't need one nearby right now, only somewhere along the way over the next few days. Shares the same expedition capacity as SCOUT and HUNTING_PARTY. Finding a partner exchanges goods immediately; the emissary still has to walk home to report what happened.",
