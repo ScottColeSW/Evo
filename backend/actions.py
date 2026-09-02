@@ -353,13 +353,16 @@ def _build_road(sim, tribe, biome, target):
 
 def _expand_territory(sim, tribe, biome, target):
     """Only meaningful once automatic city growth (Simulation._advance_city_growth)
-    has already reached its normal ceiling -- a deliberate push past
-    MAX_CITY_BUILDINGS, not redundant with growth that already happens on its own.
-    Repeatable up to double the normal max (see config.TERRITORY_EXPANSION_
-    BUILDINGS_BONUS) so the territory visual doesn't grow without bound."""
-    if tribe.city_buildings < config.MAX_CITY_BUILDINGS:
+    has already reached its normal ceiling -- a deliberate push past that ceiling, not
+    redundant with growth that already happens on its own. Repeatable up to double the
+    normal max (see config.TERRITORY_EXPANSION_BUILDINGS_BONUS) so the territory visual
+    doesn't grow without bound. The ceiling itself is land-scaled (Simulation.
+    _effective_city_building_cap) -- a tribe hemmed in by water/cliffs gets less room
+    to expand into in both places, not just the ordinary growth path."""
+    cap = sim._effective_city_building_cap(tribe)
+    if tribe.city_buildings < cap:
         return "the city hasn't finished growing on its own yet -- nothing more to expand"
-    if tribe.city_buildings >= config.MAX_CITY_BUILDINGS * 2:
+    if tribe.city_buildings >= cap * 2:
         return None
     if tribe.wood < config.TERRITORY_EXPANSION_WOOD_COST or tribe.stone < config.TERRITORY_EXPANSION_STONE_COST:
         return None

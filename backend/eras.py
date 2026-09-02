@@ -107,7 +107,10 @@ ERAS: tuple[Era, ...] = (
         requires_resources={"water": 60, "stone": 30, "wood": 50},
         advancement_cost={"wood": 40, "stone": 40, "water": 40},
         unlocks_actions=("BUILD_FORTRESS", "BUILD_CASTLE", "BUILD_ROAD", "EXPAND_TERRITORY", "BUILD_MINE"),
-        announcement="{tribe} has founded a lasting city and entered the Monolithic Era!",
+        # Founding itself is a separate, real milestone (Simulation._advance_city_founding
+        # requires at least one Long House first) -- this only announces the era
+        # threshold being reached, not the city actually standing yet.
+        announcement="{tribe} enters the Monolithic Era, ready to found a lasting city!",
         founds_city=True,
     ),
     Era(

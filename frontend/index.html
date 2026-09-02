@@ -1591,10 +1591,11 @@ function drawCityBuildings(t) {
   const r = Math.max(6, (TILE * MOON_CORE_RADIUS_TILES) / 3);
   const wallHalf = r * 2.4;
   // Explicit request: "maybe up, 2 or 3 story buildings eventually." Once the
-  // whole allotment is full (the real MAX_CITY_BUILDINGS cap, not an invented
-  // threshold), a city that can't expand out anymore starts reading as building up
-  // instead -- taller icons, not a bigger ring.
-  const full = t.city_buildings >= config_MAX_CITY_BUILDINGS_HINT;
+  // whole allotment is full (the real, land-scaled effective_city_building_cap from
+  // the backend -- a tribe hemmed in by water/cliffs maxes out well below the flat 6
+  // this used to hardcode), a city that can't expand out anymore starts reading as
+  // building up instead -- taller icons, not a bigger ring.
+  const full = t.city_buildings >= (t.effective_city_building_cap ?? 6);
   for (let i = 0; i < t.city_buildings; i++) {
     const layer = Math.floor(i / BUILDINGS_PER_LAYER);
     const posInLayer = i % BUILDINGS_PER_LAYER;
@@ -1610,10 +1611,6 @@ function drawCityBuildings(t) {
     ctx.fillText(full ? "🏢" : "🏠", bx, by);
   }
 }
-// Matches backend/config.py's MAX_CITY_BUILDINGS -- spaces the ring evenly regardless
-// of how many buildings have appeared so far, rather than bunching them as they grow.
-const config_MAX_CITY_BUILDINGS_HINT = 6;
-
 function drawTrails() {
   // Regression fix: each trail tile used to draw at 1.6x the actual tile size with a
   // heavy dark border -- neighboring trail tiles (very common; that's what a worn

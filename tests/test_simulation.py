@@ -4993,7 +4993,10 @@ def test_drowning_hazard_never_fires_off_river():
     assert tribe.water == 34  # 30 + round(3 * 1.25 labor multiplier at population 10)
 
 
-def test_reaching_monolithic_era_marks_founded_city():
+def test_reaching_monolithic_era_marks_city_founding_eligible_but_not_yet_founded():
+    """Live bug report: a tribe reached Monolithic Era and grew a full, maxed-out city
+    having never built a single Long House. Reaching the era milestone alone is no
+    longer enough -- see _advance_city_founding for the real gate."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.era = "tribal_synapse"
@@ -5005,7 +5008,83 @@ def test_reaching_monolithic_era_marks_founded_city():
     sim._advance_era_if_ready(tribe)
 
     assert tribe.era == "monolithic_era"
+    assert tribe.city_founding_eligible is True
+    assert tribe.founded_city is False
+
+
+def test_advance_city_founding_does_nothing_without_a_long_house():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.city_founding_eligible = True
+    tribe.long_houses_built = 0
+
+    sim._advance_city_founding(tribe)
+
+    assert tribe.founded_city is False
+
+
+def test_advance_city_founding_fires_once_a_long_house_exists():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.city_founding_eligible = True
+    tribe.long_houses_built = 1
+
+    sim._advance_city_founding(tribe)
+
     assert tribe.founded_city is True
+    assert any("founds a city" in entry for entry in tribe.history)
+
+
+def test_advance_city_founding_does_nothing_before_the_era_milestone():
+    """A tribe could build a Long House long before Monolithic Era (housing is
+    unlocked much earlier, at Tribal Synapse) -- that alone shouldn't found a city
+    ahead of schedule."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.city_founding_eligible = False
+    tribe.long_houses_built = 3
+
+    sim._advance_city_founding(tribe)
+
+    assert tribe.founded_city is False
+
+
+def test_effective_city_building_cap_is_full_on_open_land():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")  # open plains
+
+    assert sim._effective_city_building_cap(tribe) == config.MAX_CITY_BUILDINGS
+
+
+def test_effective_city_building_cap_is_reduced_on_a_narrow_shoreline_strip():
+    """Live bug report: a tribe wedged into a narrow forest strip between a river and
+    the coastal cliffs grew a full, maxed-out city there anyway. (83, 58) is real map
+    geography confirmed narrow -- river immediately west, cliffs/ocean two tiles east."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 83, 58, "#c084fc")
+
+    cap = sim._effective_city_building_cap(tribe)
+
+    assert config.MIN_CITY_BUILDINGS_ON_CRAMPED_LAND <= cap < config.MAX_CITY_BUILDINGS
+
+
+def test_advance_city_growth_is_capped_by_local_land_not_just_max_buildings():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 83, 58, "#c084fc")  # cramped strip
+    tribe.founded_city = True
+    tribe.population = config.CITY_BUILDING_POPULATION_STEP * (config.MAX_CITY_BUILDINGS + 10)
+
+    sim._advance_city_growth(tribe)
+
+    cap = sim._effective_city_building_cap(tribe)
+    assert cap < config.MAX_CITY_BUILDINGS
+    assert tribe.city_buildings == cap
 
 
 _FAKE_CHIEF = {"chief_name": "Test Chief", "victory_method": "a coin flip", "guiding_philosophy": "test philosophy"}

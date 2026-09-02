@@ -191,6 +191,12 @@ class Tribe:
         self.history: list[str] = TribeHistory(name, event_log)
         self.memory = TribeMemory(tribe_id)
         self.founded_city = False
+        # Set the moment the tribe's era reaches Era.founds_city, even if it isn't
+        # actually allowed to found yet (see _advance_city_founding) -- separates "the
+        # era-progression milestone has been reached" from "a real city has actually
+        # been founded," so a still-pending founding gets rechecked every cycle instead
+        # of only at the one instant the era itself advanced.
+        self.city_founding_eligible = False
         self.extinct = False
         self.chief_name = ""
         self.chief_philosophy = ""
@@ -924,7 +930,10 @@ class Simulation:
             "storm_cloud": {"x": self.storm_cloud["x"], "y": self.storm_cloud["y"]} if self.storm_cloud else None,
             "lightning_strike": list(self.lightning_strike) if self.lightning_strike else None,
             "recent_encounters": self.recent_encounters,
-            "tribes": {tid: t.to_dict() for tid, t in self.tribes.items()},
+            "tribes": {
+                tid: {**t.to_dict(), "effective_city_building_cap": self._effective_city_building_cap(t)}
+                for tid, t in self.tribes.items()
+            },
             "structures": [{"x": x, "y": y, **info} for (x, y), info in self.world.constructions.items()],
             "trails": [
                 {
@@ -989,6 +998,7 @@ class Simulation:
             self._advance_resource_trails(tribe)
             self._advance_farming(tribe)
             self._advance_flock(tribe)
+            self._advance_city_founding(tribe)
             self._advance_city_growth(tribe)
             self._check_chief_trophies(tribe)
             self._check_for_celebration(tribe)
@@ -2850,7 +2860,13 @@ class Simulation:
         tribe.era = nxt.key
         tribe.history.append(nxt.announcement.format(tribe=tribe.name))
         if nxt.founds_city:
-            tribe.founded_city = True
+            # Live bug report: a tribe reached Monolithic Era and grew a full,
+            # maxed-out city (6 buildings) having never built a single Long House --
+            # city founding and the housing ladder were two completely disconnected
+            # progression tracks. _advance_city_founding (below) does the real gating
+            # now; this just marks the milestone reached, same as every other
+            # Sawmill/Quarry/Mine/Tannery gate already requires long_houses_built > 0.
+            tribe.city_founding_eligible = True
         self.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.ERA_ADVANCE_PRIDE_MAGNITUDE, config.ERA_ADVANCE_PRIDE_RADIUS
         )
@@ -2985,18 +3001,60 @@ class Simulation:
             parents = tribe.flock_lineage[-2:] if len(tribe.flock_lineage) >= 2 else None
             tribe.pending_hatch = {"parents": parents}
 
+    def _advance_city_founding(self, tribe: Tribe) -> None:
+        """Real gate on Era.founds_city eligibility (see _advance_era_if_ready): a
+        city doesn't formally get founded until at least one Long House stands, the
+        same real-housing dependency Sawmill/Quarry/Mine/Tannery already require.
+        Rechecked every cycle rather than only at the instant the era advances, so
+        a tribe that reaches the milestone before building any housing still founds
+        its city the moment a Long House finally goes up, instead of being
+        permanently denied for having built things in the "wrong" order."""
+        if tribe.founded_city or not tribe.city_founding_eligible:
+            return
+        if tribe.long_houses_built > 0:
+            tribe.founded_city = True
+            tribe.history.append(f"the first Long House stands -- {tribe.name} formally founds a city")
+
+    def _local_buildable_fraction(self, tribe: Tribe) -> float:
+        """Live bug report: a tribe wedged into a narrow forest strip between a river
+        and the coastal cliffs grew a full, maxed-out city there anyway -- nothing
+        checked whether there was actually room. Scans the (2*CITY_LAND_CHECK_RADIUS+1)
+        square centered on the tribe's own tile and returns what fraction of it is
+        real, buildable ground (not ocean/river/lake/cliffs/shoals). 1.0 on wide-open
+        plains; well under 1.0 on a narrow shoreline strip like the one that prompted
+        this."""
+        total = 0
+        buildable = 0
+        r = config.CITY_LAND_CHECK_RADIUS
+        for dx in range(-r, r + 1):
+            for dy in range(-r, r + 1):
+                x, y = tribe.x + dx, tribe.y + dy
+                if not (0 <= x < self.world.grid_size and 0 <= y < self.world.grid_size):
+                    continue
+                total += 1
+                if self.world.biome(x, y) not in config.UNBUILDABLE_BIOMES:
+                    buildable += 1
+        return buildable / total if total else 1.0
+
+    def _effective_city_building_cap(self, tribe: Tribe) -> int:
+        """MAX_CITY_BUILDINGS scaled down by how much real land actually surrounds the
+        settlement (see _local_buildable_fraction) -- floored at
+        MIN_CITY_BUILDINGS_ON_CRAMPED_LAND so even the tightest coastal strip stays
+        buildable at all. Used for both normal city growth and EXPAND_TERRITORY's
+        doubled ceiling, so a cramped tribe is capped in both places, not just one."""
+        fraction = self._local_buildable_fraction(tribe)
+        return max(config.MIN_CITY_BUILDINGS_ON_CRAMPED_LAND, round(config.MAX_CITY_BUILDINGS * fraction))
+
     def _advance_city_growth(self, tribe: Tribe) -> None:
         """Once a city is founded (Era.founds_city), one more building appears every
         time population crosses another multiple of CITY_BUILDING_POPULATION_STEP, up
-        to MAX_CITY_BUILDINGS -- a small, legible stand-in for real city-layout
-        simulation, not an attempt at one. Mirrors _grow_population's surplus-threshold
-        shape, keyed on population instead of food."""
-        if not tribe.founded_city or tribe.city_buildings >= config.MAX_CITY_BUILDINGS:
+        to _effective_city_building_cap -- a small, legible stand-in for real
+        city-layout simulation, not an attempt at one. Mirrors _grow_population's
+        surplus-threshold shape, keyed on population instead of food."""
+        cap = self._effective_city_building_cap(tribe)
+        if not tribe.founded_city or tribe.city_buildings >= cap:
             return
-        earned = min(
-            tribe.population // config.CITY_BUILDING_POPULATION_STEP,
-            config.MAX_CITY_BUILDINGS,
-        )
+        earned = min(tribe.population // config.CITY_BUILDING_POPULATION_STEP, cap)
         if earned > tribe.city_buildings:
             tribe.city_buildings = earned
             tribe.history.append(f"a new building rises in {tribe.name}'s city")

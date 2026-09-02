@@ -250,6 +250,19 @@ CROP_WATER_PER_PLOT_PER_CYCLE = 2  # a plot that goes unwatered withers outright
 CITY_BUILDING_POPULATION_STEP = 5
 MAX_CITY_BUILDINGS = 6
 
+# Live bug report: a tribe wedged into a narrow forest strip between a river and the
+# coastal cliffs grew a full, maxed-out city there anyway -- nothing checked whether
+# there was actually room. Simulation._local_buildable_fraction scans a
+# (2*CITY_LAND_CHECK_RADIUS+1)^2 square centered on the tribe's tile and counts how
+# much of it isn't open water/cliff, then scales MAX_CITY_BUILDINGS (and
+# EXPAND_TERRITORY's doubled ceiling) by that fraction -- a tribe on wide-open plains
+# still gets the full cap, a tribe hemmed in by water/cliffs gets less.
+# MIN_CITY_BUILDINGS_ON_CRAMPED_LAND keeps even the tightest shoreline strip
+# buildable at all, rather than rounding down to zero.
+CITY_LAND_CHECK_RADIUS = 4
+MIN_CITY_BUILDINGS_ON_CRAMPED_LAND = 2
+UNBUILDABLE_BIOMES = ("ocean", "river", "lake", "cliffs", "shoals")
+
 # Egg-gathering/flock genetics (backend/actions.py GATHER_EGGS, Simulation._resolve_hatch,
 # backend/genetics.py hatch()): gated the same as farming (settled + real water access) --
 # wild fowl near a confirmed water source, not a separate condition.
