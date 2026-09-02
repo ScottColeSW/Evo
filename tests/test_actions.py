@@ -70,14 +70,17 @@ def test_wood_yield_is_scaled_down_outside_forest():
     assert 0 < tribe.wood < 10  # some wood, but far less than a forest tile
 
 
-def test_stone_yield_is_negligible_outside_mountains():
+def test_stone_yield_is_reduced_outside_mountains():
+    """Raised from a 0.1x multiplier to 0.25x (2026-09-02 tuning pass, see
+    BIOME_YIELD_MULTIPLIER's comment) -- still clearly worse than mountains' 1.0x, but
+    no longer an effective lockout on ever bootstrapping a Quarry off-mountain."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.stone = 0
 
     ACTION_REGISTRY["GATHER_STONE"](sim, tribe, "forest", _NO_TARGET)
 
-    assert tribe.stone == 1  # round(10 * 0.1)
+    assert tribe.stone == 2  # round(10 * 0.25)
 
 
 def test_second_fire_at_the_same_tile_costs_nothing_and_gains_no_pride():

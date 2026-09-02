@@ -30,7 +30,15 @@ from .world import BIOME_LABELS, biome_at
 BIOME_YIELD_MULTIPLIER = {
     "wood": {"forest": 1.0, "plains": 0.4, "river": 0.3, "lake": 0.3, "mountains": 0.15,
              "cliffs": 0.0, "shoals": 0.05, "ocean": 0.0},
-    "stone": {"mountains": 1.0, "forest": 0.1, "plains": 0.1, "river": 0.1, "lake": 0.1,
+    # Live data, 2026-09-01: a tribe settled near a lake (not mountains -- settling is
+    # already pulled hard toward confirmed water, which mountains rarely coincide with)
+    # accumulated wood 4712 vs. stone 11 over ~600 cycles, and never built Quarry or
+    # Mine despite knowing 4 real Mine sites -- both cost 30 stone, essentially
+    # unreachable at the old 0.1x off-mountain rate (a 10x gap against wood's 1.0x in
+    # forest). Raised to 0.25x: mountains/cliffs stay clearly the real place to get
+    # stone, but a lake- or forest-settled tribe can now actually bootstrap a Quarry
+    # instead of being structurally locked out of the entire stone-building tree.
+    "stone": {"mountains": 1.0, "forest": 0.25, "plains": 0.25, "river": 0.25, "lake": 0.25,
               "cliffs": 0.5, "shoals": 0.05, "ocean": 0.0},
     "game": {"forest": 1.0, "plains": 0.6, "river": 0.3, "lake": 0.3, "mountains": 0.15,
              "cliffs": 0.05, "shoals": 0.1, "ocean": 0.0},
