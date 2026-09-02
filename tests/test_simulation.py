@@ -1813,13 +1813,14 @@ def test_expedition_senses_water_crossed_mid_step_even_if_the_landing_tile_misse
     assert biome_at(*found) in ("river", "lake")
 
 
-def test_expedition_reaching_its_target_without_water_pushes_onward_if_days_remain():
-    """Regression test: a model's own target_vector is usually close (one
-    EXPEDITION_SPEED step away), so treating "arrived at the declared spot" as "search
-    over" meant max_days and the scout's determination trait almost never actually
-    mattered -- live runs showed parties turning back on day one nearly every time.
-    Reaching a non-water target with days left should extend the search outward along
-    the same heading, not end it."""
+def test_expedition_reaching_its_target_without_water_turns_back_and_reports_terrain():
+    """Bug report (2026-09-02): "they go big long lines like they are flying, possibly
+    too far." Reaching the assigned patrol target used to push the search onward all
+    the way to the map's true edge if days remained -- live data showed a scout
+    covering 26 tiles in 2 days on a dead-straight heading. Reaching a non-water
+    target now ends the outbound leg for good (still noting what terrain was actually
+    there), the same as if it had landed on the grid's literal edge -- shorter, more
+    numerous local patrols instead of one long committed dash."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 60, 10, "#c084fc")
     tribe.expeditions = [{
@@ -1833,11 +1834,10 @@ def test_expedition_reaching_its_target_without_water_pushes_onward_if_days_rema
 
     sim._advance_expeditions(tribe)
 
-    assert tribe.expeditions[0]["phase"] == "outbound"  # not turned back
+    assert tribe.expeditions[0]["phase"] == "returning"
     assert tribe.expeditions[0]["terrain_report"] is not None  # still noted what's there
     assert tribe.expeditions[0]["found"] is None
-    assert tribe.expeditions[0]["target"] != [66, 10]  # extended past the original spot
-    assert any("pushes onward" in entry for entry in tribe.history)
+    assert any("surveys" in entry and "heads home to report" in entry for entry in tribe.history)
 
 
 def test_expedition_does_not_give_up_from_day_count_alone():
@@ -1848,10 +1848,10 @@ def test_expedition_does_not_give_up_from_day_count_alone():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 60, 10, "#c084fc")
     tribe.expeditions = [{
-        # Already pushed onward once (terrain_report set) and nowhere near the
-        # (extended) target yet -- a huge day count should still change nothing.
-        # (60,10) is well clear of the river/lake -- WATER_SENSING_RADIUS must not
-        # fire here, or this would test the wrong mechanic.
+        # Nowhere near its assigned target yet -- a huge day count should still
+        # change nothing. (60,10) is well clear of the river/lake --
+        # WATER_SENSING_RADIUS must not fire here, or this would test the wrong
+        # mechanic.
         "pos": [60, 10], "origin": [60, 10], "target": [99, 10],
         "day": 50, "phase": "outbound", "found": None, "terrain_report": "plains",
         "food_gathered": 0, "water_gathered": 0,
@@ -1923,12 +1923,13 @@ def test_expedition_gives_up_upon_reaching_the_edge_of_the_world():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.expeditions = [{
-        # Already pushed onward once (terrain_report set); one EXPEDITION_SPEED (10)
-        # step from here lands exactly on the extended target -- the edge itself.
+        # One EXPEDITION_SPEED (10) step from here lands exactly on the target, which
+        # happens to be the grid's literal edge -- same unified "reached the assigned
+        # point, turn back" handling as reaching an ordinary (non-edge) patrol target.
         # South (increasing y) rather than east: x=99 is past OCEAN_X_START and would
         # be deflected by the impassable-ocean physics, never actually arriving.
         "pos": [50, 89], "origin": [50, 50], "target": [50, 99],
-        "day": 4, "phase": "outbound", "found": None, "terrain_report": "plains",
+        "day": 4, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
     }]
@@ -1937,7 +1938,8 @@ def test_expedition_gives_up_upon_reaching_the_edge_of_the_world():
 
     assert tribe.expeditions[0]["phase"] == "returning"
     assert tribe.expeditions[0]["found"] is None
-    assert any("reaches the edge of explored land" in entry for entry in tribe.history)
+    assert tribe.expeditions[0]["terrain_report"] is not None
+    assert any("surveys" in entry and "heads home to report" in entry for entry in tribe.history)
 
 
 def test_expedition_arrival_home_delivers_water_finding_to_memory_and_clears_state():

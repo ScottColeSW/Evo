@@ -2251,28 +2251,25 @@ class Simulation:
                     tribe.history.append(f"{scout}'s party has found fresh water and is heading home to report it")
                 else:
                     tribe.history.append(f"{scout}'s party hears water nearby and marks ({wx},{wy}) before heading home to report it")
-            elif [nx, ny] == [tx, ty] and exp["terrain_report"] is None:
-                # Reached wherever the tribe told them to look, but the model's own
-                # target_vector is usually close (a single EXPEDITION_SPEED step), so
-                # treating "arrived" as "search over" meant a day-count cutoff and the
-                # scout's determination trait almost never actually mattered -- the
-                # party turned back on day 1 nearly every time. Note what's here
-                # (still useful information) and push onward along the same heading
-                # to the edge of the known world instead -- an arbitrary day limit was
-                # the wrong reason to call off a search; running out of world to
-                # search is a real one.
-                exp["terrain_report"] = reached_biome
-                ex, ey = physics.extend_ray_to_grid_edge(exp["origin"][0], exp["origin"][1], tx, ty, self.world.grid_size)
-                exp["target"] = [ex, ey]
-                label = BIOME_LABELS.get(reached_biome, reached_biome)
-                tribe.history.append(f"{scout}'s party passed through ({nx},{ny}), {label}, and pushes onward")
             elif [nx, ny] == [tx, ty]:
-                # Reached the edge of the grid itself with nothing found -- genuinely
-                # nowhere left in this direction to search, not a countdown running
-                # out. This is the only unconditional turn-back left in an outbound
-                # search.
+                # Reached the assigned patrol point (config.SCOUT_PATROL_DISTANCE tiles
+                # along this dispatch's rotating heading -- see actions.py._scout) with
+                # no water found. Bug report: "they go big long lines like they are
+                # flying." This used to push the party onward toward the map's true
+                # edge whenever days remained, on the theory that "running out of world
+                # to search" was the only honest reason to stop -- that produced
+                # exactly the ruler-straight, cross-map dashes being complained about.
+                # Shortening the leash: reaching the assigned patrol point is real
+                # completion now, the same as a party that happens to land right on the
+                # grid's literal edge -- more, shorter local patrols over many
+                # dispatches (still covering new ground each time via
+                # scout_rotation_index) instead of one long committed sprint. The
+                # terrain actually reached is still worth reporting home (see how
+                # terrain_report drives lumber/quarry/mine/wildlife discovery below).
+                exp["terrain_report"] = reached_biome
                 exp["phase"] = "returning"
-                tribe.history.append(f"{scout}'s party reaches the edge of explored land after {exp['day']} days with nothing found -- they turn back")
+                label = BIOME_LABELS.get(reached_biome, reached_biome)
+                tribe.history.append(f"{scout}'s party surveys ({nx},{ny}), {label}, after {exp['day']} days and heads home to report")
             return False
         else:  # returning
             px, py = exp["pos"]

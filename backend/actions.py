@@ -639,9 +639,17 @@ def _scout(sim, tribe, biome, target):
     ) % 360
     tribe.scout_rotation_index += 1
     angle_radians = math.radians(angle_degrees)
-    through_x = tribe.x + round(math.cos(angle_radians) * 10)
-    through_y = tribe.y + round(math.sin(angle_radians) * 10)
-    tx, ty = physics.extend_ray_to_grid_edge(tribe.x, tribe.y, through_x, through_y, sim.world.grid_size)
+    # Bug report: "they go big long lines like they are flying, possibly too far."
+    # This used to project all the way to the grid's true edge (physics.
+    # extend_ray_to_grid_edge, up to ~99 tiles distant) and, if a party reached it
+    # early with days left, push even further -- a ruler-straight, cross-map dash
+    # every single dispatch. SCOUT_PATROL_DISTANCE bounds a single dispatch to a
+    # local patrol instead; the rotating heading (scout_rotation_index) still sweeps
+    # a new direction each real dispatch, so coverage keeps spreading over many
+    # shorter trips rather than one long one. EXPEDITION_SPEED is untouched -- this
+    # is deliberately about how far a trip is aimed, not how fast it's walked.
+    tx = tribe.x + round(math.cos(angle_radians) * config.SCOUT_PATROL_DISTANCE)
+    ty = tribe.y + round(math.sin(angle_radians) * config.SCOUT_PATROL_DISTANCE)
     tx = max(0, min(sim.world.grid_size - 1, tx))
     ty = max(0, min(sim.world.grid_size - 1, ty))
     scout = _generate_scout(tribe, sim.cycle)

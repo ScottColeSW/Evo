@@ -447,6 +447,18 @@ WATER_SENSING_RADIUS = 6
 SCOUT_ROTATION_START_ANGLE_DEGREES = 45
 SCOUT_ROTATION_STEP_DEGREES = 20
 
+# Live bug report (2026-09-02): "they go big long lines like they are flying,
+# possibly too far." A fresh dispatch used to target the grid's true edge (up to ~99
+# tiles away) and get pushed even further if it arrived early with days left --
+# confirmed live, a scout covered 26 tiles in just 2 days on a dead-straight heading.
+# Bounds a single SCOUT dispatch to a local patrol instead; EXPEDITION_SPEED (10/day,
+# an earlier deliberate choice) is untouched -- this only shortens how far a trip is
+# aimed, not how fast it walks. At the low end of determination variance (max_days=2,
+# see EXPEDITION_DETERMINATION_DAY_VARIANCE), 25 tiles takes a full day's speed to
+# spare either way, so determination still meaningfully affects whether a party
+# finishes its patrol before giving up.
+SCOUT_PATROL_DISTANCE = 25
+
 # A wandering storm cloud (Simulation._advance_weather) -- weather that exists whether
 # or not any tribe is watching, not triggered by or aimed at anyone. Rare to spawn
 # (checked once per cycle only while no storm is active), rare to strike once present,
