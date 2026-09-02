@@ -1139,6 +1139,44 @@ def test_scout_does_not_move_the_tribe_but_launches_an_expedition():
     assert "depart" in note
 
 
+def test_reflect_into_grid_leaves_in_bounds_values_alone():
+    from backend.actions import _reflect_into_grid
+
+    assert _reflect_into_grid(50, 100) == 50
+    assert _reflect_into_grid(0, 100) == 0
+    assert _reflect_into_grid(99, 100) == 99
+
+
+def test_reflect_into_grid_bounces_an_overshoot_back_inward():
+    """Bug report: "at least 5 quarries on the map edge... this random distribution
+    of stuff to find is wrong." Reflecting (not clamping) means different overshoot
+    amounts land at different points, instead of every overshoot collapsing onto the
+    same boundary value."""
+    from backend.actions import _reflect_into_grid
+
+    assert _reflect_into_grid(-9, 100) == 9
+    assert _reflect_into_grid(-7, 100) == 7
+    assert _reflect_into_grid(108, 100) == 90  # 2*99 - 108
+
+
+def test_scout_targets_near_an_edge_no_longer_all_collapse_onto_the_same_coordinate():
+    """Live bug: a tribe near the map's edge scouting mountains kept landing every
+    westward-ish dispatch on the exact same x=0 -- hard-clamping an overshooting
+    target throws away the heading, collapsing a whole arc of distinct angles onto
+    one identical coordinate."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Mountain Tribe", "gemma2:2b", 16, 27, "#fb923c")
+
+    targets = set()
+    for _ in range(6):
+        tribe.expeditions.clear()
+        ACTION_REGISTRY["SCOUT"](sim, tribe, "mountains", (0, 0))
+        targets.add(tuple(tribe.expeditions[0]["target"]))
+
+    edge_x_count = sum(1 for (x, _y) in targets if x == 0)
+    assert edge_x_count < len(targets)  # not every heading collapses onto x=0
+
+
 def test_scout_rotation_starts_southwest_and_advances_by_a_fixed_step():
     """Explicit request: "scout directions rotate on a 20 degree angle" (starting
     direction changed from southeast to southwest 2026-09-02 -- see config.

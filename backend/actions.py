@@ -615,6 +615,24 @@ def _generate_scout(tribe, cycle: int, base_days: int = None) -> dict:
     }
 
 
+def _reflect_into_grid(value: int, grid_size: int) -> int:
+    """Bug report: "at least 5 quarries on the map edge... this random distribution
+    of stuff to find is wrong." A raw SCOUT target beyond the grid used to be
+    hard-clamped straight onto the boundary value (0 or grid_size-1) -- every
+    heading whose patrol distance overshot the same edge collapsed onto that
+    identical coordinate, so a tribe scouting repeatedly toward real mountains near
+    the map's own edge kept "discovering" the exact same x=0 quarry site over and
+    over, only the other axis varying. Reflecting the overshoot back inward instead
+    (like a ray bouncing off a wall, not sliding down it) gives each distinct
+    heading a genuinely different landing point."""
+    bound = grid_size - 1
+    if value < 0:
+        return min(bound, -value)
+    if value > bound:
+        return max(0, 2 * bound - value)
+    return value
+
+
 def _scout(sim, tribe, biome, target):
     """Dispatches an expedition -- your most capable people, out searching, not an
     instant look. They travel and camp under their own supply (no drain on the
@@ -669,10 +687,8 @@ def _scout(sim, tribe, biome, target):
     # a new direction each real dispatch, so coverage keeps spreading over many
     # shorter trips rather than one long one. EXPEDITION_SPEED is untouched -- this
     # is deliberately about how far a trip is aimed, not how fast it's walked.
-    tx = tribe.x + round(math.cos(angle_radians) * config.SCOUT_PATROL_DISTANCE)
-    ty = tribe.y + round(math.sin(angle_radians) * config.SCOUT_PATROL_DISTANCE)
-    tx = max(0, min(sim.world.grid_size - 1, tx))
-    ty = max(0, min(sim.world.grid_size - 1, ty))
+    tx = _reflect_into_grid(tribe.x + round(math.cos(angle_radians) * config.SCOUT_PATROL_DISTANCE), sim.world.grid_size)
+    ty = _reflect_into_grid(tribe.y + round(math.sin(angle_radians) * config.SCOUT_PATROL_DISTANCE), sim.world.grid_size)
     scout = _generate_scout(tribe, sim.cycle)
     tribe.expeditions.append({
         "kind": "scout",

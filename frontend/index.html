@@ -2047,7 +2047,9 @@ const FARMABLE_BIOMES = ["plains", "river", "lake"];
 // (has_ever_settled was already true, current tile within this radius of a
 // confirmed site), this sidebar label just never got the same territory-radius
 // fallback the backend gained, only ever checking the exact-biome-match case.
-const SETTLEMENT_WATER_TERRITORY_RADIUS = 6;
+// Tightened 6 -> 4 (2026-09-02): a settlement exactly at the old radius's edge read
+// as visually disconnected from the water it was supposedly settled near.
+const SETTLEMENT_WATER_TERRITORY_RADIUS = 4;
 
 function nearConfirmedWater(t) {
   return (t.confirmed_water_sites || []).some(

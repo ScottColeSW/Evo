@@ -1565,20 +1565,21 @@ def test_apply_turn_does_not_reset_relocate_clock_when_still_within_qualifying_t
 
 
 def test_apply_turn_still_resets_relocate_clock_when_leaving_qualifying_territory():
-    """A single RELOCATE step (speed 4) starting exactly on a confirmed water site can
-    never actually leave its radius-6 territory in one hop -- so this places the tribe
-    near the edge of the territory instead, confirming a hop that crosses out of the
-    radius still resets the clock as before. Column x=5 stays real mountains (not
-    farmable) through y=59, same terrain used by the existing settlement-radius tests
-    above, so biome alone can't accidentally satisfy _settlement_ground_ok here."""
+    """Mountain terrain slows RELOCATE to ~2 tiles/cycle (TERRAIN_MOVEMENT_MULTIPLIER),
+    so this moves twice to clear the radius-4 territory, confirming a hop that
+    crosses out of it still resets the clock as before. Column x=5 stays real
+    mountains (not farmable) through y=59, same terrain used by the existing
+    settlement-radius tests above, so biome alone can't accidentally satisfy
+    _settlement_ground_ok here."""
     sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 5, "y": 55}])
     tribe = sim.tribes["tribe_0"]
-    tribe.confirmed_water_sites = [(5, 50)]  # distance 5 from tribe -- within radius 6
+    tribe.confirmed_water_sites = [(5, 53)]  # distance 2 from tribe -- within radius 4
     tribe.cycles_since_relocate = 5
     tribe.food = 100
     tribe.water = 100
     ctx = {"biome": "mountains", "available_actions": ["RELOCATE"]}
 
+    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [5, 99]}, 10.0, ctx)
     sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [5, 99]}, 10.0, ctx)
 
     assert tribe.y > 55  # confirms the move actually happened, away from the site

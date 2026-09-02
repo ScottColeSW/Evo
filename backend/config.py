@@ -25,7 +25,9 @@ FARMABLE_BIOMES = ("plains", "river", "lake")
 # within this Chebyshev radius of a confirmed water site now counts as good
 # enough ground too (see Simulation._near_confirmed_water), on top of the
 # existing exact-biome-match check, not instead of it.
-SETTLEMENT_WATER_TERRITORY_RADIUS = 6
+# Tightened 6 -> 4 (2026-09-02): a settlement exactly at the old radius's edge
+# read as visually disconnected from the water it was supposedly settled near.
+SETTLEMENT_WATER_TERRITORY_RADIUS = 4
 
 # Toll roads (backend/world.py.wear_trail/is_toll_road/road_owner, Simulation.
 # _resolve_toll): explicit request -- "trails that have been traversed more
