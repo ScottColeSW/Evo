@@ -586,7 +586,16 @@ let lastCelebrationCycleByTribe = {};
 // separate "reason" field through the whole state payload just for this banner.
 function celebrationReason(t) {
   const recent = (t.history || []).slice(-4);
-  if (recent.some(e => e.includes("welcome a child"))) return "a new birth";
+  // Bug report: "the Birth celebration should say the kid's name" -- Simulation.
+  // _resolve_birth already names the actual child in the chronicle line ("...welcome
+  // a child, Aethyr -- ..."), but this only ever detected the generic phrase's
+  // presence and threw the real name away, same class of bug the discovery case
+  // below was already fixed for.
+  const birthEntry = recent.find(e => e.includes("welcome a child"));
+  if (birthEntry) {
+    const match = birthEntry.match(/welcome a child, (.+?)(?:\s--\s|\.$)/);
+    return match ? `a new birth -- ${match[1]}` : "a new birth";
+  }
   if (recent.some(e => e.includes("celebrates the discovery of water"))) return "finding water";
   if (recent.some(e => e.includes("celebrates the discovery of a game-rich site"))) return "a game-rich discovery";
   if (recent.some(e => e.includes("celebrates settling here for good"))) return "settling down for good";
@@ -747,6 +756,51 @@ function isLake(x, y) {
 
 function coastBoundaryX(y) {
   return OCEAN_X_START + 5 * Math.sin(y * 0.08) + 2 * Math.sin(y * 0.23 + 1.7);
+}
+
+// Explicit request: "make that end of the river flowing into the ocean look like a
+// waterfall." Precomputed once (river tiles bordering ocean are a fixed, small set
+// determined entirely by the map's own procedural generation, never by live game
+// state) rather than scanned every frame -- only the coastal band near
+// OCEAN_X_START can possibly qualify, so this stays a handful of tiles, not a
+// GRID x GRID sweep.
+function computeWaterfallTiles() {
+  const tiles = [];
+  for (let x = OCEAN_X_START - RIVER_HALF_WIDTH - 2; x <= OCEAN_X_START + 2; x++) {
+    for (let y = 0; y < GRID; y++) {
+      if (isRiver(x, y) && biomeNameAt(x + 1, y) === "ocean") tiles.push([x, y]);
+    }
+  }
+  return tiles;
+}
+const WATERFALL_TILES = computeWaterfallTiles();
+
+function drawWaterfall() {
+  WATERFALL_TILES.forEach(([x, y]) => {
+    const px = x * TILE, py = y * TILE;
+    const seed = stringSeed(`waterfall:${x},${y}`);
+    // A churn of white foam streaks surging toward the ocean (+x), rather than a
+    // flat river-blue tile -- animated so the rush actually reads as motion, not a
+    // static texture.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(px, py, TILE + 0.6, TILE + 0.6);
+    ctx.clip();
+    ctx.fillStyle = "#dbeefc";
+    ctx.fillRect(px, py, TILE + 0.6, TILE + 0.6);
+    for (let i = 0; i < 3; i++) {
+      const phase = (animFrame * 0.06 + hashUnit(seed + i * 7.3)) % 1;
+      const streakX = px + phase * (TILE + 6) - 3;
+      const streakY = py + TILE * (0.15 + 0.3 * ((i + hashUnit(seed + i)) % 3));
+      ctx.strokeStyle = `rgba(255,255,255,${0.85 * (1 - Math.abs(phase - 0.5) * 1.4)})`;
+      ctx.lineWidth = Math.max(1, TILE * 0.12);
+      ctx.beginPath();
+      ctx.moveTo(streakX, streakY);
+      ctx.lineTo(streakX - TILE * 0.5, streakY + TILE * 0.18);
+      ctx.stroke();
+    }
+    ctx.restore();
+  });
 }
 
 function coastIsHeadland(y) {
@@ -1179,8 +1233,14 @@ function drawTribeIndividuals(tribeId, t) {
     ctx.font = "bold 10px monospace";
     const w = ctx.measureText(t.last_broadcast).width;
     const padX = 6, padY = 4, tailH = 6;
-    const bw = w + padX * 2, bh = 14 + padY;
-    const bx = centerX - bw / 2;
+    const bw = w + padX * 2, bh = 14 + padY * 2;
+    // Bug report ("day time dialog boxes are not shaped correctly"): bh used to be
+    // `14 + padY` -- only one padY instead of the symmetric padY*2 every other
+    // dimension here uses (bw, and drawThoughtBubble's own bh right above), making the
+    // box shorter than its own padding math intended. Also never clamped to the
+    // canvas like drawThoughtBubble already does, so a tribe near the map edge could
+    // push most of the bubble off-screen.
+    const bx = Math.max(4, Math.min(canvas.width - bw - 4, centerX - bw / 2));
     const by = claimBubbleSlot(bx, centerY - topClearance - bh, bw, bh);
     const r = 5;
 
@@ -1833,6 +1893,7 @@ function drawFrame() {
   animFrame++;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(terrainCanvas, 0, 0);
+  drawWaterfall();
   // Explicit request: "the visual overlap happened when both thought bubbles were up
   // at the same time" -- two tribes close enough together (common at low zoom, since
   // a bubble can span a large fraction of the whole map's pixel width) could each
