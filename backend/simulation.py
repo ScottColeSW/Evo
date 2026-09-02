@@ -184,6 +184,10 @@ class Tribe:
         # -- None means last cycle's answer was understood as a real action.
         self.last_confusion: dict | None = None
         self.last_target: list[int] | None = None
+        # Unlike last_target (RELOCATE-only, drives the journey_note fact), this
+        # records the target_vector submitted alongside *every* action, purely for
+        # decision_log.py's offline analysis -- it has no effect on gameplay.
+        self.last_decision_target: list[int] | None = None
         self.history: list[str] = TribeHistory(name, event_log)
         self.memory = TribeMemory(tribe_id)
         self.founded_city = False
@@ -465,6 +469,7 @@ class Tribe:
             "era_label": era_label,
             "last_broadcast": self.last_broadcast,
             "last_action": self.last_action,
+            "last_decision_target": self.last_decision_target,
             "history": self.history[-6:],
             "cycles_since_relocate": self.cycles_since_relocate,
             "last_reflection": self.last_reflection,
@@ -1987,6 +1992,7 @@ class Simulation:
         # turn happened to carry.
         if action == "RELOCATE":
             tribe.last_target = [target[0], target[1]]
+        tribe.last_decision_target = [target[0], target[1]]
         pos_before = (tribe.x, tribe.y)
 
         hazard_note = self._apply_action(tribe, action, ctx["biome"], target)

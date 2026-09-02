@@ -1456,6 +1456,19 @@ def test_apply_turn_does_not_record_last_target_for_non_relocate_actions():
     assert tribe.last_target is None
 
 
+def test_apply_turn_records_last_decision_target_for_every_action():
+    """Unlike last_target, last_decision_target exists purely for decision_log.py's
+    offline analysis and should capture the submitted target_vector regardless of
+    which action was chosen."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    ctx = {"biome": "forest", "available_actions": ["GATHER_FOOD"]}
+
+    sim._apply_turn(tribe, {"visual_action": "GATHER_FOOD", "target_vector": [20, 30]}, 10.0, ctx)
+
+    assert tribe.last_decision_target == [20, 30]
+
+
 def test_only_relocate_moves_the_tribe_via_apply_turn():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
