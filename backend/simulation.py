@@ -790,6 +790,35 @@ class Simulation:
         tribe.last_gathering_cycle = self.cycle
         tribe.population_at_last_gathering = tribe.population
 
+    def _hold_evening_recap(self, tribe: "Tribe") -> None:
+        """Explicit request: "at the beginning of the night they should sort of
+        recap the accomplishments of the day." Fires at the actual dusk boundary
+        (cycle % DAY_LENGTH_CYCLES == DAY_LENGTH_CYCLES // 2, the same day/night split
+        frontend/index.html's own sun/moon arc uses) -- distinct from
+        _run_night_cycle's occasional, costly philosophy reconsideration
+        (NIGHT_CYCLE_EVERY_N_CYCLES drifts against the visual day/night boundary, so
+        it isn't reliably "at dusk" at all) and from _hold_tribal_gathering's own
+        dawn recap of the *previous* day. Same cheap, deterministic, real-facts-only
+        shape as the dawn gathering -- reads (never resets) its last_gathering_cycle/
+        population_at_last_gathering baseline, so "today" always means "since this
+        morning's gathering" without needing a second set of tracking fields."""
+        new_trophies = [t for t in tribe.trophies if t["cycle"] > tribe.last_gathering_cycle]
+        pop_delta = tribe.population - tribe.population_at_last_gathering
+
+        parts = []
+        if new_trophies:
+            parts.append("today " + "; ".join(
+                f"{t['chief']} earned the '{t['name']}' honor" for t in new_trophies
+            ))
+        if pop_delta > 0:
+            parts.append(f"the tribe grew by {pop_delta} today")
+        elif pop_delta < 0:
+            parts.append(f"the tribe lost {-pop_delta} today")
+        parts.append(f"{tribe.wood} wood, {tribe.stone} stone, {tribe.food} food, and {tribe.water} water on hand")
+
+        recap = "; ".join(parts)
+        tribe.history.append(f"As the sun sets, the tribe takes stock of the day's work: {recap}.")
+
     def _build_night_inventory(self, tribe: "Tribe") -> str:
         """A structured "state of affairs" snapshot for the night-cycle reviewer,
         alongside the raw chronicle -- what the chief actually takes stock of after the
@@ -1028,6 +1057,11 @@ class Simulation:
             for tribe in self.tribes.values():
                 if not tribe.extinct:
                     self._hold_tribal_gathering(tribe)
+
+        if self.cycle % config.DAY_LENGTH_CYCLES == config.DAY_LENGTH_CYCLES // 2:
+            for tribe in self.tribes.values():
+                if not tribe.extinct:
+                    self._hold_evening_recap(tribe)
 
         if self.cycle % config.NIGHT_CYCLE_EVERY_N_CYCLES == 0:
             for tribe in self.tribes.values():

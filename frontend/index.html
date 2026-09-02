@@ -1963,12 +1963,15 @@ function drawFrame() {
       if (!approach) return;
       const cx = approach.x * TILE + TILE / 2;
       const cy = approach.y * TILE + TILE / 2;
-      ctx.font = `${Math.max(11, TILE * 1.0)}px sans-serif`;
+      // Explicit request: "the raider invasion forces should look a lot bigger on
+      // the approach (like 1.5x house size)" -- a real, growing threat reads better
+      // as visibly imposing than as a same-size-as-everything-else icon.
+      ctx.font = `${Math.max(16, TILE * 1.5)}px sans-serif`;
       ctx.textAlign = "center";
       ctx.fillText("\u{1F3F4}", cx, cy);
-      ctx.font = `bold ${Math.max(8, TILE * 0.35)}px sans-serif`;
+      ctx.font = `bold ${Math.max(10, TILE * 0.5)}px sans-serif`;
       ctx.fillStyle = "#fca5a5";
-      ctx.fillText(`${approach.cycles_left}`, cx, cy + TILE * 0.55);
+      ctx.fillText(`${approach.cycles_left}`, cx, cy + TILE * 0.85);
     });
     Object.values(latestState.tribes || {}).forEach(t => {
       drawSettlementMarker(t);
@@ -2225,8 +2228,12 @@ function formatChiefDecision(entry) {
   const pipeIdx = remainder.indexOf(" | ");
   const rationale = pipeIdx === -1 ? remainder : remainder.slice(0, pipeIdx);
   const outcome = pipeIdx === -1 ? "" : remainder.slice(pipeIdx + 3);
-  const question = `<span class="chief-decision" title="decided in ${latencyMs}ms">"Should we ${humanizeAction(action)}?"</span>`;
-  let html = `${question} ${rationale}`;
+  // Bug report: "I still find it hard to understand what the Chief has decided
+  // finally for the day's work to be done" -- "Should we X?" reads as a question
+  // still being weighed, not the actual, already-executed choice for the cycle.
+  // A plain, declarative "TODAY'S ORDER" label makes clear this already happened.
+  const decision = `<span class="chief-decision" title="decided in ${latencyMs}ms">TODAY'S ORDER: ${humanizeAction(action).toUpperCase()}</span>`;
+  let html = `${decision} ${rationale}`;
   if (outcome) html += ` <span class="chief-outcome">— ${outcome}</span>`;
   return html;
 }

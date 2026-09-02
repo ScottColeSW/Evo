@@ -3329,6 +3329,57 @@ def test_tribal_gathering_says_something_even_with_nothing_new():
     assert tribe.gathering_brief == "a quiet gathering -- nothing new to report"
 
 
+def test_evening_recap_reports_todays_trophies_population_change_and_resources():
+    """Explicit request: "at the beginning of the night they should sort of recap
+    the accomplishments of the day." """
+    sim = _bare_simulation()
+    sim.cycle = 30
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.last_gathering_cycle = 20  # this morning's dawn gathering
+    tribe.population_at_last_gathering = 8
+    tribe.population = 11
+    tribe.trophies = [{"name": "Water Bringer", "chief": "Ashgar", "cycle": 25}]
+    tribe.wood, tribe.stone, tribe.food, tribe.water = 40, 20, 30, 50
+
+    sim._hold_evening_recap(tribe)
+
+    entry = tribe.history[-1]
+    assert entry.startswith("As the sun sets, the tribe takes stock of the day's work:")
+    assert "Ashgar earned the 'Water Bringer' honor" in entry
+    assert "grew by 3 today" in entry
+    assert "40 wood, 20 stone, 30 food, and 50 water on hand" in entry
+
+
+def test_evening_recap_omits_a_trophy_from_before_this_mornings_gathering():
+    sim = _bare_simulation()
+    sim.cycle = 30
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.last_gathering_cycle = 20
+    tribe.trophies = [{"name": "Water Bringer", "chief": "Ashgar", "cycle": 5}]
+
+    sim._hold_evening_recap(tribe)
+
+    assert "Water Bringer" not in tribe.history[-1]
+
+
+def test_evening_recap_does_not_mutate_the_dawn_gathering_baseline():
+    """Unlike _hold_tribal_gathering, this only reads last_gathering_cycle/
+    population_at_last_gathering -- resetting them here would break the next dawn
+    gathering's own "since yesterday" calculation (it needs the same baseline the
+    evening recap read, not one this already consumed)."""
+    sim = _bare_simulation()
+    sim.cycle = 30
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.last_gathering_cycle = 20
+    tribe.population_at_last_gathering = 8
+    tribe.population = 11
+
+    sim._hold_evening_recap(tribe)
+
+    assert tribe.last_gathering_cycle == 20
+    assert tribe.population_at_last_gathering == 8
+
+
 def test_gathering_brief_is_surfaced_into_the_next_turns_visible_entities():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
