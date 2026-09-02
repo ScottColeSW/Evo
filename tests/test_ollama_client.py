@@ -63,3 +63,24 @@ async def test_generate_json_returns_empty_dict_on_invalid_json():
         result = await client.generate_json("gemma2:2b", "prompt")
 
     assert result == {}
+
+
+@run_async
+async def test_list_loaded_models_returns_names_from_api_ps():
+    client = OllamaClient()
+    fake = _FakeResponse({"models": [{"name": "gemma2:2b"}, {"name": "qwen2.5:3b"}]})
+
+    with mock.patch.object(httpx.AsyncClient, "get", mock.AsyncMock(return_value=fake)):
+        result = await client.list_loaded_models()
+
+    assert result == ["gemma2:2b", "qwen2.5:3b"]
+
+
+@run_async
+async def test_list_loaded_models_returns_empty_list_when_ollama_is_unreachable():
+    client = OllamaClient()
+
+    with mock.patch.object(httpx.AsyncClient, "get", mock.AsyncMock(side_effect=httpx.ConnectError("down"))):
+        result = await client.list_loaded_models()
+
+    assert result == []

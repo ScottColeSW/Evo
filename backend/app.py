@@ -8,6 +8,7 @@ from aiohttp import WSMsgType, web
 from . import config
 from .board_history import record_board_state
 from .experiment_log import read_all_experiment_runs, summarize_experiment
+from .ollama_client import OllamaClient
 from .scoreboard import read_all_results, summarize_by_model
 from .simulation import Simulation
 
@@ -130,8 +131,24 @@ async def broadcast_loop(app: web.Application) -> None:
         await asyncio.sleep(config.TICK_SECONDS)
 
 
+async def _unload_stale_models() -> None:
+    """A previous server process that got force-killed (rather than STOP/tab-close,
+    both of which reach Simulation.shutdown()) leaves whatever models it had loaded
+    sitting in Ollama's VRAM until their keep_alive window expires on its own --
+    confirmed live (task manager showed two orphaned llama-server.exe processes well
+    after the server that loaded them was gone). This app assumes exclusive ownership
+    of the local Ollama instance's model lifecycle, so every fresh startup is a
+    reasonable point to guarantee a clean slate regardless of how the last process
+    ended, rather than relying on every shutdown path being graceful."""
+    client = OllamaClient(config.OLLAMA_URL)
+    for model in await client.list_loaded_models():
+        print(f"[startup] unloading stale model left resident from a previous run: {model}")
+        await client.unload_model(model)
+
+
 async def on_startup(app: web.Application) -> None:
     app["sessions"] = {}
+    await _unload_stale_models()
     app["bg_task"] = asyncio.create_task(broadcast_loop(app))
 
 

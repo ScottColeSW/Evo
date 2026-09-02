@@ -68,6 +68,19 @@ class OllamaClient:
             r.raise_for_status()
             return r.json().get("response", "")
 
+    async def list_loaded_models(self) -> list[str]:
+        """Models Ollama currently has resident in memory/VRAM right now (Ollama's
+        /api/ps), as opposed to list_models()'s /api/tags (every model ever pulled,
+        loaded or not). Used by app.py's startup cleanup to find and evict whatever a
+        previous, ungracefully-killed server process left loaded."""
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            try:
+                r = await client.get(f"{self.base_url}/api/ps")
+                r.raise_for_status()
+                return [m["name"] for m in r.json().get("models", [])]
+            except Exception:
+                return []
+
     async def unload_model(self, model: str) -> None:
         """Tells Ollama to evict this model from memory/VRAM right now instead of
         waiting out its keep_alive window. Called on game-over and on Simulation.
