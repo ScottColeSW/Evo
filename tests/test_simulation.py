@@ -648,6 +648,30 @@ def test_water_warning_mentions_settling_at_a_confirmed_site_as_the_real_fix():
     assert "Settling at the confirmed water source (40,37) would fix this for good" in request["prompt"]
 
 
+def test_water_warning_stops_suggesting_relocate_once_already_at_the_confirmed_site():
+    """Live bug, confirmed via decision_log analysis of a real run: this used to gate
+    on _is_settled_near_water, which stays False for the tribe's entire
+    SETTLEMENT_STABILITY_CYCLES wait even after physically arriving at the site --
+    so a starving tribe already parked on its own confirmed water tile kept getting
+    told "relocate there to fix this" every cycle, and it kept RELOCATE-ing in place
+    instead of switching to GATHER_FOOD, losing over half its population before
+    finally pivoting. The suggestion should stop the moment arrival happens, not
+    once settling officially finishes."""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.water = 0  # triggers the thirst warning
+    tribe.confirmed_water_sites = [(40, 37)]  # already standing exactly on it
+    tribe.cycles_since_relocate = 0  # still well short of settling -- would be
+    assert tribe.cycles_since_relocate < config.SETTLEMENT_STABILITY_CYCLES
+    assert sim._is_settled_near_water(tribe) is False  # the old (buggy) gate condition
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Settling at the confirmed water source" not in request["prompt"]
+
+
 def test_water_warning_says_nothing_extra_without_a_confirmed_site():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]

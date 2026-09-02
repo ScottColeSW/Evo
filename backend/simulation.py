@@ -1390,7 +1390,17 @@ class Simulation:
         # settling at an already-known site would actually fix this for good.
         # Appended directly onto the same warning line the model already reads
         # closely, not left as a separate, easier-to-miss fact.
-        if survival_bias and "water" in survival_bias.lower() and tribe.confirmed_water_sites and not self._is_settled_near_water(tribe):
+        #
+        # Live bug: this used to gate on `not _is_settled_near_water(tribe)`, which
+        # stays True for the tribe's entire SETTLEMENT_STABILITY_CYCLES wait *even
+        # after it has physically arrived* at the confirmed site -- confirmed live,
+        # a starving tribe already parked on its own water tile kept getting told
+        # "relocate there to fix this" every cycle, and RELOCATE-ing in place instead
+        # of switching to GATHER_FOOD is very likely why it stayed at 0 food for 6+
+        # cycles and lost over half its population. Gating on `_near_confirmed_water`
+        # (proximity only, no stability wait) means the suggestion stops the moment
+        # arrival actually happens, not once settling officially finishes.
+        if survival_bias and "water" in survival_bias.lower() and tribe.confirmed_water_sites and not self._near_confirmed_water(tribe):
             wx, wy = tribe.confirmed_water_sites[-1]
             survival_bias += f" Settling at the confirmed water source ({wx},{wy}) would fix this for good, not just this cycle."
         memories = tribe.memory.recall(f"{biome} at {tribe.x},{tribe.y}")
