@@ -1286,18 +1286,31 @@ class Simulation:
             visible_entities = ["none"]
         return visible_entities, era_gap_note
 
-    def _near_confirmed_water(self, tribe: Tribe) -> bool:
+    def _near_confirmed_water(self, tribe: Tribe, x: int | None = None, y: int | None = None) -> bool:
         """Explicit request: "make this an initial territory with a bounding area
         around it that is larger than the Discovery." A single confirmed water
         tile was too fragile a RELOCATE target -- landing one tile off onto
         non-qualifying ground meant never actually settling despite being right
         next to real water. Used by both settlement checks below as an
         additional way to qualify, on top of the exact-biome-match check, not a
-        replacement for it."""
+        replacement for it. x/y default to the tribe's current position, but can
+        be passed explicitly to check a hypothetical/past position instead (see
+        _settlement_ground_ok)."""
+        px, py = (tribe.x, tribe.y) if x is None else (x, y)
         return any(
-            max(abs(tribe.x - wx), abs(tribe.y - wy)) <= config.SETTLEMENT_WATER_TERRITORY_RADIUS
+            max(abs(px - wx), abs(py - wy)) <= config.SETTLEMENT_WATER_TERRITORY_RADIUS
             for wx, wy in tribe.confirmed_water_sites
         )
+
+    def _settlement_ground_ok(self, tribe: Tribe, x: int | None = None, y: int | None = None) -> bool:
+        """The ground-qualification half of _is_settled (biome match or near confirmed
+        water), without the stability-cycle clock. Factored out so _apply_turn's
+        cycles_since_relocate reset (below) can tell a RELOCATE that hops between two
+        tiles that both already qualify -- e.g. jittering among several confirmed water
+        sites a tile or two apart -- from one that actually leaves settled-worthy
+        ground, instead of restarting the settlement clock on every such hop."""
+        px, py = (tribe.x, tribe.y) if x is None else (x, y)
+        return self.world.biome(px, py) in config.FARMABLE_BIOMES or self._near_confirmed_water(tribe, px, py)
 
     def _is_settled(self, tribe: Tribe) -> bool:
         """Whether this tribe has actually put down roots -- see config.
@@ -1307,7 +1320,7 @@ class Simulation:
         that until now."""
         if tribe.cycles_since_relocate < config.SETTLEMENT_STABILITY_CYCLES:
             return False
-        return self.world.biome(tribe.x, tribe.y) in config.FARMABLE_BIOMES or self._near_confirmed_water(tribe)
+        return self._settlement_ground_ok(tribe)
 
     def _is_settled_near_water(self, tribe: Tribe) -> bool:
         """Stricter than _is_settled: PLANT_CROP/GATHER_EGGS need a tribe that actually
@@ -1532,15 +1545,13 @@ class Simulation:
             # when the ground already qualifies and the only thing left is
             # time, versus the tribe genuinely standing somewhere that
             # doesn't count at all.
-            already_good_ground = (
-                self.world.biome(tribe.x, tribe.y) in config.FARMABLE_BIOMES or self._near_confirmed_water(tribe)
-            )
+            already_good_ground = self._settlement_ground_ok(tribe)
             if already_good_ground:
                 visible_entities.append(
                     f"This ground already qualifies for settling -- {tribe.cycles_since_relocate}/"
                     f"{config.SETTLEMENT_STABILITY_CYCLES} cycles without relocating so far. Staying here "
-                    "without choosing RELOCATE again will finish settling; relocating again resets this "
-                    "progress back to 0."
+                    "without choosing RELOCATE again will finish settling; relocating somewhere that no "
+                    "longer qualifies resets this progress back to 0."
                 )
             else:
                 visible_entities.append(
@@ -2005,8 +2016,21 @@ class Simulation:
         # being true just because they arrived) could never accumulate any settlement
         # progress at all, standing right on the water forever. Only a real change in
         # position should restart the clock.
+        #
+        # Second regression, found live: a tribe with several confirmed water sites a
+        # tile or two apart (common once a scout has walked the shoreline) kept
+        # jittering RELOCATE between them -- (19,62) -> (20,61) -> (20,62) -- each hop
+        # a genuine position change, so the clock kept restarting to 0 forever even
+        # though every one of those tiles already satisfied _is_settled's ground
+        # check. A small model can't be talked out of this with a fact (see
+        # evolution2civ-facts-vs-mechanics-pattern.md) -- the fix is mechanical: only
+        # reset the clock when the move actually leaves settlement-qualifying ground,
+        # not just when the coordinates change.
         if action == "RELOCATE" and (tribe.x, tribe.y) != pos_before:
-            tribe.cycles_since_relocate = 0
+            if self._settlement_ground_ok(tribe, *pos_before) and self._settlement_ground_ok(tribe):
+                tribe.cycles_since_relocate += 1
+            else:
+                tribe.cycles_since_relocate = 0
         else:
             tribe.cycles_since_relocate += 1
         tribe.last_broadcast = broadcast

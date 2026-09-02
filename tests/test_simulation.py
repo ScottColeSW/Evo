@@ -223,7 +223,7 @@ def test_not_settled_yet_names_ground_already_qualifying_and_warns_against_reloc
     request, _ctx = sim._prepare_turn(tribe)
 
     assert "This ground already qualifies for settling -- 3/10 cycles" in request["prompt"]
-    assert "relocating again resets this progress back to 0" in request["prompt"]
+    assert "relocating somewhere that no longer qualifies resets this progress back to 0" in request["prompt"]
 
 
 def test_not_settled_yet_names_ground_that_doesnt_qualify_at_all():
@@ -1454,6 +1454,59 @@ def test_apply_turn_does_not_record_last_target_for_non_relocate_actions():
     sim._apply_turn(tribe, {"visual_action": "GATHER_FOOD", "target_vector": [20, 30]}, 10.0, ctx)
 
     assert tribe.last_target is None
+
+
+def test_settlement_ground_ok_true_on_farmable_biome_or_near_confirmed_water():
+    sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 5, "y": 55}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.confirmed_water_sites = [(19, 62)]
+
+    assert sim._settlement_ground_ok(tribe, 19, 62) is True  # exactly on the site
+    assert sim._settlement_ground_ok(tribe, 20, 61) is True  # a tile away, still in radius
+    assert sim._settlement_ground_ok(tribe, 90, 90) is False  # nowhere near it, not farmable
+
+
+def test_apply_turn_does_not_reset_relocate_clock_when_still_within_qualifying_territory():
+    """Live bug: a tribe with a confirmed water site kept RELOCATE-jittering between
+    nearby tiles that all already satisfied _is_settled's ground check --
+    (19,62) -> (20,61) -> (20,62) -- and the old "any position change resets the
+    clock" rule meant cycles_since_relocate restarted at 0 every single hop, so the
+    tribe could never accumulate enough cycles to actually settle despite already
+    standing on qualifying ground the whole time."""
+    sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 19, "y": 62}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.confirmed_water_sites = [(19, 62)]
+    tribe.cycles_since_relocate = 5
+    tribe.food = 100
+    tribe.water = 100
+    ctx = {"biome": "mountains", "available_actions": ["RELOCATE"]}
+
+    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [20, 61]}, 10.0, ctx)
+
+    assert (tribe.x, tribe.y) == (20, 61)  # confirms the move actually happened
+    assert tribe.cycles_since_relocate == 6  # kept climbing instead of resetting to 0
+
+
+def test_apply_turn_still_resets_relocate_clock_when_leaving_qualifying_territory():
+    """A single RELOCATE step (speed 4) starting exactly on a confirmed water site can
+    never actually leave its radius-6 territory in one hop -- so this places the tribe
+    near the edge of the territory instead, confirming a hop that crosses out of the
+    radius still resets the clock as before. Column x=5 stays real mountains (not
+    farmable) through y=59, same terrain used by the existing settlement-radius tests
+    above, so biome alone can't accidentally satisfy _settlement_ground_ok here."""
+    sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 5, "y": 55}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.confirmed_water_sites = [(5, 50)]  # distance 5 from tribe -- within radius 6
+    tribe.cycles_since_relocate = 5
+    tribe.food = 100
+    tribe.water = 100
+    ctx = {"biome": "mountains", "available_actions": ["RELOCATE"]}
+
+    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [5, 99]}, 10.0, ctx)
+
+    assert tribe.y > 55  # confirms the move actually happened, away from the site
+    assert sim._settlement_ground_ok(tribe) is False  # now outside the radius, still not farmable
+    assert tribe.cycles_since_relocate == 0
 
 
 def test_apply_turn_records_last_decision_target_for_every_action():
