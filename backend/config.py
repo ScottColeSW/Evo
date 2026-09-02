@@ -620,6 +620,13 @@ RAIDER_DEFEAT_LOOT_FRACTION = 0.2
 RAIDER_SIGHTING_CHANCE = 0.1
 RAIDER_SIGHTING_TRAUMA_MAGNITUDE = -0.4
 RAIDER_SIGHTING_TRAUMA_RADIUS = 4
+# Bug report: "we have a lot of Raider camps right on top of a resource." Both the
+# raider sighting and a resource-site discovery (terrain_report) get recorded at the
+# exact same exp["target"] coordinate, so whenever both independent rolls succeed on
+# the same trip they land on the literal same tile by construction -- "on the same
+# trip" doesn't have to mean "at the identical spot." Nudges the raider sighting by
+# up to this many tiles off the target instead, still nearby, no longer stacked.
+RAIDER_SIGHTING_OFFSET = 5
 
 # Explicit request: "I do want to see RAIDERs ride in over time" -- an attack used to
 # resolve entirely in one invisible instant (roll, resolve, done). Now a triggered

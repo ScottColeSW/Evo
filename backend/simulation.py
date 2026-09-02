@@ -2351,25 +2351,31 @@ class Simulation:
                 # branches below). Radiates dread AT THE SIGHTING COORDINATE, not the
                 # tribe's own camp -- a place now known to be dangerous, not
                 # something that happened at home.
-                # Bug report: "there is a raider in the ocean." exp["target"] is
-                # wherever this leg was AIMED, not necessarily anywhere the party
-                # actually set foot -- a target that lands in open water (deflected
-                # around, per physics.terrain_aware_step, or just never reached)
-                # still got reported as a raider sighting with no land check at all.
-                # "Not biome-matched" (see this constant's own comment) means no
-                # specific biome is required, not that literally underwater counts.
-                if (
-                    random.random() < config.RAIDER_SIGHTING_CHANCE
-                    and biome_at(*exp["target"]) not in config.UNBUILDABLE_BIOMES
-                ):
-                    rx, ry = exp["target"]
-                    if (rx, ry) not in tribe.raider_sightings:
-                        tribe.raider_sightings.append((rx, ry))
-                    self.trauma.radiate_event_wave(
-                        rx, ry, config.RAIDER_SIGHTING_TRAUMA_MAGNITUDE, config.RAIDER_SIGHTING_TRAUMA_RADIUS
-                    )
-                    tribe.memory.remember(f"Scouts spotted signs of raiders near ({rx},{ry}).", self.cycle, weight=0.7)
-                    tribe.history.append(f"{scout} reports signs of raiders near ({rx},{ry}) on the way home -- best be cautious")
+                if random.random() < config.RAIDER_SIGHTING_CHANCE:
+                    # Bug report: "we have a lot of Raider camps right on top of a
+                    # resource." A resource-site discovery (terrain_report, below)
+                    # is recorded at this exact exp["target"] tile -- reporting the
+                    # raider sighting there too meant any trip where both
+                    # independent rolls succeeded stacked them on the identical
+                    # tile. Nudged to a nearby point instead, same "spotted on the
+                    # same journey" idea, no longer literally the same spot.
+                    off = config.RAIDER_SIGHTING_OFFSET
+                    rx = max(0, min(self.world.grid_size - 1, exp["target"][0] + random.randint(-off, off)))
+                    ry = max(0, min(self.world.grid_size - 1, exp["target"][1] + random.randint(-off, off)))
+                    # Bug report: "there is a raider in the ocean." A raw target/
+                    # offset point can land in open water (deflected around, per
+                    # physics.terrain_aware_step, or just never reached) with no
+                    # land check at all. "Not biome-matched" (see this constant's
+                    # own comment) means no specific biome is required, not that
+                    # literally underwater counts.
+                    if biome_at(rx, ry) not in config.UNBUILDABLE_BIOMES:
+                        if (rx, ry) not in tribe.raider_sightings:
+                            tribe.raider_sightings.append((rx, ry))
+                        self.trauma.radiate_event_wave(
+                            rx, ry, config.RAIDER_SIGHTING_TRAUMA_MAGNITUDE, config.RAIDER_SIGHTING_TRAUMA_RADIUS
+                        )
+                        tribe.memory.remember(f"Scouts spotted signs of raiders near ({rx},{ry}).", self.cycle, weight=0.7)
+                        tribe.history.append(f"{scout} reports signs of raiders near ({rx},{ry}) on the way home -- best be cautious")
 
                 if exp["found"]:
                     fx, fy = exp["found"]

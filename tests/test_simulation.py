@@ -2783,13 +2783,35 @@ def test_raider_sighting_is_recorded_and_radiates_dread_at_the_sighting_not_the_
     exp = _returning_scout_exp((60, 60), "plains")
     tribe.expeditions = [exp]
 
-    with mock.patch("backend.simulation.random.random", return_value=0.0):
+    with mock.patch("backend.simulation.random.random", return_value=0.0), \
+         mock.patch("backend.simulation.random.randint", return_value=0):
         sim._advance_one_expedition(tribe, exp)
 
     assert tribe.raider_sightings == [(60, 60)]
     assert "DREAD" in sim.trauma.bias_string(60, 60)
     assert "DREAD" not in sim.trauma.bias_string(50, 50)  # not at the tribe's own camp
     assert any("signs of raiders near (60,60)" in entry for entry in tribe.history)
+
+
+def test_raider_sighting_lands_near_but_not_necessarily_on_the_target():
+    """Bug report: "we have a lot of Raider camps right on top of a resource." A
+    resource-site discovery is recorded at the exact same exp["target"] tile the
+    raider sighting used to use too -- nudged off by up to RAIDER_SIGHTING_OFFSET
+    tiles now, so the two independent rolls succeeding on the same trip no longer
+    stack on the identical coordinate."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    exp = _returning_scout_exp((60, 60), "plains")
+    tribe.expeditions = [exp]
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0), \
+         mock.patch("backend.simulation.random.randint", return_value=config.RAIDER_SIGHTING_OFFSET):
+        sim._advance_one_expedition(tribe, exp)
+
+    expected = 60 + config.RAIDER_SIGHTING_OFFSET
+    assert tribe.raider_sightings == [(expected, expected)]
 
 
 def test_revisiting_a_known_raider_sighting_does_not_duplicate_the_list():
@@ -2799,10 +2821,27 @@ def test_revisiting_a_known_raider_sighting_does_not_duplicate_the_list():
     exp = _returning_scout_exp((60, 60), "plains")
     tribe.expeditions = [exp]
 
-    with mock.patch("backend.simulation.random.random", return_value=0.0):
+    with mock.patch("backend.simulation.random.random", return_value=0.0), \
+         mock.patch("backend.simulation.random.randint", return_value=0):
         sim._advance_one_expedition(tribe, exp)
 
     assert tribe.raider_sightings == [(60, 60)]
+
+
+def test_raider_sighting_skipped_when_the_offset_point_lands_in_water():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    exp = _returning_scout_exp((60, 60), "plains")
+    tribe.expeditions = [exp]
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0), \
+         mock.patch("backend.simulation.random.randint", return_value=0), \
+         mock.patch("backend.simulation.biome_at", return_value="ocean"):
+        sim._advance_one_expedition(tribe, exp)
+
+    assert tribe.raider_sightings == []
 
 
 def test_hunting_party_never_rolls_a_raider_sighting():
