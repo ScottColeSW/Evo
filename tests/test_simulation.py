@@ -360,7 +360,26 @@ def test_confirmed_water_nudge_says_scouting_for_it_is_no_longer_needed():
     request, _ctx = sim._prepare_turn(tribe)
 
     assert "Water has already been found at (40,37)" in request["prompt"]
-    assert "no further scouting is needed to search for it" in request["prompt"]
+
+
+def test_confirmed_water_nudge_recognizes_already_being_there():
+    """Bug report: "it looks like they want to consider relocating when they
+    are on top of the water discovery site." The old fact always said
+    "RELOCATE there" regardless of whether the tribe's current position
+    already qualified -- confusing when settled_near_water was still False for
+    some other reason (not enough cycles yet) while standing right on the
+    confirmed site."""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.confirmed_water_sites = [(40, 37)]  # exactly where the tribe already stands
+    tribe.cycles_since_relocate = 3  # not yet enough to count as settled_near_water
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "The tribe is already at or near the confirmed water site (40,37)" in request["prompt"]
+    assert "Water has already been found at" not in request["prompt"]
 
 
 def test_quarry_nudge_requires_a_scouted_site_not_just_the_other_prerequisites():

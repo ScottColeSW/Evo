@@ -1577,10 +1577,25 @@ class Simulation:
             # mine/raiders), so this doesn't retire it, just closes off the one
             # already-answered reason to use it.
             wx, wy = tribe.confirmed_water_sites[-1]
-            visible_entities.append(
-                f"Water has already been found at ({wx},{wy}) -- no further scouting is needed to "
-                "search for it. RELOCATE there to finally settle and begin farming and raising a flock."
-            )
+            if self._near_confirmed_water(tribe):
+                # Bug report: "it looks like they want to consider relocating
+                # when they are on top of the water discovery site." The old
+                # fact always said "RELOCATE there" regardless of whether the
+                # tribe's current position already qualified -- if
+                # settled_near_water was still False for some other reason
+                # (not enough cycles yet, or standing within the territory
+                # radius but not on an exact river/lake tile), the tribe kept
+                # getting told to travel to a place it was already standing.
+                visible_entities.append(
+                    f"The tribe is already at or near the confirmed water site ({wx},{wy}) -- "
+                    "relocating again would accomplish nothing; simply remaining here without "
+                    "choosing RELOCATE again is what finishes settling."
+                )
+            else:
+                visible_entities.append(
+                    f"Water has already been found at ({wx},{wy}) -- no further scouting is needed to "
+                    "search for it. RELOCATE there to finally settle and begin farming and raising a flock."
+                )
 
         if "HUNTING_PARTY" in available_actions and tribe.wildlife_sites:
             # NUDGE (2026-08-31, explicit request: "scouts have to evolve so they can
