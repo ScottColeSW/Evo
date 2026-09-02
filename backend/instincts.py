@@ -10,7 +10,10 @@ food/water actually had upkeep consumption (see Simulation._apply_upkeep).
 from . import config
 
 
-def survival_bias_string(food: int, water: int, population: int) -> tuple[str, bool]:
+def survival_bias_string(
+    food: int, water: int, population: int,
+    fishing_learned: bool = False, cooking_learned: bool = False,
+) -> tuple[str, bool]:
     """Returns (bias_text, is_critical). is_critical raises inference temperature the
     same way ancestral dread does -- panic should read as less predictable model
     output, not just differently worded prompt text.
@@ -35,11 +38,28 @@ def survival_bias_string(food: int, water: int, population: int) -> tuple[str, b
     # model's own choice are untouched -- but it no longer pretends not to know what
     # the tribe actually needs. Revisit if this proves too heavy-handed later --
     # grep "# NUDGE" across backend/ to find every place this line was crossed.
+    #
+    # Explicit follow-up: "revise the 'your people are starving' messaging to be
+    # more inclusive of options that would help them fix it -- add Fishing or Cook
+    # in a Kitchen as additional ideas." The original three options (gather/hunt)
+    # aren't the only real ways to fix a food shortage -- fishing is always a real
+    # option, and cooking permanently stretches every future harvest further, not
+    # just this one crisis. Only mentioned once fishing_learned/cooking_learned are
+    # actually false, so a tribe that's already mastered them doesn't get told to
+    # go learn something it already knows.
     if food <= upkeep * config.HUNGER_CRITICAL_CYCLES_LEFT:
-        urgent.append("Your people are starving -- gather food or send a hunting party now.")
+        message = "Your people are starving -- gather food, send a hunting party"
+        message += ", or try fishing now." if not fishing_learned else " now."
+        if not cooking_learned:
+            message += " Learning to cook (build a fire, then cook after a successful hunt) would make every future harvest go much further."
+        urgent.append(message)
         critical = True
     elif food <= upkeep * config.HUNGER_WARNING_CYCLES_LEFT:
-        urgent.append("Food stores are running low -- gathering food or hunting soon would help.")
+        message = "Food stores are running low -- gathering food, hunting"
+        message += ", or fishing soon would help." if not fishing_learned else " soon would help."
+        if not cooking_learned:
+            message += " Learning to cook would help stored food last much longer too."
+        urgent.append(message)
 
     if water <= upkeep * config.THIRST_CRITICAL_CYCLES_LEFT:
         urgent.append("Your people are dying of thirst -- gather water or dispatch scouts to find a source now.")

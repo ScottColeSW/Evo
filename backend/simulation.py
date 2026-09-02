@@ -450,7 +450,9 @@ class Tribe:
 
     def to_dict(self) -> dict:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
-        survival_warning, _ = survival_bias_string(self.food, self.water, self.population)
+        survival_warning, _ = survival_bias_string(
+            self.food, self.water, self.population, self.fishing_learned, self.cooking_learned
+        )
         nxt = next_era(self.era)
         next_era_info = None
         if nxt is not None:
@@ -832,7 +834,9 @@ class Simulation:
             f"Population: {tribe.population}.",
             f"Resources on hand: {tribe.wood} wood, {tribe.stone} stone, {tribe.food} food, {tribe.water} water.",
         ]
-        survival_bias, _critical = survival_bias_string(tribe.food, tribe.water, tribe.population)
+        survival_bias, _critical = survival_bias_string(
+            tribe.food, tribe.water, tribe.population, tribe.fishing_learned, tribe.cooking_learned
+        )
         if survival_bias:
             lines.append(survival_bias)
         if self._is_settled(tribe):
@@ -1427,7 +1431,9 @@ class Simulation:
         biome = self.world.biome(tribe.x, tribe.y)
         nearby = self.world.nearby_structures(tribe.x, tribe.y)
         ghost_bias = self.trauma.bias_string(tribe.x, tribe.y)
-        survival_bias, survival_critical = survival_bias_string(tribe.food, tribe.water, tribe.population)
+        survival_bias, survival_critical = survival_bias_string(
+            tribe.food, tribe.water, tribe.population, tribe.fishing_learned, tribe.cooking_learned
+        )
         # NUDGE (2026-08-31, explicit request: "the warnings do not mention settling
         # as an alternative to low water"). A tribe already sitting on a chronic water
         # shortage may well already know exactly where real water is (a confirmed
