@@ -2691,14 +2691,13 @@ def _returning_scout_exp(target, terrain_report, lead_scout="Ashgar"):
     }
 
 
-def test_forest_terrain_report_can_discover_lumber_and_wildlife_without_stacking():
-    """2026-09-02 rework: site discovery is now an independent chance roll per type
-    (LUMBER/WILDLIFE/QUARRY_SITE_DISCOVERY_CHANCE), not a biome-exclusive guarantee
-    -- explicit bug report: a tribe that never scouted toward the right biome was
-    structurally locked out of that resource forever. Forcing both rolls to succeed
-    here also confirms the "without overlap" fix: lumber and wildlife used to always
-    land on the identical forest tile together; now the second one gets nudged off
-    a tile the first already claimed."""
+def test_forest_terrain_report_can_discover_lumber_and_wildlife_together():
+    """2026-09-02 rework ("a twisted sparse matrix assignment based on the existing
+    map"): site discovery now checks for a real, pre-seeded location near the
+    scout's target (world.find_nearby_site) instead of rolling an independent
+    chance on their exact tile. Each site type has its own independent seed set, so
+    two types landing on the same tile is no longer even possible -- no nudging
+    needed, unlike the brief intermediate chance-roll fix this replaced."""
     from unittest import mock
 
     from backend.world import WILDLIFE_SITE_TYPES
@@ -2708,15 +2707,15 @@ def test_forest_terrain_report_can_discover_lumber_and_wildlife_without_stacking
     exp = _returning_scout_exp((60, 60), "forest")
     tribe.expeditions = [exp]
 
-    # Call order per arrival: raider sighting, lumber, wildlife, quarry, mine.
-    with mock.patch("backend.simulation.random.random", side_effect=[1.0, 0.0, 0.0, 1.0, 1.0]):
+    # find_nearby_site call order per arrival: lumber, wildlife, quarry, mine.
+    with mock.patch("backend.simulation.find_nearby_site", side_effect=[(60, 60), (63, 58), None, None]):
         sim._advance_one_expedition(tribe, exp)
 
     assert tribe.lumber_sites == [(60, 60)]
     assert len(tribe.wildlife_sites) == 1
     site = tribe.wildlife_sites[0]
     assert site["type"] in WILDLIFE_SITE_TYPES
-    assert (site["x"], site["y"]) != (60, 60)  # nudged off the lumber site, not stacked
+    assert (site["x"], site["y"]) == (63, 58)
     assert tribe.quarry_sites == []
 
 
@@ -2758,9 +2757,8 @@ def test_new_wildlife_site_throws_a_game_discovery_celebration():
     exp = _returning_scout_exp((60, 60), "forest")
     tribe.expeditions = [exp]
 
-    # Lumber fails so it doesn't claim (60,60) first and push the wildlife site
-    # somewhere else -- call order: raider sighting, lumber, wildlife, quarry, mine.
-    with mock.patch("backend.simulation.random.random", side_effect=[1.0, 1.0, 0.0, 1.0, 1.0]):
+    # find_nearby_site call order per arrival: lumber, wildlife, quarry, mine.
+    with mock.patch("backend.simulation.find_nearby_site", side_effect=[None, (60, 60), None, None]):
         sim._advance_one_expedition(tribe, exp)
 
     assert any("celebrates the discovery of a game-rich site at (60,60)" in entry for entry in tribe.history)
@@ -2769,6 +2767,12 @@ def test_new_wildlife_site_throws_a_game_discovery_celebration():
 
 
 def test_revisiting_an_already_known_wildlife_site_does_not_re_celebrate():
+    """find_nearby_site itself excludes coordinates already in `known` from its
+    search (backend/world.py) -- an already-known site can never be "found" again,
+    so this only needs to confirm _advance_one_expedition passes that real set
+    through and doesn't re-celebrate when nothing new comes back."""
+    from unittest import mock
+
     from backend import config
 
     sim = _bare_simulation()
@@ -2778,7 +2782,8 @@ def test_revisiting_an_already_known_wildlife_site_does_not_re_celebrate():
     exp = _returning_scout_exp((60, 60), "forest")
     tribe.expeditions = [exp]
 
-    sim._advance_one_expedition(tribe, exp)
+    with mock.patch("backend.simulation.find_nearby_site", return_value=None):
+        sim._advance_one_expedition(tribe, exp)
 
     # Only the ordinary arrival-home food delivery -- no feast cost, not a new site.
     assert tribe.food == 100 + config.EXPEDITION_RETURN_DAILY_FOOD
@@ -2793,8 +2798,8 @@ def test_mountains_terrain_report_can_confirm_a_quarry_site():
     exp = _returning_scout_exp((15, 20), "mountains")
     tribe.expeditions = [exp]
 
-    # Call order: raider sighting, lumber, wildlife, quarry, mine.
-    with mock.patch("backend.simulation.random.random", side_effect=[1.0, 1.0, 1.0, 0.0, 1.0]):
+    # find_nearby_site call order: lumber, wildlife, quarry, mine.
+    with mock.patch("backend.simulation.find_nearby_site", side_effect=[None, None, (15, 20), None]):
         sim._advance_one_expedition(tribe, exp)
 
     assert tribe.quarry_sites == [(15, 20)]
@@ -2805,8 +2810,10 @@ def test_mountains_terrain_report_can_confirm_a_quarry_site():
 def test_quarry_site_can_be_discovered_on_a_non_mountain_biome():
     """The actual bug fix: quarry sites used to be guaranteed on 'mountains' and
     impossible everywhere else -- a tribe with no mountains anywhere in scouting
-    range was structurally locked out of ever building a quarry. Independent chance
-    roll now, on any biome."""
+    range was structurally locked out of ever building a quarry. Discovery is now
+    keyed to a real pre-seeded location (world.find_nearby_site), not the scout's
+    own biome, so it works identically regardless of what terrain they're standing
+    on when they report home."""
     from unittest import mock
 
     sim = _bare_simulation()
@@ -2814,23 +2821,45 @@ def test_quarry_site_can_be_discovered_on_a_non_mountain_biome():
     exp = _returning_scout_exp((60, 60), "plains")
     tribe.expeditions = [exp]
 
-    with mock.patch("backend.simulation.random.random", side_effect=[1.0, 1.0, 1.0, 0.0, 1.0]):
+    with mock.patch("backend.simulation.find_nearby_site", side_effect=[None, None, (60, 60), None]):
         sim._advance_one_expedition(tribe, exp)
 
     assert tribe.quarry_sites == [(60, 60)]
 
 
-def test_no_resource_landmark_is_found_when_every_discovery_roll_fails():
+def test_mine_site_resource_name_is_read_off_the_found_points_own_biome():
+    """A pre-seeded mine site can sit on a different biome than the scout's own
+    target tile (it just has to be within SITE_DISCOVERY_RADIUS) -- the resource
+    name must come from the site's real location, not the scout's terrain_report,
+    or a mine found near a mountains report could wrongly be named as if it were
+    sitting in mountains when it's actually on, say, plains."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Mountain Tribe", "qwen2.5:3b", 50, 50, "#fb923c")
+    exp = _returning_scout_exp((15, 20), "mountains")
+    tribe.expeditions = [exp]
+
+    with mock.patch("backend.simulation.find_nearby_site", side_effect=[None, None, None, (60, 60)]), \
+         mock.patch("backend.simulation.biome_at", return_value="plains"):
+        sim._advance_one_expedition(tribe, exp)
+
+    assert tribe.mine_sites == [{"x": 60, "y": 60, "biome": "plains", "resource": "Basin Loamstone"}]
+    assert any("vein of Basin Loamstone" in entry for entry in tribe.history)
+
+
+def test_no_resource_landmark_is_found_when_nothing_is_seeded_nearby():
+    from unittest import mock
+
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     exp = _returning_scout_exp((60, 60), "plains")
     tribe.expeditions = [exp]
 
-    from unittest import mock
-    with mock.patch("backend.simulation.random.random", return_value=1.0):
+    with mock.patch("backend.simulation.find_nearby_site", return_value=None):
         sim._advance_one_expedition(tribe, exp)
 
-    assert tribe.lumber_sites == tribe.wildlife_sites == tribe.quarry_sites == []
+    assert tribe.lumber_sites == tribe.wildlife_sites == tribe.quarry_sites == tribe.mine_sites == []
 
 
 def test_spawn_minor_settlements_creates_the_configured_count_snapshotting_the_biggest_tribe():
@@ -4241,6 +4270,25 @@ def test_advance_farming_harvests_food_once_growth_matures_and_resets():
     assert any("harvest festival" in entry for entry in tribe.history)
 
 
+def test_advance_farming_harvest_is_capped_by_storage_and_notes_the_waste():
+    """Live-run correction: a harvest used to add straight to tribe.food with no
+    ceiling at all -- same passive-income gap settled water/fish/mine/tannery had."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.farm_plots = 2
+    tribe.crop_growth = 100 - config.CROP_GROWTH_PER_CYCLE
+    tribe.water = 100
+    tribe.food = config.STORAGE_CAP_BASE - 3  # less than the harvest amount, so some is wasted
+    tribe.last_celebration_cycle = sim.cycle  # skip the celebration cost for a clean read
+
+    sim._advance_farming(tribe)
+
+    assert tribe.food == config.STORAGE_CAP_BASE
+    assert any("stores nearly full" in entry and "wasted" in entry for entry in tribe.history)
+
+
 def test_advance_farming_harvest_scales_with_population():
     """Explicit finding: a harvest used to be a flat CROP_HARVEST_YIELD per plot
     regardless of population -- every other resource-producing mechanic already
@@ -4362,6 +4410,22 @@ def test_advance_water_supply_scales_with_population_not_a_flat_amount():
     assert tribe.water > upkeep  # a real surplus, not just barely keeping pace
 
 
+def test_advance_water_supply_is_capped_by_storage():
+    """Live-run correction: passive settled-water income used to bypass the storage
+    cap entirely, which is exactly how a live run reached 540 water on one tribe --
+    manual GATHER_WATER was already capped, but this dwarfs it."""
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.water = config.STORAGE_CAP_BASE
+
+    sim._advance_water_supply(tribe)
+
+    assert tribe.water == config.STORAGE_CAP_BASE
+
+
 def test_advance_water_supply_does_nothing_before_settling():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # forest, not settled
     tribe = sim.tribes["tribe_0"]
@@ -4403,6 +4467,20 @@ def test_advance_fish_supply_scales_with_cooking_multiplier():
     assert tribe.food == 10 + round(upkeep * config.FISHING_SUPPLY_MULTIPLIER * config.COOKING_FOOD_MULTIPLIER)
 
 
+def test_advance_fish_supply_is_capped_by_storage():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.fishing_learned = True
+    tribe.food = config.STORAGE_CAP_BASE
+
+    sim._advance_fish_supply(tribe)
+
+    assert tribe.food == config.STORAGE_CAP_BASE
+
+
 def test_advance_fish_supply_does_nothing_until_fishing_is_learned():
     from backend import config
 
@@ -4425,6 +4503,64 @@ def test_advance_fish_supply_does_nothing_before_settling_even_if_learned():
     sim._advance_fish_supply(tribe)
 
     assert tribe.food == 10
+
+
+def test_advance_mine_yield_flows_in_once_excavated_and_settled():
+    from backend import config
+
+    sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.mine_built = True
+    tribe.mine_resource_name = "Orosite Ore"
+
+    sim._advance_mine_yield(tribe)
+
+    assert tribe.unique_resources["Orosite Ore"] == config.MINE_YIELD_PER_CYCLE
+
+
+def test_advance_mine_yield_is_capped_by_storage():
+    """Live-run correction: passive mine/tannery income used to bypass the storage
+    cap entirely, same gap as settled water/fish supply."""
+    from backend import config
+
+    sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.mine_built = True
+    tribe.mine_resource_name = "Orosite Ore"
+    tribe.unique_resources["Orosite Ore"] = config.STORAGE_CAP_BASE
+
+    sim._advance_mine_yield(tribe)
+
+    assert tribe.unique_resources["Orosite Ore"] == config.STORAGE_CAP_BASE
+
+
+def test_advance_tannery_yield_flows_in_once_built_and_settled():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.tannery_built = True
+
+    sim._advance_tannery_yield(tribe)
+
+    assert tribe.unique_resources["Fur"] == config.TANNERY_YIELD_PER_CYCLE
+
+
+def test_advance_tannery_yield_is_capped_by_storage():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.tannery_built = True
+    tribe.unique_resources["Fur"] = config.STORAGE_CAP_BASE
+
+    sim._advance_tannery_yield(tribe)
+
+    assert tribe.unique_resources["Fur"] == config.STORAGE_CAP_BASE
 
 
 def test_catch_fish_gated_the_same_as_farming_and_eggs():

@@ -865,36 +865,27 @@ WAREHOUSE_STORAGE_BONUS_PER_BUILDING = 100
 WAREHOUSE_WOOD_COST = 25
 WAREHOUSE_STONE_COST = 20
 
-# Live-run correction (2026-09-02): lumber/wildlife sites used to be *guaranteed*
-# whenever a scout's terrain_report happened to be "forest," and quarry sites the
-# same for "mountains" -- a tribe that never happened to scout toward the right
-# biome was structurally locked out of that resource forever (a real bug report: a
-# Forest Tribe stuck at Cognitive Horizon because no mountains were ever within
-# scouting range, so it could never discover a quarry site). Explicit request: "it
-# should be an even distribution, without overlap. the exception is the Biome
-# unique Ore in some Mines." Reworked to the same shape UNIQUE_RESOURCE_BY_BIOME
-# already uses -- an independent chance roll on ANY scouted terrain, regardless of
-# biome -- so every tribe eventually finds every resource type no matter where it
-# happens to scout, just not deterministically from one specific biome.
-LUMBER_SITE_DISCOVERY_CHANCE = 0.35
-WILDLIFE_SITE_DISCOVERY_CHANCE = 0.35
-QUARRY_SITE_DISCOVERY_CHANCE = 0.35
-# "Without overlap": if an independent roll lands on a tile another site type
-# already occupies for this tribe, nudge it to a nearby free tile instead of
-# stacking two different resource sites on the identical coordinate -- same
-# "spotted nearby, not literally on it" idea RAIDER_SIGHTING_OFFSET already uses.
-RESOURCE_SITE_OVERLAP_OFFSET = 5
+# Resource-site discovery (lumber/wildlife/quarry/mine): superseded 2026-09-02 --
+# see world.py's SITE_SEED_GRID_CELL_SIZE/SITE_SEED_FILL_PROBABILITY/
+# SITE_DISCOVERY_RADIUS. Sites used to be decided fresh via an independent chance
+# roll on whatever exact tile a scout's report landed on (a brief intermediate
+# fix for the *fairness* problem: lumber/wildlife were guaranteed on forest and
+# quarry on mountains, structurally locking out a tribe that never scouted the
+# right biome). Explicit follow-up request -- "a twisted sparse matrix assignment
+# based on the existing map" -- replaced that with real, pre-seeded site locations
+# a scout discovers by landing nearby, which fixes the earlier fix's own remaining
+# gap for free (two site types can no longer stack on the same tile, since each
+# has its own independent seed set).
 
 # BUILD_MINE + the per-biome unique resource (backend/actions.py): explicit
 # request -- "Mines can [also] contain the Unique Resource of the Biome (these
-# locations are scattered about the map)." A mine site is discovered the same way
-# lumber_sites/quarry_sites are (see Simulation._advance_one_expedition's terrain
-# report), at MINE_DISCOVERY_CHANCE odds on top of whatever else that scouted
-# terrain already reports, across any biome, not just mountains -- a rarer, richer
-# find layered on top of the ordinary lumber/quarry read. Gated on tribe.
-# quarry_built: excavating a named seam is a deeper extension of already knowing
-# how to quarry, not a parallel unrelated skill.
-MINE_DISCOVERY_CHANCE = 0.12
+# locations are scattered about the map)." A mine site is discovered the same
+# pre-seeded way lumber/quarry sites are (see world.py/Simulation.
+# _advance_one_expedition's terrain report); its resource name is read off
+# whatever real biome the pre-seeded point itself sits on, across any biome, not
+# just mountains. Gated on tribe.quarry_built: excavating a named seam is a
+# deeper extension of already knowing how to quarry, not a parallel unrelated
+# skill.
 MINE_WOOD_COST = 20
 MINE_STONE_COST = 30
 MINE_YIELD_PER_CYCLE = 5

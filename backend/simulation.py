@@ -8,7 +8,7 @@ from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _eligible_breeding_pair, _execute_trade, _find_trade_partner, _food_multiplier, _labor_multiplier,
-    expedition_capacity,
+    _storage_cap, expedition_capacity,
 )
 from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
@@ -28,7 +28,9 @@ from .scheduler import ModelBatchScheduler
 from .self_mod import SelfModEngine
 from .translation_matrix import TranslationConfidenceMatrix
 from .vram_guard import HardwareVRAMBoundaryGuard
-from .world import BIOME_LABELS, UNIQUE_RESOURCE_BY_BIOME, WILDLIFE_SITE_TYPES, Landscape, biome_at
+from .world import (
+    BIOME_LABELS, UNIQUE_RESOURCE_BY_BIOME, WILDLIFE_SITE_TYPES, Landscape, biome_at, find_nearby_site,
+)
 
 # One spawn per land biome (forest, mountains, plains, river -- not ocean, nothing spawns
 # at sea) so the default picker order (Forest Tribe, Mountain Tribe, ...) actually starts
@@ -2235,23 +2237,6 @@ class Simulation:
         for model in models:
             await self.client.unload_model(model)
 
-    def _resolve_site_overlap(self, x: int, y: int, occupied: set[tuple[int, int]]) -> tuple[int, int]:
-        """Explicit request: resource-site discovery should not stack two different
-        site types on the identical tile (lumber and wildlife used to always land on
-        the same forest tile together). If (x, y) is already used by a different
-        site type this tribe already knows about, nudge to a nearby free tile
-        instead -- same "spotted nearby, not literally on it" idea RAIDER_SIGHTING_
-        OFFSET already uses for raider sightings vs. resource sites."""
-        if (x, y) not in occupied:
-            return x, y
-        off = config.RESOURCE_SITE_OVERLAP_OFFSET
-        for _ in range(8):
-            nx = max(0, min(self.world.grid_size - 1, x + random.randint(-off, off)))
-            ny = max(0, min(self.world.grid_size - 1, y + random.randint(-off, off)))
-            if (nx, ny) not in occupied and biome_at(nx, ny) not in config.UNBUILDABLE_BIOMES:
-                return nx, ny
-        return x, y  # rare fallback -- accept the overlap rather than loop forever
-
     def _biggest_tribe_snapshot(self) -> dict[str, int]:
         """The stockpile a minor settlement spawns/respawns with -- a snapshot of
         whichever real tribe currently has the highest population, not a flat
@@ -2543,52 +2528,47 @@ class Simulation:
                     label = BIOME_LABELS.get(exp["terrain_report"], exp["terrain_report"])
                     tx, ty = exp["target"]
                     tribe.memory.remember(f"Scouts explored toward ({tx},{ty}) and found {label} terrain.", self.cycle, weight=0.6)
-                    # Live-run correction (2026-09-02): lumber/wildlife/quarry sites
-                    # used to be guaranteed from one specific biome each (forest,
-                    # forest, mountains) -- a tribe that never scouted toward the
-                    # right biome was structurally locked out of that resource
-                    # forever. Independent chance rolls now, on ANY terrain_report,
-                    # the same shape the unique mine resource below already uses.
-                    occupied = set(tribe.lumber_sites) | {(s["x"], s["y"]) for s in tribe.wildlife_sites} | set(tribe.quarry_sites)
-                    # "Already known at this exact tile" is checked BEFORE nudging --
-                    # revisiting a tile that's already a known site of that same type
-                    # is just a re-confirmation (no-op), not a reason to place a new
-                    # site nearby. Nudging only ever applies when a fresh discovery
-                    # would otherwise land on a tile a DIFFERENT site type already
-                    # occupies.
-                    if random.random() < config.LUMBER_SITE_DISCOVERY_CHANCE and (tx, ty) not in tribe.lumber_sites:
-                        lx, ly = self._resolve_site_overlap(tx, ty, occupied)
-                        tribe.lumber_sites.append((lx, ly))
-                        occupied.add((lx, ly))
-                    if random.random() < config.WILDLIFE_SITE_DISCOVERY_CHANCE:
-                        is_new_game_site = not any(s["x"] == tx and s["y"] == ty for s in tribe.wildlife_sites)
-                        if is_new_game_site:
-                            wx, wy = self._resolve_site_overlap(tx, ty, occupied)
-                            site_type = random.choice(WILDLIFE_SITE_TYPES)
-                            tribe.wildlife_sites.append({"x": wx, "y": wy, "type": site_type})
-                            occupied.add((wx, wy))
-                            if tribe.last_celebration_cycle != self.cycle:
-                                self._celebrate_game_discovery(tribe, wx, wy)
-                    if random.random() < config.QUARRY_SITE_DISCOVERY_CHANCE and (tx, ty) not in tribe.quarry_sites:
-                        qx, qy = self._resolve_site_overlap(tx, ty, occupied)
-                        tribe.quarry_sites.append((qx, qy))
-                        occupied.add((qx, qy))
+                    # 2026-09-02 rework ("a twisted sparse matrix assignment based on
+                    # the existing map"): lumber/wildlife/quarry/mine sites are no
+                    # longer decided fresh on every report -- they're real, pre-seeded
+                    # locations (world.site_seed_points) a scout discovers by landing
+                    # within world.SITE_DISCOVERY_RADIUS of one, not an independent
+                    # chance roll on their exact tile. Solves the earlier fairness
+                    # fix's own remaining gap for free: each site type has its own
+                    # independent seed set, so two types can no longer stack on the
+                    # same coordinate by construction, no nudging needed.
+                    grid_size = self.world.grid_size
+                    lumber_found = find_nearby_site("lumber", tx, ty, grid_size, set(tribe.lumber_sites))
+                    if lumber_found is not None:
+                        tribe.lumber_sites.append(lumber_found)
+                    known_wildlife = {(s["x"], s["y"]) for s in tribe.wildlife_sites}
+                    wildlife_found = find_nearby_site("wildlife", tx, ty, grid_size, known_wildlife)
+                    if wildlife_found is not None:
+                        wx, wy = wildlife_found
+                        site_type = random.choice(WILDLIFE_SITE_TYPES)
+                        tribe.wildlife_sites.append({"x": wx, "y": wy, "type": site_type})
+                        if tribe.last_celebration_cycle != self.cycle:
+                            self._celebrate_game_discovery(tribe, wx, wy)
+                    quarry_found = find_nearby_site("quarry", tx, ty, grid_size, set(tribe.quarry_sites))
+                    if quarry_found is not None:
+                        tribe.quarry_sites.append(quarry_found)
                     # Explicit request: "Mines can [also] contain the Unique
                     # Resource of the Biome (these locations are scattered about
-                    # the map)." A rarer find layered on top of whatever else
-                    # this same scouted tile already reported, across any biome
-                    # (not just mountains) -- see world.UNIQUE_RESOURCE_BY_BIOME.
-                    resource_name = UNIQUE_RESOURCE_BY_BIOME.get(exp["terrain_report"])
-                    if resource_name and random.random() < config.MINE_DISCOVERY_CHANCE:
-                        already_known = any(site["x"] == tx and site["y"] == ty for site in tribe.mine_sites)
-                        if not already_known:
-                            tribe.mine_sites.append(
-                                {"x": tx, "y": ty, "biome": exp["terrain_report"], "resource": resource_name}
-                            )
-                            tribe.history.append(
-                                f"{scout} also reports something rarer at ({tx},{ty}) -- a vein of "
-                                f"{resource_name}, waiting to be excavated"
-                            )
+                    # the map)." Same pre-seeded discovery as above; the one
+                    # deliberate exception stays -- a mine's resource name is read
+                    # off whatever real biome the pre-seeded point itself sits on
+                    # (world.UNIQUE_RESOURCE_BY_BIOME), not the scout's own tile.
+                    known_mines = {(site["x"], site["y"]) for site in tribe.mine_sites}
+                    mine_found = find_nearby_site("mine", tx, ty, grid_size, known_mines)
+                    if mine_found is not None:
+                        mx, my = mine_found
+                        mine_biome = biome_at(mx, my)
+                        resource_name = UNIQUE_RESOURCE_BY_BIOME.get(mine_biome, "Unknown Ore")
+                        tribe.mine_sites.append({"x": mx, "y": my, "biome": mine_biome, "resource": resource_name})
+                        tribe.history.append(
+                            f"{scout} also reports something rarer at ({mx},{my}) -- a vein of "
+                            f"{resource_name}, waiting to be excavated"
+                        )
                     tribe.history.append(
                         f"{scout} is home and gives {recipient} a full report: "
                         f"{label} terrain at ({tx},{ty}), {forage_note}"
@@ -3077,6 +3057,30 @@ class Simulation:
             tribe.x, tribe.y, config.ERA_ADVANCE_PRIDE_MAGNITUDE, config.ERA_ADVANCE_PRIDE_RADIUS
         )
 
+    def _capped_add(self, tribe: Tribe, resource: str, amount: int) -> int:
+        """Live-run correction (2026-09-02): the storage cap actions.py._add_capped
+        enforces on manual gathering was silently not applied to any of the
+        *passive* per-cycle income below (settled water, fish, farm harvest) --
+        exactly the source of a tribe's real runaway stockpile (540 water on a
+        live run), since passive income usually dwarfs anything a manual GATHER_*
+        action adds. Same generous per-resource ceiling (_storage_cap), just
+        enforced here too. Returns the amount actually added, since a caller may
+        need to report the real number, not the nominal one."""
+        cap = _storage_cap(tribe)
+        current = getattr(tribe, resource)
+        added = max(0, min(amount, cap - current))
+        setattr(tribe, resource, current + added)
+        return added
+
+    def _capped_unique_add(self, tribe: Tribe, resource_name: str, amount: int) -> None:
+        """Same as _capped_add, for the tribe.unique_resources dict (Mine ore,
+        Tannery Fur) -- each named resource gets its own cap ceiling, same as
+        every other resource."""
+        cap = _storage_cap(tribe)
+        current = tribe.unique_resources.get(resource_name, 0)
+        added = max(0, min(amount, cap - current))
+        tribe.unique_resources[resource_name] = current + added
+
     def _advance_water_supply(self, tribe: Tribe) -> None:
         """Explicit request: "like relocate, gather water becomes irrelevant once they
         have settled." A tribe genuinely settled next to real water shouldn't need to
@@ -3085,7 +3089,7 @@ class Simulation:
         GATHER_WATER still works and still adds more on top of this."""
         if self._is_settled_near_water(tribe):
             upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
-            tribe.water += round(upkeep * config.SETTLED_WATER_SUPPLY_MULTIPLIER)
+            self._capped_add(tribe, "water", round(upkeep * config.SETTLED_WATER_SUPPLY_MULTIPLIER))
 
     def _advance_fish_supply(self, tribe: Tribe) -> None:
         """Once fishing is learned (the first successful CATCH_FISH), food flows in
@@ -3098,23 +3102,22 @@ class Simulation:
         if tribe.fishing_learned and self._is_settled(tribe):
             upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
             fishery_bonus = config.FISHERY_SUPPLY_BONUS_MULTIPLIER if tribe.fishery_built else 1.0
-            tribe.food += round(upkeep * config.FISHING_SUPPLY_MULTIPLIER * fishery_bonus * _food_multiplier(tribe))
+            amount = round(upkeep * config.FISHING_SUPPLY_MULTIPLIER * fishery_bonus * _food_multiplier(tribe))
+            self._capped_add(tribe, "food", amount)
 
     def _advance_mine_yield(self, tribe: Tribe) -> None:
         """Once a mine is excavated (actions.py._build_mine), its named unique
         resource flows in daily -- same passive "action unlocks a system" shape
         _advance_fish_supply already uses, gated on the same general settled check."""
         if tribe.mine_built and tribe.mine_resource_name and self._is_settled(tribe):
-            tribe.unique_resources[tribe.mine_resource_name] = (
-                tribe.unique_resources.get(tribe.mine_resource_name, 0) + config.MINE_YIELD_PER_CYCLE
-            )
+            self._capped_unique_add(tribe, tribe.mine_resource_name, config.MINE_YIELD_PER_CYCLE)
 
     def _advance_tannery_yield(self, tribe: Tribe) -> None:
         """Once a tannery is built (actions.py._build_tannery), Fur flows in
         daily -- mirrors _advance_mine_yield exactly, into the same
         unique_resources dict."""
         if tribe.tannery_built and self._is_settled(tribe):
-            tribe.unique_resources["Fur"] = tribe.unique_resources.get("Fur", 0) + config.TANNERY_YIELD_PER_CYCLE
+            self._capped_unique_add(tribe, "Fur", config.TANNERY_YIELD_PER_CYCLE)
 
     def _advance_resource_trails(self, tribe: Tribe) -> None:
         """Explicit request: "if they have found a Quarry, Mine, Stand of Trees
@@ -3178,9 +3181,15 @@ class Simulation:
                 config.CROP_HARVEST_YIELD * tribe.farm_plots * _labor_multiplier(tribe.population)
                 * _food_multiplier(tribe)
             )
-            tribe.food += harvested
+            added = self._capped_add(tribe, "food", harvested)
             tribe.last_harvest_cycle = self.cycle
-            tribe.history.append(f"the farm plots yield a harvest -- {harvested} food gathered in")
+            if added < harvested:
+                tribe.history.append(
+                    f"the farm plots yield a harvest -- {added} food gathered in "
+                    f"(stores nearly full, {harvested - added} wasted)"
+                )
+            else:
+                tribe.history.append(f"the farm plots yield a harvest -- {added} food gathered in")
             self._award_trophy(tribe, "Harvester")
             # Explicit request: "a grand harvest is a real celebration." Cooldown-
             # gated (unlike _celebrate_water_discovery/_celebrate_settling, which are

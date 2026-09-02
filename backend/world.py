@@ -1,4 +1,6 @@
+import functools
 import math
+import random
 
 from . import config
 
@@ -168,6 +170,73 @@ def biome_at(x: int, y: int) -> str:
     if y < _forest_north_boundary(x) or x >= _forest_east_boundary(y):
         return "forest"
     return "plains"
+
+
+# 2026-09-02 rework: resource sites (lumber/wildlife/quarry/mine) used to be decided
+# fresh on every single scouting report, rolling an independent chance on whatever
+# exact tile the scout happened to land on. That has two real problems: the world has
+# no actual geography of "where things are" (a site can spontaneously not-exist one
+# scout's report and then exist for the next tribe's report on the same tile), and
+# nothing prevents two different site types stacking on the identical coordinate by
+# construction (they used to). Explicit follow-up request: "a twisted sparse matrix
+# assignment based on the existing map."
+#
+# This scatters a real, fixed set of site locations across the map ONCE, up front --
+# a coarse grid of cells (SITE_SEED_GRID_CELL_SIZE), each with SITE_SEED_FILL_
+# PROBABILITY odds of holding exactly one site, placed at a random jittered offset
+# within its own cell rather than a fixed grid intersection (the "twist" -- the same
+# organic-irregularity idea the coastline/mountain-boundary sine distortion above
+# already uses, just via jitter instead of a wave). Sparse because most cells end up
+# empty; a matrix because it's still grid-structured, not a purely uniform random
+# scatter that could clump by chance. Deterministic per (seed_type, grid_size) via a
+# string-seeded RNG -- same "pure function of coordinates" philosophy biome_at
+# itself already follows, so this needs no persisted state anywhere.
+#
+# Explicit steer, matching the earlier discovery-chance fairness fix: seed points are
+# placed on ANY buildable biome, not tied to matching terrain (forest for
+# lumber/wildlife, mountains for quarry) -- a tribe scouting the "wrong" biome is no
+# longer structurally locked out. Mine sites are included in the same sparse system;
+# each pre-seeded mine's resource name is read off whatever real biome the point
+# itself sits on (world.UNIQUE_RESOURCE_BY_BIOME), preserving the one deliberate
+# exception -- ore is still biome-tied, just the location is now a real place, not a
+# fresh roll.
+SITE_SEED_TYPES = ("lumber", "wildlife", "quarry", "mine")
+SITE_SEED_GRID_CELL_SIZE = 18
+SITE_SEED_FILL_PROBABILITY = 0.55
+SITE_DISCOVERY_RADIUS = 8
+
+
+@functools.lru_cache(maxsize=None)
+def site_seed_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], ...]:
+    rng = random.Random(f"site_seed:{seed_type}:{grid_size}")
+    cell = SITE_SEED_GRID_CELL_SIZE
+    points = []
+    for cell_y in range(0, grid_size, cell):
+        for cell_x in range(0, grid_size, cell):
+            if rng.random() >= SITE_SEED_FILL_PROBABILITY:
+                continue
+            x = min(grid_size - 1, cell_x + rng.randint(0, cell - 1))
+            y = min(grid_size - 1, cell_y + rng.randint(0, cell - 1))
+            if biome_at(x, y) in config.UNBUILDABLE_BIOMES:
+                continue
+            points.append((x, y))
+    return tuple(points)
+
+
+def find_nearby_site(
+    seed_type: str, x: int, y: int, grid_size: int, known: set, radius: int = SITE_DISCOVERY_RADIUS
+) -> tuple[int, int] | None:
+    """The nearest real, pre-seeded site of this type within `radius` of (x, y) that
+    isn't already in `known` -- how a scout's report turns into an actual new
+    discovery now, instead of an independent chance roll on their exact tile."""
+    best, best_dist = None, None
+    for px, py in site_seed_points(seed_type, grid_size):
+        if (px, py) in known:
+            continue
+        dist = (px - x) ** 2 + (py - y) ** 2
+        if dist <= radius * radius and (best is None or dist < best_dist):
+            best, best_dist = (px, py), dist
+    return best
 
 
 class Landscape:

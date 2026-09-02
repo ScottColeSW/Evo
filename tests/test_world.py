@@ -1,4 +1,55 @@
-from backend.world import Landscape, biome_at
+from backend import config
+from backend.world import Landscape, biome_at, find_nearby_site, site_seed_points
+
+
+def test_site_seed_points_are_deterministic():
+    """Same "pure function of coordinates" philosophy biome_at itself already
+    follows -- no persisted state, safe to call repeatedly/from anywhere."""
+    assert site_seed_points("quarry", 100) == site_seed_points("quarry", 100)
+
+
+def test_site_seed_points_differ_by_type():
+    """Each site type gets its own independent seed set -- explicit request: 'a
+    twisted sparse matrix assignment,' not one shared layout every type reuses."""
+    assert site_seed_points("lumber", 100) != site_seed_points("quarry", 100)
+
+
+def test_site_seed_points_are_sparse_not_every_cell_filled():
+    """SITE_SEED_FILL_PROBABILITY < 1 -- most cells of the underlying grid should
+    end up empty, not one seed per cell."""
+    from backend.world import SITE_SEED_GRID_CELL_SIZE
+
+    points = site_seed_points("quarry", 100)
+    max_possible_cells = (100 // SITE_SEED_GRID_CELL_SIZE + 1) ** 2
+    assert 0 < len(points) < max_possible_cells
+
+
+def test_site_seed_points_never_land_on_an_unbuildable_biome():
+    for seed_type in ("lumber", "wildlife", "quarry", "mine"):
+        for x, y in site_seed_points(seed_type, 100):
+            assert biome_at(x, y) not in config.UNBUILDABLE_BIOMES
+
+
+def test_find_nearby_site_returns_none_when_nothing_is_within_radius():
+    # (1, 1) is far from every real seed point's own grid cell given the coarse
+    # SITE_SEED_GRID_CELL_SIZE -- radius 1 is far tighter than any cell.
+    assert find_nearby_site("quarry", 1, 1, 100, set(), radius=1) is None
+
+
+def test_find_nearby_site_finds_a_real_seeded_point_within_radius():
+    seed_x, seed_y = site_seed_points("quarry", 100)[0]
+
+    found = find_nearby_site("quarry", seed_x, seed_y, 100, set(), radius=0)
+
+    assert found == (seed_x, seed_y)
+
+
+def test_find_nearby_site_excludes_already_known_points():
+    seed_x, seed_y = site_seed_points("quarry", 100)[0]
+
+    found = find_nearby_site("quarry", seed_x, seed_y, 100, {(seed_x, seed_y)}, radius=0)
+
+    assert found is None
 
 
 def test_wear_trail_accumulates_and_caps_at_full_wear():
