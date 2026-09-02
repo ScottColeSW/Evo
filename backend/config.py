@@ -187,7 +187,17 @@ WATER_YIELD_OFF_RIVER = 3
 # cycle just to stand still -- the same "passive consequence, not a discrete action"
 # category as crop growth (Simulation._advance_farming). GATHER_WATER still works and
 # still adds more on top; this just means the tap never really runs dry once settled.
-SETTLED_WATER_SUPPLY_PER_CYCLE = 10
+#
+# Bug report: "we have hit a food and water scaling problem... I'm not sure why
+# water is still a problem when they are settled." Confirmed: this used to be a
+# flat SETTLED_WATER_SUPPLY_PER_CYCLE = 10, while _apply_upkeep's real drain
+# (population // UPKEEP_POPULATION_DIVISOR) grows with the tribe -- past
+# population ~100 the flat income could no longer keep up, a structural deficit
+# that only got worse the bigger (more "successful") a tribe got. Now scales
+# with the same per-capita upkeep base instead of a fixed number, so a settled
+# tribe's water income keeps pace at any population -- this multiplier is the
+# "easy factor variable" to turn up if tribes are still running dry.
+SETTLED_WATER_SUPPLY_MULTIPLIER = 1.5
 
 # Reaching a new era (backend/eras.py) radiates a pride event at the tribe's location,
 # same mechanism as BUILD_FIRE -- advancement is a genuine "the ground remembers this"
@@ -271,7 +281,13 @@ FLOCK_NATURAL_HATCH_CHANCE = 0.15
 CATCH_FISH_SUCCESS_CHANCE = 0.8
 FISHING_CATCH_FOOD_MIN = 14
 FISHING_CATCH_FOOD_MAX = 24
-FISHING_SUPPLY_PER_CYCLE = 8
+# Bug report: "we have hit a food and water scaling problem... we should have an
+# easy factor vaiable we can we turn up for food." Same flat-vs-scaling flaw
+# SETTLED_WATER_SUPPLY_MULTIPLIER was fixed for -- a flat 8 food/cycle couldn't
+# keep pace with population-scaled upkeep past a certain tribe size. Now scales
+# with the same per-capita upkeep base; turn this multiplier up if tribes are
+# still going hungry once large.
+FISHING_SUPPLY_MULTIPLIER = 1.5
 # Explicit request: fish fertilizer -- once fishing is learned, a farm plot's growth
 # rate roughly doubles (halving the season), reusing tribe.fishing_learned rather than
 # a separate fertilizer resource/action. See Simulation._advance_farming.

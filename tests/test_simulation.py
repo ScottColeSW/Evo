@@ -3868,7 +3868,28 @@ def test_advance_water_supply_flows_in_once_settled_near_water():
 
     sim._advance_water_supply(tribe)
 
-    assert tribe.water == 10 + config.SETTLED_WATER_SUPPLY_PER_CYCLE
+    upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+    assert tribe.water == 10 + round(upkeep * config.SETTLED_WATER_SUPPLY_MULTIPLIER)
+
+
+def test_advance_water_supply_scales_with_population_not_a_flat_amount():
+    """Bug report: "we have hit a food and water scaling problem... I'm not
+    sure why water is still a problem when they are settled." A flat per-cycle
+    supply couldn't keep pace with population-scaled upkeep past a certain
+    tribe size -- confirmed by comparing a small and a large settled tribe."""
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.population = 200
+    tribe.water = 0
+
+    sim._advance_water_supply(tribe)
+
+    upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+    assert tribe.water == round(upkeep * config.SETTLED_WATER_SUPPLY_MULTIPLIER)
+    assert tribe.water > upkeep  # a real surplus, not just barely keeping pace
 
 
 def test_advance_water_supply_does_nothing_before_settling():
@@ -3892,7 +3913,8 @@ def test_advance_fish_supply_flows_in_once_fishing_is_learned_and_settled():
 
     sim._advance_fish_supply(tribe)
 
-    assert tribe.food == 10 + config.FISHING_SUPPLY_PER_CYCLE
+    upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+    assert tribe.food == 10 + round(upkeep * config.FISHING_SUPPLY_MULTIPLIER)
 
 
 def test_advance_fish_supply_does_nothing_until_fishing_is_learned():

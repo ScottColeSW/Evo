@@ -2022,12 +2022,20 @@ function landmarkCounts(t) {
   return counts.length ? " · " + counts.join(" ") : "";
 }
 
-// Mirrors backend/config.py's FISHING_SUPPLY_PER_CYCLE/MINE_YIELD_PER_CYCLE -- the
-// real, passive daily yields _advance_fish_supply/_advance_mine_yield pay out, same
-// numbers the lines below report rather than a vaguer "mastered" label.
-const FISHING_SUPPLY_PER_CYCLE = 8;
+// Mirrors backend/config.py's MINE_YIELD_PER_CYCLE/TANNERY_YIELD_PER_CYCLE -- the
+// real, passive daily yields _advance_mine_yield/_advance_tannery_yield pay out,
+// same numbers the lines below report rather than a vaguer "mastered" label.
 const MINE_YIELD_PER_CYCLE = 5;
 const TANNERY_YIELD_PER_CYCLE = 4;
+// Mirrors backend/config.py's UPKEEP_POPULATION_DIVISOR/FISHING_SUPPLY_MULTIPLIER
+// -- fishing's passive supply scales with population the same way upkeep does
+// (bug report: "we have hit a food and water scaling problem"), not a flat number.
+const UPKEEP_POPULATION_DIVISOR = 10;
+const FISHING_SUPPLY_MULTIPLIER = 1.5;
+function fishSupplyPerCycle(t) {
+  const upkeep = Math.max(1, Math.floor((t.population || 0) / UPKEEP_POPULATION_DIVISOR));
+  return Math.round(upkeep * FISHING_SUPPLY_MULTIPLIER);
+}
 
 // A dedicated mini-panel for each real production system or structure a tribe has
 // stood up -- per explicit request ("you might as well show the rest, like Fire and
@@ -2064,7 +2072,7 @@ function farmingPanel(t) {
       parts.push(`🐔 Flock — ${t.flock}${last ? ` · latest: ${escapeHtml(last.trait)}` : ""}`);
     }
   }
-  if (t.fishing_learned) parts.push(`🎣 Fishery — ${FISHING_SUPPLY_PER_CYCLE} food/day flows in automatically`);
+  if (t.fishing_learned) parts.push(`🎣 Fishery — ${fishSupplyPerCycle(t)} food/day flows in automatically`);
   if (t.fire_ever_built) parts.push("🔥 Fire — mastered, enables cooking");
   if (t.cooking_learned && !t.kitchen_built) parts.push("🍳 Cooking — mastered, stored food goes much further");
   if (t.founded_city) {

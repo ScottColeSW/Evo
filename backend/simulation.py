@@ -2787,7 +2787,8 @@ class Simulation:
         same "passive consequence, not a discrete action" category as crop growth.
         GATHER_WATER still works and still adds more on top of this."""
         if self._is_settled_near_water(tribe):
-            tribe.water += config.SETTLED_WATER_SUPPLY_PER_CYCLE
+            upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+            tribe.water += round(upkeep * config.SETTLED_WATER_SUPPLY_MULTIPLIER)
 
     def _advance_fish_supply(self, tribe: Tribe) -> None:
         """Once fishing is learned (the first successful CATCH_FISH), food flows in
@@ -2798,7 +2799,8 @@ class Simulation:
         availability uses (see _prepare_turn), not the stricter settled_near_water --
         explicit correction that the extra water-adjacency distinction was bogus."""
         if tribe.fishing_learned and self._is_settled(tribe):
-            tribe.food += config.FISHING_SUPPLY_PER_CYCLE
+            upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+            tribe.food += round(upkeep * config.FISHING_SUPPLY_MULTIPLIER)
 
     def _advance_mine_yield(self, tribe: Tribe) -> None:
         """Once a mine is excavated (actions.py._build_mine), its named unique
