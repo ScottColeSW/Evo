@@ -1073,9 +1073,11 @@ def test_scout_does_not_move_the_tribe_but_launches_an_expedition():
     assert "depart" in note
 
 
-def test_scout_rotation_starts_southeast_and_advances_by_a_fixed_step():
-    """Explicit request: "scout directions rotate on a 20 degree angle
-    starting with the South East.\""""
+def test_scout_rotation_starts_southwest_and_advances_by_a_fixed_step():
+    """Explicit request: "scout directions rotate on a 20 degree angle" (starting
+    direction changed from southeast to southwest 2026-09-02 -- see config.
+    SCOUT_ROTATION_START_ANGLE_DEGREES's own comment -- to steer every tribe's first
+    scout away from a specific cramped map corner that caused other live bugs)."""
     from backend.simulation import _compass_direction
 
     sim = _bare_simulation()
@@ -1083,7 +1085,7 @@ def test_scout_rotation_starts_southeast_and_advances_by_a_fixed_step():
 
     ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (0, 0))
     first_target = tribe.expeditions[0]["target"]
-    assert _compass_direction(first_target[0] - 50, first_target[1] - 50) == "southeast"
+    assert _compass_direction(first_target[0] - 50, first_target[1] - 50) == "southwest"
     assert tribe.scout_rotation_index == 1
 
     tribe.expeditions.clear()  # room for a second party

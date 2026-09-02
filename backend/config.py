@@ -442,9 +442,16 @@ WATER_SENSING_RADIUS = 6
 # used for RELOCATE/HUNTING_PARTY/RAID/TRADE/etc, all of which have a real
 # reason to point somewhere the model actually chose): each dispatch advances
 # to the next angle in a fixed rotation instead, guaranteeing coverage spreads
-# out over time regardless of what the model reasons about geometry. 45
-# degrees matches _compass_direction's own convention for southeast.
-SCOUT_ROTATION_START_ANGLE_DEGREES = 45
+# out over time regardless of what the model reasons about geometry.
+# Changed from 45 (southeast) to 135 (southwest) -- live bug report: Forest
+# Tribe's very first scout (every tribe's rotation starts at index 0, so this
+# is the one heading every tribe's opening scout shares) walked southeast
+# straight into the cramped river/cliffs strip at (83,58) that later caused
+# the city-founding/land-cap bugs fixed the same session. Southwest was
+# picked as a quick, reversible nudge away from that specific corner of the
+# map, not a claim that it's provably better in general -- 135 degrees
+# matches _compass_direction's own convention for southwest.
+SCOUT_ROTATION_START_ANGLE_DEGREES = 135
 SCOUT_ROTATION_STEP_DEGREES = 20
 
 # Live bug report (2026-09-02): "they go big long lines like they are flying,
