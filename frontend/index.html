@@ -43,12 +43,20 @@
      the decided Chief's orders for the day and night" -- a viewer watching a run
      had no way to see what every tribe is currently doing/why without switching to
      the Tribes tab (or worse, scrolling the Chronicle) per tribe. Always-visible
-     strip right under the header, one compact line per living tribe. */
-  #orders-banner { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 18px; background: #15151d; border-bottom: 1px solid #2a2a3a; flex-shrink: 0; font-size: 11px; }
+     strip right under the header, one compact line per living tribe.
+     Bug report: "keeps cutting off text" -- a flex chip's children don't truncate
+     as one unit (text-overflow:ellipsis only works on a single block's own
+     overflowing inline content, not across separate flex items), and flex-wrap on
+     the container let the whole banner's height jump around with content instead
+     of staying put. Fixed height now, each chip a plain block (its tribe-name/
+     reflection spans stay inline within it, not flex children) so a long line
+     truncates as one real ellipsis instead of just getting clipped; more tribes
+     than fit scroll inside the fixed height rather than growing it. */
+  #orders-banner { display: flex; flex-direction: column; gap: 2px; padding: 4px 18px; height: 68px; overflow-y: auto; background: #15151d; border-bottom: 1px solid #2a2a3a; flex-shrink: 0; font-size: 11px; }
   #orders-banner:empty { display: none; }
-  .orders-chip { display: flex; align-items: baseline; gap: 5px; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .orders-chip .orders-tribe { font-weight: 700; flex-shrink: 0; }
-  .orders-chip .orders-reflection { color: #a5b4fc; font-style: italic; flex-shrink: 0; cursor: help; }
+  .orders-chip { display: block; flex-shrink: 0; line-height: 20px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .orders-chip .orders-tribe { font-weight: 700; }
+  .orders-chip .orders-reflection { color: #a5b4fc; font-style: italic; cursor: help; }
 
   #theater-body { flex: 1; display: flex; min-height: 0; }
   #canvas-container { flex: 1; display: flex; justify-content: center; align-items: center; background: #0b0b0f; position: relative; padding: 12px; min-width: 0; }

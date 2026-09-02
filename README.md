@@ -214,6 +214,40 @@ real server, the way every change in this repo so far has been.
 
 ## Running it
 
+Requires [Ollama](https://ollama.com) installed **and running** locally -- this app calls
+its API at `http://localhost:11434` (`backend/config.py`'s `OLLAMA_URL`) both to list models
+for the picker and for every tribe's turn. If Ollama isn't running, nothing crashes loudly:
+the picker just shows **"(no models found)"** with a warning to pull a model, which is
+misleading if the real problem is that Ollama itself isn't up yet.
+
+Start (or confirm) the Ollama server first:
+
+```bash
+ollama serve
+```
+
+Leave that running in its own terminal/window. (On Windows/Mac, the Ollama app usually does
+this automatically and keeps a tray/menu-bar icon running once you've launched it at least
+once -- but it does *not* restart itself on its own after a reboot, so check for that icon,
+or just run `ollama serve`, before assuming it's up.)
+
+On Windows, to start it as a background process instead of dedicating a terminal window to
+it, use PowerShell:
+
+```powershell
+Start-Process ollama -ArgumentList "serve" -WindowStyle Hidden
+```
+
+Stop it later with `Get-Process ollama | Stop-Process` if needed.
+
+Confirm it's actually reachable:
+
+```bash
+ollama list
+```
+
+Then, in a separate terminal:
+
 ```bash
 pip install -r requirements.txt
 ollama pull llama3
