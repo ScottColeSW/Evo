@@ -245,25 +245,84 @@ CROP_GROWTH_PER_CYCLE = 10  # a plot matures in ~10 cycles once planted
 CROP_HARVEST_YIELD = 15  # food per plot, per harvest
 CROP_WATER_PER_PLOT_PER_CYCLE = 2  # a plot that goes unwatered withers outright
 
-# City growth (backend/simulation.py._advance_city_growth): once a tribe founds a city
-# (Era.founds_city), one more building appears every time population crosses another
-# multiple of this step, up to MAX_CITY_BUILDINGS -- a small, legible stand-in for real
-# city-layout simulation, not an attempt at one.
-CITY_BUILDING_POPULATION_STEP = 5
-MAX_CITY_BUILDINGS = 6
-
 # Live bug report: a tribe wedged into a narrow forest strip between a river and the
 # coastal cliffs grew a full, maxed-out city there anyway -- nothing checked whether
 # there was actually room. Simulation._local_buildable_fraction scans a
 # (2*CITY_LAND_CHECK_RADIUS+1)^2 square centered on the tribe's tile and counts how
-# much of it isn't open water/cliff, then scales MAX_CITY_BUILDINGS (and
-# EXPAND_TERRITORY's doubled ceiling) by that fraction -- a tribe on wide-open plains
-# still gets the full cap, a tribe hemmed in by water/cliffs gets less.
-# MIN_CITY_BUILDINGS_ON_CRAMPED_LAND keeps even the tightest shoreline strip
-# buildable at all, rather than rounding down to zero.
+# much of it isn't open water/cliff -- reused by actions._expand_territory to scale
+# how much a tribe on cramped land can grow its territory per call.
 CITY_LAND_CHECK_RADIUS = 4
-MIN_CITY_BUILDINGS_ON_CRAMPED_LAND = 2
 UNBUILDABLE_BIOMES = ("ocean", "river", "lake", "cliffs", "shoals")
+
+# Redesigned 2026-09-02 ("these shouldn't be disconnected... look at it as a whole"):
+# retires the old abstract city_buildings counter (population-driven, unrelated to any
+# real named building) in favor of real placed building footprints (backend/
+# architect.py) inside a real owned territory (backend/city_layout.py). Granted the
+# instant tribe.has_ever_settled becomes True -- the earlier "Settled" milestone, not
+# the later, stricter founded_city (Monolithic Era + a real Long House).
+TERRITORY_FOUNDING_REGION = 10  # base radius = SETTLEMENT_WATER_TERRITORY_RADIUS * this = 40 tiles
+WALL_RING_RADIUS_STEP = SETTLEMENT_WATER_TERRITORY_RADIUS * TERRITORY_FOUNDING_REGION  # 40; ring i sits at 40*(i+1)
+
+# EXPAND_TERRITORY grows the real territory radius (scaled down on cramped land via
+# _local_buildable_fraction, same idea the old MIN_CITY_BUILDINGS_ON_CRAMPED_LAND
+# floor protected) and unlocks exactly one new wall section per call, in fixed compass
+# order -- "expansion must be done for each wall section," no exception for ring 0.
+TERRITORY_EXPANSION_RADIUS_INCREMENT_BASE = 12
+TERRITORY_EXPANSION_RADIUS_MIN_INCREMENT = 3  # floor even on badly cramped land
+
+# The wall is a real polygon of positioned sections around the territory, not one
+# progress-bar tile. WALL_RING_SECTION_COUNT=8 (a compass octagon) at radius >= 40
+# gives ~30+ tiles of chord spacing between adjacent sections -- comfortably past
+# WALL_MIN_SECTION_SPACING (3 long-house-widths, 3*3=9), so the spacing rule is
+# satisfied by construction; WALL_MIN_RING_RADIUS documents the real floor (solves
+# 2*R*sin(pi/8) >= 9) as a tripwire against a future radius change violating it, not
+# a runtime path that's ever expected to fire.
+WALL_RING_SECTION_COUNT = 8
+WALL_SECTION_LENGTH = 5
+WALL_SECTION_WIDTH = 1
+WALL_MIN_SECTION_SPACING = 9
+WALL_MIN_RING_RADIUS = 12
+
+# A water/cliff/etc-bordered section substitutes as a free "natural barrier" needing
+# no construction/reinforcement -- weaker than a real built section, never fully
+# impassable (matches how the tribe's own people can still reach real water; only the
+# defense math is affected here).
+NATURAL_BARRIER_DEFENSE_FRACTION = 0.5
+# Defense-in-depth: each ring behind the outermost one, once fully built+reinforced,
+# adds a small extra bonus on top of the outer ring's own defense_fraction -- a raider
+# that breaches the outer wall still has to get through however many maxed rings
+# stand behind it.
+RAIDER_DEFENSE_PER_INNER_RING_BONUS = 0.05
+
+# backend/architect.py's placement algorithm inflates every occupied rect (buildings
+# and wall sections alike) by this many tiles on each side before checking overlap,
+# so placed structures never sit edge-to-edge touching.
+BUILDING_PLACEMENT_PADDING = 1
+
+# Real footprints (tiles, w x h) for every placeable structure. Moat and Road are
+# deliberately excluded -- the moat is a property of the wall ring, not a placeable
+# rect, and the road already follows worn trail tiles (world.trails); both keep their
+# existing boolean-flag mechanics untouched.
+BUILDING_FOOTPRINTS = {
+    "town_hall": (5, 5), "long_house": (3, 2), "wall_section": (5, 1),
+    "keep": (4, 4), "fortress": (6, 6), "castle": (8, 8),
+    "sawmill": (3, 3), "quarry": (3, 3), "mine": (3, 3),
+    "kitchen": (2, 2), "tannery": (2, 2), "dock": (2, 2), "fishery": (2, 4),
+    "farm_plot": (3, 3), "flock_pen": (2, 2), "fire": (1, 1),
+}
+
+# BUILD_FISHERY (backend/actions.py): a new building, unlocked once a Dock already
+# stands. Stacks a further multiplier onto the existing passive daily fish supply
+# (FISHING_SUPPLY_MULTIPLIER) rather than replacing it -- a real reason to build both.
+FISHERY_WOOD_COST = 25
+FISHERY_STONE_COST = 15
+FISHERY_SUPPLY_BONUS_MULTIPLIER = 1.5
+
+# wellbeing.compute_wellbeing's self-actualization tier: how many real placed
+# buildings (backend/architect.py) count as "fully built out" for a 1.0 score,
+# replacing the old fixed MAX_CITY_BUILDINGS=6 ceiling now that building count has
+# no hard cap.
+SELF_ACTUALIZATION_BUILDING_REFERENCE = 15
 
 # Egg-gathering/flock genetics (backend/actions.py GATHER_EGGS, Simulation._resolve_hatch,
 # backend/genetics.py hatch()): gated the same as farming (settled + real water access) --
@@ -664,13 +723,15 @@ WALL_PROGRESS_PER_ACTION_BASE = 30
 WALL_WOOD_COST_TOTAL = 15
 WALL_STONE_COST_TOTAL = 15
 
-# A second wall layer, reinforcing an already-complete wall (backend/actions.py.
-# _construct_wall): explicit request -- "Torches can be a freebie for building
-# walls 2 levels" and "a Moat should be available after 2 layers of walls have
-# been built." A flat cost, not another multi-action progress bar the way the
-# very first layer was -- reinforcing a standing wall is simpler than raising one
-# from nothing. Capped at WALL_MAX_LAYERS: 2 layers is the whole point named in
-# both requests, not an arbitrary stopping point.
+# A second wall layer, reinforcing an already-complete section (backend/city_layout.py/
+# actions.py._construct_wall): explicit request -- "Torches can be a freebie for
+# building walls 2 levels" and "a Moat should be available after 2 layers of walls
+# have been built." A flat cost, not another multi-action progress bar the way the
+# very first pass on a section was -- reinforcing a standing section is simpler than
+# raising one from nothing. Capped at WALL_MAX_LAYERS per section: 2 layers/tiers is
+# the whole point named in both requests, not an arbitrary stopping point. Once every
+# section in a ring is at this tier, growth continues via a whole new ring further
+# out (backend/city_layout.py.build_ring) -- no limit on ring count beyond land.
 WALL_MAX_LAYERS = 2
 WALL_LAYER_WOOD_COST = 20
 WALL_LAYER_STONE_COST = 20
@@ -730,15 +791,11 @@ ROAD_WOOD_COST = 30
 ROAD_STONE_COST = 15
 ROAD_SPEED_BONUS = 2
 
-# EXPAND_TERRITORY (backend/actions.py._expand_territory): only meaningful once
-# automatic city growth (Simulation._advance_city_growth) has already reached its
-# normal ceiling -- a deliberate push past MAX_CITY_BUILDINGS, not redundant with
-# growth that already happens on its own. Capped at double the normal max so the
-# territory visual (frontend's drawTerritory, which scales off city_buildings)
-# doesn't grow without bound.
+# EXPAND_TERRITORY (backend/actions.py._expand_territory): grows the tribe's real
+# territory_radius (see TERRITORY_FOUNDING_REGION above) and unlocks the next wall
+# section in fixed compass order -- one call per section, no exception for ring 0.
 TERRITORY_EXPANSION_WOOD_COST = 60
 TERRITORY_EXPANSION_STONE_COST = 60
-TERRITORY_EXPANSION_BUILDINGS_BONUS = 2
 
 # BUILD_DOCK (backend/actions.py._build_dock): explicit request, "once they have
 # Settled in hopes they will figure out fishing" -- a real fishing yield bonus once

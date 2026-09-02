@@ -167,14 +167,31 @@ def test_prepare_turn_caches_wellbeing_on_the_tribe_and_injects_its_summary_into
 
 
 def test_wall_fraction_helper_reused_by_wellbeing_matches_raider_defense_lookup():
-    """_wall_fraction is the single source of truth both _resolve_raider_attack and
-    the wellbeing safety tier read from -- a half-built wall should report the same
-    0.5 to both, not two independently-computed numbers that could drift apart."""
-    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
-    tribe = sim.tribes["tribe_0"]
-    sim.world.add_construction(tribe.x, tribe.y, "wall", sim.cycle, progress=50)
+    """city_layout.wall_defense_fraction is the single source of truth both
+    _resolve_raider_attack and the wellbeing safety tier read from -- both call it
+    directly (backend/simulation.py, backend/wellbeing.py) rather than each computing
+    their own number that could drift apart. The formula itself is covered directly
+    in tests/test_city_layout.py; this confirms a fully-built-and-reinforced ring
+    reports (near-)full defense to both consumers via the one shared value."""
+    from backend import city_layout
+    from backend.wellbeing import compute_wellbeing
 
-    assert sim._wall_fraction(tribe) == 0.5
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 50, "y": 50}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    for sec in tribe.wall_rings[0]["sections"]:
+        if not sec["natural_barrier"]:
+            sec["unlocked"] = True
+            sec["progress"] = 100
+            sec["tier"] = 2
+
+    fraction = city_layout.wall_defense_fraction(tribe)
+    assert fraction > 0.9  # 7/8 real sections maxed, 1 natural barrier at 0.5
+
+    wellbeing = compute_wellbeing(tribe, fraction)
+    unwalled = compute_wellbeing(tribe, 0.0)
+    assert wellbeing["tiers"]["safety"] > unwalled["tiers"]["safety"]
 
 
 def test_settling_near_water_succeeds_within_a_confirmed_sites_territory_radius():
@@ -322,13 +339,18 @@ def test_unfinished_wall_nudges_against_a_premature_long_house():
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
-    sim.world.add_construction(tribe.x, tribe.y, "wall", sim.cycle, progress=40)
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.wall_rings[0]["sections"][0]["unlocked"] = True
+    tribe.wall_rings[0]["sections"][0]["progress"] = 40
 
     request, ctx = sim._prepare_turn(tribe)
 
+    done = sum(1 for s in tribe.wall_rings[0]["sections"] if s["natural_barrier"] or s["progress"] >= 100)
+    total = len(tribe.wall_rings[0]["sections"])
     assert "CONSTRUCT_WALL" in ctx["available_actions"]
-    assert "40% complete" in request["prompt"]
-    assert "a long house is not worth attempting until the wall is finished" in request["prompt"]
+    assert f"{done}/{total} sections raised" in request["prompt"]
+    assert "a long house is not worth attempting until the whole ring is finished" in request["prompt"]
 
 
 def test_no_wall_started_yet_nudges_toward_construct_wall():
@@ -342,6 +364,10 @@ def test_no_wall_started_yet_nudges_toward_construct_wall():
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    # Settled, but wall_rings deliberately left empty -- structurally shouldn't happen
+    # now that _found_territory populates ring 0 the instant a tribe first settles,
+    # but the CONSTRUCT_WALL nudge keeps this defensive fallback message for it.
+    tribe.has_ever_settled = True
 
     request, ctx = sim._prepare_turn(tribe)
 
@@ -430,14 +456,18 @@ def test_finished_wall_nudges_toward_a_long_house_then_reinforcement():
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
-    sim.world.add_construction(tribe.x, tribe.y, "wall", sim.cycle, progress=100)
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    for sec in tribe.wall_rings[0]["sections"]:
+        sec["unlocked"] = True
+        sec["progress"] = 100
 
     request, _ctx = sim._prepare_turn(tribe)
     assert "a long house is now worth building for real, lasting shelter" in request["prompt"]
 
     tribe.long_houses_built = 1
     request, _ctx = sim._prepare_turn(tribe)
-    assert "it can be reinforced with" in request["prompt"]
+    assert "sections can still be reinforced for a" in request["prompt"]
 
 
 def test_long_house_count_nudges_toward_keep_then_fortress_then_castle():
@@ -472,8 +502,12 @@ def test_torches_and_moat_nudge_once_wall_is_fully_reinforced():
     tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.fire_ever_built = True
-    sim.world.add_construction(tribe.x, tribe.y, "wall", sim.cycle, progress=100)
-    tribe.wall_layers = config.WALL_MAX_LAYERS
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    for sec in tribe.wall_rings[0]["sections"]:
+        sec["unlocked"] = True
+        sec["progress"] = 100
+        sec["tier"] = config.WALL_MAX_LAYERS
 
     request, _ctx = sim._prepare_turn(tribe)
 
@@ -3115,13 +3149,22 @@ def test_full_wall_reduces_population_loss_more_than_a_partial_wall():
     partial = Tribe("tribe_0", "A", "gemma2:2b", 50, 50, "#c084fc")
     partial.population = 10
     partial.food = partial.water = partial.wood = partial.stone = 100
-    sim_partial.world.constructions[(50, 50)] = {"type": "wall", "cycle": 0, "progress": 30}
+    partial.has_ever_settled = True
+    sim_partial._found_territory(partial)
+    partial.wall_rings[0]["sections"][0]["unlocked"] = True
+    partial.wall_rings[0]["sections"][0]["progress"] = 30
 
     sim_full = _bare_simulation()
     full = Tribe("tribe_1", "B", "gemma2:2b", 50, 50, "#c084fc")
     full.population = 10
     full.food = full.water = full.wood = full.stone = 100
-    sim_full.world.constructions[(50, 50)] = {"type": "wall", "cycle": 0, "progress": 100}
+    full.has_ever_settled = True
+    sim_full._found_territory(full)
+    for sec in full.wall_rings[0]["sections"]:
+        if not sec["natural_barrier"]:
+            sec["unlocked"] = True
+            sec["progress"] = 100
+            sec["tier"] = 2
 
     with mock.patch("backend.simulation.random.random", return_value=0.99):
         sim_partial._resolve_raider_attack(partial)
@@ -3134,38 +3177,49 @@ def test_full_wall_reduces_population_loss_more_than_a_partial_wall():
 def test_failed_wall_defense_destroys_the_wall_forcing_a_rebuild():
     """Explicit request: a wall that fails to stop a raid doesn't stay standing --
     the tribe has to rebuild it, the same as any real defensive structure that gets
-    breached."""
+    breached. 2026-09-02 redesign: a breach resets only the outermost ring's real
+    (non-natural) sections back to progress=0 -- terrain-barrier sections are never
+    reset."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.population = 10
     tribe.food = tribe.water = tribe.wood = tribe.stone = 100
-    sim.world.constructions[(50, 50)] = {"type": "wall", "cycle": 0, "progress": 80}
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    for sec in tribe.wall_rings[0]["sections"]:
+        if not sec["natural_barrier"]:
+            sec["unlocked"] = True
+            sec["progress"] = 80
 
     with mock.patch("backend.simulation.random.random", return_value=0.99):  # defense fails
         sim._resolve_raider_attack(tribe)
 
-    assert (50, 50) not in sim.world.constructions
+    assert all(sec["progress"] == 0 for sec in tribe.wall_rings[0]["sections"] if not sec["natural_barrier"])
 
 
 def test_failed_wall_defense_also_resets_reinforcement_layers():
     """Live bug report: "the forest tribe has built walls and then they got
-    destroyed? and they built them again" -- a breach deleted the wall construction
-    but left tribe.wall_layers at whatever it was (e.g. 2, after a reinforcement),
-    out of sync with "no wall actually stands." Rebuilding the base wall from
-    scratch then unconditionally reset wall_layers to 1 on completion
-    (actions._construct_wall), silently discarding the earlier reinforcement instead
-    of reflecting a genuine breach down to nothing."""
+    destroyed? and they built them again" -- a breach used to delete the wall
+    construction but left tribe.wall_layers at whatever it was (e.g. 2, after a
+    reinforcement), out of sync with "no wall actually stands." Now
+    city_layout.breach_outer_ring resets both progress and tier together on every
+    real section of the breached (outermost) ring."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.population = 10
     tribe.food = tribe.water = tribe.wood = tribe.stone = 100
-    tribe.wall_layers = 2  # already reinforced once
-    sim.world.constructions[(50, 50)] = {"type": "wall", "cycle": 0, "progress": 100}
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    for sec in tribe.wall_rings[0]["sections"]:
+        if not sec["natural_barrier"]:
+            sec["unlocked"] = True
+            sec["progress"] = 100
+            sec["tier"] = 2  # already reinforced once
 
     with mock.patch("backend.simulation.random.random", return_value=0.99):  # defense fails
         sim._resolve_raider_attack(tribe)
 
-    assert tribe.wall_layers == 0
+    assert all(sec["tier"] == 0 for sec in tribe.wall_rings[0]["sections"] if not sec["natural_barrier"])
 
 
 def test_successful_wall_defense_leaves_the_wall_standing():
@@ -4550,43 +4604,6 @@ def test_advance_flock_does_nothing_with_an_empty_flock():
     assert tribe.pending_hatch is None
 
 
-def test_advance_city_growth_adds_buildings_as_population_climbs():
-    from backend import config
-
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.founded_city = True
-    tribe.population = config.CITY_BUILDING_POPULATION_STEP * 2
-
-    sim._advance_city_growth(tribe)
-
-    assert tribe.city_buildings == 2
-    assert any("new building rises" in entry for entry in tribe.history)
-
-
-def test_advance_city_growth_does_nothing_before_a_city_is_founded():
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.population = 1000
-
-    sim._advance_city_growth(tribe)
-
-    assert tribe.city_buildings == 0
-
-
-def test_advance_city_growth_caps_at_max_buildings():
-    from backend import config
-
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.founded_city = True
-    tribe.population = config.CITY_BUILDING_POPULATION_STEP * (config.MAX_CITY_BUILDINGS + 10)
-
-    sim._advance_city_growth(tribe)
-
-    assert tribe.city_buildings == config.MAX_CITY_BUILDINGS
-
-
 def test_celebrate_settling_fires_once_a_tribe_settles_near_real_water():
     """Explicit request: settling somewhere for good deserves its own celebration,
     not just whatever unrelated surplus/discovery celebration happens to fire next."""
@@ -5217,42 +5234,23 @@ def test_advance_city_founding_does_nothing_before_the_era_milestone():
     assert tribe.founded_city is False
 
 
-def test_effective_city_building_cap_is_full_on_open_land():
-    from backend import config
-
+def test_local_buildable_fraction_is_full_on_open_land():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")  # open plains
 
-    assert sim._effective_city_building_cap(tribe) == config.MAX_CITY_BUILDINGS
+    assert sim._local_buildable_fraction(tribe) == 1.0
 
 
-def test_effective_city_building_cap_is_reduced_on_a_narrow_shoreline_strip():
+def test_local_buildable_fraction_is_reduced_on_a_narrow_shoreline_strip():
     """Live bug report: a tribe wedged into a narrow forest strip between a river and
     the coastal cliffs grew a full, maxed-out city there anyway. (83, 58) is real map
-    geography confirmed narrow -- river immediately west, cliffs/ocean two tiles east."""
-    from backend import config
-
+    geography confirmed narrow -- river immediately west, cliffs/ocean two tiles east.
+    This fraction now scales EXPAND_TERRITORY's radius increment (actions._expand_
+    territory) instead of an abstract building cap."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 83, 58, "#c084fc")
 
-    cap = sim._effective_city_building_cap(tribe)
-
-    assert config.MIN_CITY_BUILDINGS_ON_CRAMPED_LAND <= cap < config.MAX_CITY_BUILDINGS
-
-
-def test_advance_city_growth_is_capped_by_local_land_not_just_max_buildings():
-    from backend import config
-
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 83, 58, "#c084fc")  # cramped strip
-    tribe.founded_city = True
-    tribe.population = config.CITY_BUILDING_POPULATION_STEP * (config.MAX_CITY_BUILDINGS + 10)
-
-    sim._advance_city_growth(tribe)
-
-    cap = sim._effective_city_building_cap(tribe)
-    assert cap < config.MAX_CITY_BUILDINGS
-    assert tribe.city_buildings == cap
+    assert sim._local_buildable_fraction(tribe) < 1.0
 
 
 _FAKE_CHIEF = {"chief_name": "Test Chief", "victory_method": "a coin flip", "guiding_philosophy": "test philosophy"}

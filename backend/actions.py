@@ -16,7 +16,7 @@ drift a little every time someone chops wood.
 import math
 import random
 
-from . import config, physics
+from . import architect, city_layout, config, physics
 from .world import BIOME_LABELS, biome_at
 
 
@@ -199,6 +199,13 @@ def _build_fire(sim, tribe, biome, target):
     tribe.wood -= 10
     sim.world.add_construction(tribe.x, tribe.y, "fire", sim.cycle)
     tribe.fire_ever_built = True  # see actions.py._cook_food's own prerequisite
+    # Fire is available from the very first era, long before a tribe has any real
+    # territory (see Tribe.territory_center) -- placement is best-effort, never a
+    # gate: a nomadic tribe's fire just isn't tracked positionally yet.
+    if tribe.territory_center is not None:
+        slot = architect.find_free_slot(sim.world, tribe, "fire")
+        if slot is not None:
+            architect.record_building(tribe, "fire", slot[0], slot[1], 1, 1, sim.cycle)
     sim.trauma.radiate_event_wave(
         tribe.x, tribe.y, config.BUILD_FIRE_PRIDE_MAGNITUDE, config.BUILD_FIRE_PRIDE_RADIUS
     )
@@ -228,30 +235,35 @@ def _construct_wall(sim, tribe, biome, target):
     action -- "30% of a wall can be built through a day with a team of 3." Reuses
     _labor_multiplier (the same "more hands get more done" concept _harvest already
     uses) instead of a separate team-size notion: at Tribe.__init__'s starting
-    population (labor multiplier 1.0), one action adds ~30% progress, reaching
-    completion in ~4 actions; a larger tribe builds faster. Total cost is unchanged
-    from the old instant version (15 wood, 15 stone), just paid proportionally to
-    the progress each action actually adds, so a tribe can start without the full
-    amount banked yet."""
-    existing = sim.world.constructions.get((tribe.x, tribe.y))
-    current_progress = existing["progress"] if existing and existing["type"] == "wall" else 0
+    population (labor multiplier 1.0), one action adds ~30% progress to a section,
+    reaching completion in ~4 actions; a larger tribe builds faster.
 
-    if current_progress >= 100:
+    2026-09-02 redesign: the wall is a real polygon of positioned 1x5 sections
+    (backend/city_layout.py), not one progress-bar tile. city_layout.
+    next_wall_work_section picks whichever section needs work next -- unfinished
+    construction anywhere, across every ring, before any reinforcement -- so this
+    action always has a clear, single real target without the tribe needing to
+    reason about which section that is."""
+    target_section = city_layout.next_wall_work_section(tribe)
+    if target_section is None:
+        return "no wall section is currently unlocked and incomplete -- EXPAND_TERRITORY unlocks the next one"
+    ring_i, sec_i = target_section
+    section = tribe.wall_rings[ring_i]["sections"][sec_i]
+
+    if section["progress"] >= 100:
         # Explicit request: "Torches can be a freebie for building walls 2
         # levels" / "a Moat should be available after 2 layers of walls have
-        # been built." A completed wall can be reinforced with more layers, up
+        # been built." A completed section can be reinforced with more tiers, up
         # to WALL_MAX_LAYERS -- a flat cost, not another multi-action progress
-        # bar the way the very first layer was.
-        if tribe.wall_layers >= config.WALL_MAX_LAYERS:
-            return None
+        # bar the way the very first pass was.
         if tribe.wood < config.WALL_LAYER_WOOD_COST or tribe.stone < config.WALL_LAYER_STONE_COST:
             return None
         tribe.wood -= config.WALL_LAYER_WOOD_COST
         tribe.stone -= config.WALL_LAYER_STONE_COST
-        tribe.wall_layers += 1
-        return f"a wall layer is reinforced -- {tribe.wall_layers} layers of defense now stand"
+        section["tier"] += 1
+        return f"the {section['direction']} wall section is reinforced -- tier {section['tier']} of defense now stands there"
 
-    added = min(100 - current_progress, round(config.WALL_PROGRESS_PER_ACTION_BASE * _labor_multiplier(tribe.population)))
+    added = min(100 - section["progress"], round(config.WALL_PROGRESS_PER_ACTION_BASE * _labor_multiplier(tribe.population)))
     wood_cost = round(config.WALL_WOOD_COST_TOTAL * added / 100)
     stone_cost = round(config.WALL_STONE_COST_TOTAL * added / 100)
     if tribe.wood < wood_cost or tribe.stone < stone_cost:
@@ -259,20 +271,21 @@ def _construct_wall(sim, tribe, biome, target):
 
     tribe.wood -= wood_cost
     tribe.stone -= stone_cost
-    new_progress = current_progress + added
-    sim.world.add_construction(tribe.x, tribe.y, "wall", sim.cycle, progress=new_progress)
-    if new_progress >= 100:
-        tribe.wall_layers = 1
-        return "the wall is complete -- the camp is properly defended now"
-    return f"wall construction continues -- {new_progress}% complete"
+    section["progress"] += added
+    if section["progress"] >= 100:
+        return f"the {section['direction']} wall section is complete"
+    return f"the {section['direction']} wall section continues -- {section['progress']}% complete"
 
 
 def _build_moat(sim, tribe, biome, target):
     """Explicit request: "a Moat should be available after 2 layers of walls
-    have been built." A cheaper alternative investment once wall layers are
-    maxed out, not a replacement for the wall already standing -- smaller cost,
-    smaller bonus than a wall layer (Simulation._resolve_raider_attack)."""
-    if tribe.moat_built or tribe.wall_layers < config.WALL_MAX_LAYERS:
+    have been built." A cheaper alternative investment once the first wall ring
+    is fully reinforced, not a replacement for the wall already standing --
+    smaller cost, smaller bonus than a reinforcement tier (Simulation.
+    _resolve_raider_attack). Excluded from the real building-footprint system --
+    a moat is a property of the wall ring, not a placeable rect."""
+    ring0_reinforced = bool(tribe.wall_rings) and city_layout.ring_fully_reinforced(tribe.wall_rings[0])
+    if tribe.moat_built or not ring0_reinforced:
         return None
     if tribe.wood < config.MOAT_WOOD_COST or tribe.stone < config.MOAT_STONE_COST:
         return None
@@ -291,15 +304,20 @@ def _build_long_house(sim, tribe, biome, target):
     (config.HOUSING_POPULATION_PER_LONG_HOUSE) so a tribe can't spam housing it
     doesn't need. tribe.long_houses_built is also the real proxy the Keep/
     Fortress/Castle tier reads for how established this settlement has become."""
-    if sim._wall_fraction(tribe) < 1.0:
-        return "the wall must be finished before a long house is worth building here"
+    if not tribe.wall_rings or not city_layout.ring_fully_built(tribe.wall_rings[0]):
+        return "the first wall ring must be finished before a long house is worth building here"
     houses_needed = max(1, -(-tribe.population // config.HOUSING_POPULATION_PER_LONG_HOUSE))
     if tribe.long_houses_built >= houses_needed:
         return None
     if tribe.wood < config.LONG_HOUSE_WOOD_COST or tribe.stone < config.LONG_HOUSE_STONE_COST:
         return None
+    slot = architect.find_free_slot(sim.world, tribe, "long_house")
+    if slot is None:
+        return None
     tribe.wood -= config.LONG_HOUSE_WOOD_COST
     tribe.stone -= config.LONG_HOUSE_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["long_house"]
+    architect.record_building(tribe, "long_house", slot[0], slot[1], w, h, sim.cycle)
     tribe.long_houses_built += 1
     if tribe.long_houses_built == 1:
         sim._award_trophy(tribe, "Master Builder")
@@ -319,8 +337,13 @@ def _build_keep(sim, tribe, biome, target):
         return f"{config.KEEP_LONG_HOUSES_REQUIRED} long houses are needed before a keep is worth building here"
     if tribe.wood < config.KEEP_WOOD_COST or tribe.stone < config.KEEP_STONE_COST:
         return None
+    slot = architect.find_free_slot(sim.world, tribe, "keep")
+    if slot is None:
+        return None
     tribe.wood -= config.KEEP_WOOD_COST
     tribe.stone -= config.KEEP_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["keep"]
+    architect.record_building(tribe, "keep", slot[0], slot[1], w, h, sim.cycle)
     tribe.keep_built = True
     sim._award_trophy(tribe, "Keep Warden")
     return "a keep rises -- a further defense bonus for the settlement"
@@ -337,8 +360,13 @@ def _build_fortress(sim, tribe, biome, target):
         return f"{config.FORTRESS_LONG_HOUSES_REQUIRED} long houses are needed before a fortress is worth building here"
     if tribe.wood < config.FORTRESS_WOOD_COST or tribe.stone < config.FORTRESS_STONE_COST:
         return None
+    slot = architect.find_free_slot(sim.world, tribe, "fortress")
+    if slot is None:
+        return None
     tribe.wood -= config.FORTRESS_WOOD_COST
     tribe.stone -= config.FORTRESS_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["fortress"]
+    architect.record_building(tribe, "fortress", slot[0], slot[1], w, h, sim.cycle)
     tribe.fortress_built = True
     sim._award_trophy(tribe, "Fortress Warden")
     return "a fortress rises -- a further defense bonus for the settlement"
@@ -357,8 +385,13 @@ def _build_castle(sim, tribe, biome, target):
         return f"{config.CASTLE_LONG_HOUSES_REQUIRED} long houses are needed before a castle is worth building here"
     if tribe.wood < config.CASTLE_WOOD_COST or tribe.stone < config.CASTLE_STONE_COST:
         return None
+    slot = architect.find_free_slot(sim.world, tribe, "castle")
+    if slot is None:
+        return None
     tribe.wood -= config.CASTLE_WOOD_COST
     tribe.stone -= config.CASTLE_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["castle"]
+    architect.record_building(tribe, "castle", slot[0], slot[1], w, h, sim.cycle)
     tribe.castle_built = True
     sim._award_trophy(tribe, "Castle Builder")
     sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.ERA_ADVANCE_PRIDE_MAGNITUDE, config.ERA_ADVANCE_PRIDE_RADIUS)
@@ -379,25 +412,41 @@ def _build_road(sim, tribe, biome, target):
 
 
 def _expand_territory(sim, tribe, biome, target):
-    """Only meaningful once automatic city growth (Simulation._advance_city_growth)
-    has already reached its normal ceiling -- a deliberate push past that ceiling, not
-    redundant with growth that already happens on its own. Repeatable up to double the
-    normal max (see config.TERRITORY_EXPANSION_BUILDINGS_BONUS) so the territory visual
-    doesn't grow without bound. The ceiling itself is land-scaled (Simulation.
-    _effective_city_building_cap) -- a tribe hemmed in by water/cliffs gets less room
-    to expand into in both places, not just the ordinary growth path."""
-    cap = sim._effective_city_building_cap(tribe)
-    if tribe.city_buildings < cap:
-        return "the city hasn't finished growing on its own yet -- nothing more to expand"
-    if tribe.city_buildings >= cap * 2:
+    """2026-09-02 redesign: grows the tribe's real territory_radius and unlocks
+    exactly one new wall section per call, in fixed compass order -- "expansion
+    must be done for each wall section," no exception for ring 0. The radius
+    increment is scaled down on cramped land (Simulation._local_buildable_fraction,
+    the same land-availability signal the old abstract city-growth cap used to
+    read), floored so even a badly cramped tribe keeps making some progress.
+
+    Once every section in the outermost ring is both unlocked and fully reinforced,
+    the next call opens a whole new ring further out instead (backend/
+    city_layout.build_ring) -- no limit on ring count beyond land availability."""
+    if not tribe.wall_rings:
         return None
     if tribe.wood < config.TERRITORY_EXPANSION_WOOD_COST or tribe.stone < config.TERRITORY_EXPANSION_STONE_COST:
         return None
+
+    unlockable = city_layout.next_unlockable_section(tribe)
+    if unlockable is None:
+        if not city_layout.ring_fully_reinforced(tribe.wall_rings[-1]):
+            return "the outermost wall ring must be fully reinforced before territory can expand further"
+        tribe.wall_rings.append(city_layout.build_ring(sim.world, tribe, len(tribe.wall_rings)))
+        unlockable = city_layout.next_unlockable_section(tribe)
+
     tribe.wood -= config.TERRITORY_EXPANSION_WOOD_COST
     tribe.stone -= config.TERRITORY_EXPANSION_STONE_COST
-    tribe.city_buildings += config.TERRITORY_EXPANSION_BUILDINGS_BONUS
+    fraction = sim._local_buildable_fraction(tribe)
+    increment = max(
+        config.TERRITORY_EXPANSION_RADIUS_MIN_INCREMENT,
+        round(config.TERRITORY_EXPANSION_RADIUS_INCREMENT_BASE * fraction),
+    )
+    tribe.territory_radius += increment
+    if unlockable is not None:
+        ring_i, sec_i = unlockable
+        tribe.wall_rings[ring_i]["sections"][sec_i]["unlocked"] = True
     sim._award_trophy(tribe, "Territory Expander")
-    return f"the tribe's territory expands beyond its old borders -- {tribe.city_buildings} buildings now stand"
+    return f"the tribe's territory expands to a {tribe.territory_radius}-tile radius"
 
 
 def _build_dock(sim, tribe, biome, target):
@@ -409,8 +458,37 @@ def _build_dock(sim, tribe, biome, target):
         return None
     tribe.wood -= config.DOCK_WOOD_COST
     tribe.dock_built = True
+    # Best-effort placement, not a gate -- Dock has no long_houses_built prerequisite,
+    # so it's reachable before a tribe necessarily has any real territory yet.
+    if tribe.territory_center is not None:
+        slot = architect.find_free_slot(sim.world, tribe, "dock")
+        if slot is not None:
+            w, h = config.BUILDING_FOOTPRINTS["dock"]
+            architect.record_building(tribe, "dock", slot[0], slot[1], w, h, sim.cycle)
     sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.BUILD_FIRE_PRIDE_MAGNITUDE, config.BUILD_FIRE_PRIDE_RADIUS)
     return "a dock rises at the water's edge -- fishing here will pay out more from now on"
+
+
+def _build_fishery(sim, tribe, biome, target):
+    """A real building beyond the Dock, not just a bigger version of it -- explicit
+    request: "Fishery comes after the Dock is built." Stacks
+    config.FISHERY_SUPPLY_BONUS_MULTIPLIER onto the existing passive daily fish
+    supply (Simulation._advance_fish_supply's own FISHING_SUPPLY_MULTIPLIER) rather
+    than replacing it, a real further reason to build both."""
+    if tribe.fishery_built or not tribe.dock_built:
+        return None
+    if tribe.wood < config.FISHERY_WOOD_COST or tribe.stone < config.FISHERY_STONE_COST:
+        return None
+    slot = architect.find_free_slot(sim.world, tribe, "fishery")
+    if slot is None:
+        return None
+    tribe.wood -= config.FISHERY_WOOD_COST
+    tribe.stone -= config.FISHERY_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["fishery"]
+    architect.record_building(tribe, "fishery", slot[0], slot[1], w, h, sim.cycle)
+    tribe.fishery_built = True
+    sim._award_trophy(tribe, "Fishmonger")
+    return "a fishery is built alongside the dock -- the daily catch flows in even more steadily now"
 
 
 def _build_sawmill(sim, tribe, biome, target):
@@ -429,8 +507,13 @@ def _build_sawmill(sim, tribe, biome, target):
         return "no stand of trees has been scouted yet -- a sawmill needs a real stand to work"
     if tribe.wood < config.SAWMILL_WOOD_COST or tribe.stone < config.SAWMILL_STONE_COST:
         return None
+    slot = architect.find_free_slot(sim.world, tribe, "sawmill")
+    if slot is None:
+        return None
     tribe.wood -= config.SAWMILL_WOOD_COST
     tribe.stone -= config.SAWMILL_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["sawmill"]
+    architect.record_building(tribe, "sawmill", slot[0], slot[1], w, h, sim.cycle)
     tribe.sawmill_built = True
     tribe.lumber_site = tribe.lumber_sites[-1]
     sim._award_trophy(tribe, "Sawyer")
@@ -454,8 +537,13 @@ def _build_quarry(sim, tribe, biome, target):
         return "no stone-rich site has been scouted yet -- a quarry needs a real deposit to work"
     if tribe.wood < config.QUARRY_WOOD_COST or tribe.stone < config.QUARRY_STONE_COST:
         return None
+    slot = architect.find_free_slot(sim.world, tribe, "quarry")
+    if slot is None:
+        return None
     tribe.wood -= config.QUARRY_WOOD_COST
     tribe.stone -= config.QUARRY_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["quarry"]
+    architect.record_building(tribe, "quarry", slot[0], slot[1], w, h, sim.cycle)
     tribe.quarry_built = True
     tribe.quarry_site = tribe.quarry_sites[-1]
     sim._award_trophy(tribe, "Quarrier")
@@ -474,8 +562,13 @@ def _build_kitchen(sim, tribe, biome, target):
         return None
     if tribe.wood < config.KITCHEN_WOOD_COST or tribe.stone < config.KITCHEN_STONE_COST:
         return None
+    slot = architect.find_free_slot(sim.world, tribe, "kitchen")
+    if slot is None:
+        return None
     tribe.wood -= config.KITCHEN_WOOD_COST
     tribe.stone -= config.KITCHEN_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["kitchen"]
+    architect.record_building(tribe, "kitchen", slot[0], slot[1], w, h, sim.cycle)
     tribe.kitchen_built = True
     sim._award_trophy(tribe, "Gourmet")
     return "a kitchen is built -- cooked meals now count as excellent food, stretching stores even further"
@@ -493,8 +586,13 @@ def _build_mine(sim, tribe, biome, target):
         return None
     if tribe.wood < config.MINE_WOOD_COST or tribe.stone < config.MINE_STONE_COST:
         return None
+    slot = architect.find_free_slot(sim.world, tribe, "mine")
+    if slot is None:
+        return None
     tribe.wood -= config.MINE_WOOD_COST
     tribe.stone -= config.MINE_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["mine"]
+    architect.record_building(tribe, "mine", slot[0], slot[1], w, h, sim.cycle)
     tribe.mine_built = True
     chosen_site = tribe.mine_sites[-1]
     tribe.mine_resource_name = chosen_site["resource"]
@@ -517,8 +615,13 @@ def _build_tannery(sim, tribe, biome, target):
         return "no rabbit warren has been scouted yet -- a tannery needs real pelts to work"
     if tribe.wood < config.TANNERY_WOOD_COST or tribe.stone < config.TANNERY_STONE_COST:
         return None
+    slot = architect.find_free_slot(sim.world, tribe, "tannery")
+    if slot is None:
+        return None
     tribe.wood -= config.TANNERY_WOOD_COST
     tribe.stone -= config.TANNERY_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["tannery"]
+    architect.record_building(tribe, "tannery", slot[0], slot[1], w, h, sim.cycle)
     tribe.tannery_built = True
     chosen_site = warren_sites[-1]
     tribe.tannery_site = (chosen_site["x"], chosen_site["y"])
@@ -535,7 +638,12 @@ def _plant_crop(sim, tribe, biome, target):
     tend."""
     if tribe.farm_plots >= config.MAX_FARM_PLOTS or tribe.wood < config.PLANT_CROP_WOOD_COST:
         return None
+    slot = architect.find_free_slot(sim.world, tribe, "farm_plot")
+    if slot is None:
+        return None
     tribe.wood -= config.PLANT_CROP_WOOD_COST
+    w, h = config.BUILDING_FOOTPRINTS["farm_plot"]
+    architect.record_building(tribe, "farm_plot", slot[0], slot[1], w, h, sim.cycle)
     tribe.farm_plots += 1
     return f"a new plot is planted -- {tribe.farm_plots} now growing"
 
@@ -1134,6 +1242,7 @@ ACTION_REGISTRY = {
     "BUILD_ROAD": _build_road,
     "EXPAND_TERRITORY": _expand_territory,
     "BUILD_DOCK": _build_dock,
+    "BUILD_FISHERY": _build_fishery,
     "BUILD_SAWMILL": _build_sawmill,
     "BUILD_QUARRY": _build_quarry,
     "BUILD_MINE": _build_mine,
@@ -1176,8 +1285,9 @@ ACTION_DESCRIPTIONS = {
     "BUILD_LONG_HOUSE": "Build a long house at your current tile using stored wood and stone -- only possible once your wall is fully complete. Repeatable as population grows: real, lasting shelter for the tribe, one house at a time.",
     "BUILD_CASTLE": "Build a castle at your current tile using stored wood and stone -- only possible once a fortress stands and enough long houses have been built. A one-time, permanent structure that adds real defense on top of whatever your wall already provides.",
     "BUILD_ROAD": "Build a road at your current tile using stored wood and stone. A one-time, permanent improvement: every future scouting party, hunting party, or trade emissary you send out travels faster from then on.",
-    "EXPAND_TERRITORY": "Push your city's growth beyond its normal limit using stored wood and stone -- only possible once your city has already finished growing on its own. Adds more buildings, up to double the usual cap.",
+    "EXPAND_TERRITORY": "Grow your settlement's real owned territory using stored wood and stone, unlocking the next wall section to build. Repeatable -- once a whole wall ring is fully unlocked and reinforced, this opens a brand new ring further out instead.",
     "BUILD_DOCK": "Build a dock at your current tile using stored wood -- only possible once the tribe has settled here. A one-time, permanent structure: every future fish caught here pays out more from then on.",
+    "BUILD_FISHERY": "Build a fishery using stored wood and stone -- only possible once a dock already stands. A one-time, permanent structure: the settlement's passive daily fish supply flows in even more steadily from then on.",
     "BUILD_SAWMILL": "Build a sawmill using stored wood and stone -- only possible once a long house stands, fishing is mastered, and a stand of trees has actually been scouted. A one-time, permanent structure at your settlement: every future load of gathered wood is worth three times as much from then on.",
     "BUILD_QUARRY": "Build a quarry using stored wood and stone -- only possible once a long house stands, fishing is mastered, and a stone-rich site has actually been scouted. A one-time, permanent structure at your settlement: every future load of harvested stone is worth three times as much from then on.",
     "BUILD_MINE": "Excavate a mine at a vein your scouts have already found, using stored wood and stone -- only possible once a quarry stands and at least one vein is known. A one-time, permanent structure: its unique resource flows in steadily from then on.",

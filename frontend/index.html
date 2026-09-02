@@ -1202,16 +1202,14 @@ function drawTribeIndividuals(tribeId, t) {
 
   // Explicit request: "thought bubbles shouldn't overlap." A fixed clusterRadius + 14
   // clearance only ever accounted for the wandering dot cluster -- once a settlement
-  // marker (drawSettlementMarker), a ring of city buildings (drawCityBuildings), a farm
-  // plot (drawFarmPlot, offset up-and-right), or an active firework burst
-  // (drawCelebrationFireworks) are also on screen, the bubble could sit low enough to
-  // cover them. Clears whichever of those actually extends furthest above center this
-  // frame, not just the dots.
+  // marker (drawSettlementMarker), a farm plot (drawFarmPlot, offset up-and-right), or
+  // an active firework burst (drawCelebrationFireworks) are also on screen, the bubble
+  // could sit low enough to cover them. Clears whichever of those actually extends
+  // furthest above center this frame, not just the dots. Real buildings/wall rings
+  // (drawBuildings/drawSettlementWall) sit at their own real, independent map
+  // coordinates now rather than a fixed ring above the settlement center, so they no
+  // longer factor into this specific clearance calculation.
   let topClearance = clusterRadius + 14;
-  if (t.city_buildings > 0) {
-    const ringRadius = Math.max(14, TILE * 2.4);
-    topClearance = Math.max(topClearance, ringRadius * 0.6 + 14);
-  }
   if (t.farm_plots > 0) {
     const farmRadius = Math.max(5, (TILE * MOON_CORE_RADIUS_TILES) / 3.6);
     topClearance = Math.max(topClearance, TILE * 1.4 + farmRadius + 14);
@@ -1512,17 +1510,15 @@ function drawLandmarks() {
 }
 
 // Explicit request: "a visual on how much land they have staked out... its
-// expansion dynamically as they grow." Radius scales with t.city_buildings (a real,
-// already-tracked number, 0-6 -- see backend/simulation.py._advance_city_growth)
-// rather than an invented territory stat, so it grows exactly when the city
-// visibly does.
+// expansion dynamically as they grow." 2026-09-02 redesign: real territory now --
+// t.territory_center/t.territory_radius (backend/simulation.py._found_territory,
+// actions._expand_territory), granted the moment a tribe first settles and grown one
+// EXPAND_TERRITORY call at a time, not an invented radius derived from a building count.
 function drawTerritory(t) {
-  if (!isSettled(t)) return;
-  const [landX, landY] = landAnchor(t.x, t.y);
-  const cx = landX * TILE + TILE / 2;
-  const cy = landY * TILE + TILE / 2;
-  const buildings = t.city_buildings || 0;
-  const radius = Math.max(24, TILE * 3.2) + buildings * TILE * 1.1;
+  if (!t.territory_center) return;
+  const cx = t.territory_center[0] * TILE + TILE / 2;
+  const cy = t.territory_center[1] * TILE + TILE / 2;
+  const radius = (t.territory_radius || 0) * TILE;
   const [r, g, b] = hexToRgb(t.color);
   ctx.save();
   ctx.beginPath();
@@ -1557,39 +1553,41 @@ function drawSettlementMarker(t) {
   ctx.fillText(t.founded_city ? "🏛️" : "🛖", cx, cy + 1);
 }
 
-// A rectangle around the settlement marker, not a separate world-tile square -- walls
-// are a settlement feature, not generic terrain. Stroke opacity/dash reflects real
-// construction progress (Simulation._construct_wall) so a half-built wall visibly
-// reads as half-built, not invisible until 100%.
+// 2026-09-02 redesign: a real polygon of positioned wall sections (backend/
+// city_layout.py) around the tribe's own territory_center, not one progress-bar
+// tile drawn as a fixed-size collar around the settlement marker. Each section
+// draws at its own real (x, y, w, h) tile rect, styled by what it actually is:
+// a natural barrier (terrain, always "built"), locked (not yet unlocked by
+// EXPAND_TERRITORY), under construction (progress < 100), or complete/reinforced.
 function drawSettlementWall(t) {
-  const wall = (latestState.structures || []).find(s => s.x === t.x && s.y === t.y && s.type === "wall");
-  if (!wall) return;
-  const [landX, landY] = landAnchor(t.x, t.y);
-  const cx = landX * TILE + TILE / 2;
-  const cy = landY * TILE + TILE / 2;
-  const r = Math.max(6, (TILE * MOON_CORE_RADIUS_TILES) / 3);
-  // Explicit feedback: the wall read as sitting too tight against the settlement
-  // marker -- more clearance so it reads as a perimeter around the settlement, not
-  // a collar right on top of it.
-  const half = r * 2.4;
-  const progress = Math.max(0, Math.min(100, wall.progress ?? 100));
-  // Explicit request: "walls should expand concentrically as territory expands, so
-  // there will be layers of township." Visual only, per explicit confirmation --
-  // reuses the same single wall_fraction (progress) for every ring's styling
-  // rather than a separate mechanic per layer. One extra ring per every 2
-  // city_buildings (a real, already-tracked 0-6 count), matching how drawTerritory
-  // already scales with the same number.
-  const layerCount = 1 + Math.floor((t.city_buildings || 0) / 2);
-  ctx.save();
-  ctx.strokeStyle = "#a8a29e";
-  ctx.lineWidth = Math.max(1.5, TILE * 0.12);
-  ctx.globalAlpha = 0.35 + 0.65 * (progress / 100);
-  if (progress < 100) ctx.setLineDash([4, 3]);
-  for (let i = 0; i < layerCount; i++) {
-    const layerHalf = half + i * WALL_LAYER_SPACING;
-    ctx.strokeRect(cx - layerHalf, cy - layerHalf, layerHalf * 2, layerHalf * 2);
-  }
-  ctx.restore();
+  (t.wall_rings || []).forEach(ring => {
+    ring.sections.forEach(sec => {
+      const px = sec.x * TILE, py = sec.y * TILE, pw = sec.w * TILE, ph = sec.h * TILE;
+      ctx.save();
+      if (sec.natural_barrier) {
+        // Terrain doing the wall's job for free -- a weaker, distinct look (dotted,
+        // dim) rather than reading as a real built section.
+        ctx.strokeStyle = "#38bdf8";
+        ctx.globalAlpha = 0.4;
+        ctx.setLineDash([2, 3]);
+      } else if (!sec.unlocked) {
+        ctx.strokeStyle = "#57534e";
+        ctx.globalAlpha = 0.25;
+        ctx.setLineDash([3, 4]);
+      } else if (sec.progress < 100) {
+        ctx.strokeStyle = "#a8a29e";
+        ctx.globalAlpha = 0.35 + 0.5 * (sec.progress / 100);
+        ctx.setLineDash([4, 3]);
+      } else {
+        // Complete -- brighter and thicker per reinforcement tier.
+        ctx.strokeStyle = "#e7e5e4";
+        ctx.globalAlpha = 0.85;
+      }
+      ctx.lineWidth = Math.max(1.5, TILE * (0.12 + 0.06 * (sec.tier || 0)));
+      ctx.strokeRect(px, py, pw, ph);
+      ctx.restore();
+    });
+  });
 }
 
 // One plot icon per tribe (not one per t.farm_plots -- identical repeated icons would
@@ -1624,52 +1622,34 @@ function drawFarmPlot(t) {
   }
 }
 
-// A city that grows building-by-building (Simulation._advance_city_growth) instead of
-// a single one-time icon flip -- drawSettlementMarker stays the town's "seat," these
-// are the buildings growing up around it, arranged in a small deterministic ring so a
-// bigger city visibly reads as bigger.
-// Explicit request: buildings distribute across the same concentric layers
-// drawSettlementWall draws (2 buildings per layer, matching that function's own
-// "one extra ring per 2 city_buildings" pacing), sitting inside each layer's own
-// wall ring with real clearance -- "leave space enough for housing in each
-// ring/square/partial square," not all buildings bunched at one fixed radius
-// regardless of how many wall layers exist.
-const BUILDINGS_PER_LAYER = 2;
-// Explicit feedback: "when they built walls, they didn't leave a lot of room
-// for growth between the sections. it needs to be more space." Shared by
-// drawSettlementWall (ring spacing) and drawCityBuildings (housing radius) so
-// the buildings always sit inside their own ring band, never touching the next
-// one out -- was TILE * 1.6, too tight for a ring's housing to read as its own
-// distinct band once a couple of buildings occupied it.
-const WALL_LAYER_SPACING = TILE * 2.4;
+// 2026-09-02 redesign: every building now has a real placed footprint (backend/
+// architect.py.record_building) -- drawn at its own real (x, y, w, h) tile rect
+// instead of arranged into a deterministic decorative ring around the settlement
+// marker. drawSettlementMarker stays the town's live "seat" (it follows the
+// tribe's current position, which can drift from the anchored buildings after a
+// RELOCATE -- see Tribe.territory_center); these are the real structures standing
+// wherever the City Architect actually placed them.
+const BUILDING_ICONS = {
+  town_hall: "🏛️", long_house: "🏠", keep: "🏯", fortress: "🏰", castle: "🏯",
+  sawmill: "🪵", quarry: "⛏️", mine: "💎", kitchen: "🍲", tannery: "🦫",
+  dock: "⚓", fishery: "🎣", farm_plot: "🌾", flock_pen: "🐔", fire: "🔥",
+};
 
-function drawCityBuildings(t) {
-  if (t.city_buildings <= 0) return;
-  const [landX, landY] = landAnchor(t.x, t.y);
-  const baseX = landX * TILE + TILE / 2;
-  const baseY = landY * TILE + TILE / 2;
-  const r = Math.max(6, (TILE * MOON_CORE_RADIUS_TILES) / 3);
-  const wallHalf = r * 2.4;
-  // Explicit request: "maybe up, 2 or 3 story buildings eventually." Once the
-  // whole allotment is full (the real, land-scaled effective_city_building_cap from
-  // the backend -- a tribe hemmed in by water/cliffs maxes out well below the flat 6
-  // this used to hardcode), a city that can't expand out anymore starts reading as
-  // building up instead -- taller icons, not a bigger ring.
-  const full = t.city_buildings >= (t.effective_city_building_cap ?? 6);
-  for (let i = 0; i < t.city_buildings; i++) {
-    const layer = Math.floor(i / BUILDINGS_PER_LAYER);
-    const posInLayer = i % BUILDINGS_PER_LAYER;
-    const countInLayer = Math.min(BUILDINGS_PER_LAYER, t.city_buildings - layer * BUILDINGS_PER_LAYER);
-    const layerWallHalf = wallHalf + layer * WALL_LAYER_SPACING;
-    const housingRadius = Math.max(10, layerWallHalf - TILE * 0.9);
-    const angle = (posInLayer / countInLayer) * Math.PI * 2 + layer * 0.6;
-    const bx = baseX + Math.cos(angle) * housingRadius;
-    const by = baseY + Math.sin(angle) * housingRadius * 0.6;
-    ctx.font = `${Math.max(9, TILE * (full ? 1.15 : 0.9))}px sans-serif`;
+function drawBuildings(t) {
+  (t.buildings || []).forEach(b => {
+    const px = b.x * TILE, py = b.y * TILE, pw = b.w * TILE, ph = b.h * TILE;
+    ctx.save();
+    ctx.fillStyle = "rgba(15,23,42,0.55)";
+    ctx.fillRect(px, py, pw, ph);
+    ctx.strokeStyle = t.color;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(px, py, pw, ph);
+    ctx.font = `${Math.max(9, Math.min(pw, ph) * 0.8)}px sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(full ? "🏢" : "🏠", bx, by);
-  }
+    ctx.fillText(BUILDING_ICONS[b.type] || "🏗️", px + pw / 2, py + ph / 2 + 1);
+    ctx.restore();
+  });
 }
 function drawTrails() {
   // Regression fix: each trail tile used to draw at 1.6x the actual tile size with a
@@ -1919,10 +1899,7 @@ function drawFrame() {
         ctx.beginPath(); ctx.arc(px + TILE / 2, py + TILE / 2, r + 2, 0, 2 * Math.PI); ctx.fill();
         ctx.fillStyle = "#ef4444";
         ctx.beginPath(); ctx.arc(px + TILE / 2, py + TILE / 2, r, 0, 2 * Math.PI); ctx.fill();
-      } else if (s.type !== "wall") {
-        // Walls get their own settlement-anchored rectangle (drawSettlementWall)
-        // instead of a flat world-tile square -- a wall is a settlement feature, not
-        // generic terrain, and needs to visibly reflect real construction progress.
+      } else {
         ctx.fillStyle = "#78350f";
         ctx.fillRect(px, py, TILE, TILE);
       }
@@ -1976,7 +1953,7 @@ function drawFrame() {
     Object.values(latestState.tribes || {}).forEach(t => {
       drawSettlementMarker(t);
       drawSettlementWall(t);
-      drawCityBuildings(t);
+      drawBuildings(t);
       drawFarmPlot(t);
     });
     Object.entries(latestState.tribes || {}).forEach(([id, t]) => drawTribeIndividuals(id, t));
@@ -2105,9 +2082,14 @@ function fishSupplyPerCycle(t) {
 // Wall and more"), every one-time flag/construction with a real effect gets its own
 // named line, the same visual weight the farm's growth stage already had, not a
 // buried stat.
+// Mirrors backend/config.py's WALL_MAX_LAYERS -- a section is fully reinforced once
+// its tier reaches this cap (backend/city_layout.py.ring_fully_reinforced).
+const WALL_MAX_LAYERS = 2;
+
 function farmingPanel(t) {
-  const wall = (latestState.structures || []).find(s => s.x === t.x && s.y === t.y && s.type === "wall");
-  const hasAny = t.farm_plots || t.flock || t.fishing_learned || t.fire_ever_built || wall
+  const ring0 = (t.wall_rings || [])[0];
+  const ring0Reinforced = !!ring0 && ring0.sections.every(s => s.natural_barrier || s.tier >= WALL_MAX_LAYERS);
+  const hasAny = t.farm_plots || t.flock || t.fishing_learned || t.fishery_built || t.fire_ever_built || ring0
     || t.long_houses_built || t.keep_built || t.fortress_built || t.castle_built
     || t.moat_built || t.road_built || t.dock_built
     || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built || t.tannery_built
@@ -2135,19 +2117,28 @@ function farmingPanel(t) {
       parts.push(`🐔 Flock — ${t.flock}${last ? ` · latest: ${escapeHtml(last.trait)}` : ""}`);
     }
   }
-  if (t.fishing_learned) parts.push(`🎣 Fishery — ${fishSupplyPerCycle(t)} food/day flows in automatically`);
+  if (t.fishing_learned) parts.push("🎣 Fishing — mastered, fish now caught for food");
+  if (t.fishery_built) parts.push(`🐟 Fishery — ${fishSupplyPerCycle(t)} food/day flows in automatically`);
   if (t.fire_ever_built) parts.push("🔥 Fire — mastered, enables cooking");
   if (t.cooking_learned && !t.kitchen_built) parts.push("🍳 Cooking — mastered, stored food goes much further");
   if (t.founded_city) {
     const name = t.settlement_name ? escapeHtml(t.settlement_name) : "the city";
-    parts.push(`🏛️ Town Hall — ${name}, ${t.city_buildings} building${t.city_buildings === 1 ? "" : "s"} strong`);
+    const count = (t.buildings || []).length;
+    parts.push(`🏛️ Town Hall — ${name}, ${count} building${count === 1 ? "" : "s"} strong`);
   }
-  if (wall) {
-    const progress = Math.max(0, Math.min(100, wall.progress ?? 100));
-    const layers = t.wall_layers ? ` · ${t.wall_layers} layer${t.wall_layers === 1 ? "" : "s"}` : "";
-    parts.push(progress >= 100 ? `🧱 Wall — complete${layers}` : `🧱 Wall — ${progress}% complete`);
+  if (ring0) {
+    const total = ring0.sections.length;
+    const done = ring0.sections.filter(s => s.natural_barrier || s.progress >= 100).length;
+    const tier = Math.max(0, ...ring0.sections.filter(s => !s.natural_barrier).map(s => s.tier));
+    const rings = (t.wall_rings || []).length;
+    const ringNote = rings > 1 ? ` · ${rings} rings` : "";
+    if (done < total) {
+      parts.push(`🧱 Wall — ${done}/${total} sections raised${ringNote}`);
+    } else {
+      parts.push(`🧱 Wall — complete${tier > 0 ? ` · tier ${tier} reinforced` : ""}${ringNote}`);
+    }
   }
-  if (t.fire_ever_built && (t.wall_layers || 0) >= 2) parts.push("🔥🧱 Torches — lining the wall, a free defense bonus");
+  if (t.fire_ever_built && ring0Reinforced) parts.push("🔥🧱 Torches — lining the wall, a free defense bonus");
   if (t.moat_built) parts.push("💧 Moat — a further defense bonus");
   if (t.long_houses_built > 0) {
     parts.push(`🏠 Long House — ${t.long_houses_built} standing, real lasting shelter`);

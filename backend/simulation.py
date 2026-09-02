@@ -4,7 +4,7 @@ import importlib
 import math
 import random
 
-from . import config, physics
+from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _eligible_breeding_pair, _execute_trade, _find_trade_partner, _food_multiplier, _labor_multiplier,
@@ -340,13 +340,9 @@ class Tribe:
         # other "proven once" flag here.
         self.hunt_ever_succeeded = False
         self.fire_ever_built = False
-        # A completed wall's second reinforcing layer (backend/actions.py.
-        # _construct_wall) -- explicit request: "Torches can be a freebie for
-        # building walls 2 levels" / "a Moat should be available after 2 layers of
-        # walls have been built." Capped at config.WALL_MAX_LAYERS.
-        self.wall_layers = 0
-        # See actions.py._build_moat -- one-way, gated on wall_layers maxed out.
-        # A cheaper alternative defense investment, not a wall replacement.
+        # See actions.py._build_moat -- one-way, gated on the first wall ring being
+        # fully reinforced (backend/city_layout.py.ring_fully_reinforced). A cheaper
+        # alternative defense investment, not a wall replacement.
         self.moat_built = False
         # See actions.py._build_long_house -- explicit correction: "most
         # structures they only need 1 of. but house builds are dependant on
@@ -420,10 +416,6 @@ class Tribe:
         # _advance_water_supply's passive income exists (settled_near_water) -- see
         # Simulation._prepare_turn.
         self.watering_retired = False
-        # City growth (Simulation._advance_city_growth): founded_city stays the
-        # one-time era-advancement flag it always was; this is the separate, growing
-        # count of buildings that appear afterward as population climbs.
-        self.city_buildings = 0
         # Egg-gathering/flock genetics (backend/actions.py GATHER_EGGS, Simulation.
         # _resolve_hatch, backend/genetics.py hatch()) -- same pending_X/resolve shape
         # as pending_birth/lineage above, applied to a flock instead of the tribe's own
@@ -442,6 +434,26 @@ class Tribe:
         # PRE_SETTLEMENT_ACTIONS. Distinct from currently-settled (which can toggle)
         # because the point is to have proven the tribe CAN settle, once.
         self.has_ever_settled = False
+
+        # Real territory + building footprints (2026-09-02 redesign): granted the
+        # instant has_ever_settled becomes True, via Simulation._found_territory.
+        # territory_center is fixed forever at the founding coordinate, deliberately
+        # NOT the same as tribe.x/y -- RELOCATE can move a tribe anytime with no
+        # gating, but buildings/wall rings must stay anchored to where the city was
+        # actually founded, not wherever the tribe currently roams.
+        self.territory_center: tuple[int, int] | None = None
+        self.territory_radius = 0
+        # One entry per concentric wall ring -- see backend/city_layout.py for the
+        # shape of each ring/section dict.
+        self.wall_rings: list[dict] = []
+        # One entry per placed structure (every Long House instance, Town Hall,
+        # Sawmill, Quarry, Dock, Fishery, Kitchen, Tannery, Mine, Keep, Fortress,
+        # Castle, each Farm plot, the Flock pen, Fire) -- positional metadata only,
+        # placed by backend/architect.py; the flags below stay the source of truth
+        # for gating/mechanics.
+        self.buildings: list[dict] = []
+        # See actions.py._build_fishery -- one-way, gated on dock_built.
+        self.fishery_built = False
 
         # Set once per turn by Simulation._prepare_turn (see wellbeing.compute_wellbeing)
         # -- cached here rather than recomputed in to_dict() because the safety tier
@@ -485,14 +497,12 @@ class Tribe:
             "scout_successes": self.scout_successes,
             "hunt_successes": self.hunt_successes,
             "founded_city": self.founded_city,
-            "city_buildings": self.city_buildings,
             "farm_plots": self.farm_plots,
             "crop_growth": self.crop_growth,
             "fishing_learned": self.fishing_learned,
             "cooking_learned": self.cooking_learned,
             "hunt_ever_succeeded": self.hunt_ever_succeeded,
             "fire_ever_built": self.fire_ever_built,
-            "wall_layers": self.wall_layers,
             "moat_built": self.moat_built,
             "long_houses_built": self.long_houses_built,
             "keep_built": self.keep_built,
@@ -516,6 +526,11 @@ class Tribe:
             "flock_lineage": self.flock_lineage,
             "settlement_name": self.settlement_name,
             "has_ever_settled": self.has_ever_settled,
+            "territory_center": self.territory_center,
+            "territory_radius": self.territory_radius,
+            "wall_rings": self.wall_rings,
+            "buildings": self.buildings,
+            "fishery_built": self.fishery_built,
             "survival_warning": survival_warning,
             "extinct": self.extinct,
             "chief_name": self.chief_name,
@@ -727,6 +742,15 @@ class Simulation:
         trait = result.get("trait") or "unremarkable but hardy"
         note = result.get("note", "")
 
+        if tribe.flock == 0 and tribe.territory_center is not None:
+            # One-time flock pen, placed the moment the first egg actually hatches --
+            # matches every other building's "the real thing exists now" placement
+            # trigger, not the earlier GATHER_EGGS action that only started the
+            # (possibly multi-cycle) hatch.
+            w, h = config.BUILDING_FOOTPRINTS["flock_pen"]
+            slot = architect.find_free_slot(self.world, tribe, "flock_pen")
+            if slot is not None:
+                architect.record_building(tribe, "flock_pen", slot[0], slot[1], w, h, self.cycle)
         tribe.flock += 1
         tribe.flock_lineage.append({
             "trait": trait,
@@ -960,10 +984,7 @@ class Simulation:
             "storm_cloud": {"x": self.storm_cloud["x"], "y": self.storm_cloud["y"]} if self.storm_cloud else None,
             "lightning_strike": list(self.lightning_strike) if self.lightning_strike else None,
             "recent_encounters": self.recent_encounters,
-            "tribes": {
-                tid: {**t.to_dict(), "effective_city_building_cap": self._effective_city_building_cap(t)}
-                for tid, t in self.tribes.items()
-            },
+            "tribes": {tid: t.to_dict() for tid, t in self.tribes.items()},
             "structures": [{"x": x, "y": y, **info} for (x, y), info in self.world.constructions.items()],
             "trails": [
                 {
@@ -1046,7 +1067,6 @@ class Simulation:
             self._advance_farming(tribe)
             self._advance_flock(tribe)
             self._advance_city_founding(tribe)
-            self._advance_city_growth(tribe)
             self._check_chief_trophies(tribe)
             self._check_for_celebration(tribe)
 
@@ -1418,14 +1438,6 @@ class Simulation:
         owner.wood += config.TOLL_FEE_WOOD
         return nx, ny
 
-    def _wall_fraction(self, tribe: Tribe) -> float:
-        """0.0-1.0 construction progress of a wall at this tribe's own tile, if any.
-        Shared by raider-defense resolution (_resolve_raider_attack) and the
-        wellbeing safety tier (wellbeing.compute_wellbeing) -- both need the same
-        real signal, not two copies of the same world.constructions lookup."""
-        existing = self.world.constructions.get((tribe.x, tribe.y))
-        return (existing["progress"] / 100) if existing and existing["type"] == "wall" else 0.0
-
     def _prepare_turn(self, tribe: Tribe) -> tuple[dict, dict]:
         """Builds this tribe's prompt with no network calls; returns (request, context)."""
         biome = self.world.biome(tribe.x, tribe.y)
@@ -1467,8 +1479,9 @@ class Simulation:
         # branch still checked the stricter condition. FARMING_REQUIRES_ADJACENT_WATER
         # is a strict subset of FARMABLE_BIOMES, so this is a pure expansion -- never
         # fires later than before, only possibly sooner.
-        if settled:
+        if settled and not tribe.has_ever_settled:
             tribe.has_ever_settled = True
+            self._found_territory(tribe)
 
         if not tribe.has_ever_settled:
             # Explicit request: narrow the choice set before a tribe has ever proven
@@ -1712,6 +1725,12 @@ class Simulation:
                 "would make stored food go much further from then on."
             )
 
+        # Real wall ring, not one progress-bar tile (2026-09-02 redesign) -- ring 0
+        # is what BUILD_LONG_HOUSE/Moat/Torches gate on; further rings are purely
+        # additional defense-in-depth, not a further gate on anything else.
+        ring0 = tribe.wall_rings[0] if tribe.wall_rings else None
+        ring0_reinforced = bool(ring0) and city_layout.ring_fully_reinforced(ring0)
+
         if "CONSTRUCT_WALL" in available_actions:
             # NUDGE (2026-09-01, explicit request: live logs showed the chief
             # repeatedly choosing BUILD_LONG_HOUSE against a wall that wasn't
@@ -1720,8 +1739,7 @@ class Simulation:
             # the same era, so the chief had no way to know the wall wasn't done
             # without this being stated as a fact. Same category as the COOK_FOOD
             # eligibility nudge above: a real gate the tribe couldn't otherwise see.
-            wall_fraction = self._wall_fraction(tribe)
-            if wall_fraction <= 0.0:
+            if ring0 is None:
                 # Bug report: "wall building is not coming up for them" -- live
                 # runs showed a tribe sitting at Tribal Synapse for many cycles
                 # with a wall never even started, buried among a dozen other
@@ -1731,36 +1749,40 @@ class Simulation:
                 # missing relative to every other eligibility nudge here.
                 visible_entities.append(
                     "No wall has been started here yet -- CONSTRUCT_WALL is available now, and a long "
-                    "house, sawmill, quarry, kitchen, and further defenses all build on a wall existing "
-                    "first."
+                    "house, sawmill, quarry, kitchen, and further defenses all build on the first wall "
+                    "ring existing first."
                 )
-            elif wall_fraction >= 1.0:
+            elif not city_layout.ring_fully_built(ring0):
+                done = sum(1 for s in ring0["sections"] if s["natural_barrier"] or s["progress"] >= 100)
+                total = len(ring0["sections"])
                 if tribe.long_houses_built == 0:
                     visible_entities.append(
-                        "The wall here is complete -- a long house is now worth building for real, "
+                        f"The settlement's first wall ring is {done}/{total} sections raised -- a long "
+                        "house is not worth attempting until the whole ring is finished."
+                    )
+                else:
+                    visible_entities.append(f"The settlement's first wall ring is {done}/{total} sections raised.")
+            elif not ring0_reinforced:
+                if tribe.long_houses_built == 0:
+                    visible_entities.append(
+                        "The first wall ring is complete -- a long house is now worth building for real, "
                         "lasting shelter."
                     )
-                elif tribe.wall_layers < config.WALL_MAX_LAYERS:
+                else:
                     visible_entities.append(
-                        f"The wall stands complete with {tribe.wall_layers} layer"
-                        f"{'s' if tribe.wall_layers != 1 else ''} -- it can be reinforced with "
-                        f"{config.WALL_MAX_LAYERS - tribe.wall_layers} more."
+                        "The first wall ring stands complete -- sections can still be reinforced for a "
+                        "stronger defense."
                     )
-            elif tribe.long_houses_built == 0:
-                visible_entities.append(
-                    f"The wall here is only {wall_fraction:.0%} complete -- a long house is not worth "
-                    "attempting until the wall is finished."
-                )
 
-        if "BUILD_MOAT" in available_actions and not tribe.moat_built and tribe.wall_layers >= config.WALL_MAX_LAYERS:
+        if "BUILD_MOAT" in available_actions and not tribe.moat_built and ring0_reinforced:
             visible_entities.append(
-                "The wall has been reinforced to its full 2 layers -- a moat is now available, a "
-                "cheaper alternative defense investment."
+                "The first wall ring has been fully reinforced -- a moat is now available, a cheaper "
+                "alternative defense investment."
             )
-        if tribe.fire_ever_built and tribe.wall_layers >= config.WALL_MAX_LAYERS:
+        if tribe.fire_ever_built and ring0_reinforced:
             visible_entities.append(
-                "Fire is known and the wall stands fully reinforced -- torches now line it for free, "
-                "a further defense bonus."
+                "Fire is known and the first wall ring stands fully reinforced -- torches now line it "
+                "for free, a further defense bonus."
             )
 
         if tribe.long_houses_built > 0:
@@ -2016,7 +2038,7 @@ class Simulation:
         # above. Cached on the tribe (not just injected into this turn's prompt) so
         # the frontend can render the same numbers the chief itself is reasoning
         # from -- one source of truth, not a UI-only recomputation.
-        tribe.wellbeing = compute_wellbeing(tribe, self._wall_fraction(tribe))
+        tribe.wellbeing = compute_wellbeing(tribe, city_layout.wall_defense_fraction(tribe))
         lineage_note = ""
         if tribe.lineage:
             latest = tribe.lineage[-1]
@@ -2756,7 +2778,8 @@ class Simulation:
         already drives whether an attack happens at all: a bigger, wealthier tribe
         draws a genuinely stronger raiding force, which is what makes a wall (and
         water) actually matter rather than population alone being enough."""
-        wall_fraction = self._wall_fraction(tribe)
+        wall_fraction = city_layout.wall_defense_fraction(tribe)
+        ring0_reinforced = bool(tribe.wall_rings) and city_layout.ring_fully_reinforced(tribe.wall_rings[0])
         raider_strength = min(1.0, tribe.population / config.RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE)
 
         defense_chance = max(0.0, min(
@@ -2764,6 +2787,8 @@ class Simulation:
             config.RAIDER_DEFENSE_BASE_CHANCE
             + (tribe.population // 10) * config.RAIDER_DEFENSE_POPULATION_BONUS_PER_10
             + config.RAIDER_DEFENSE_WALL_BONUS_AT_FULL_PROGRESS * wall_fraction
+            # Defense-in-depth: each fully-reinforced ring behind the outermost one.
+            + city_layout.inner_ring_defense_bonus(tribe)
             + (config.RAIDER_DEFENSE_WATER_BONUS if self._is_settled_near_water(tribe) else 0.0)
             # See actions.py._build_keep/_build_fortress/_build_castle -- each a
             # real bonus stacked on top of the wall's own, not another way to
@@ -2776,8 +2801,8 @@ class Simulation:
             + (config.MOAT_DEFENSE_BONUS if tribe.moat_built else 0.0)
             # Explicit request: "Torches can be a freebie for building walls 2
             # levels" -- free once a tribe has both fire and a fully reinforced
-            # wall, no action or cost of its own.
-            + (config.TORCHES_DEFENSE_BONUS if tribe.fire_ever_built and tribe.wall_layers >= config.WALL_MAX_LAYERS else 0.0)
+            # first wall ring, no action or cost of its own.
+            + (config.TORCHES_DEFENSE_BONUS if tribe.fire_ever_built and ring0_reinforced else 0.0)
             - config.RAIDER_STRENGTH_DEFENSE_PENALTY_AT_MAX * raider_strength
         ))
         if random.random() < defense_chance:
@@ -2814,18 +2839,12 @@ class Simulation:
         # actual failed defense, not on a successful repel (wall_fraction > 0 branch
         # above returns before reaching here).
         #
-        # Bug report: "the forest tribe has built walls and then they got destroyed?
-        # and they built them again" -- this deleted the construction but left
-        # tribe.wall_layers at whatever it was (e.g. 2, after a reinforcement),
-        # silently out of sync with "no wall actually stands." Rebuilding the base
-        # wall from scratch (actions._construct_wall) then unconditionally set
-        # wall_layers back to 1 on completion, quietly discarding the earlier
-        # reinforcement instead of reflecting that it was genuinely breached down to
-        # nothing. Reset here so the two stay consistent: a breach takes the whole
-        # wall down, reinforcement layers included.
+        # 2026-09-02 redesign: a breach now resets only the outermost ring's real
+        # (non-natural) sections -- the newest perimeter is what got breached; older,
+        # inner rings/fortification survive. Natural-barrier sections are terrain,
+        # never reset.
         if wall_fraction > 0:
-            del self.world.constructions[(tribe.x, tribe.y)]
-            tribe.wall_layers = 0
+            city_layout.breach_outer_ring(tribe)
         tribe.history.append(
             "raiders struck the camp -- the wall blunted the worst of it, but was breached and must be rebuilt" if wall_fraction > 0.3 else
             "raiders struck the camp -- defenses failed, supplies stolen"
@@ -2959,7 +2978,8 @@ class Simulation:
         explicit correction that the extra water-adjacency distinction was bogus."""
         if tribe.fishing_learned and self._is_settled(tribe):
             upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
-            tribe.food += round(upkeep * config.FISHING_SUPPLY_MULTIPLIER * _food_multiplier(tribe))
+            fishery_bonus = config.FISHERY_SUPPLY_BONUS_MULTIPLIER if tribe.fishery_built else 1.0
+            tribe.food += round(upkeep * config.FISHING_SUPPLY_MULTIPLIER * fishery_bonus * _food_multiplier(tribe))
 
     def _advance_mine_yield(self, tribe: Tribe) -> None:
         """Once a mine is excavated (actions.py._build_mine), its named unique
@@ -3107,28 +3127,19 @@ class Simulation:
                     buildable += 1
         return buildable / total if total else 1.0
 
-    def _effective_city_building_cap(self, tribe: Tribe) -> int:
-        """MAX_CITY_BUILDINGS scaled down by how much real land actually surrounds the
-        settlement (see _local_buildable_fraction) -- floored at
-        MIN_CITY_BUILDINGS_ON_CRAMPED_LAND so even the tightest coastal strip stays
-        buildable at all. Used for both normal city growth and EXPAND_TERRITORY's
-        doubled ceiling, so a cramped tribe is capped in both places, not just one."""
-        fraction = self._local_buildable_fraction(tribe)
-        return max(config.MIN_CITY_BUILDINGS_ON_CRAMPED_LAND, round(config.MAX_CITY_BUILDINGS * fraction))
-
-    def _advance_city_growth(self, tribe: Tribe) -> None:
-        """Once a city is founded (Era.founds_city), one more building appears every
-        time population crosses another multiple of CITY_BUILDING_POPULATION_STEP, up
-        to _effective_city_building_cap -- a small, legible stand-in for real
-        city-layout simulation, not an attempt at one. Mirrors _grow_population's
-        surplus-threshold shape, keyed on population instead of food."""
-        cap = self._effective_city_building_cap(tribe)
-        if not tribe.founded_city or tribe.city_buildings >= cap:
-            return
-        earned = min(tribe.population // config.CITY_BUILDING_POPULATION_STEP, cap)
-        if earned > tribe.city_buildings:
-            tribe.city_buildings = earned
-            tribe.history.append(f"a new building rises in {tribe.name}'s city")
+    def _found_territory(self, tribe: Tribe) -> None:
+        """Grants a real, owned territory the instant a tribe first qualifies as
+        settled (has_ever_settled) -- explicit request: "when a Tribe becomes
+        Settled, they automatically get a region of territory they own." Anchors
+        territory_center at the founding coordinate (deliberately not tribe.x/y --
+        see Tribe.__init__'s own comment on why RELOCATE can't be allowed to drag a
+        city's buildings/walls around), builds the first wall ring, and places the
+        Town Hall centered on that same coordinate."""
+        tribe.territory_center = (tribe.x, tribe.y)
+        tribe.territory_radius = config.WALL_RING_RADIUS_STEP
+        tribe.wall_rings = [city_layout.build_ring(self.world, tribe, ring_index=0)]
+        w, h = config.BUILDING_FOOTPRINTS["town_hall"]
+        architect.record_building(tribe, "town_hall", tribe.x - w // 2, tribe.y - h // 2, w, h, self.cycle)
 
     def _award_trophy(self, tribe: Tribe, name: str, individual: str | None = None) -> None:
         """`individual`, when given, credits a specific named person (e.g. the scout or

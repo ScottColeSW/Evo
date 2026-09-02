@@ -87,7 +87,9 @@ def test_self_actualization_tier_rises_with_era_and_city_growth():
     # era matters too now. See test_self_actualization_maxes_out_at_the_top_era.
     primitive_dawn = compute_wellbeing(_tribe(era="primitive_dawn", founded_city=False), wall_fraction=0.0)
     monolithic = compute_wellbeing(_tribe(era="monolithic_era", founded_city=False), wall_fraction=0.0)
-    built_up_city = compute_wellbeing(_tribe(era="monolithic_era", founded_city=True, city_buildings=6), wall_fraction=0.0)
+    built_up_city = compute_wellbeing(
+        _tribe(era="monolithic_era", founded_city=True, buildings=[{} for _ in range(6)]), wall_fraction=0.0
+    )
 
     assert primitive_dawn["tiers"]["self_actualization"] < monolithic["tiers"]["self_actualization"]
     assert monolithic["tiers"]["self_actualization"] < built_up_city["tiers"]["self_actualization"]
@@ -95,7 +97,12 @@ def test_self_actualization_tier_rises_with_era_and_city_growth():
 
 
 def test_self_actualization_maxes_out_at_the_top_era():
-    top = compute_wellbeing(_tribe(era="cosmic_post_human", founded_city=True, city_buildings=6), wall_fraction=0.0)
+    from backend import config
+
+    top = compute_wellbeing(
+        _tribe(era="cosmic_post_human", founded_city=True, buildings=[{} for _ in range(config.SELF_ACTUALIZATION_BUILDING_REFERENCE)]),
+        wall_fraction=0.0,
+    )
 
     assert top["tiers"]["self_actualization"] == 1.0
 

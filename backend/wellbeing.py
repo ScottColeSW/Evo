@@ -61,9 +61,10 @@ def compute_wellbeing(tribe, wall_fraction: float) -> dict:
     esteem = min(1.0, len(tribe.trophies) / 5)
 
     # Self-Actualization: era progression plus, once a city is founded, how much of
-    # it has actually been built out.
+    # it has actually been built out -- real placed buildings now (backend/
+    # architect.py), not the old abstract city_buildings counter.
     era_fraction = era_index(tribe.era) / max(1, len(ERAS) - 1)
-    city_fraction = (tribe.city_buildings / config.MAX_CITY_BUILDINGS) if tribe.founded_city else 0.0
+    city_fraction = min(1.0, len(tribe.buildings) / config.SELF_ACTUALIZATION_BUILDING_REFERENCE) if tribe.founded_city else 0.0
     self_actualization = min(1.0, era_fraction * 0.6 + city_fraction * 0.4)
 
     tiers = {
@@ -98,7 +99,7 @@ def _summary_text(tribe, tiers: dict, focus: str, buffer_cycles: float, wall_fra
         f"({tribe.trades_completed} trade contact(s) made with other tribes).",
         f"Esteem: {len(tribe.trophies)} trophy/trophies earned.",
         f"Self-Actualization: {era_label}"
-        + (f", {tribe.city_buildings} building(s) raised" if tribe.founded_city else ", no city founded yet")
+        + (f", {len(tribe.buildings)} building(s) raised" if tribe.founded_city else ", no city founded yet")
         + ".",
     ]
     return (

@@ -94,8 +94,8 @@ ERAS: tuple[Era, ...] = (
         requires_resources={"water": 40, "stone": 40, "wood": 40},
         advancement_cost={"wood": 30, "stone": 30, "water": 20},
         unlocks_actions=(
-            "CONSTRUCT_WALL", "PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "STRIKE_RAIDER_CAMP",
-            "BUILD_LONG_HOUSE", "DECLARE_ALLIANCE", "DECLARE_WAR", "BUILD_DOCK",
+            "CONSTRUCT_WALL", "EXPAND_TERRITORY", "PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "STRIKE_RAIDER_CAMP",
+            "BUILD_LONG_HOUSE", "DECLARE_ALLIANCE", "DECLARE_WAR", "BUILD_DOCK", "BUILD_FISHERY",
             "BUILD_SAWMILL", "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_MOAT", "BUILD_KEEP", "BUILD_TANNERY",
         ),
         announcement="{tribe} has forged the Tribal Synapse -- true society begins!",
@@ -106,7 +106,7 @@ ERAS: tuple[Era, ...] = (
         requires_population=40,
         requires_resources={"water": 60, "stone": 30, "wood": 50},
         advancement_cost={"wood": 40, "stone": 40, "water": 40},
-        unlocks_actions=("BUILD_FORTRESS", "BUILD_CASTLE", "BUILD_ROAD", "EXPAND_TERRITORY", "BUILD_MINE"),
+        unlocks_actions=("BUILD_FORTRESS", "BUILD_CASTLE", "BUILD_ROAD", "BUILD_MINE"),
         # Founding itself is a separate, real milestone (Simulation._advance_city_founding
         # requires at least one Long House first) -- this only announces the era
         # threshold being reached, not the city actually standing yet.
