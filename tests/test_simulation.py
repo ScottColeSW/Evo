@@ -1480,6 +1480,59 @@ def test_apply_turn_does_not_record_last_target_for_non_relocate_actions():
     assert tribe.last_target is None
 
 
+def test_relocate_corrects_a_self_targeting_no_op_toward_confirmed_water():
+    """Live bug, confirmed via last_decision_target on a real run: llama3.2:1b kept
+    submitting its own current position as target_vector for RELOCATE, every single
+    cycle, despite a confirmed water site being named explicitly in its prompt --
+    a guaranteed no-op that left it standing still while it starved to death. Same
+    class of small-model target-parameter failure as SCOUT's; RELOCATE should now
+    substitute the real confirmed site when the model's target is this degenerate."""
+    sim = Simulation([{"name": "A", "model": "llama3.2:1b", "x": 80, "y": 38}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.confirmed_water_sites = [(83, 58)]
+    tribe.food = 100
+    tribe.water = 100
+    ctx = {"biome": "forest", "available_actions": ["RELOCATE"]}
+
+    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [80, 38]}, 10.0, ctx)
+
+    assert (tribe.x, tribe.y) != (80, 38)  # actually moved, toward the real site
+    assert tribe.last_target != [80, 38]
+    assert tribe.last_decision_target == [80, 38]  # raw model output preserved for analysis
+
+
+def test_relocate_leaves_a_genuine_self_target_alone_once_already_at_the_site():
+    """A tribe that has actually arrived at its confirmed water site legitimately
+    submits its own position as target_vector -- that's not the bug, and shouldn't
+    get redirected anywhere."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 83, "y": 58}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.confirmed_water_sites = [(83, 58)]
+    tribe.food = 100
+    tribe.water = 100
+    ctx = {"biome": "forest", "available_actions": ["RELOCATE"]}
+
+    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [83, 58]}, 10.0, ctx)
+
+    assert (tribe.x, tribe.y) == (83, 58)
+    assert tribe.last_target == [83, 58]
+
+
+def test_relocate_leaves_a_real_different_target_alone():
+    """A model that successfully produces a real, different target shouldn't be
+    second-guessed -- the correction only fires for the specific degenerate case."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 80, "y": 38}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.confirmed_water_sites = [(83, 58)]
+    tribe.food = 100
+    tribe.water = 100
+    ctx = {"biome": "forest", "available_actions": ["RELOCATE"]}
+
+    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [90, 90]}, 10.0, ctx)
+
+    assert tribe.last_target == [90, 90]
+
+
 def test_settlement_ground_ok_true_on_farmable_biome_or_near_confirmed_water():
     sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 5, "y": 55}])
     tribe = sim.tribes["tribe_0"]

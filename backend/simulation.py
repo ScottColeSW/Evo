@@ -2007,13 +2007,33 @@ class Simulation:
         except (TypeError, ValueError):
             target = (tribe.x, tribe.y)
 
+        # last_decision_target records the model's raw submission (for decision_log.py's
+        # offline analysis, before any correction below) -- last_target below may end up
+        # holding a mechanically-corrected value instead.
+        tribe.last_decision_target = [target[0], target[1]]
+
         # Only RELOCATE actually moves the tribe -- everything else happens wherever it
         # currently stands. last_target/journey_note (see _prepare_turn) specifically
         # track an in-progress relocation, not just whatever coordinate a GATHER_WOOD
         # turn happened to carry.
         if action == "RELOCATE":
+            # Live bug, confirmed via last_decision_target on a real run: a small model
+            # (llama3.2:1b) asked to RELOCATE toward a confirmed water site named
+            # explicitly in its own prompt instead submitted its own current position as
+            # target_vector, every single time, for 15+ consecutive cycles while
+            # starving -- a guaranteed no-op that left it standing still until it died.
+            # Same category of failure as SCOUT's unreliable target_vector (see
+            # evolution2civ-facts-vs-mechanics-pattern.md) -- the fix there was to stop
+            # trusting the model's coordinate and compute the real one mechanically.
+            # Here the correction is narrower: only the specific degenerate case (target
+            # equals current position while the tribe genuinely hasn't reached any
+            # confirmed water site yet) gets substituted with the real site, since a
+            # tribe that has actually arrived legitimately submits its own position too
+            # (see the cycles_since_relocate handling below), and a model that does
+            # produce a real, different target is left alone.
+            if target == (tribe.x, tribe.y) and tribe.confirmed_water_sites and not self._near_confirmed_water(tribe):
+                target = tuple(tribe.confirmed_water_sites[-1])
             tribe.last_target = [target[0], target[1]]
-        tribe.last_decision_target = [target[0], target[1]]
         pos_before = (tribe.x, tribe.y)
 
         hazard_note = self._apply_action(tribe, action, ctx["biome"], target)
