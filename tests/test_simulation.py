@@ -3393,6 +3393,26 @@ def test_gathering_brief_is_surfaced_into_the_next_turns_visible_entities():
 
 
 @run_async
+async def test_dawn_gathering_chronicle_line_lands_before_this_cycles_own_action():
+    """Bug report: "scouts fired before the day started." The dawn gathering/evening
+    recap used to run *after* the per-tribe turn loop, so an action dispatched on
+    the exact cycle a new day lands appended its own chronicle line first, reading
+    as if it happened before the day began. Now the gathering fires before any of
+    that cycle's actions are resolved."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    sim.cycle = config.DAY_LENGTH_CYCLES - 1  # step() increments before checking
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
+        await sim.step()
+
+    gathering_index = next(i for i, e in enumerate(tribe.history) if e.startswith("The tribe gathers as the sun rises."))
+    assert gathering_index < len(tribe.history) - 1  # something from this cycle's own turn came after it
+
+
+@run_async
 async def test_step_holds_the_tribal_gathering_only_on_its_own_interval():
     from backend import config
 

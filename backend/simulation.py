@@ -994,6 +994,23 @@ class Simulation:
         # _check_raider_attack/_raid/_strike_raider_camp, whichever fire this cycle.
         self.recent_encounters = []
 
+        # Bug report: "scouts fired before the day started." These used to run
+        # *after* the per-tribe turn loop below, so a SCOUT (or any other action)
+        # dispatched on the exact cycle a new day/dusk boundary lands appended its
+        # own chronicle line before "the tribe gathers as the sun rises"/the evening
+        # recap for that same cycle -- reading, top to bottom, as if the day's first
+        # action happened before the day itself began. Moved here, before any of
+        # today's actions are resolved, so the day/dusk announcement always leads.
+        if self.cycle % config.DAY_LENGTH_CYCLES == 0:
+            for tribe in self.tribes.values():
+                if not tribe.extinct:
+                    self._hold_tribal_gathering(tribe)
+
+        if self.cycle % config.DAY_LENGTH_CYCLES == config.DAY_LENGTH_CYCLES // 2:
+            for tribe in self.tribes.values():
+                if not tribe.extinct:
+                    self._hold_evening_recap(tribe)
+
         requests = []
         contexts = {}
         for tid, tribe in self.tribes.items():
@@ -1052,16 +1069,6 @@ class Simulation:
         for tribe in self.tribes.values():
             if not tribe.extinct and not tribe.chief_name:
                 await self._install_chief(tribe)
-
-        if self.cycle % config.DAY_LENGTH_CYCLES == 0:
-            for tribe in self.tribes.values():
-                if not tribe.extinct:
-                    self._hold_tribal_gathering(tribe)
-
-        if self.cycle % config.DAY_LENGTH_CYCLES == config.DAY_LENGTH_CYCLES // 2:
-            for tribe in self.tribes.values():
-                if not tribe.extinct:
-                    self._hold_evening_recap(tribe)
 
         if self.cycle % config.NIGHT_CYCLE_EVERY_N_CYCLES == 0:
             for tribe in self.tribes.values():
