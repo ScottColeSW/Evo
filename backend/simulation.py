@@ -7,7 +7,8 @@ import random
 from . import config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
-    _eligible_breeding_pair, _execute_trade, _find_trade_partner, _labor_multiplier, expedition_capacity,
+    _eligible_breeding_pair, _execute_trade, _find_trade_partner, _food_multiplier, _labor_multiplier,
+    expedition_capacity,
 )
 from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
@@ -16,7 +17,7 @@ from .reflection import AWARD_CATEGORIES, reflect_on_history
 from .eras import ERAS, era_index, next_era, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
-from .instincts import effective_food_upkeep, survival_bias_string
+from .instincts import survival_bias_string
 from .threat import threat_assessment_string
 from .wellbeing import compute_wellbeing
 from .leadership import elect_chief, name_settlement
@@ -330,8 +331,8 @@ class Tribe:
         self.fishing_learned = False
         # See actions.py._cook_food -- one-way, like fishing_learned. Once true,
         # _celebration_cost charges less: real food contributed and prepared, not
-        # just handed over from the stockpile, and Simulation._apply_upkeep makes
-        # stored food go further (config.COOKING_UPKEEP_DIVISOR).
+        # just handed over from the stockpile, and every future food harvest goes
+        # further (config.COOKING_FOOD_MULTIPLIER, actions._food_multiplier).
         self.cooking_learned = False
         # Real prerequisites for COOK_FOOD's own availability (see Simulation.
         # _prepare_turn) -- a successful hunt (instant HUNT_DEER or a HUNTING_PARTY
@@ -403,8 +404,8 @@ class Tribe:
         self.mine_resource_name: str | None = None
         self.unique_resources: dict[str, int] = {}
         # See actions.py._build_kitchen -- one-way, gated on cooking_learned +
-        # long_house_built. Stacks config.KITCHEN_UPKEEP_MULTIPLIER on top of the
-        # cooking divisor (see instincts.effective_food_upkeep).
+        # long_house_built. Stacks config.KITCHEN_FOOD_MULTIPLIER on top of
+        # cooking's own harvest-point multiplier (see actions._food_multiplier).
         self.kitchen_built = False
         # See actions.py._build_tannery -- one-way, gated on a discovered Rabbit
         # Warren (tribe.wildlife_sites). Mirrors mine_built/mine_site/
@@ -449,9 +450,7 @@ class Tribe:
 
     def to_dict(self) -> dict:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
-        survival_warning, _ = survival_bias_string(
-            self.food, self.water, self.population, self.cooking_learned, self.kitchen_built
-        )
+        survival_warning, _ = survival_bias_string(self.food, self.water, self.population)
         nxt = next_era(self.era)
         next_era_info = None
         if nxt is not None:
@@ -804,9 +803,7 @@ class Simulation:
             f"Population: {tribe.population}.",
             f"Resources on hand: {tribe.wood} wood, {tribe.stone} stone, {tribe.food} food, {tribe.water} water.",
         ]
-        survival_bias, _critical = survival_bias_string(
-            tribe.food, tribe.water, tribe.population, tribe.cooking_learned, tribe.kitchen_built
-        )
+        survival_bias, _critical = survival_bias_string(tribe.food, tribe.water, tribe.population)
         if survival_bias:
             lines.append(survival_bias)
         if self._is_settled(tribe):
@@ -1389,9 +1386,7 @@ class Simulation:
         biome = self.world.biome(tribe.x, tribe.y)
         nearby = self.world.nearby_structures(tribe.x, tribe.y)
         ghost_bias = self.trauma.bias_string(tribe.x, tribe.y)
-        survival_bias, survival_critical = survival_bias_string(
-            tribe.food, tribe.water, tribe.population, tribe.cooking_learned, tribe.kitchen_built
-        )
+        survival_bias, survival_critical = survival_bias_string(tribe.food, tribe.water, tribe.population)
         # NUDGE (2026-08-31, explicit request: "the warnings do not mention settling
         # as an alternative to low water"). A tribe already sitting on a chronic water
         # shortage may well already know exactly where real water is (a confirmed
@@ -2293,10 +2288,11 @@ class Simulation:
                 # expedition succeeded -- the trip cost real time either way, so it isn't
                 # a total loss on a failed search. The findings themselves only become
                 # real, actionable knowledge for the tribe at this exact moment.
-                tribe.food += exp["food_gathered"]
+                food_home = round(exp["food_gathered"] * _food_multiplier(tribe))
+                tribe.food += food_home
                 tribe.water += exp["water_gathered"]
                 scout = exp["lead_scout"]
-                forage_note = f"bringing back {exp['food_gathered']} food and {exp['water_gathered']} water foraged along the way"
+                forage_note = f"bringing back {food_home} food and {exp['water_gathered']} water foraged along the way"
                 recipient = f"Chief {tribe.chief_name}" if tribe.chief_name else "the tribe"
 
                 if exp.get("kind") == "hunt":
@@ -2565,7 +2561,7 @@ class Simulation:
             )
 
     def _report_hunting_party_home(self, tribe: Tribe, exp: dict, scout: str, forage_note: str, recipient: str) -> None:
-        caught = exp.get("food_caught", 0)
+        caught = round(exp.get("food_caught", 0) * _food_multiplier(tribe))
         if caught:
             tribe.food += caught
             tribe.expeditions_succeeded += 1
@@ -2592,11 +2588,12 @@ class Simulation:
     def _apply_upkeep(self, tribe: Tribe) -> None:
         """Larger tribes cost more to sustain each tick. Left unpaid, someone dies --
         this is what makes hunger and thirst actual stakes rather than numbers that
-        only ever go up. Food's real drain is reduced once cooking is learned (see
-        instincts.effective_food_upkeep) -- "cooked food is worth 3 raw food."
-        Water is unaffected."""
+        only ever go up. Cooking no longer reduces this drain -- see config.
+        COOKING_FOOD_MULTIPLIER's own comment: it multiplies food production at the
+        harvest point instead (actions._food_multiplier), the same shape every other
+        resource-mastery building already uses."""
         upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
-        tribe.food -= effective_food_upkeep(upkeep, tribe.cooking_learned, tribe.kitchen_built)
+        tribe.food -= upkeep
         tribe.water -= upkeep
 
         if tribe.food < 0:
@@ -2888,7 +2885,7 @@ class Simulation:
         explicit correction that the extra water-adjacency distinction was bogus."""
         if tribe.fishing_learned and self._is_settled(tribe):
             upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
-            tribe.food += round(upkeep * config.FISHING_SUPPLY_MULTIPLIER)
+            tribe.food += round(upkeep * config.FISHING_SUPPLY_MULTIPLIER * _food_multiplier(tribe))
 
     def _advance_mine_yield(self, tribe: Tribe) -> None:
         """Once a mine is excavated (actions.py._build_mine), its named unique
@@ -2964,7 +2961,10 @@ class Simulation:
             # already out-yield an entire ~10-cycle farming cycle, which is a real
             # economic reason to never bother planting, independent of any framing
             # bias. More hands to bring in a harvest should mean more harvested.
-            harvested = round(config.CROP_HARVEST_YIELD * tribe.farm_plots * _labor_multiplier(tribe.population))
+            harvested = round(
+                config.CROP_HARVEST_YIELD * tribe.farm_plots * _labor_multiplier(tribe.population)
+                * _food_multiplier(tribe)
+            )
             tribe.food += harvested
             tribe.last_harvest_cycle = self.cycle
             tribe.history.append(f"the farm plots yield a harvest -- {harvested} food gathered in")

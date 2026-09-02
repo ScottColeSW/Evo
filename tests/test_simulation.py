@@ -3974,6 +3974,23 @@ def test_advance_farming_harvest_scales_with_population():
     assert tribe.food > config.CROP_HARVEST_YIELD
 
 
+def test_advance_farming_harvest_scales_with_cooking_multiplier():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.farm_plots = 2
+    tribe.crop_growth = 100 - config.CROP_GROWTH_PER_CYCLE
+    tribe.water = 100
+    tribe.food = 0
+    tribe.cooking_learned = True
+    tribe.last_celebration_cycle = sim.cycle  # skip the celebration cost for a clean read
+
+    sim._advance_farming(tribe)
+
+    assert tribe.food == config.CROP_HARVEST_YIELD * 2 * config.COOKING_FOOD_MULTIPLIER
+
+
 def test_advance_farming_harvest_celebration_respects_the_cooldown():
     """Unlike the water-discovery/settling celebrations (each essentially one-time),
     a harvest recurs every ~10 cycles per plot -- an uncapped feast on every single
@@ -4079,6 +4096,22 @@ def test_advance_fish_supply_flows_in_once_fishing_is_learned_and_settled():
 
     upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
     assert tribe.food == 10 + round(upkeep * config.FISHING_SUPPLY_MULTIPLIER)
+
+
+def test_advance_fish_supply_scales_with_cooking_multiplier():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.fishing_learned = True
+    tribe.cooking_learned = True
+    tribe.food = 10
+
+    sim._advance_fish_supply(tribe)
+
+    upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+    assert tribe.food == 10 + round(upkeep * config.FISHING_SUPPLY_MULTIPLIER * config.COOKING_FOOD_MULTIPLIER)
 
 
 def test_advance_fish_supply_does_nothing_until_fishing_is_learned():
@@ -4551,11 +4584,12 @@ def test_upkeep_consumes_food_and_water_proportional_to_population():
     assert tribe.water == 38
 
 
-def test_upkeep_food_drain_reduced_once_cooking_is_learned():
-    """Explicit request: "cooked food is worth 3 raw food." Water is unaffected --
-    only the food side of upkeep is reduced."""
-    from backend import config
-
+def test_upkeep_is_unaffected_by_cooking():
+    """Redesigned 2026-09-02 ("that's a mess, let's build it back up properly"):
+    cooking used to reduce food *consumption* here -- it now multiplies food
+    *production* at the harvest point instead (actions._food_multiplier), the same
+    shape Sawmill/Quarry/Dock already use. Upkeep itself no longer knows or cares
+    whether cooking has been learned."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.population = 25  # upkeep = max(1, 25 // 10) = 2
@@ -4565,8 +4599,8 @@ def test_upkeep_food_drain_reduced_once_cooking_is_learned():
 
     sim._apply_upkeep(tribe)
 
-    assert tribe.food == 40 - max(1, round(2 / config.COOKING_UPKEEP_DIVISOR))
-    assert tribe.water == 38  # unchanged formula
+    assert tribe.food == 38
+    assert tribe.water == 38
 
 
 def test_unpaid_food_upkeep_causes_starvation():

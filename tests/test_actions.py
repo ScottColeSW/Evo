@@ -510,6 +510,72 @@ def test_quarry_triples_every_future_stone_harvest():
         assert tribe.stone == 40  # +10 unboosted, then +30 (10 * QUARRY_STONE_MULTIPLIER)
 
 
+def test_food_multiplier_stacks_cooking_and_kitchen():
+    """Redesigned 2026-09-02 ("that's a mess, let's build it back up properly"):
+    cooking now multiplies food production at the harvest point, the same shape
+    SAWMILL_WOOD_MULTIPLIER/QUARRY_STONE_MULTIPLIER already use, instead of dividing
+    upkeep consumption."""
+    from backend import config
+    from backend.actions import _food_multiplier
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    assert _food_multiplier(tribe) == 1.0
+
+    tribe.cooking_learned = True
+    assert _food_multiplier(tribe) == config.COOKING_FOOD_MULTIPLIER
+
+    tribe.kitchen_built = True
+    assert _food_multiplier(tribe) == config.COOKING_FOOD_MULTIPLIER * config.KITCHEN_FOOD_MULTIPLIER
+
+
+def test_cooking_triples_every_future_gather_food_harvest():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 0
+
+    with mock.patch("backend.actions._harvest", return_value=10):
+        ACTION_REGISTRY["GATHER_FOOD"](sim, tribe, "plains", _NO_TARGET)
+        assert tribe.food == 10
+
+        tribe.cooking_learned = True
+        ACTION_REGISTRY["GATHER_FOOD"](sim, tribe, "plains", _NO_TARGET)
+        assert tribe.food == 40  # +10 unboosted, then +30 (10 * COOKING_FOOD_MULTIPLIER)
+
+
+def test_cooking_triples_every_future_hunt_deer_catch():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 0
+    tribe.cooking_learned = True
+
+    with mock.patch("backend.actions.random.random", return_value=1.0), \
+         mock.patch("backend.actions._harvest", return_value=15):
+        ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "forest", _NO_TARGET)
+
+    assert tribe.food == 45  # 15 * COOKING_FOOD_MULTIPLIER
+
+
+def test_cooking_stacks_with_docks_fish_bonus():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 0
+    tribe.fishing_learned = True  # isolate the catch-amount math from the first-catch path
+    tribe.dock_built = True
+    tribe.cooking_learned = True
+
+    with mock.patch("backend.actions.random.random", return_value=0.0), \
+         mock.patch("backend.actions.random.randint", return_value=20):
+        ACTION_REGISTRY["CATCH_FISH"](sim, tribe, "river", _NO_TARGET)
+
+    assert tribe.food == 90  # 20 * 1.5 (dock) * 3 (cooking) = 90
+
+
 def test_build_sawmill_requires_long_house_and_fishing_first():
     from backend import config
 

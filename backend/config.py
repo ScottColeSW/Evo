@@ -357,16 +357,16 @@ CELEBRATION_SURPLUS_RETIREMENT_COUNT = 3
 # over from the stockpile.
 CELEBRATION_COOKING_COST_MULTIPLIER = 0.5
 
-# Explicit request: "cooked food is worth 3 raw food... so only the task of
-# cooking is needed to improve the meals and maslow stats." Applied at the single
-# point food is actually consumed (Simulation._apply_upkeep) rather than at every
-# scattered food-gain call site (GATHER_FOOD, HUNT_DEER, HUNTING_PARTY, CATCH_FISH,
-# farm harvest) -- economically equivalent (the same stockpile now covers 3x the
-# need) but one clean touch point instead of six. wellbeing.py's physiological tier
-# and instincts.py's hunger thresholds both read the same effective food-upkeep so
-# a tribe that's learned to cook doesn't get a false "starving" warning under the
-# old, harsher rate.
-COOKING_UPKEEP_DIVISOR = 3
+# Redesigned 2026-09-02 ("that's a mess, let's break it down and build it back up
+# properly"): cooking used to divide food *consumption* (Simulation._apply_upkeep)
+# by 3 instead of multiplying food *production*, the odd one out against
+# SAWMILL_WOOD_MULTIPLIER/QUARRY_STONE_MULTIPLIER/DOCK_FISH_CATCH_BONUS_FRACTION,
+# which all apply their bonus at the harvest point instead. COOKING_FOOD_MULTIPLIER
+# now matches that shape exactly: applied in actions._food_multiplier at every real
+# food-production point (GATHER_FOOD, HUNT_DEER/HUNTING_PARTY, CATCH_FISH, passive
+# fish supply, crop harvest) -- not to loot/pillage transfers, which move existing
+# stockpiled food rather than producing new food.
+COOKING_FOOD_MULTIPLIER = 3
 
 # Milestone trophies (backend/simulation.py._award_trophy's `individual` param): unlike
 # the chief-credited trophies above, these are earned by a specific named scout or
@@ -741,8 +741,8 @@ DOCK_FISH_CATCH_BONUS_FRACTION = 0.5
 # should build a saw mill and a quarry after they have farming and fishing down and
 # are building homes. saw mill turns 1 wood into 3 wood. quarried stone is also
 # worth 3 times as much as a harvested stone." Same "3x via a multiplier applied
-# once at the point of harvest" shape cooked food already uses (config.
-# COOKING_UPKEEP_DIVISOR) -- not a conversion action spending wood to make more
+# once at the point of harvest" shape cooked food uses (config.
+# COOKING_FOOD_MULTIPLIER) -- not a conversion action spending wood to make more
 # wood, a permanent multiplier on every future GATHER_WOOD/GATHER_STONE. Gated on
 # tribe.long_house_built ("building homes") and tribe.fishing_learned ("fishing
 # down"), the two real facts named in the request, not era alone.
@@ -779,12 +779,12 @@ TANNERY_YIELD_PER_CYCLE = 4
 
 # BUILD_KITCHEN (backend/actions.py): explicit follow-up -- "we might have to let
 # them build a kitchen which improves cooked food to excellent food yielding 3
-# per cooked item." Stacks on top of COOKING_UPKEEP_DIVISOR (see instincts.py.
-# effective_food_upkeep) rather than replacing it -- excellent food is 3x as good
+# per cooked item." Stacks on top of COOKING_FOOD_MULTIPLIER (see actions.
+# _food_multiplier) rather than replacing it -- excellent food is 3x as good
 # as cooked food, not just 3x raw. Gated on cooking_learned + long_house_built.
 KITCHEN_WOOD_COST = 20
 KITCHEN_STONE_COST = 10
-KITCHEN_UPKEEP_MULTIPLIER = 3
+KITCHEN_FOOD_MULTIPLIER = 3
 
 # Bronze Age counter-offensive (backend/actions.py._strike_raider_camp): a tribe that
 # has scouted a raider camp (raider_sightings) can strike it directly once organized

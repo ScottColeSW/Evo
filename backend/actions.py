@@ -72,6 +72,25 @@ GAME_SPECIES_BY_BIOME = {
 }
 
 
+def _food_multiplier(tribe) -> float:
+    """Cooking's real effect, redesigned 2026-09-02 to match the same "multiplier
+    applied at the point of harvest" shape SAWMILL_WOOD_MULTIPLIER/
+    QUARRY_STONE_MULTIPLIER/DOCK_FISH_CATCH_BONUS_FRACTION already use -- it used to
+    instead divide food *consumption* in Simulation._apply_upkeep, the odd one out
+    against every other resource-mastery building. Applied at every real
+    food-production point (GATHER_FOOD, HUNT_DEER/HUNTING_PARTY, CATCH_FISH, passive
+    fish supply, crop harvest) -- never to loot/pillage transfers, which move
+    existing stockpiled food rather than producing new food. Kitchen only means
+    anything once cooking is already known (_build_kitchen itself requires
+    cooking_learned), so this doesn't need to guard against kitchen_built alone."""
+    multiplier = 1.0
+    if tribe.cooking_learned:
+        multiplier *= config.COOKING_FOOD_MULTIPLIER
+    if tribe.kitchen_built:
+        multiplier *= config.KITCHEN_FOOD_MULTIPLIER
+    return multiplier
+
+
 def _labor_multiplier(population: int) -> float:
     """More hands means more gathered per action -- upkeep (Simulation._apply_upkeep)
     already scales with population, but yield never did, so a bigger tribe was strictly
@@ -151,7 +170,7 @@ def _hunt_deer(sim, tribe, biome, target):
         )
         sim._lose_population(tribe, config.HUNT_HAZARD_POPULATION_LOSS, cause="wolf_attack")
         return "a wolf pack struck the hunting party"
-    tribe.food += _harvest(sim, tribe, "game", 15, biome)
+    tribe.food += round(_harvest(sim, tribe, "game", 15, biome) * _food_multiplier(tribe))
     tribe.hunt_ever_succeeded = True  # see actions.py._cook_food's own prerequisite
     return None
 
@@ -161,7 +180,7 @@ def _forage(sim, tribe, biome, target):
     HUNT_DEER/HUNTING_PARTY which both carry wolf-pack risk. Lower base yield than
     hunting (10 vs. 15) since safety is the whole point: foraging trades hunting's
     higher ceiling for a guaranteed, no-hazard return."""
-    tribe.food += _harvest(sim, tribe, "forage", 10, biome)
+    tribe.food += round(_harvest(sim, tribe, "forage", 10, biome) * _food_multiplier(tribe))
     return None
 
 
@@ -195,8 +214,8 @@ def _cook_food(sim, tribe, biome, target):
     standing at this exact tile -- cooking is a skill learned once, not something
     tied to a specific structure. One-way, like fishing_learned: once learned, it
     isn't unlearned. No further effect on its own here -- Simulation._celebration_
-    cost charges less and Simulation._apply_upkeep makes stored food go further
-    (config.COOKING_UPKEEP_DIVISOR) from then on."""
+    cost charges less, and _food_multiplier (above) makes every future food
+    harvest go further from then on."""
     if tribe.cooking_learned:
         return None
     tribe.cooking_learned = True
@@ -448,8 +467,9 @@ def _build_kitchen(sim, tribe, biome, target):
     improves cooked food to excellent food yielding 3 per cooked item." Only
     means anything once cooking is already known -- gated on cooking_learned +
     long_house_built (real shelter, same "building homes" signal sawmill/quarry
-    use). Stacks config.KITCHEN_UPKEEP_MULTIPLIER on top of the cooking divisor
-    (see instincts.effective_food_upkeep) rather than replacing it."""
+    use). Stacks config.KITCHEN_FOOD_MULTIPLIER on top of cooking's own
+    harvest-point multiplier (see _food_multiplier above) rather than replacing
+    it."""
     if tribe.kitchen_built or not (tribe.cooking_learned and tribe.long_houses_built > 0):
         return None
     if tribe.wood < config.KITCHEN_WOOD_COST or tribe.stone < config.KITCHEN_STONE_COST:
@@ -551,6 +571,7 @@ def _catch_fish(sim, tribe, biome, target):
     # early enough to build one, not just flavor text.
     if tribe.dock_built:
         caught = round(caught * (1 + config.DOCK_FISH_CATCH_BONUS_FRACTION))
+    caught = round(caught * _food_multiplier(tribe))
     tribe.food += caught
     if not tribe.fishing_learned:
         tribe.fishing_learned = True
