@@ -55,6 +55,21 @@ from .world import (
 SPAWN_POINTS = [(80, 38), (18, 43), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 
+# See _prepare_turn's own use of this -- every one-time structure with a single
+# boolean "already built" flag is retired from a tribe's available_actions the
+# moment that flag is set, the same treatment BUILD_FIRE/COOK_FOOD/GATHER_FOOD
+# already get individually. Long House/Warehouse/farm plots are deliberately
+# excluded -- genuinely repeatable, gated by their own real capacity check.
+ONE_TIME_BUILD_FLAGS = {
+    "BUILD_DOCK": "dock_built", "BUILD_FISHERY": "fishery_built",
+    "BUILD_SAWMILL": "sawmill_built", "BUILD_QUARRY": "quarry_built",
+    "BUILD_KITCHEN": "kitchen_built", "BUILD_MOAT": "moat_built",
+    "BUILD_KEEP": "keep_built", "BUILD_FORTRESS": "fortress_built",
+    "BUILD_CASTLE": "castle_built", "BUILD_TANNERY": "tannery_built",
+    "BUILD_MINE": "mine_built", "BUILD_FORGE": "forge_built",
+    "BUILD_ROAD": "road_built",
+}
+
 
 def _interpolated_path(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
     """Every whole tile on the straight line from (x0, y0) to (x1, y1), inclusive
@@ -181,6 +196,14 @@ class Tribe:
         self.era = ERAS[0].key
         self.last_broadcast = ""
         self.last_action = ""
+        # See config.ACTION_REPETITION_THROTTLE_THRESHOLD/COOLDOWN -- tracks how many
+        # cycles in a row the SAME action has just been chosen (regardless of whether
+        # it actually succeeded), and which actions are currently pulled from
+        # available_actions as a result. throttled_actions maps action name -> the
+        # cycle it becomes choosable again.
+        self.action_streak_name = ""
+        self.action_streak_count = 0
+        self.throttled_actions: dict[str, int] = {}
         # Set by _apply_turn whenever _resolve_action couldn't match the model's raw
         # visual_action text to anything real; surfaced once as a correction fact by
         # _prepare_turn next cycle, then cleared. {"raw", "guess", "fallback"} or None
@@ -341,6 +364,12 @@ class Tribe:
         # catch) and a successfully-built fire, ever. One-way, same shape as every
         # other "proven once" flag here.
         self.hunt_ever_succeeded = False
+        # See Simulation._advance_automatic_fire -- the other real "found food"
+        # prerequisite fire can ignite from, alongside a successful hunt. GATHER_FOOD
+        # never has a hazard/failure branch (see actions.py._forage), so this is set
+        # the first time it's ever chosen at all, not on some stricter "good yield"
+        # bar.
+        self.foraged_ever_succeeded = False
         self.fire_ever_built = False
         # See actions.py._build_moat -- one-way, gated on the first wall ring being
         # fully reinforced (backend/city_layout.py.ring_fully_reinforced). A cheaper
@@ -505,6 +534,7 @@ class Tribe:
             "era_label": era_label,
             "last_broadcast": self.last_broadcast,
             "last_action": self.last_action,
+            "throttled_actions": list(self.throttled_actions.keys()),
             "last_decision_target": self.last_decision_target,
             "history": self.history[-6:],
             "cycles_since_relocate": self.cycles_since_relocate,
@@ -519,6 +549,7 @@ class Tribe:
             "fishing_learned": self.fishing_learned,
             "cooking_learned": self.cooking_learned,
             "hunt_ever_succeeded": self.hunt_ever_succeeded,
+            "foraged_ever_succeeded": self.foraged_ever_succeeded,
             "fire_ever_built": self.fire_ever_built,
             "moat_built": self.moat_built,
             "long_houses_built": self.long_houses_built,
@@ -1078,6 +1109,7 @@ class Simulation:
                 continue
             outcome = results.get(tid, {"intent": {}, "latency_ms": 0.0})
             self._apply_turn(tribe, outcome["intent"], outcome["latency_ms"], contexts[tid])
+            self._advance_automatic_fire(tribe)
             self._apply_upkeep(tribe)
             self._check_raider_attack(tribe)
             self._advance_raider_approach(tribe)
@@ -1607,7 +1639,40 @@ class Simulation:
         if tribe.foraging_retired:
             available_actions = [a for a in available_actions if a != "GATHER_FOOD"]
 
+        # Explicit request ("i know you can see they kept try to build a dock when
+        # they already had one"): every other one-time structure with a single
+        # boolean "already built" flag gets the same fire/cooking/foraging
+        # treatment above -- retired from the choice set the moment its flag is
+        # set, instead of sitting in the menu as a permanent no-op a model can
+        # keep reflexively re-choosing forever (a live run wasted 77 turns
+        # re-"building" an already-standing Dock this exact way). Long House/
+        # Warehouse/farm plots are deliberately excluded -- genuinely repeatable,
+        # gated by their own real capacity check, not a single flag.
+        available_actions = [
+            a for a in available_actions
+            if not (a in ONE_TIME_BUILD_FLAGS and getattr(tribe, ONE_TIME_BUILD_FLAGS[a]))
+        ]
+
+        # See config.ACTION_REPETITION_THROTTLE_THRESHOLD/COOLDOWN and
+        # Simulation._track_action_repetition -- once an action has been thrown out
+        # of the menu for fixating, it stays out until its cooldown cycle passes.
+        tribe.throttled_actions = {a: until for a, until in tribe.throttled_actions.items() if until > self.cycle}
+        available_actions = [a for a in available_actions if a not in tribe.throttled_actions]
+
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
+        if tribe.throttled_actions:
+            # See "should we always keep them in the dark like this?" -- unlike
+            # tribe.history (spectator/chronicle-only, never reaches the model's own
+            # prompt), this must land in visible_entities to actually explain the
+            # throttle to the tribe itself, in the same in-fiction "Historian" voice
+            # the user proposed.
+            names = ", ".join(sorted(tribe.throttled_actions))
+            plural = "s" if len(tribe.throttled_actions) > 1 else ""
+            visible_entities.append(
+                f"The Historian has counseled against repeating {names} for now, after it was chosen too "
+                f"many cycles in a row -- that action{plural} will return to consideration again soon. "
+                "Choose something genuinely different in the meantime."
+            )
         # NUDGE (2026-08-31, explicit request: an "Instant Enlightenment" for a chief
         # whose last answer didn't match any real action -- see _resolve_action/
         # _apply_turn). Names exactly what was said, exactly what a valid answer looks
@@ -2099,6 +2164,27 @@ class Simulation:
         request = {"id": tribe.id, "model": tribe.model, "prompt": prompt, "temperature": temperature}
         return request, {"biome": biome, "available_actions": available_actions}
 
+    def _track_action_repetition(self, tribe: Tribe, action: str) -> None:
+        """Explicit request, after a live run showed one tribe choose GATHER_STONE on
+        49% of all 728 turns (and a different run's tribe choose BREED on 63.8%) while
+        other real needs went untouched -- see config.ACTION_REPETITION_THROTTLE_*.
+        RELOCATE is exempt: a real, sustained multi-cycle journey is documented,
+        desired behavior (see README), not fixation."""
+        if action == tribe.action_streak_name:
+            tribe.action_streak_count += 1
+        else:
+            tribe.action_streak_name = action
+            tribe.action_streak_count = 1
+        if action == "RELOCATE":
+            return
+        if tribe.action_streak_count >= config.ACTION_REPETITION_THROTTLE_THRESHOLD:
+            tribe.throttled_actions[action] = self.cycle + config.ACTION_REPETITION_THROTTLE_COOLDOWN
+            tribe.action_streak_count = 0
+            tribe.history.append(
+                f"{tribe.name} has repeated {action} too many times in a row -- "
+                "the Historian insists on a different approach for a while"
+            )
+
     def _apply_turn(self, tribe: Tribe, intent: dict, latency_ms: float, ctx: dict) -> None:
         raw_action = intent.get("visual_action", "(no action provided)")
         action, unresolved_raw = _resolve_action(raw_action, ctx["available_actions"])
@@ -2177,6 +2263,7 @@ class Simulation:
             tribe.cycles_since_relocate += 1
         tribe.last_broadcast = broadcast
         tribe.last_action = action
+        self._track_action_repetition(tribe, action)
         self.translation.record_broadcast(tribe.id, broadcast, action)
 
         # Regression: this used to hard-cut at 60 chars with no ellipsis, silently
@@ -2667,6 +2754,9 @@ class Simulation:
             self._lose_population(tribe, config.HUNT_HAZARD_POPULATION_LOSS, cause="wolf_attack")
             exp["phase"] = "returning"
             tribe.history.append(f"a wolf pack struck {scout}'s hunting party -- the survivors turn back")
+            self.recent_encounters.append({
+                "x": px, "y": py, "kind": "wolf_attack", "label": "Wolf pack!", "outcome": "struck",
+            })
             return
 
         game_multiplier = BIOME_YIELD_MULTIPLIER["game"].get(current_biome, 0.0)
@@ -3080,6 +3170,32 @@ class Simulation:
         current = tribe.unique_resources.get(resource_name, 0)
         added = max(0, min(amount, cap - current))
         tribe.unique_resources[resource_name] = current + added
+
+    def _advance_automatic_fire(self, tribe: Tribe) -> None:
+        """Explicit request, after a live run showed a tribe sitting on 900 idle
+        wood that never once chose BUILD_FIRE in 728 cycles: 'at least make hunting
+        or gathering the gate to the automatic fire.' Fire has essentially no real
+        downside and unlocks cooking (a real food multiplier) -- guaranteed now,
+        the same way settled water/fish supply are already passive systems rather
+        than something a model has to remember to keep choosing. The only thing
+        that still requires a real, proven achievement is which door unlocks it (a
+        successful hunt or a successful forage, either one), not the ignition
+        itself -- free, no wood cost, since the whole point is removing this as a
+        point of failure. BUILD_FIRE itself is unaffected -- still there as a
+        faster manual path, and already retired from available_actions the moment
+        fire_ever_built is set, by either route."""
+        if tribe.fire_ever_built or not (tribe.hunt_ever_succeeded or tribe.foraged_ever_succeeded):
+            return
+        self.world.add_construction(tribe.x, tribe.y, "fire", self.cycle)
+        tribe.fire_ever_built = True
+        if tribe.territory_center is not None:
+            slot = architect.find_free_slot(self.world, tribe, "fire")
+            if slot is not None:
+                architect.record_building(tribe, "fire", slot[0], slot[1], 1, 1, self.cycle)
+        tribe.history.append(f"{tribe.name} discovers fire -- cooking is within reach now")
+        self.trauma.radiate_event_wave(
+            tribe.x, tribe.y, config.BUILD_FIRE_PRIDE_MAGNITUDE, config.BUILD_FIRE_PRIDE_RADIUS
+        )
 
     def _advance_water_supply(self, tribe: Tribe) -> None:
         """Explicit request: "like relocate, gather water becomes irrelevant once they

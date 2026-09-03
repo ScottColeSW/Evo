@@ -1056,3 +1056,20 @@ EXPEDITION_OUTBOUND_DAILY_FOOD = 3
 EXPEDITION_OUTBOUND_DAILY_WATER = 2
 EXPEDITION_RETURN_DAILY_FOOD = 1
 EXPEDITION_RETURN_DAILY_WATER = 1
+
+# Action-repetition throttle (Simulation._apply_turn/_prepare_turn): explicit
+# request, after a live run showed one tribe choose GATHER_STONE on 49% of all
+# 728 turns (and a different run's tribe choose BREED on 63.8%) while other real
+# needs went untouched -- the same "models fixate on one verb regardless of
+# payoff" pattern this project already documented for GATHER_FOOD/GATHER_WOOD.
+# Once an action has been chosen this many cycles in a row, it's pulled from
+# available_actions for a cooldown, forcing a genuinely different choice.
+# RELOCATE is exempt (Simulation._apply_turn) -- a real, sustained multi-cycle
+# journey is documented, desired behavior (see README), not fixation.
+# Threshold=4 is the minimum that still lets CONSTRUCT_WALL finish building one
+# full section (WALL_PROGRESS_PER_ACTION_BASE=30 -- 30/60/90/100, exactly 4
+# actions at baseline population) before ever throttling -- reinforcing a
+# section to WALL_MAX_LAYERS afterward can still eat one cooldown, a smaller,
+# accepted cost since that only gates Moat/Torches, not core progression.
+ACTION_REPETITION_THROTTLE_THRESHOLD = 4
+ACTION_REPETITION_THROTTLE_COOLDOWN = 7

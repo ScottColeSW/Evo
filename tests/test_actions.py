@@ -1285,6 +1285,21 @@ def test_hunt_deer_wolf_attack_does_not_mark_hunt_ever_succeeded():
     assert tribe.hunt_ever_succeeded is False
 
 
+def test_hunt_deer_wolf_attack_marks_a_map_encounter():
+    """Explicit request: 'I do want to see the Wolves encountered marked for
+    them' -- every other hazard/conflict already gets a momentary map marker via
+    recent_encounters; the wolf-pack hazard never did."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # trigger the wolf hazard
+        ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "forest", _NO_TARGET)
+
+    assert sim.recent_encounters == [{"x": 50, "y": 50, "kind": "wolf_attack", "label": "Wolf pack!", "outcome": "struck"}]
+
+
 def test_later_catches_do_not_re_learn_or_re_celebrate():
     from unittest import mock
 

@@ -1042,6 +1042,164 @@ def test_build_fire_retires_once_ever_built():
     assert "BUILD_FIRE" not in ctx["available_actions"]
 
 
+def test_one_time_buildings_retire_from_available_actions_once_built():
+    """Live-run correction: a tribe wasted 77 of 728 turns re-'building' an already-
+    standing Dock (dock_built stays True forever, so it was a pure no-op every
+    time). Every one-time BUILD_* action in ONE_TIME_BUILD_FLAGS gets the same
+    fire/cooking/foraging retirement treatment now."""
+    from backend import config
+    from backend.simulation import ONE_TIME_BUILD_FLAGS
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"  # unlocks every action in the table
+
+    _, ctx_before = sim._prepare_turn(tribe)
+    assert "BUILD_DOCK" in ctx_before["available_actions"]
+    assert "BUILD_CASTLE" in ctx_before["available_actions"]
+
+    tribe.dock_built = True
+    tribe.castle_built = True
+    _, ctx_after = sim._prepare_turn(tribe)
+
+    assert "BUILD_DOCK" not in ctx_after["available_actions"]
+    assert "BUILD_CASTLE" not in ctx_after["available_actions"]
+    # Every other flag in the table also retires its own action -- not just the
+    # two spot-checked above.
+    for action, flag in ONE_TIME_BUILD_FLAGS.items():
+        setattr(tribe, flag, True)
+    _, ctx_all = sim._prepare_turn(tribe)
+    for action in ONE_TIME_BUILD_FLAGS:
+        assert action not in ctx_all["available_actions"]
+
+
+def test_automatic_fire_ignites_after_a_successful_hunt():
+    """Explicit request, after a live run showed a tribe with 900 idle wood that
+    never once chose BUILD_FIRE in 728 cycles: 'at least make hunting or gathering
+    the gate to the automatic fire.'"""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.hunt_ever_succeeded = True
+
+    sim._advance_automatic_fire(tribe)
+
+    assert tribe.fire_ever_built is True
+    assert any("discovers fire" in entry for entry in tribe.history)
+    assert sim.world.constructions[(50, 50)]["type"] == "fire"
+
+
+def test_automatic_fire_ignites_after_a_successful_forage_too():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.foraged_ever_succeeded = True
+
+    sim._advance_automatic_fire(tribe)
+
+    assert tribe.fire_ever_built is True
+
+
+def test_automatic_fire_does_not_ignite_without_a_real_success():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    sim._advance_automatic_fire(tribe)
+
+    assert tribe.fire_ever_built is False
+
+
+def test_automatic_fire_does_not_re_ignite_once_already_built():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.fire_ever_built = True
+    tribe.hunt_ever_succeeded = True
+
+    sim._advance_automatic_fire(tribe)
+
+    assert (50, 50) not in sim.world.constructions  # no fire actually placed twice
+
+
+def test_hunting_party_wolf_attack_marks_a_map_encounter():
+    """Same fix as the instant HUNT_DEER hazard -- the multi-day HUNTING_PARTY
+    wolf-pack hazard never reported a map encounter either."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    exp = {"pos": [50, 50], "kind": "hunt"}
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_hunting_party_outbound(tribe, exp, "plains", "Ashgar")
+
+    assert sim.recent_encounters == [{"x": 50, "y": 50, "kind": "wolf_attack", "label": "Wolf pack!", "outcome": "struck"}]
+
+
+def test_action_repetition_streak_increments_and_resets():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    sim._track_action_repetition(tribe, "GATHER_STONE")
+    sim._track_action_repetition(tribe, "GATHER_STONE")
+    assert tribe.action_streak_name == "GATHER_STONE"
+    assert tribe.action_streak_count == 2
+
+    sim._track_action_repetition(tribe, "GATHER_WOOD")
+    assert tribe.action_streak_name == "GATHER_WOOD"
+    assert tribe.action_streak_count == 1
+
+
+def test_action_repetition_throttles_once_threshold_is_reached():
+    """Live-run evidence: a tribe chose GATHER_STONE on 49% of all 728 turns. See
+    config.ACTION_REPETITION_THROTTLE_THRESHOLD."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    for _ in range(config.ACTION_REPETITION_THROTTLE_THRESHOLD - 1):
+        sim._track_action_repetition(tribe, "GATHER_STONE")
+    assert "GATHER_STONE" not in tribe.throttled_actions
+
+    sim._track_action_repetition(tribe, "GATHER_STONE")
+
+    assert tribe.throttled_actions == {"GATHER_STONE": sim.cycle + config.ACTION_REPETITION_THROTTLE_COOLDOWN}
+    assert tribe.action_streak_count == 0
+    assert any("repeated GATHER_STONE too many times" in entry for entry in tribe.history)
+
+
+def test_action_repetition_relocate_is_exempt_from_throttling():
+    """A real, sustained multi-cycle journey is documented, desired behavior (see
+    README), not fixation."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    for _ in range(config.ACTION_REPETITION_THROTTLE_THRESHOLD + 5):
+        sim._track_action_repetition(tribe, "RELOCATE")
+
+    assert tribe.throttled_actions == {}
+
+
+def test_action_repetition_throttle_expires_and_filters_available_actions():
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+
+    tribe.throttled_actions = {"GATHER_STONE": sim.cycle + 3}
+    request, ctx = sim._prepare_turn(tribe)
+    assert "GATHER_STONE" not in ctx["available_actions"]
+    assert "GATHER_STONE" in request["prompt"]  # the Historian's fact reaches the live prompt
+
+    sim.cycle += 3
+    _, ctx_after = sim._prepare_turn(tribe)
+    assert "GATHER_STONE" in ctx_after["available_actions"]
+
+
 def test_farming_and_eggs_available_once_settled_next_to_real_water():
     from backend import config
 

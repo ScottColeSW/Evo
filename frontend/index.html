@@ -1175,13 +1175,20 @@ function drawTribeIndividuals(tribeId, t) {
   if (t.extinct) {
     // A grave marker at the last known position, not a fading cluster -- extinction is
     // a permanent, visible event, not just a state that quietly stops updating.
-    ctx.strokeStyle = "#6b7280";
-    ctx.lineWidth = Math.max(1.5, TILE * 0.18);
-    const r = Math.max(3, TILE * 0.5);
+    // Explicit request: "a skull and crossbones grave marker would be cool" --
+    // a real 💀 on a dark backing disc, replacing the old plain X.
+    const r = Math.max(6, TILE * 0.6);
     ctx.beginPath();
-    ctx.moveTo(centerX - r, centerY - r); ctx.lineTo(centerX + r, centerY + r);
-    ctx.moveTo(centerX + r, centerY - r); ctx.lineTo(centerX - r, centerY + r);
+    ctx.arc(centerX, centerY, r, 0, 2 * Math.PI);
+    ctx.fillStyle = "rgba(15,15,21,0.85)";
+    ctx.fill();
+    ctx.strokeStyle = "#6b7280";
+    ctx.lineWidth = Math.max(1.2, TILE * 0.12);
     ctx.stroke();
+    ctx.font = `${Math.max(10, r * 1.4)}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("💀", centerX, centerY + 1);
     return;
   }
 
@@ -2019,7 +2026,8 @@ function drawFrame() {
       ctx.textAlign = "center";
       // The emoji shakes with the scuffle; the label stays put underneath so it's
       // still readable while the dust is flying.
-      ctx.fillText(e.kind === "raider_attack" ? "⚔️" : "\u{1F3F4}", cx + shakeX, cy + shakeY);
+      const encounterIcon = e.kind === "raider_attack" ? "⚔️" : e.kind === "wolf_attack" ? "🐺" : "\u{1F3F4}";
+      ctx.fillText(encounterIcon, cx + shakeX, cy + shakeY);
       ctx.font = `bold ${Math.max(8, TILE * 0.35)}px sans-serif`;
       ctx.fillStyle = "#fecaca";
       ctx.fillText(e.label, cx, cy + TILE * 0.6);

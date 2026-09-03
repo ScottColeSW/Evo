@@ -192,6 +192,13 @@ def _hunt_deer(sim, tribe, biome, target):
             tribe.x, tribe.y, config.HUNT_HAZARD_TRAUMA_MAGNITUDE, config.HUNT_HAZARD_TRAUMA_RADIUS
         )
         sim._lose_population(tribe, config.HUNT_HAZARD_POPULATION_LOSS, cause="wolf_attack")
+        # Explicit request: "I do want to see the Wolves encountered marked for
+        # them" -- every other hazard/conflict (raids, camp strikes) already gets a
+        # momentary map marker via recent_encounters; the wolf-pack hazard never did.
+        sim.recent_encounters.append({
+            "x": tribe.x, "y": tribe.y, "kind": "wolf_attack",
+            "label": "Wolf pack!", "outcome": "struck",
+        })
         return "a wolf pack struck the hunting party"
     amount = round(_harvest(sim, tribe, "game", 15, biome) * _food_multiplier(tribe))
     tribe.hunt_ever_succeeded = True  # see actions.py._cook_food's own prerequisite
@@ -204,6 +211,7 @@ def _forage(sim, tribe, biome, target):
     hunting (10 vs. 15) since safety is the whole point: foraging trades hunting's
     higher ceiling for a guaranteed, no-hazard return."""
     amount = round(_harvest(sim, tribe, "forage", 10, biome) * _food_multiplier(tribe))
+    tribe.foraged_ever_succeeded = True  # see Simulation._advance_automatic_fire
     return _add_capped(tribe, "food", amount, "food")
 
 
