@@ -318,6 +318,7 @@ BUILDING_FOOTPRINTS = {
     "warehouse": (3, 3),
     "kitchen": (2, 2), "tannery": (2, 2), "dock": (2, 2), "fishery": (2, 4),
     "farm_plot": (3, 3), "flock_pen": (2, 2), "fire": (1, 1), "hatchery": (2, 2),
+    "boat": (2, 3),
 }
 
 # BUILD_FISHERY (backend/actions.py): a new building, unlocked once a Dock already
@@ -1056,6 +1057,15 @@ TERRAIN_MOVEMENT_MULTIPLIER = {
     "river": 0.3,
     "ocean": 0.0,
 }
+
+# Boat (Simulation._advance_automatic_boat, backend/physics.py.terrain_aware_step):
+# explicit request, automatic like fire once a Dock stands and fishing is
+# mastered -- "give the boat mobility in the clean water, not the sea." River is
+# normally the slowest passable terrain (0.3x above); a boat turns it into a real
+# advantage over dry land instead of an obstacle. Ocean stays exactly as
+# impassable as ever -- this is deliberately NOT an ocean-crossing mechanic.
+BOAT_WATER_BIOMES = {"river", "lake"}
+BOAT_WATER_MOVEMENT_MULTIPLIER = 1.2
 
 EXPEDITION_SPEED = 10
 EXPEDITION_MAX_DAYS = 3

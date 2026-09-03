@@ -1140,6 +1140,58 @@ def test_automatic_fire_does_not_re_ignite_once_already_built():
     assert (50, 50) not in sim.world.constructions  # no fire actually placed twice
 
 
+def test_automatic_boat_is_granted_once_dock_and_fishing_are_both_real():
+    """Explicit follow-up: "if they build a Dock, they can get a Boat" --
+    automatic, like fire, once both are genuinely true."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.dock_built = True
+    tribe.fishing_learned = True
+
+    sim._advance_automatic_boat(tribe)
+
+    assert tribe.boat_built is True
+    assert any("builds a boat" in entry for entry in tribe.history)
+
+
+def test_automatic_boat_requires_both_dock_and_fishing():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.dock_built = True  # fishing not yet mastered
+
+    sim._advance_automatic_boat(tribe)
+
+    assert tribe.boat_built is False
+
+
+def test_automatic_boat_does_not_regrant_once_already_built():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.boat_built = True
+    tribe.dock_built = True
+    tribe.fishing_learned = True
+
+    sim._advance_automatic_boat(tribe)
+
+    assert tribe.history == []  # no duplicate announcement
+
+
+def test_automatic_boat_places_a_real_footprint_once_settled():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    sim._found_territory(tribe)
+    tribe.dock_built = True
+    tribe.fishing_learned = True
+
+    sim._advance_automatic_boat(tribe)
+
+    boats = [b for b in tribe.buildings if b["type"] == "boat"]
+    assert len(boats) == 1
+    assert (boats[0]["w"], boats[0]["h"]) == config.BUILDING_FOOTPRINTS["boat"]
+
+
 def test_hunting_party_wolf_attack_marks_a_map_encounter():
     """Same fix as the instant HUNT_DEER hazard -- the multi-day HUNTING_PARTY
     wolf-pack hazard never reported a map encounter either."""

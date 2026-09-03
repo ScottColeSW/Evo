@@ -71,6 +71,41 @@ def test_terrain_aware_step_never_drops_below_one_tile_of_progress():
     assert terrain_aware_step(40, 37, 60, 37, base_speed=1) != (40, 37)  # (40,37) is river
 
 
+def test_terrain_aware_step_boat_speeds_up_river_crossing():
+    """Explicit request: "give the boat mobility in the clean water, not the
+    sea" -- river is normally the slowest passable terrain (0.3x); a boat
+    turns it into a real speed advantage instead."""
+    from backend import config
+
+    # (40, 37) is river. Without a boat: round(10 * 0.3) = 3 tiles.
+    assert terrain_aware_step(40, 37, 60, 37, base_speed=10) == (43, 37)
+    # With a boat: round(10 * BOAT_WATER_MOVEMENT_MULTIPLIER) = 12 tiles.
+    expected = 40 + round(10 * config.BOAT_WATER_MOVEMENT_MULTIPLIER)
+    assert terrain_aware_step(40, 37, 60, 37, base_speed=10, has_boat=True) == (expected, 37)
+
+
+def test_terrain_aware_step_boat_does_not_help_on_dry_land():
+    # (50, 50) is plains -- a boat shouldn't change anything off the water.
+    assert terrain_aware_step(50, 50, 80, 50, base_speed=4, has_boat=True) == (54, 50)
+
+
+def test_terrain_aware_step_boat_does_not_unlock_the_ocean():
+    """Explicit request: this is deliberately NOT an ocean-crossing mechanic --
+    only real, fresh water (river/lake) gets the boat's speed bonus."""
+    from backend.world import biome_at
+
+    # Find a real ocean-adjacent plains tile the same way the existing ocean
+    # deflection test below does, then confirm a boat still can't cross it.
+    ox, oy = None, None
+    for x in range(100):
+        if biome_at(x, 50) == "ocean" and biome_at(x - 1, 50) != "ocean":
+            ox, oy = x, 50
+            break
+    assert ox is not None, "expected to find an ocean tile for this test"
+    result = terrain_aware_step(ox - 1, oy, ox + 5, oy, base_speed=4, has_boat=True)
+    assert biome_at(*result) != "ocean"
+
+
 def test_terrain_aware_step_deflects_around_the_ocean_on_a_diagonal():
     """The one real "obstacle": stepping directly into open ocean is impassable (no
     boats yet), so a party heading southeast from forest into the sea gets deflected

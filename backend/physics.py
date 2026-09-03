@@ -6,19 +6,28 @@ def calculate_next_step(x: int, y: int, target_x: int, target_y: int, bound: int
     return max(0, min(bound, x + dx)), max(0, min(bound, y + dy))
 
 
-def terrain_aware_step(x: int, y: int, target_x: int, target_y: int, bound: int = 99, base_speed: float = 1.0):
+def terrain_aware_step(
+    x: int, y: int, target_x: int, target_y: int, bound: int = 99, base_speed: float = 1.0, has_boat: bool = False,
+):
     """Like calculate_next_step, but movement speed depends on the terrain currently
     being crossed (config.TERRAIN_MOVEMENT_MULTIPLIER -- mountains and rivers are slow
-    going, plains are easy), and stepping directly into the ocean -- impassable without
-    a boat, which nothing in this Stone Age simulation has yet -- gets deflected along
-    a single axis instead of blocked outright, the simplest way to route around an
-    obstacle without full pathfinding. Used by RELOCATE and scouting expeditions alike
-    (backend/actions.py, backend/simulation.py._advance_expedition) so a straight-line
-    journey isn't perfectly linear regardless of what's actually in the way."""
+    going, plains are easy), and stepping directly into the ocean stays impassable
+    outright (deflected along a single axis instead of blocked outright, the simplest
+    way to route around an obstacle without full pathfinding) -- explicit request: a
+    Boat (Simulation._advance_automatic_boat) grants real mobility only in fresh
+    water (config.BOAT_WATER_BIOMES -- river/lake), never the sea, so ocean crossing
+    stays exactly as impassable as ever even once a tribe has one. Used by RELOCATE
+    and scouting expeditions alike (backend/actions.py, backend/simulation.py.
+    _advance_expedition) so a straight-line journey isn't perfectly linear regardless
+    of what's actually in the way."""
     from . import config
     from .world import biome_at
 
-    multiplier = config.TERRAIN_MOVEMENT_MULTIPLIER.get(biome_at(x, y), 1.0)
+    biome = biome_at(x, y)
+    if has_boat and biome in config.BOAT_WATER_BIOMES:
+        multiplier = config.BOAT_WATER_MOVEMENT_MULTIPLIER
+    else:
+        multiplier = config.TERRAIN_MOVEMENT_MULTIPLIER.get(biome, 1.0)
     speed = max(1, round(base_speed * multiplier))
 
     candidates = (

@@ -480,6 +480,11 @@ class Tribe:
         self.wood_ever_gathered = False
         self.stone_ever_gathered = False
         self.fire_ever_built = False
+        # See Simulation._advance_automatic_boat/config.BOAT_WATER_BIOMES --
+        # automatic like fire, once both a Dock and fishing are real. Grants real
+        # movement speed through river/lake tiles (backend/physics.py.
+        # terrain_aware_step), never ocean access.
+        self.boat_built = False
         # See actions.py._build_moat -- one-way, gated on the first wall ring being
         # fully reinforced (backend/city_layout.py.ring_fully_reinforced). A cheaper
         # alternative defense investment, not a wall replacement.
@@ -706,6 +711,7 @@ class Tribe:
             "flock": self.flock,
             "eggs": self.eggs,
             "hatchery_built": self.hatchery_built,
+            "boat_built": self.boat_built,
             "flock_lineage": self.flock_lineage,
             "settlement_name": self.settlement_name,
             "has_ever_settled": self.has_ever_settled,
@@ -1278,6 +1284,7 @@ class Simulation:
             outcome = results.get(tid, {"intent": {}, "latency_ms": 0.0})
             self._apply_turn(tribe, outcome["intent"], outcome["latency_ms"], contexts[tid])
             self._advance_automatic_fire(tribe)
+            self._advance_automatic_boat(tribe)
             self._apply_upkeep(tribe)
             self._check_raider_attack(tribe)
             self._advance_raider_approach(tribe)
@@ -2638,7 +2645,7 @@ class Simulation:
             # Explicit request: "travel speed is 5x on toll roads."
             if self.world.is_toll_road(px, py):
                 base_speed *= config.TOLL_ROAD_SPEED_MULTIPLIER
-            nx, ny = physics.terrain_aware_step(px, py, tx, ty, base_speed=base_speed)
+            nx, ny = physics.terrain_aware_step(px, py, tx, ty, base_speed=base_speed, has_boat=tribe.boat_built)
             nx, ny = self._resolve_toll(tribe, px, py, nx, ny)
             self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
             exp["pos"] = [nx, ny]
@@ -2745,7 +2752,7 @@ class Simulation:
             # Explicit request: "travel speed is 5x on toll roads."
             if self.world.is_toll_road(px, py):
                 base_speed *= config.TOLL_ROAD_SPEED_MULTIPLIER
-            nx, ny = physics.terrain_aware_step(px, py, ox, oy, base_speed=base_speed)
+            nx, ny = physics.terrain_aware_step(px, py, ox, oy, base_speed=base_speed, has_boat=tribe.boat_built)
             nx, ny = self._resolve_toll(tribe, px, py, nx, ny)
             self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
             exp["pos"] = [nx, ny]
@@ -3430,6 +3437,28 @@ class Simulation:
         tribe.history.append(f"{tribe.name} discovers fire -- cooking is within reach now")
         self.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.BUILD_FIRE_PRIDE_MAGNITUDE, config.BUILD_FIRE_PRIDE_RADIUS
+        )
+
+    def _advance_automatic_boat(self, tribe: Tribe) -> None:
+        """Explicit follow-up: "if they build a Dock, they can get a Boat" --
+        automatic once real, the same shape _advance_automatic_fire already
+        uses (a Dock plus mastered fishing is proof enough a Boat makes sense,
+        no separate action/cost needed). "Give the boat mobility in the clean
+        water, not the sea" -- grants real speed through river/lake tiles
+        (config.BOAT_WATER_BIOMES, backend/physics.py.terrain_aware_step) for
+        every future RELOCATE/expedition; ocean stays exactly as impassable as
+        ever, deliberately not an ocean-crossing mechanic."""
+        if tribe.boat_built or not (tribe.dock_built and tribe.fishing_learned):
+            return
+        tribe.boat_built = True
+        if tribe.territory_center is not None:
+            w, h = config.BUILDING_FOOTPRINTS["boat"]
+            slot = architect.find_free_slot(self.world, tribe, "boat")
+            if slot is not None:
+                architect.record_building(tribe, "boat", slot[0], slot[1], w, h, self.cycle)
+        tribe.history.append(f"{tribe.name} builds a boat -- the river is a highway now, not an obstacle")
+        self.trauma.radiate_event_wave(
+            tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS
         )
 
     def _advance_water_supply(self, tribe: Tribe) -> None:
