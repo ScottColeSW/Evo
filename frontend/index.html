@@ -2356,15 +2356,22 @@ function farmingPanel(t) {
     parts.push(`🏛️ Town Hall — ${name}, ${count} building${count === 1 ? "" : "s"} strong`);
   }
   if (ring0) {
-    const total = ring0.sections.length;
-    const done = ring0.sections.filter(s => s.natural_barrier || s.progress >= 100).length;
-    const tier = Math.max(0, ...ring0.sections.filter(s => !s.natural_barrier).map(s => s.tier));
+    // Explicit correction: "we have to separate the natural barriers out so
+    // they are not in the count and the build need is exact... makes it look
+    // like they already built a section which they may be confusing with a
+    // completed Wall." Real sections built vs. what's actually still needed --
+    // a natural barrier is noted separately, not folded into the same count.
+    const realSections = ring0.sections.filter(s => !s.natural_barrier);
+    const naturalCount = ring0.sections.length - realSections.length;
+    const built = realSections.filter(s => s.progress >= 100).length;
+    const tier = Math.max(0, ...realSections.map(s => s.tier));
     const rings = (t.wall_rings || []).length;
     const ringNote = rings > 1 ? ` · ${rings} rings` : "";
-    if (done < total) {
-      parts.push(`🧱 Wall — ${done}/${total} sections raised${ringNote}`);
+    const naturalNote = naturalCount > 0 ? ` (+${naturalCount} natural)` : "";
+    if (built < realSections.length) {
+      parts.push(`🧱 Wall — ${built}/${realSections.length} sections built${naturalNote}${ringNote}`);
     } else {
-      parts.push(`🧱 Wall — complete${tier > 0 ? ` · tier ${tier} reinforced` : ""}${ringNote}`);
+      parts.push(`🧱 Wall — complete${naturalNote}${tier > 0 ? ` · tier ${tier} reinforced` : ""}${ringNote}`);
     }
   }
   if (t.fire_ever_built && ring0Reinforced) parts.push("🔥🧱 Torches — lining the wall, a free defense bonus");

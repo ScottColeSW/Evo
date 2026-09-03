@@ -2168,15 +2168,31 @@ class Simulation:
                     "ring existing first."
                 )
             elif not city_layout.ring_fully_built(ring0):
-                done = sum(1 for s in ring0["sections"] if s["natural_barrier"] or s["progress"] >= 100)
-                total = len(ring0["sections"])
+                # Explicit correction: "we have to separate the natural barriers
+                # out so they are not in the count and the build need is exact.
+                # the way it is makes it look like they already built a section
+                # which they may be confusing with a completed Wall." A natural
+                # barrier needs nothing from the tribe -- folding it into the same
+                # count as real, built sections understated exactly how much
+                # CONSTRUCT_WALL still has left to do.
+                real_sections = [s for s in ring0["sections"] if not s["natural_barrier"]]
+                built = sum(1 for s in real_sections if s["progress"] >= 100)
+                real_total = len(real_sections)
+                natural_count = len(ring0["sections"]) - real_total
+                natural_note = (
+                    f" ({natural_count} more section{'s' if natural_count != 1 else ''} already stand for "
+                    "free, thanks to natural terrain)" if natural_count else ""
+                )
                 if tribe.long_houses_built == 0:
                     visible_entities.append(
-                        f"The settlement's first wall ring is {done}/{total} sections raised -- a long "
-                        "house is not worth attempting until the whole ring is finished."
+                        f"The settlement's first wall ring has {built}/{real_total} real sections built"
+                        f"{natural_note} -- a long house is not worth attempting until every real section "
+                        "is finished."
                     )
                 else:
-                    visible_entities.append(f"The settlement's first wall ring is {done}/{total} sections raised.")
+                    visible_entities.append(
+                        f"The settlement's first wall ring has {built}/{real_total} real sections built{natural_note}."
+                    )
             elif not ring0_reinforced:
                 if tribe.long_houses_built == 0:
                     visible_entities.append(

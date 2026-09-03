@@ -347,11 +347,40 @@ def test_unfinished_wall_nudges_against_a_premature_long_house():
 
     request, ctx = sim._prepare_turn(tribe)
 
-    done = sum(1 for s in tribe.wall_rings[0]["sections"] if s["natural_barrier"] or s["progress"] >= 100)
-    total = len(tribe.wall_rings[0]["sections"])
+    # Explicit correction: natural barriers no longer pad this count -- see
+    # "we have to separate the natural barriers out so they are not in the
+    # count and the build need is exact."
+    real_sections = [s for s in tribe.wall_rings[0]["sections"] if not s["natural_barrier"]]
+    built = sum(1 for s in real_sections if s["progress"] >= 100)
     assert "CONSTRUCT_WALL" in ctx["available_actions"]
-    assert f"{done}/{total} sections raised" in request["prompt"]
-    assert "a long house is not worth attempting until the whole ring is finished" in request["prompt"]
+    assert f"{built}/{len(real_sections)} real sections built" in request["prompt"]
+    assert "a long house is not worth attempting until every real section is finished" in request["prompt"]
+
+
+def test_wall_progress_fact_notes_natural_barriers_separately_from_the_real_count():
+    """Explicit correction: "we have to separate the natural barriers out so
+    they are not in the count and the build need is exact. the way it is
+    makes it look like they already built a section which they may be
+    confusing with a completed Wall." A tribe with zero real progress but
+    real natural barriers should be told 0/N real sections, not a padded
+    fraction that reads as partial progress."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, farmable
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    natural_count = sum(1 for s in tribe.wall_rings[0]["sections"] if s["natural_barrier"])
+    real_total = len(tribe.wall_rings[0]["sections"]) - natural_count
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert f"0/{real_total} real sections built" in request["prompt"]
+    if natural_count:
+        assert f"{natural_count}" in request["prompt"] and "stand for free" in request["prompt"]
+    assert "0/8 sections raised" not in request["prompt"]  # the old, padded phrasing is gone
 
 
 def test_no_wall_started_yet_nudges_toward_construct_wall():
