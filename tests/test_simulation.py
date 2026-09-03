@@ -3906,6 +3906,80 @@ async def test_resolve_birth_falls_back_to_a_generic_name_if_the_llm_call_fails(
     assert tribe.lineage[0]["child_name"] == "child of Ashgar and BriMir"
 
 
+@run_async
+async def test_resolve_cultural_crossover_records_history_for_both_tribes():
+    sim = Simulation([
+        {"name": "Forest Tribe", "model": "gemma2:2b"},
+        {"name": "Mountain Tribe", "model": "qwen2.5:3b"},
+    ])
+    tribe = sim.tribes["tribe_0"]
+    rival = sim.tribes["tribe_1"]
+    tribe.chief_philosophy = "strength through unity"
+    rival.chief_philosophy = "patience above all"
+    tribe.pending_cultural_crossover = rival.id
+
+    async def fake_breed(client, model, tribe_a, tribe_b, era):
+        assert tribe_a["ideology"] == "strength through unity"
+        assert tribe_b["ideology"] == "patience above all"
+        return {"note": "they trade stories of fire and stone"}
+
+    with mock.patch("backend.simulation.breed", fake_breed):
+        await sim._resolve_cultural_crossover(tribe)
+
+    assert tribe.pending_cultural_crossover is None
+    assert any("they trade stories of fire and stone" in e for e in tribe.history)
+    assert any("they trade stories of fire and stone" in e for e in rival.history)
+    # Deliberately doesn't overwrite either tribe's philosophy -- that's the
+    # night-cycle reflection's own authority, not this event's.
+    assert tribe.chief_philosophy == "strength through unity"
+    assert rival.chief_philosophy == "patience above all"
+
+
+@run_async
+async def test_resolve_cultural_crossover_passes_the_real_stabilized_vocabulary():
+    sim = Simulation([
+        {"name": "Forest Tribe", "model": "gemma2:2b"},
+        {"name": "Mountain Tribe", "model": "qwen2.5:3b"},
+    ])
+    tribe = sim.tribes["tribe_0"]
+    rival = sim.tribes["tribe_1"]
+    tribe.pending_cultural_crossover = rival.id
+    for _ in range(6):
+        sim.translation.record_broadcast(tribe.id, "VASH-TA", "BUILD_FIRE")
+        sim.translation.record_broadcast(rival.id, "VASH-TA", "BUILD_FIRE")
+
+    seen = {}
+
+    async def fake_breed(client, model, tribe_a, tribe_b, era):
+        seen["lexicon"] = tribe_a["lexicon"]
+        return {}
+
+    with mock.patch("backend.simulation.breed", fake_breed):
+        await sim._resolve_cultural_crossover(tribe)
+
+    assert "VASH-TA" in seen["lexicon"]
+
+
+@run_async
+async def test_resolve_cultural_crossover_is_a_no_op_if_the_rival_went_extinct():
+    sim = Simulation([
+        {"name": "Forest Tribe", "model": "gemma2:2b"},
+        {"name": "Mountain Tribe", "model": "qwen2.5:3b"},
+    ])
+    tribe = sim.tribes["tribe_0"]
+    rival = sim.tribes["tribe_1"]
+    rival.extinct = True
+    tribe.pending_cultural_crossover = rival.id
+
+    async def fake_breed(client, model, tribe_a, tribe_b, era):
+        raise AssertionError("should never be called for an extinct rival")
+
+    with mock.patch("backend.simulation.breed", fake_breed):
+        await sim._resolve_cultural_crossover(tribe)
+
+    assert tribe.pending_cultural_crossover is None
+
+
 def test_tribal_gathering_reports_new_trophies_unclaimed_awards_and_population_change():
     sim = _bare_simulation()
     sim.cycle = 20

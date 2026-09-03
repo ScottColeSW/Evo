@@ -35,6 +35,14 @@ class TranslationConfidenceMatrix:
             if self._scores[key] <= 0.0:
                 del self._scores[key]
 
+    def stabilized_tokens(self, tribe_a: str, tribe_b: str, threshold: float = 0.75) -> list[str]:
+        """The actual converged token strings for this pair, at or above the same
+        threshold pair_summary already counts as 'stabilized' -- used by
+        Simulation._resolve_cultural_crossover to give genetics.breed() a real,
+        non-empty shared vocabulary to work from instead of just an opaque count."""
+        prefix = tuple(sorted((tribe_a, tribe_b)))
+        return [key[2] for key, score in self._scores.items() if key[:2] == prefix and score >= threshold]
+
     def pair_summary(self, tribe_a: str, tribe_b: str) -> dict:
         prefix = tuple(sorted((tribe_a, tribe_b)))
         relevant = [v for k, v in self._scores.items() if k[:2] == prefix]

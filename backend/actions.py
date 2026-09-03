@@ -1381,10 +1381,15 @@ def _declare_alliance(sim, tribe, biome, target):
     if rival is None:
         return "no rival tribe exists to declare a stance toward"
     was_war = tribe.stance_toward.get(rival.id) == "WAR"
+    already_allied = tribe.stance_toward.get(rival.id) == "ALLIED"
     tribe.stance_toward[rival.id] = "ALLIED"
     rival.stance_toward[tribe.id] = "ALLIED"
     sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.NEGOTIATE_PRIDE_MAGNITUDE, config.NEGOTIATE_PRIDE_RADIUS)
     sim.trauma.radiate_event_wave(rival.x, rival.y, config.NEGOTIATE_PRIDE_MAGNITUDE, config.NEGOTIATE_PRIDE_RADIUS)
+    if not already_allied:
+        # See Simulation._resolve_cultural_crossover -- only on genuinely becoming
+        # allies, not every redundant re-declaration while already allied.
+        tribe.pending_cultural_crossover = rival.id
     if was_war:
         return f"{tribe.name} sues for peace with {rival.name} -- the war ends, both now allied"
     return f"{tribe.name} declares an alliance with {rival.name}"

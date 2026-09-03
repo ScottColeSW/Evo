@@ -12,7 +12,7 @@ from .actions import (
 )
 from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
-from .genetics import hatch
+from .genetics import breed, hatch
 from .reflection import AWARD_CATEGORIES, reflect_on_history
 from .eras import ERAS, era_index, next_era, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
@@ -571,6 +571,14 @@ class Tribe:
         # resolve shape as pending_birth/pending_hatch above.
         self.settlement_name = ""
         self.pending_settlement_naming = False
+        # DECLARE_ALLIANCE's tribe-level cultural crossover (backend/actions.py.
+        # _declare_alliance, Simulation._resolve_cultural_crossover, backend/
+        # genetics.py's breed()) -- same pending_X/resolve shape as pending_birth/
+        # pending_hatch above, applied to two whole tribes' cultures on first
+        # becoming allies. Stores the rival's id (not a direct reference) so a
+        # rival going extinct before this resolves is handled the same way
+        # elsewhere in this file -- a fresh lookup, not a stale object.
+        self.pending_cultural_crossover: str | None = None
         # Set once, the first time _is_settled_near_water is ever true, and never
         # cleared again even if the tribe later relocates away -- see config.
         # PRE_SETTLEMENT_ACTIONS. Distinct from currently-settled (which can toggle)
@@ -928,6 +936,42 @@ class Simulation:
         entry = f"Chief {tribe.chief_name} names the settlement {tribe.settlement_name}" if tribe.chief_name else f"the settlement is named {tribe.settlement_name}"
         tribe.history.append(f"{entry} -- {note}" if note else f"{entry}.")
 
+    async def _resolve_cultural_crossover(self, tribe: "Tribe") -> None:
+        """Resolves DECLARE_ALLIANCE's pending_cultural_crossover (see actions.py.
+        _declare_alliance) with a real, non-scripted LLM call (backend/genetics.py's
+        breed()) -- same pending_X/resolve pattern as _resolve_birth/_resolve_hatch,
+        applied to two whole tribes' cultures instead of two people or two flock
+        members.
+
+        Adapted to what's actually real on Tribe, rather than the 'ideology'/
+        'lexicon' dict shape breed() was originally written against (there's no
+        separate per-tribe vocabulary field): chief_philosophy stands in for
+        'ideology', and TranslationConfidenceMatrix.stabilized_tokens -- the real,
+        empirically-converged shared vocabulary between this exact pair -- stands
+        in for 'lexicon'.
+
+        Deliberately doesn't overwrite chief_philosophy directly -- that's the
+        night-cycle reflection's own authority (backend/reflection.py), not
+        something a single alliance should silently override. This only records
+        the moment as real tribal history for both sides, an emergent event
+        either tribe's own future reasoning can reference on its own, not a
+        scripted rewrite of who they are."""
+        rival_id = tribe.pending_cultural_crossover
+        tribe.pending_cultural_crossover = None
+        rival = self.tribes.get(rival_id)
+        if rival is None or rival.extinct:
+            return
+
+        shared_tokens = self.translation.stabilized_tokens(tribe.id, rival.id)
+        lexicon = {token: "a word both tribes have converged on" for token in shared_tokens}
+        tribe_a = {"ideology": tribe.chief_philosophy or "no fixed creed yet", "lexicon": lexicon}
+        tribe_b = {"ideology": rival.chief_philosophy or "no fixed creed yet", "lexicon": lexicon}
+        result = await breed(self.client, tribe.model, tribe_a, tribe_b, tribe.era)
+        note = result.get("note") or "two cultures briefly touch, then go their own way"
+        entry = f"{tribe.name} and {rival.name} exchange ideas as new allies -- {note}"
+        tribe.history.append(entry)
+        rival.history.append(entry)
+
     def _hold_tribal_gathering(self, tribe: "Tribe") -> None:
         """An innate tradition, not a chief's choice: every tribe, whatever its
         philosophy or model, gathers once per in-game day (config.DAY_LENGTH_CYCLES,
@@ -1245,6 +1289,10 @@ class Simulation:
         for tribe in self.tribes.values():
             if not tribe.extinct and tribe.pending_settlement_naming:
                 await self._resolve_settlement_naming(tribe)
+
+        for tribe in self.tribes.values():
+            if not tribe.extinct and tribe.pending_cultural_crossover:
+                await self._resolve_cultural_crossover(tribe)
 
         for tribe in self.tribes.values():
             if not tribe.extinct and not tribe.chief_name:

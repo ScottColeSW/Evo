@@ -1985,6 +1985,22 @@ def test_declare_alliance_sets_symmetric_stance():
     assert a.stance_toward["tribe_1"] == "ALLIED"
     assert b.stance_toward["tribe_0"] == "ALLIED"
     assert "declares an alliance" in result
+    assert a.pending_cultural_crossover == "tribe_1"
+
+
+def test_declare_alliance_does_not_requeue_a_crossover_while_already_allied():
+    """See Simulation._resolve_cultural_crossover -- only a genuinely new
+    alliance should trigger it, not a redundant re-declaration."""
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.stance_toward["tribe_1"] = "ALLIED"
+    b.stance_toward["tribe_0"] = "ALLIED"
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
+
+    assert a.pending_cultural_crossover is None
 
 
 def test_declare_war_sets_symmetric_stance():
@@ -2026,6 +2042,7 @@ def test_declare_alliance_ends_a_previously_declared_war():
     assert a.stance_toward["tribe_1"] == "ALLIED"
     assert b.stance_toward["tribe_0"] == "ALLIED"
     assert "sues for peace" in result
+    assert a.pending_cultural_crossover == "tribe_1"  # a war ending into alliance is also new
 
 
 def test_declare_alliance_with_no_rival_tribe():
