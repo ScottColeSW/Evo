@@ -2754,7 +2754,13 @@ class Simulation:
             exp["pos"] = [nx, ny]
             exp["path"].append([nx, ny])
             exp["food_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_FOOD
-            exp["water_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_WATER
+            # Explicit correction: "foragers do not need to bring water back
+            # once they are settled, they should start bringing back
+            # everything else though" -- a settled-near-water tribe's passive
+            # daily supply (_advance_water_supply) already covers this; a
+            # trickle of foraged water on top just clutters the report.
+            if not self._is_settled_near_water(tribe):
+                exp["water_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_WATER
             reached_biome = biome_at(nx, ny)
             scout = exp["lead_scout"]
 
@@ -2863,7 +2869,8 @@ class Simulation:
             exp["pos"] = [nx, ny]
             exp["path"].append([nx, ny])
             exp["food_gathered"] += config.EXPEDITION_RETURN_DAILY_FOOD
-            exp["water_gathered"] += config.EXPEDITION_RETURN_DAILY_WATER
+            if not self._is_settled_near_water(tribe):  # see the matching outbound-leg comment above
+                exp["water_gathered"] += config.EXPEDITION_RETURN_DAILY_WATER
             self._expedition_river_hazard(tribe, nx, ny)
             self._expedition_raider_ambush(tribe, exp, nx, ny)
             if [nx, ny] == [ox, oy]:
@@ -2875,7 +2882,14 @@ class Simulation:
                 tribe.food += food_home
                 tribe.water += exp["water_gathered"]
                 scout = exp["lead_scout"]
-                forage_note = f"bringing back {food_home} food and {exp['water_gathered']} water foraged along the way"
+                forage_note = f"bringing back {food_home} food"
+                # water_gathered never accrues once _is_settled_near_water is true (see
+                # the matching outbound/returning-leg gate above) -- omit it from the
+                # note entirely rather than always reporting a flat "0 water".
+                if exp["water_gathered"]:
+                    forage_note += f" and {exp['water_gathered']} water foraged along the way"
+                else:
+                    forage_note += " foraged along the way"
                 # Only EXPLORATION_PARTY ever populates these -- see actions.py.
                 # _exploration_party. .get(..., 0) leaves scout/hunt/trade untouched.
                 wood_home, stone_home = exp.get("wood_gathered", 0), exp.get("stone_gathered", 0)

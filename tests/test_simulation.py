@@ -2638,6 +2638,34 @@ def test_expedition_arrival_delivers_foraged_food_and_water_to_the_tribe():
     assert any("celebrates the discovery of water" in entry for entry in tribe.history)
 
 
+def test_expedition_stops_foraging_water_home_once_settled_near_water():
+    """Explicit request: "foragers do not need to bring water back once they are
+    settled, they should start bringing back everything else though" -- a settled
+    tribe's passive daily supply (_advance_water_supply) already covers water, so
+    the foraged trickle from a returning expedition is redundant clutter on top of
+    it. Food (and, per actions.py._exploration_party, wood/stone) keep coming home
+    exactly as before -- only water_gathered stops accumulating."""
+    from backend import config
+
+    sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 50, "y": 50}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.confirmed_water_sites = [(50, 50)]  # exactly on the tribe's own tile
+    assert sim._is_settled_near_water(tribe) is True
+    tribe.food, tribe.water = 10, 10
+    tribe.expeditions = [{
+        "pos": [50, 50], "origin": [50, 50], "target": [40, 37],
+        "day": 2, "phase": "returning", "found": None, "terrain_report": None,
+        "food_gathered": 7, "water_gathered": 5,  # already-accrued water; must not grow further
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+
+    sim._advance_expeditions(tribe)
+
+    assert tribe.food == 10 + 7 + config.EXPEDITION_RETURN_DAILY_FOOD
+    assert tribe.water == 10 + 5  # no EXPEDITION_RETURN_DAILY_WATER credited
+
+
 def test_expedition_report_is_attributed_to_the_chief_when_one_exists():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
