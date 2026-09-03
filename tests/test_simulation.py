@@ -5056,7 +5056,10 @@ def test_advance_fish_supply_does_nothing_before_settling_even_if_learned():
     assert tribe.food == 10
 
 
-def test_advance_mine_yield_flows_in_once_excavated_and_settled():
+def test_advance_mine_yield_flows_in_once_excavated_fetched_and_settled():
+    """Explicit correction: "GATHER_ORE only comes in if they Discover a Mine.
+    They do not harvest on a Discovery, so they have to fetch it once" --
+    mine_built alone is no longer enough to start the passive daily flow."""
     from backend import config
 
     sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
@@ -5065,6 +5068,10 @@ def test_advance_mine_yield_flows_in_once_excavated_and_settled():
     tribe.mine_built = True
     tribe.mine_resource_name = "Orosite Ore"
 
+    sim._advance_mine_yield(tribe)
+    assert "Orosite Ore" not in tribe.unique_resources  # not fetched yet
+
+    tribe.ore_ever_gathered = True
     sim._advance_mine_yield(tribe)
 
     assert tribe.unique_resources["Orosite Ore"] == config.MINE_YIELD_PER_CYCLE
@@ -5079,6 +5086,7 @@ def test_advance_mine_yield_is_capped_by_storage():
     tribe = sim.tribes["tribe_0"]
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.mine_built = True
+    tribe.ore_ever_gathered = True
     tribe.mine_resource_name = "Orosite Ore"
     tribe.unique_resources["Orosite Ore"] = config.STORAGE_CAP_BASE
 

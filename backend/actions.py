@@ -661,7 +661,23 @@ def _build_mine(sim, tribe, biome, target):
     tribe.mine_resource_name = chosen_site["resource"]
     tribe.mine_site = (chosen_site["x"], chosen_site["y"])
     sim._award_trophy(tribe, "Prospector")
-    return f"a mine is excavated -- {tribe.mine_resource_name} will flow in steadily from now on"
+    return f"a mine is excavated -- {tribe.mine_resource_name} waits to be fetched"
+
+
+def _gather_ore(sim, tribe, biome, target):
+    """Explicit correction: "GATHER_ORE only comes in if they Discover a Mine.
+    They do not harvest on a Discovery, so they have to fetch it once." A Mine
+    produces a brand new named resource with no manual counterpart, unlike
+    Sawmill/Quarry (multipliers on an existing manual gather) -- this is that
+    missing manual fetch. First success flips tribe.ore_ever_gathered, the
+    same "action unlocks a passive system" shape fishing_learned already uses
+    for _advance_fish_supply -- see Simulation._advance_mine_yield."""
+    if not tribe.mine_built:
+        return None
+    amount = round(config.GATHER_ORE_BASE_YIELD * _labor_multiplier(tribe.population))
+    tribe.ore_ever_gathered = True
+    sim._capped_unique_add(tribe, tribe.mine_resource_name, amount)
+    return f"{amount} {tribe.mine_resource_name} is fetched from the mine"
 
 
 def _build_tannery(sim, tribe, biome, target):
@@ -1498,6 +1514,7 @@ ACTION_REGISTRY = {
     "BUILD_SAWMILL": _build_sawmill,
     "BUILD_QUARRY": _build_quarry,
     "BUILD_MINE": _build_mine,
+    "GATHER_ORE": _gather_ore,
     "BUILD_TANNERY": _build_tannery,
     "BUILD_HATCHERY": _build_hatchery,
     "BUILD_WAREHOUSE": _build_warehouse,
@@ -1547,7 +1564,8 @@ ACTION_DESCRIPTIONS = {
     "BUILD_FISHERY": "Build a fishery using stored wood and stone -- only possible once a dock already stands. A one-time, permanent structure: the settlement's passive daily fish supply flows in even more steadily from then on.",
     "BUILD_SAWMILL": "Build a sawmill using stored wood and stone -- only possible once wood has actually been gathered here at least once. A one-time, permanent structure at your settlement: every future load of gathered wood is worth three times as much from then on.",
     "BUILD_QUARRY": "Build a quarry using stored wood and stone -- only possible once stone has actually been gathered here at least once. A one-time, permanent structure at your settlement: every future load of harvested stone is worth three times as much from then on.",
-    "BUILD_MINE": "Excavate a mine at a vein your scouts have already found, using stored wood and stone -- only possible once a quarry stands and at least one vein is known. A one-time, permanent structure: its unique resource flows in steadily from then on.",
+    "BUILD_MINE": "Excavate a mine at a vein your scouts have already found, using stored wood and stone -- only possible once a quarry stands and at least one vein is known. A one-time, permanent structure, but its unique resource has to actually be fetched (GATHER_ORE) before it starts flowing in steadily.",
+    "GATHER_ORE": "Fetch the Mine's unique resource -- only possible once a mine has been excavated. The first successful fetch also starts a small, permanent daily supply from then on, the same way fishing works once learned.",
     "BUILD_TANNERY": "Build a tannery using stored wood and stone -- only possible once a hunt has actually succeeded. A one-time, permanent structure at your settlement: Fur flows in steadily from then on, and every successful hunt yields extra meat from then on.",
     "BUILD_HATCHERY": "Build a hatchery using stored wood and stone -- only possible once a wild egg has actually been found and hatched. A one-time, permanent structure at your settlement: the flock grows on its own much more reliably from then on.",
     "BUILD_WAREHOUSE": "Build a warehouse using stored wood and stone. Raises how much of every resource can be stored at once -- gathering more than storage allows is wasted. Repeatable: each one raises the limit further.",

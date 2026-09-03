@@ -926,6 +926,16 @@ MINE_WOOD_COST = 20
 MINE_STONE_COST = 30
 MINE_YIELD_PER_CYCLE = 5
 
+# GATHER_ORE (backend/actions.py): explicit correction -- "GATHER_ORE only
+# comes in if they Discover a Mine. They do not harvest on a Discovery, so
+# they have to fetch it once." Unlike Sawmill/Quarry (multipliers on an
+# existing manual action), a Mine produces a brand new named resource with no
+# manual counterpart at all -- it used to start flowing the instant mine_built
+# was set, with no real fetch ever required. Now mirrors fishing_learned's own
+# shape exactly: Simulation._advance_mine_yield's passive daily flow doesn't
+# start until tribe.ore_ever_gathered is set by a real GATHER_ORE success.
+GATHER_ORE_BASE_YIELD = 8
+
 # BUILD_TANNERY (backend/actions.py): explicit request -- "maybe some hunters
 # want a Tannery and they can trade furs too." Mirrors _build_mine exactly:
 # gated on a real discovered site (a Rabbit Warren, from tribe.wildlife_sites),

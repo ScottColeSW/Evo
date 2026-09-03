@@ -544,6 +544,12 @@ class Tribe:
         self.mine_built = False
         self.mine_resource_name: str | None = None
         self.unique_resources: dict[str, int] = {}
+        # See actions.py._gather_ore/Simulation._advance_mine_yield -- a real
+        # fetch, not automatic the instant mine_built is set (explicit
+        # correction: "they do not harvest on a Discovery, so they have to
+        # fetch it once"). Same "action unlocks a passive system" shape
+        # fishing_learned already uses for _advance_fish_supply.
+        self.ore_ever_gathered = False
         # See actions.py._build_kitchen -- one-way, gated on cooking_learned +
         # long_house_built. Stacks config.KITCHEN_FOOD_MULTIPLIER on top of
         # cooking's own harvest-point multiplier (see actions._food_multiplier).
@@ -685,6 +691,7 @@ class Tribe:
             "foraged_ever_succeeded": self.foraged_ever_succeeded,
             "wood_ever_gathered": self.wood_ever_gathered,
             "stone_ever_gathered": self.stone_ever_gathered,
+            "ore_ever_gathered": self.ore_ever_gathered,
             "fire_ever_built": self.fire_ever_built,
             "moat_built": self.moat_built,
             "long_houses_built": self.long_houses_built,
@@ -3486,10 +3493,14 @@ class Simulation:
             self._capped_add(tribe, "food", amount)
 
     def _advance_mine_yield(self, tribe: Tribe) -> None:
-        """Once a mine is excavated (actions.py._build_mine), its named unique
-        resource flows in daily -- same passive "action unlocks a system" shape
-        _advance_fish_supply already uses, gated on the same general settled check."""
-        if tribe.mine_built and tribe.mine_resource_name and self._is_settled(tribe):
+        """Once a mine is excavated (actions.py._build_mine) AND its ore has
+        actually been fetched at least once (actions.py._gather_ore), its named
+        unique resource flows in daily -- same passive "action unlocks a
+        system" shape _advance_fish_supply already uses, gated on the same
+        general settled check. Explicit correction: excavating the mine alone
+        used to start this immediately -- "they do not harvest on a Discovery,
+        so they have to fetch it once" first."""
+        if tribe.mine_built and tribe.ore_ever_gathered and tribe.mine_resource_name and self._is_settled(tribe):
             self._capped_unique_add(tribe, tribe.mine_resource_name, config.MINE_YIELD_PER_CYCLE)
 
     def _advance_tannery_yield(self, tribe: Tribe) -> None:

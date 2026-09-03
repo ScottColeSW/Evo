@@ -1754,6 +1754,9 @@ const BUILDING_ICONS = {
 
 function drawBuildings(t) {
   (t.buildings || []).forEach(b => {
+    // A boat roams nearby water instead of sitting at its placed footprint --
+    // see drawBoat, drawn separately so it isn't also rendered as a static tile here.
+    if (b.type === "boat") return;
     const px = b.x * TILE, py = b.y * TILE, pw = b.w * TILE, ph = b.h * TILE;
     ctx.save();
     ctx.fillStyle = "rgba(15,23,42,0.55)";
@@ -1768,6 +1771,63 @@ function drawBuildings(t) {
     ctx.restore();
   });
 }
+
+// Explicit request: "animate the boat to just roam the waters... only in
+// water." Purely decorative/client-side -- no backend state, just a per-tribe
+// drift between nearby river/lake tiles (never ocean, never dry land) so a
+// built boat visibly does something instead of sitting still at its placed
+// footprint. tribeId keys this since multiple tribes can each have their own.
+const boatAnimState = {};
+const BOAT_DRIFT_SPEED = 0.02; // tiles per animation frame
+
+function findNearbyWaterTile(cx, cy, maxRadius) {
+  for (let radius = 1; radius <= maxRadius; radius++) {
+    const candidates = [];
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue; // ring only
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx > 99 || ny > 99) continue;
+        const biome = biomeNameAt(nx, ny);
+        if (biome === "river" || biome === "lake") candidates.push([nx, ny]);
+      }
+    }
+    if (candidates.length) return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+  return null; // no water within range -- boat stays put rather than drift onto land
+}
+
+function drawBoat(tribeId, t) {
+  if (!t.boat_built) return;
+  let state = boatAnimState[tribeId];
+  if (!state) {
+    const start = findNearbyWaterTile(t.x, t.y, 20) || [t.x, t.y];
+    state = { x: start[0], y: start[1], targetX: start[0], targetY: start[1] };
+    boatAnimState[tribeId] = state;
+  }
+  const dx = state.targetX - state.x, dy = state.targetY - state.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 0.15) {
+    // Reached this leg -- pick the next one relative to where the boat actually
+    // is now, so it keeps roaming outward rather than snapping back to the dock.
+    const next = findNearbyWaterTile(Math.round(state.x), Math.round(state.y), 10);
+    if (next) {
+      state.targetX = next[0];
+      state.targetY = next[1];
+    }
+  } else {
+    state.x += (dx / dist) * BOAT_DRIFT_SPEED;
+    state.y += (dy / dist) * BOAT_DRIFT_SPEED;
+  }
+  const px = state.x * TILE + TILE / 2, py = state.y * TILE + TILE / 2;
+  ctx.save();
+  ctx.font = `${Math.max(10, TILE * 0.9)}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("⛵", px, py);
+  ctx.restore();
+}
+
 function drawTrails() {
   // Regression fix: each trail tile used to draw at 1.6x the actual tile size with a
   // heavy dark border -- neighboring trail tiles (very common; that's what a worn
@@ -2069,11 +2129,12 @@ function drawFrame() {
       ctx.fillStyle = "#fca5a5";
       ctx.fillText(`${approach.cycles_left}`, cx, cy + TILE * 0.85);
     });
-    Object.values(latestState.tribes || {}).forEach(t => {
+    Object.entries(latestState.tribes || {}).forEach(([id, t]) => {
       drawSettlementMarker(t);
       drawSettlementWall(t);
       drawBuildings(t);
       drawFarmPlot(t);
+      drawBoat(id, t);
     });
     Object.entries(latestState.tribes || {}).forEach(([id, t]) => drawTribeIndividuals(id, t));
     // Drawn last, on top of everything -- a trail at a tribe's own home tile (very

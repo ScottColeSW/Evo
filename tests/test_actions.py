@@ -997,6 +997,24 @@ def test_build_hatchery_requires_a_real_wild_egg_find():
     assert "hatchery is built" in result
 
 
+def test_gather_ore_requires_a_real_mine():
+    """Explicit correction: "GATHER_ORE only comes in if they Discover a Mine.
+    They do not harvest on a Discovery, so they have to fetch it once."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Mountain Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    assert ACTION_REGISTRY["GATHER_ORE"](sim, tribe, "mountains", _NO_TARGET) is None
+    assert tribe.ore_ever_gathered is False
+
+    tribe.mine_built = True
+    tribe.mine_resource_name = "Orosite Ore"
+    result = ACTION_REGISTRY["GATHER_ORE"](sim, tribe, "mountains", _NO_TARGET)
+
+    assert tribe.ore_ever_gathered is True
+    assert tribe.unique_resources["Orosite Ore"] > 0
+    assert "Orosite Ore" in result
+
+
 def test_build_forge_requires_mine_and_at_least_one_ore():
     from backend import config
 

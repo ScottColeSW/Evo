@@ -120,7 +120,7 @@ ERAS: tuple[Era, ...] = (
         advancement_cost={"wood": 40, "stone": 40, "water": 40},
         unlocks_actions=(
             "BUILD_FORTRESS", "BUILD_CASTLE", "BUILD_ROAD", "BUILD_MINE",
-            "BUILD_FORGE", "FORGE_ITEM", "USE_ITEM",
+            "BUILD_FORGE", "FORGE_ITEM", "USE_ITEM", "GATHER_ORE",
         ),
         # Founding itself is a separate, real milestone (Simulation._advance_city_founding
         # requires at least one Long House first) -- this only announces the era
