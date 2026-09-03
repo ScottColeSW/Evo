@@ -136,18 +136,26 @@ def _storage_cap(tribe) -> int:
     return config.STORAGE_CAP_BASE + tribe.warehouses_built * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
 
 
-def _add_capped(tribe, resource: str, amount: int, label: str) -> str | None:
+def _add_capped(sim, tribe, resource: str, amount: int, label: str) -> str | None:
     """Adds `amount` of `resource` up to _storage_cap, returning a real in-fiction
     outcome (like any other action's own result) instead of silently discarding the
     overflow -- explicit design goal: the tribe should be *told*, as the actual
-    result of the turn it just took, not have it vanish with no explanation."""
+    result of the turn it just took, not have it vanish with no explanation.
+
+    Explicit follow-up: "these guys need punishment for choosing the wrong
+    thing... for waste when they overfill the storage." Real waste -- current
+    stores already full, or this harvest partially wasted -- radiates a real
+    negative trauma wave (config.WASTE_TRAUMA_MAGNITUDE), not just a narrated
+    warning with no consequence."""
     cap = _storage_cap(tribe)
     current = getattr(tribe, resource)
     if current >= cap:
+        sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.WASTE_TRAUMA_MAGNITUDE, config.WASTE_TRAUMA_RADIUS)
         return f"the {label} stores are already full -- nothing more fits"
     added = min(amount, cap - current)
     setattr(tribe, resource, current + added)
     if added < amount:
+        sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.WASTE_TRAUMA_MAGNITUDE, config.WASTE_TRAUMA_RADIUS)
         return f"the {label} stores are nearly full -- only {added} of {amount} fits"
     return None
 
@@ -162,7 +170,7 @@ def _gather_wood(sim, tribe, biome, target):
         amount *= config.SAWMILL_WOOD_MULTIPLIER
     if amount > 0:
         tribe.wood_ever_gathered = True  # see actions.py._build_sawmill's own prerequisite
-    return _add_capped(tribe, "wood", amount, "wood")
+    return _add_capped(sim, tribe, "wood", amount, "wood")
 
 
 def _gather_stone(sim, tribe, biome, target):
@@ -173,7 +181,7 @@ def _gather_stone(sim, tribe, biome, target):
         amount *= config.QUARRY_STONE_MULTIPLIER
     if amount > 0:
         tribe.stone_ever_gathered = True  # see actions.py._build_quarry's own prerequisite
-    return _add_capped(tribe, "stone", amount, "stone")
+    return _add_capped(sim, tribe, "stone", amount, "stone")
 
 
 def _gather_water(sim, tribe, biome, target):
@@ -186,7 +194,7 @@ def _gather_water(sim, tribe, biome, target):
         sim._lose_population(tribe, config.DROWNING_HAZARD_POPULATION_LOSS, cause="drowning")
         return "the river's current pulled someone under"
     base = config.WATER_YIELD_RIVER if biome in ("river", "lake") else config.WATER_YIELD_OFF_RIVER
-    return _add_capped(tribe, "water", _harvest(sim, tribe, "water", base, biome), "water")
+    return _add_capped(sim, tribe, "water", _harvest(sim, tribe, "water", base, biome), "water")
 
 
 def _hunt_deer(sim, tribe, biome, target):
@@ -213,7 +221,7 @@ def _hunt_deer(sim, tribe, biome, target):
         base += config.TANNERY_MEAT_BONUS_PER_HUNT
     amount = round(base * _food_multiplier(tribe))
     tribe.hunt_ever_succeeded = True  # see actions.py._cook_food's own prerequisite
-    return _add_capped(tribe, "food", amount, "food")
+    return _add_capped(sim, tribe, "food", amount, "food")
 
 
 def _forage(sim, tribe, biome, target):
@@ -223,7 +231,7 @@ def _forage(sim, tribe, biome, target):
     higher ceiling for a guaranteed, no-hazard return."""
     amount = round(_harvest(sim, tribe, "forage", 10, biome) * _food_multiplier(tribe))
     tribe.foraged_ever_succeeded = True  # see Simulation._advance_automatic_fire
-    return _add_capped(tribe, "food", amount, "food")
+    return _add_capped(sim, tribe, "food", amount, "food")
 
 
 def _already_built(sim, tribe, kind):

@@ -133,7 +133,9 @@ def test_storage_cap_rises_with_each_warehouse_built():
 
 def test_gather_wood_is_wasted_once_storage_is_already_full():
     """Explicit design goal: the tribe should be *told*, as the real result of the
-    turn it just took, not have the overflow silently vanish."""
+    turn it just took, not have the overflow silently vanish. Explicit follow-up:
+    "these guys need punishment for choosing the wrong thing... for waste when
+    they overfill the storage" -- real waste now radiates real negative trauma."""
     from backend import config
 
     sim = _bare_simulation()
@@ -144,6 +146,7 @@ def test_gather_wood_is_wasted_once_storage_is_already_full():
 
     assert tribe.wood == config.STORAGE_CAP_BASE  # unchanged, nothing fit
     assert "wood stores are already full" in result
+    assert "DREAD" in sim.trauma.bias_string(50, 50)
 
 
 def test_gather_wood_partially_fits_right_at_the_edge_of_the_cap():
@@ -158,6 +161,7 @@ def test_gather_wood_partially_fits_right_at_the_edge_of_the_cap():
     assert tribe.wood == config.STORAGE_CAP_BASE
     assert "wood stores are nearly full" in result
     assert "only 3 of 10 fits" in result
+    assert "DREAD" in sim.trauma.bias_string(50, 50)
 
 
 def test_gather_wood_below_the_cap_is_unaffected():
@@ -169,6 +173,7 @@ def test_gather_wood_below_the_cap_is_unaffected():
 
     assert tribe.wood == 10
     assert result is None
+    assert "DREAD" not in sim.trauma.bias_string(50, 50)  # no waste, no punishment
 
 
 def test_build_warehouse_is_repeatable_and_raises_the_storage_cap():

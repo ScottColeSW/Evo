@@ -890,6 +890,19 @@ QUARRY_STONE_MULTIPLIER = 3
 # explicit request: "a building that never changes its footprint regardless of how
 # much it is holding").
 STORAGE_CAP_BASE = 150
+
+# Explicit request: "these guys need punishment for choosing the wrong thing.
+# like for waste when they overfill the storage." Gathering into an
+# already-full (or nearly full) store used to just narrate the waste with no
+# real consequence -- now radiates a real negative trauma wave (actions.py.
+# _add_capped), the same "the ancestors remember what happened here" idiom
+# already used for drowning/wolf attacks/starvation. Matches those real
+# hazards' own magnitude (-0.4) rather than a diluted version -- AncestralTrauma
+# Matrix.bias_string only surfaces DREAD past -0.35, and a real, immediately
+# felt consequence on the very first waste (not just after several repeats at
+# the same tile) is the point.
+WASTE_TRAUMA_MAGNITUDE = -0.4
+WASTE_TRAUMA_RADIUS = 5
 WAREHOUSE_STORAGE_BONUS_PER_BUILDING = 100
 WAREHOUSE_WOOD_COST = 25
 WAREHOUSE_STONE_COST = 20
