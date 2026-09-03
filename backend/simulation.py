@@ -49,10 +49,23 @@ from .world import (
 # The Mountain Tribe point moved a second time: (25, 34) sat one tile from the river
 # where it cuts through the range's original northern corner, so "confirmed nearby" was
 # never a real test of scouting. Now that the range runs much further south (see
-# world.MOUNTAIN_Y_END), (18, 43) sits along its eastern/grassy edge, ~12 tiles from the
-# river by nearest_water -- back in the same 11-13 tile band the other spawns already
-# use, but now an actual discovery instead of a freebie.
-SPAWN_POINTS = [(80, 38), (18, 43), (50, 55), (40, 37)]
+# world.MOUNTAIN_Y_END), it sits along its eastern/grassy edge, back in the same 11-13
+# tile band the other spawns already use, but now an actual discovery instead of a
+# freebie.
+#
+# Moved a third time (2026-09-03), live report: "the Mountain Scouts left at day break
+# both leaving in the very very nearly the same direction" -- traced to actions.py.
+# _reflect_into_grid: a SCOUT heading that overshoots the grid edge bounces back inward
+# (deliberately, see that function's own comment -- clamping instead used to collapse
+# every overshooting heading onto the identical boundary tile, a worse version of this
+# same symptom), but the bounce compresses two genuinely ~20-degree-apart headings back
+# toward each other when the spawn sits close enough to an edge for both to clip it.
+# (18, 43) was only 18 tiles from the west edge, well under SCOUT_PATROL_DISTANCE=25 --
+# any westward-leaning heading clipped and got folded back near its neighbor. Every
+# point below now keeps at least ~22-25 tiles of clearance from every grid edge (the
+# real ceiling for Mountains specifically, boxed in by both the west edge and the
+# 11-13-tile water band above), so an overshoot is rare and, worst case, mild.
+SPAWN_POINTS = [(74, 37), (22, 49), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 
 # See _prepare_turn's own use of this -- every one-time structure with a single

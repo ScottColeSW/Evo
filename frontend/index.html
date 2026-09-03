@@ -2378,14 +2378,13 @@ function farmingPanel(t) {
   if (t.moat_built) parts.push("💧 Moat — a further defense bonus");
   if (t.long_houses_built > 0) {
     parts.push(`🏠 Long House — ${t.long_houses_built} standing, real lasting shelter`);
-  } else if (ring0) {
-    // Explicit correction: "the long houses or just housing, isn't showing on
-    // the establishment block" -- it only ever appeared once the first one
-    // stood, unlike the Wall line above which shows real progress even at 0.
-    const ring0Built = ring0.sections.every(s => s.natural_barrier || s.progress >= 100);
-    parts.push(ring0Built
-      ? "🏠 Long House — ready to build now that the wall is complete"
-      : "🏠 Long House — blocked until the wall is complete");
+  } else if (ring0 && ring0.sections.every(s => s.natural_barrier || s.progress >= 100)) {
+    // Explicit correction: "keep the Long House blocked note hidden until
+    // [the wall's done and] they build one" -- this used to also show a
+    // "blocked until the wall is complete" line for the entire pre-wall
+    // stretch, the same nag already dropped from the backend prompt fact
+    // (Simulation._prepare_turn). Stays silent until it's actually true.
+    parts.push("🏠 Long House — ready to build now that the wall is complete");
   }
   if (t.keep_built) parts.push("🏯 Keep — a further defense bonus");
   if (t.fortress_built) parts.push("🏰 Fortress — a further defense bonus");

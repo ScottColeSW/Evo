@@ -3124,6 +3124,23 @@ def test_omitting_spawn_coordinates_still_falls_back_to_spawn_points():
     assert (sim.tribes["tribe_0"].x, sim.tribes["tribe_0"].y) == SPAWN_POINTS[0]
 
 
+def test_every_spawn_point_keeps_scout_patrol_clearance_from_every_grid_edge():
+    """Live report: "the Mountain Scouts left at day break both leaving in the
+    very very nearly the same direction." Traced to actions.py._reflect_into_grid:
+    a heading that overshoots the grid edge bounces back inward, and two
+    genuinely ~20-degree-apart headings can bounce back to nearly the same
+    landing point when the spawn sits close enough to an edge for both to clip
+    it -- (18, 43) was only 18 tiles from the west edge, under SCOUT_PATROL_
+    DISTANCE=25. Mountains can't get the full 25 (boxed in by the west edge and
+    the water-reachability band above) but every spawn should get as close to
+    it as its biome allows."""
+    from backend import config
+
+    for x, y in SPAWN_POINTS:
+        clearance = min(x, config.GRID_SIZE - 1 - x, y, config.GRID_SIZE - 1 - y)
+        assert clearance >= 20, f"({x},{y}) is only {clearance} tiles from a grid edge"
+
+
 def test_every_spawn_point_is_within_a_single_expeditions_reach_of_water():
     """Regression test: the original spawn points were picked purely to land in the
     right-named biome and turned out to be 36-42 tiles from any river -- unreachable
