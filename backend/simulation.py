@@ -200,6 +200,11 @@ AFFORDABILITY_CHECKS = {
     "EXPAND_TERRITORY": lambda t: t.wood >= config.TERRITORY_EXPANSION_WOOD_COST and t.stone >= config.TERRITORY_EXPANSION_STONE_COST,
     "PLANT_CROP": lambda t: t.farm_plots < config.MAX_FARM_PLOTS and t.wood >= config.PLANT_CROP_WOOD_COST,
     "BREED": lambda t: t.food >= config.BREED_FOOD_COST and t.water >= config.BREED_WATER_COST,
+    # Explicit request: "it's unwise to Trade before we have a full Wall" --
+    # see actions.py._send_trade_emissary's matching real prerequisite. Instant
+    # TRADE is left alone (a chance encounter, not a deliberate choice to
+    # expose the tribe) -- only the deliberate, multi-day search is gated.
+    "SEND_TRADE_EMISSARY": lambda t: bool(t.wall_rings) and city_layout.ring_fully_built(t.wall_rings[0]),
     # Both a real resource cost AND config.ITEM_STORAGE_CAP_BASE's own ceiling --
     # see _forge_item's matching "item stores are already full" no-op message.
     "FORGE_ITEM": lambda t: (

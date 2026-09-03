@@ -1490,7 +1490,15 @@ def _send_trade_emissary(sim, tribe, biome, target):
     the exchange immediately, at the point of contact -- the emissary still has to
     walk home to report it, the same "not real until you're home" rule as a hunting
     party's catch, but only for this tribe's own knowledge of what happened; the
-    exchange itself already moved both sides' goods the moment contact was made."""
+    exchange itself already moved both sides' goods the moment contact was made.
+
+    Explicit request: "it's unwise to Trade before we have a full Wall" --
+    unlike instant TRADE (a chance encounter, not a deliberate choice to expose
+    the tribe), sending an emissary out looking for strangers is a real,
+    deliberate decision a tribe shouldn't make before it can defend what it
+    has at home."""
+    if not tribe.wall_rings or not city_layout.ring_fully_built(tribe.wall_rings[0]):
+        return "the first wall ring must be finished before it's wise to go looking for strangers to trade with"
     if len(tribe.expeditions) >= expedition_capacity(tribe):
         fields = ", ".join(
             f"{e['lead_scout']} (day {e['day']}/{e['max_days']}, {e['phase']})" for e in tribe.expeditions

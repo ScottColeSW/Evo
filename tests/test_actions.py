@@ -2476,9 +2476,22 @@ def test_scout_and_hunting_party_can_both_be_out_at_once():
     assert len(tribe.expeditions) == 2
 
 
+def test_send_trade_emissary_requires_the_wall_to_be_finished_first():
+    """Explicit request: "it's unwise to Trade before we have a full Wall.\""""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    result = ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, tribe, "plains", (10, 10))
+
+    assert "wall ring must be finished" in result
+    assert tribe.expeditions == []
+
+
 def test_send_trade_emissary_dispatches_an_expedition_but_does_not_move_the_tribe():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    _complete_ring0(sim, tribe)
 
     note = ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, tribe, "plains", (10, 10))
 
@@ -2495,6 +2508,8 @@ def test_send_trade_emissary_shares_expedition_capacity_with_scout_and_hunt():
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    _complete_ring0(sim, tribe)
     for _ in range(config.MAX_CONCURRENT_EXPEDITIONS):
         ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, tribe, "plains", (10, 10))
     parties = list(tribe.expeditions)
