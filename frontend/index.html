@@ -187,6 +187,7 @@
         <button class="tab-btn active" data-tab="tribes">Tribes</button>
         <button class="tab-btn" data-tab="consensus">Consensus</button>
         <button class="tab-btn" data-tab="lineage">Lineage</button>
+        <button class="tab-btn" data-tab="library">Library</button>
         <button class="tab-btn" data-tab="chronicle">Chronicle</button>
         <button class="tab-btn" data-tab="scoreboard">Scoreboard</button>
       </div>
@@ -206,6 +207,9 @@
       </div>
       <div id="tab-lineage" class="tab-panel">
         <div id="lineage-panel"></div>
+      </div>
+      <div id="tab-library" class="tab-panel">
+        <div id="library-panel"></div>
       </div>
       <div id="tab-chronicle" class="tab-panel">
         <div id="log-chronicle" class="log-box"></div>
@@ -460,6 +464,28 @@ function renderLineage(state) {
       <span class="lineage-cycle">Cycle ${e.cycle}</span>
       <span class="lineage-tribe">${e.tribeName}</span>
       ${e.icon} ${escapeHtml(e.text)}
+    </div>`).join("");
+}
+
+function renderLibrary(state) {
+  const panel = document.getElementById("library-panel");
+  if (!panel) return;
+  const entries = [];
+  Object.values(state.tribes || {}).forEach(t => {
+    (t.library_entries || []).forEach(e => entries.push({
+      cycle: e.cycle, tribeName: t.name, tribeColor: t.color, summary: e.summary,
+    }));
+  });
+  if (entries.length === 0) {
+    panel.innerHTML = `<div class="empty-hint">No library stands yet -- build one, then RESEARCH to start recording what's been lived through.</div>`;
+    return;
+  }
+  entries.sort((a, b) => b.cycle - a.cycle);
+  panel.innerHTML = entries.map(e => `
+    <div class="lineage-row" style="border-left-color:${e.tribeColor}">
+      <span class="lineage-cycle">Cycle ${e.cycle}</span>
+      <span class="lineage-tribe">${e.tribeName}</span>
+      \u{1F4DA} ${escapeHtml(e.summary)}
     </div>`).join("");
 }
 
@@ -1353,6 +1379,7 @@ function drawExpedition(t, tribeId, exp, expIndex) {
   const fx = exp.pos[0] * TILE + TILE / 2, fy = exp.pos[1] * TILE + TILE / 2;
   const path = exp.path || [];
   const revealKey = `${tribeId}:${expIndex}`;
+  const expColor = pathColorForExpedition(t.color, expIndex);
 
   // Update the reveal tracker for this one expedition before drawing -- keyed per
   // tribe+slot since a tribe can now have more than one party out at once, each with
@@ -1373,7 +1400,7 @@ function drawExpedition(t, tribeId, exp, expIndex) {
     const revealFrac = Math.min(1, (animFrame - reveal.revealFrame) / PATH_REVEAL_FRAMES);
     const fixedCount = path.length - 1; // all segments except the newest are drawn in full
     ctx.save();
-    ctx.strokeStyle = t.color;
+    ctx.strokeStyle = expColor;
     ctx.globalAlpha = 0.6;
     ctx.setLineDash([3, 3]);
     ctx.lineWidth = Math.max(1, TILE * 0.12);
@@ -1400,7 +1427,7 @@ function drawExpedition(t, tribeId, exp, expIndex) {
   // (visually similar, same-colored) cluster back at camp.
   const scoutSeed = stringSeed(`${tribeId}:expedition:${exp.lead_scout}`);
   const clusterRadius = Math.min(TILE * 1.1, 10);
-  ctx.strokeStyle = t.color;
+  ctx.strokeStyle = expColor;
   ctx.lineWidth = Math.max(1, TILE * 0.14);
   for (let i = 0; i < 3; i++) {
     const seed = hashUnit(scoutSeed + i * 61.7);
@@ -1424,7 +1451,7 @@ function drawExpedition(t, tribeId, exp, expIndex) {
   const w = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width);
   ctx.fillStyle = "rgba(15,15,21,0.85)";
   ctx.fillRect(fx - w / 2 - 2, fy + r + 2, w + 4, 23);
-  ctx.fillStyle = t.color;
+  ctx.fillStyle = expColor;
   ctx.fillText(line1, fx - w / 2, fy + r + 11);
   ctx.fillText(line2, fx - w / 2, fy + r + 22);
 }
@@ -1444,6 +1471,24 @@ const TRAIL_COLOR_FALLBACK_HIGH = [250, 204, 21]; // used only if a trail tile s
 function hexToRgb(hex) {
   const n = parseInt(hex.replace("#", ""), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+// Live report: "scouts from the same Tribe basically follow the first one." The
+// underlying rotation math (backend/actions.py._scout) was already correct -- each
+// concurrent dispatch heads a genuinely different, full-compass-sweeping direction --
+// but every expedition from a tribe drew its path/cluster/label in the exact same flat
+// tribe color, so two paths that start close together near a shared camp (a real,
+// expected effect of only 20 degrees separating headings a short distance from the
+// origin) were visually indistinguishable from one single path. Alternates lighter/
+// darker tints of the tribe's own color per concurrent expedition slot so "which one is
+// which" is answerable at a glance without changing the underlying hue's tribe identity.
+function pathColorForExpedition(hex, index) {
+  const [r, g, b] = hexToRgb(hex);
+  const factor = [0, 0.4, -0.35, 0.65, -0.6][index % 5];
+  const mix = (channel) => Math.max(0, Math.min(255, Math.round(
+    factor >= 0 ? channel + (255 - channel) * factor : channel * (1 + factor)
+  )));
+  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
 }
 
 // Landmarks: fixed points a tribe's own scouts have earned real knowledge of, marked
@@ -1771,7 +1816,7 @@ const BUILDING_ICONS = {
   sawmill: "🪵", quarry: "⛏️", mine: "💎", kitchen: "🍲", tannery: "🦫", forge: "🔨",
   warehouse: "🏬",
   dock: "⚓", fishery: "🎣", farm_plot: "🌾", flock_pen: "🐔", fire: "🔥",
-  hatchery: "🐣", boat: "⛵", bath_house: "🛁",
+  hatchery: "🐣", boat: "⛵", bath_house: "🛁", library: "📚",
 };
 
 function drawBuildings(t) {
@@ -2303,7 +2348,7 @@ function farmingPanel(t) {
     || t.moat_built || t.road_built || t.dock_built
     || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built || t.tannery_built
     || t.forge_built || t.warehouses_built || t.founded_city || (t.cooking_learned && !t.kitchen_built)
-    || t.hatchery_built || t.boat_built || t.bath_house_built;
+    || t.hatchery_built || t.boat_built || t.bath_house_built || t.library_built;
   if (!hasAny) return "";
   const parts = [];
   if (t.farm_plots > 0) {
@@ -2346,6 +2391,10 @@ function farmingPanel(t) {
   }
   if (t.hatchery_built) parts.push("🐣 Hatchery — the flock hatches on its own much more reliably");
   if (t.bath_house_built) parts.push("🛁 Bath House — daily food and water consumption reduced");
+  if (t.library_built) {
+    // 4% per research, capped at 50% -- mirrors config.INNOVATION_ERA_DISCOUNT_PER_RESEARCH/_CAP.
+    parts.push(`📚 Library — ${t.research_completed} insight${t.research_completed === 1 ? "" : "s"} recorded, next era ${Math.min(50, t.research_completed * 4)}% closer`);
+  }
   if (t.fishing_learned) parts.push("🎣 Fishing — mastered, fish now caught for food");
   if (t.fishery_built) parts.push(`🐟 Fishery — ${fishSupplyPerCycle(t)} food/day flows in automatically`);
   if (t.fire_ever_built) parts.push("🔥 Fire — mastered, enables cooking");
@@ -2589,6 +2638,7 @@ function updateSidebar(state) {
 
   renderEraLadder(state);
   renderLineage(state);
+  renderLibrary(state);
 
   const pairs = state.linguistic_consensus || [];
   if (pairs.length === 0) {

@@ -775,6 +775,53 @@ def _build_bath_house(sim, tribe, biome, target):
     return "a bath house is built -- the tribe's stores stretch further from now on"
 
 
+def _build_library(sim, tribe, biome, target):
+    """Explicit request: a Library condenses the tribe's own remembered history
+    (TribeMemory) into permanent, readable entries and unlocks RESEARCH -- a
+    real, repeatable path to reaching the next era sooner. Gated on
+    long_houses_built > 0 (real shelter already established), the same
+    "building homes" signal Kitchen/Sawmill/Quarry already use -- a Library
+    only makes sense once people actually live here."""
+    if tribe.library_built or tribe.long_houses_built == 0:
+        return None
+    if tribe.wood < config.LIBRARY_WOOD_COST or tribe.stone < config.LIBRARY_STONE_COST:
+        return None
+    slot = architect.find_free_slot(sim.world, tribe, "library")
+    if slot is None:
+        return None
+    tribe.wood -= config.LIBRARY_WOOD_COST
+    tribe.stone -= config.LIBRARY_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["library"]
+    architect.record_building(tribe, "library", slot[0], slot[1], w, h, sim.cycle)
+    tribe.library_built = True
+    sim._award_trophy(tribe, "Keeper of Records")
+    return "a library is built -- the tribe's own memory can now be studied and put to real use"
+
+
+def _research(sim, tribe, biome, target):
+    """The Library's real payoff: distills the tribe's highest-weight remembered
+    episodes (TribeMemory.entries/taboos -- the same ranking TribeMemory.
+    consolidate already uses for its own taboo cut) into one permanent Library
+    entry, and permanently discounts the next era's threshold a little further
+    (Simulation._advance_era_if_ready) -- a real, compounding "boosts growth and
+    innovation," not a flat one-time stat bump. No-ops with nothing to study yet
+    if the tribe hasn't actually remembered anything real yet."""
+    if not tribe.library_built:
+        return None
+    ranked = sorted(tribe.memory.entries, key=lambda e: e["weight"], reverse=True)
+    top = [e["text"] for e in ranked[: config.LIBRARY_ENTRY_MEMORY_COUNT]]
+    top.extend(t for t in tribe.memory.taboos if t not in top)
+    if not top:
+        return "the library stands ready, but the tribe hasn't lived through anything worth recording yet"
+    if tribe.wood < config.RESEARCH_WOOD_COST:
+        return None
+    tribe.wood -= config.RESEARCH_WOOD_COST
+    summary = "; ".join(top[: config.LIBRARY_ENTRY_MEMORY_COUNT])
+    tribe.library_entries.append({"summary": summary, "cycle": sim.cycle})
+    tribe.research_completed += 1
+    return f"the library records a new insight: \"{summary}\" -- the path to the next era grows a little shorter"
+
+
 def _build_forge(sim, tribe, biome, target):
     """Explicit request: a Mine's named ore had nowhere real to go once excavated --
     "we skipped a beat" between production and doing anything with it. Gated on
@@ -1631,6 +1678,8 @@ ACTION_REGISTRY = {
     "BUILD_TANNERY": _build_tannery,
     "BUILD_HATCHERY": _build_hatchery,
     "BUILD_BATH_HOUSE": _build_bath_house,
+    "BUILD_LIBRARY": _build_library,
+    "RESEARCH": _research,
     "BUILD_WAREHOUSE": _build_warehouse,
     "BUILD_FORGE": _build_forge,
     "FORGE_ITEM": _forge_item,
@@ -1684,6 +1733,8 @@ ACTION_DESCRIPTIONS = {
     "BUILD_TANNERY": "Build a tannery using stored wood and stone -- only possible once a hunt has actually succeeded. A one-time, permanent structure at your settlement: Fur flows in steadily from then on, and every successful hunt yields extra meat from then on.",
     "BUILD_HATCHERY": "Build a hatchery using stored wood and stone -- only possible once a wild egg has actually been found and hatched. A one-time, permanent structure at your settlement: the flock grows on its own much more reliably from then on.",
     "BUILD_BATH_HOUSE": "Build a bath house using stored wood and stone -- no prerequisite beyond being settled. A one-time, permanent structure at your settlement: the tribe's daily food and water consumption drops from then on.",
+    "BUILD_LIBRARY": "Build a library using stored wood and stone -- only possible once at least one long house stands. A one-time, permanent structure: unlocks RESEARCH, a real way to reach the next era sooner.",
+    "RESEARCH": "Study the tribe's own remembered history at the library, using a little stored wood -- only possible once a library stands. Distills what's been lived through into a permanent Library entry, and permanently shortens the path to the next era a little further. Repeatable.",
     "BUILD_WAREHOUSE": "Build a warehouse using stored wood and stone. Raises how much of every resource can be stored at once -- gathering more than storage allows is wasted. Repeatable: each one raises the limit further.",
     "BUILD_FORGE": "Build a forge using stored wood and stone -- only possible once a mine stands and at least one unit of its ore is already in stock. A one-time, permanent structure: from then on, ore can be worked into real tools, weapons, and inventions.",
     "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. No durability to track: each item just carries a flat value, usable later or given away in a trade.",

@@ -4868,6 +4868,50 @@ def test_era_advances_one_step_at_a_time_even_if_stats_clear_a_later_era_too():
     assert "PRIDE" in sim.trauma.bias_string(50, 50)
 
 
+def test_completed_research_discounts_the_next_eras_threshold_and_cost():
+    """The Library's real payoff (actions.py._research/config.
+    INNOVATION_ERA_DISCOUNT_PER_RESEARCH): each completed research permanently
+    shaves a fraction off the next era's population/resource thresholds and its
+    advancement cost -- a real, compounding way research "boosts growth", not a
+    flat stat bump. 5 research * 4% = 20% off cognitive_horizon -> tribal_synapse's
+    stock 20 population / 40 resources / 30-30-20-20 advancement cost."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.era = "cognitive_horizon"
+    tribe.research_completed = 5  # 20% discount
+    tribe.population = 16  # below the undiscounted 20, meets the discounted 16
+    tribe.water = tribe.stone = tribe.wood = tribe.food = 32  # below undiscounted 40, meets discounted 32
+
+    sim._advance_era_if_ready(tribe)
+
+    assert tribe.era == "tribal_synapse"
+    assert tribe.wood == 8  # 32 - round(30*0.8)=24
+    assert tribe.stone == 8  # 32 - round(30*0.8)=24
+    assert tribe.water == 16  # 32 - round(20*0.8)=16
+    assert tribe.food == 16  # 32 - round(20*0.8)=16
+
+
+def test_research_discount_never_makes_advancement_free():
+    """INNOVATION_ERA_DISCOUNT_CAP keeps the discount below 100% no matter how
+    much research a tribe has banked."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.era = "cognitive_horizon"
+    tribe.research_completed = 1000  # would be a >100% discount uncapped
+
+    assert config.INNOVATION_ERA_DISCOUNT_CAP < 1.0
+    floor = 1 - config.INNOVATION_ERA_DISCOUNT_CAP
+    tribe.population = round(20 * floor)
+    tribe.water = tribe.stone = tribe.wood = tribe.food = round(40 * floor)
+
+    sim._advance_era_if_ready(tribe)
+
+    assert tribe.era == "tribal_synapse"  # the capped discount is still enough here
+    assert tribe.wood >= 0 and tribe.stone >= 0  # never charged a negative/free cost
+
+
 def test_era_does_not_advance_without_meeting_the_food_requirement():
     """Live-run correction (2026-09-02): no era used to require food at all -- a
     tribe could clear population/water/stone/wood while genuinely food-fragile."""

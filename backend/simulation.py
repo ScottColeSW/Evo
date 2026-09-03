@@ -81,7 +81,7 @@ ONE_TIME_BUILD_FLAGS = {
     "BUILD_CASTLE": "castle_built", "BUILD_TANNERY": "tannery_built",
     "BUILD_MINE": "mine_built", "BUILD_FORGE": "forge_built",
     "BUILD_ROAD": "road_built", "BUILD_HATCHERY": "hatchery_built",
-    "BUILD_BATH_HOUSE": "bath_house_built",
+    "BUILD_BATH_HOUSE": "bath_house_built", "BUILD_LIBRARY": "library_built",
 }
 
 # See _prepare_turn's survival-crisis filter. A live run showed a tribe stay at 0
@@ -213,6 +213,16 @@ AFFORDABILITY_CHECKS = {
         t.wood >= config.BATH_HOUSE_WOOD_COST and t.stone >= config.BATH_HOUSE_STONE_COST
         and _can_place(t, w, "bath_house")
     ),
+    "BUILD_LIBRARY": lambda t, w: (
+        t.long_houses_built > 0
+        and t.wood >= config.LIBRARY_WOOD_COST and t.stone >= config.LIBRARY_STONE_COST
+        and _can_place(t, w, "library")
+    ),
+    # Deliberately NOT gated on the tribe having any memory yet -- same as
+    # CONSTRUCT_WALL's own "let the action's own message surface instead" case:
+    # a library with nothing worth studying yet is a real, informative state,
+    # not a guaranteed no-op this table exists to hide.
+    "RESEARCH": lambda t, w: t.library_built and t.wood >= config.RESEARCH_WOOD_COST,
     # GATHER_ORE has no wood/stone cost of its own -- the real prerequisite is
     # a mine existing at all (see actions.py._gather_ore's own guard clause).
     "GATHER_ORE": lambda t, w: t.mine_built,
@@ -622,6 +632,17 @@ class Tribe:
         # See actions.py._build_bath_house/Simulation._apply_upkeep -- explicit
         # request: "bath house bolsters Well-Being upkeep once built."
         self.bath_house_built = False
+        # See actions.py._build_library/_research -- explicit request: a Library
+        # summarizes the tribe's own TribeMemory (backend/memory.py) into permanent,
+        # readable entries (own Library tab, not just a building icon), and unlocks
+        # RESEARCH: a real, repeatable "boost growth and innovation" -- each
+        # completed research discounts the next era's threshold (see
+        # config.INNOVATION_ERA_DISCOUNT_PER_RESEARCH, Simulation._advance_era_if_ready),
+        # a genuine payoff a spectator can watch compound, not a flat stat nudge.
+        # library_entries: {"summary", "cycle"} dicts, oldest first.
+        self.library_built = False
+        self.library_entries: list[dict] = []
+        self.research_completed = 0
         # See actions.py._build_moat -- one-way, gated on the first wall ring being
         # fully reinforced (backend/city_layout.py.ring_fully_reinforced). A cheaper
         # alternative defense investment, not a wall replacement.
@@ -858,6 +879,9 @@ class Tribe:
             "hatchery_built": self.hatchery_built,
             "boat_built": self.boat_built,
             "bath_house_built": self.bath_house_built,
+            "library_built": self.library_built,
+            "library_entries": self.library_entries,
+            "research_completed": self.research_completed,
             "flock_lineage": self.flock_lineage,
             "settlement_name": self.settlement_name,
             "has_ever_settled": self.has_ever_settled,
@@ -3630,14 +3654,25 @@ class Simulation:
         nxt = next_era(tribe.era)
         if nxt is None:
             return
-        if tribe.population < nxt.requires_population:
+        # RESEARCH's real payoff (actions.py._research/config.
+        # INNOVATION_ERA_DISCOUNT_PER_RESEARCH): every completed research permanently
+        # shaves a little off the next era's own thresholds and cost, capped so
+        # advancement is never free. Recomputed fresh against next_era() each check --
+        # not baked into eras.py's own numbers -- so it always reflects research done
+        # since the tribe's last advancement, not just at the moment of this one.
+        discount = min(
+            config.INNOVATION_ERA_DISCOUNT_CAP,
+            tribe.research_completed * config.INNOVATION_ERA_DISCOUNT_PER_RESEARCH,
+        )
+        if tribe.population < round(nxt.requires_population * (1 - discount)):
             return
         for resource, minimum in nxt.requires_resources.items():
-            if getattr(tribe, resource, 0) < minimum:
+            if getattr(tribe, resource, 0) < round(minimum * (1 - discount)):
                 return
 
         for resource, amount in nxt.advancement_cost.items():
-            setattr(tribe, resource, max(0, getattr(tribe, resource) - amount))
+            discounted = round(amount * (1 - discount))
+            setattr(tribe, resource, max(0, getattr(tribe, resource) - discounted))
         tribe.era = nxt.key
         tribe.history.append(nxt.announcement.format(tribe=tribe.name))
         if nxt.founds_city:

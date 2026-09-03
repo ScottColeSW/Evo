@@ -311,7 +311,7 @@ BUILDING_FOOTPRINTS = {
     "warehouse": (3, 3),
     "kitchen": (2, 2), "tannery": (2, 2), "dock": (2, 2), "fishery": (2, 4),
     "farm_plot": (3, 3), "flock_pen": (2, 2), "fire": (1, 1), "hatchery": (2, 2),
-    "boat": (2, 3), "bath_house": (2, 2),
+    "boat": (2, 3), "bath_house": (2, 2), "library": (3, 3),
 }
 
 # BUILD_FISHERY (backend/actions.py): a new building, unlocked once a Dock already
@@ -359,6 +359,29 @@ FLOCK_NATURAL_HATCH_CHANCE = 0.15
 BATH_HOUSE_WOOD_COST = 20
 BATH_HOUSE_STONE_COST = 15
 BATH_HOUSE_UPKEEP_MULTIPLIER = 0.85
+
+# BUILD_LIBRARY/RESEARCH (backend/actions.py, Simulation._advance_era_if_ready):
+# explicit request -- a Library condenses the tribe's own TribeMemory (backend/
+# memory.py) into permanent, readable entries (own frontend tab, not just an
+# establishment line), and unlocks RESEARCH: a real, repeatable "growth and
+# innovation" payoff, not a flat stat nudge. Gated on long_houses_built > 0 (real
+# housing already established), same "building homes" signal Kitchen/Sawmill/
+# Quarry already use -- a Library only makes sense once people actually live here.
+LIBRARY_WOOD_COST = 30
+LIBRARY_STONE_COST = 25
+RESEARCH_WOOD_COST = 10
+# Each completed RESEARCH permanently discounts the *next* era's population/
+# resource thresholds and its advancement cost by this fraction, capped so
+# advancement can never become free -- a tribe that invests in research
+# genuinely reaches the next era sooner, the concrete "boosts growth" this was
+# built for. Applied fresh against next_era() each check (Simulation.
+# _advance_era_if_ready), not baked into eras.py's own numbers.
+INNOVATION_ERA_DISCOUNT_PER_RESEARCH = 0.04
+INNOVATION_ERA_DISCOUNT_CAP = 0.5
+# How many of the tribe's own highest-weight memories get folded into one Library
+# entry -- a real distillation (see TribeMemory.consolidate's own top-3 taboo
+# ranking, which this deliberately mirrors), not the full raw log dumped in.
+LIBRARY_ENTRY_MEMORY_COUNT = 3
 
 EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR = 5  # 1 egg per 5 flock members per cycle
 LIVESTOCK_SURPLUS_THRESHOLD = 12

@@ -1008,6 +1008,92 @@ def test_build_bath_house_is_a_no_op_once_already_built():
     assert ACTION_REGISTRY["BUILD_BATH_HOUSE"](sim, tribe, "plains", _NO_TARGET) is None
 
 
+def test_build_library_requires_a_long_house_first():
+    """Explicit request: a Library condenses the tribe's own remembered history and
+    unlocks RESEARCH -- gated on long_houses_built, the same "building homes" real
+    prerequisite Kitchen/Sawmill/Quarry already use."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = config.LIBRARY_WOOD_COST
+    tribe.stone = config.LIBRARY_STONE_COST
+
+    assert ACTION_REGISTRY["BUILD_LIBRARY"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.library_built is False
+
+    tribe.long_houses_built = 1
+    result = ACTION_REGISTRY["BUILD_LIBRARY"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.library_built is True
+    assert "library is built" in result
+
+
+def test_build_library_is_a_no_op_once_already_built():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.long_houses_built = 1
+    tribe.library_built = True
+    tribe.wood = config.LIBRARY_WOOD_COST
+    tribe.stone = config.LIBRARY_STONE_COST
+
+    assert ACTION_REGISTRY["BUILD_LIBRARY"](sim, tribe, "plains", _NO_TARGET) is None
+
+
+def test_research_requires_a_library_first():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 100
+
+    assert ACTION_REGISTRY["RESEARCH"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.research_completed == 0
+
+
+def test_research_distills_the_tribes_own_memory_into_a_library_entry():
+    """The Library's real payoff: RESEARCH pulls the tribe's own highest-weight
+    remembered episodes (same ranking TribeMemory.consolidate uses for its own
+    taboo cut) into one permanent Library entry, spending a little wood and
+    permanently counting toward the next era's discount (Simulation.
+    _advance_era_if_ready)."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.library_built = True
+    tribe.wood = 100
+    tribe.memory.remember("a wolf attacked near the river", cycle=1, weight=0.9)
+    tribe.memory.remember("gathered some extra wood", cycle=2, weight=0.1)
+
+    result = ACTION_REGISTRY["RESEARCH"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.research_completed == 1
+    assert len(tribe.library_entries) == 1
+    assert "wolf attacked near the river" in tribe.library_entries[0]["summary"]
+    assert tribe.wood == 100 - config.RESEARCH_WOOD_COST
+    assert "insight" in result
+
+
+def test_research_with_no_memory_yet_is_a_real_no_op_not_a_silent_one():
+    """Deliberately left reachable even with nothing to study yet -- same as
+    CONSTRUCT_WALL's own "let the action's own message surface instead" case,
+    not a guaranteed no-op the affordability table should hide."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.library_built = True
+    tribe.wood = 100
+
+    result = ACTION_REGISTRY["RESEARCH"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.research_completed == 0
+    assert tribe.library_entries == []
+    assert tribe.wood == 100  # nothing spent on a no-op
+    assert "worth recording" in result
+
+
 def test_gather_ore_requires_a_real_mine():
     """Explicit correction: "GATHER_ORE only comes in if they Discover a Mine.
     They do not harvest on a Discovery, so they have to fetch it once."""
