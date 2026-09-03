@@ -160,6 +160,8 @@ def _gather_wood(sim, tribe, biome, target):
     amount = _harvest(sim, tribe, "wood", 10, biome)
     if tribe.sawmill_built:
         amount *= config.SAWMILL_WOOD_MULTIPLIER
+    if amount > 0:
+        tribe.wood_ever_gathered = True  # see actions.py._build_sawmill's own prerequisite
     return _add_capped(tribe, "wood", amount, "wood")
 
 
@@ -169,6 +171,8 @@ def _gather_stone(sim, tribe, biome, target):
     amount = _harvest(sim, tribe, "stone", 10, biome)
     if tribe.quarry_built:
         amount *= config.QUARRY_STONE_MULTIPLIER
+    if amount > 0:
+        tribe.stone_ever_gathered = True  # see actions.py._build_quarry's own prerequisite
     return _add_capped(tribe, "stone", amount, "stone")
 
 
@@ -200,7 +204,14 @@ def _hunt_deer(sim, tribe, biome, target):
             "label": "Wolf pack!", "outcome": "struck",
         })
         return "a wolf pack struck the hunting party"
-    amount = round(_harvest(sim, tribe, "game", 15, biome) * _food_multiplier(tribe))
+    base = _harvest(sim, tribe, "game", 15, biome)
+    if tribe.tannery_built:
+        # Explicit request: "it also gives the meat to the kitchen (2 meat per
+        # catch) which cooks it (multiplier)" -- a flat bonus folded into the
+        # same pre-multiplier harvest amount, not a separate resource, so it
+        # rides the existing cook/kitchen multiplier chain like any other food.
+        base += config.TANNERY_MEAT_BONUS_PER_HUNT
+    amount = round(base * _food_multiplier(tribe))
     tribe.hunt_ever_succeeded = True  # see actions.py._cook_food's own prerequisite
     return _add_capped(tribe, "food", amount, "food")
 
@@ -529,19 +540,18 @@ def _build_fishery(sim, tribe, biome, target):
 
 
 def _build_sawmill(sim, tribe, biome, target):
-    """Explicit request: "after they have farming and fishing down and are
-    building homes" -- gated on the two real facts named (long_house_built,
-    fishing_learned), not era alone. Mirrors _build_quarry's own real-discovery
-    gate: a sawmill needs an actual scouted stand of trees (tribe.lumber_sites)
-    to work, per "if they have found a... Stand of Trees to Harvest, these are
-    collectables that must be fetched." Locks in the exact site used
-    (tribe.lumber_site) so Simulation._advance_resource_trails knows where to
-    wear a route to. One-way, like dock_built; permanently triples every future
-    GATHER_WOOD yield (see _gather_wood)."""
-    if tribe.sawmill_built or not (tribe.long_houses_built > 0 and tribe.fishing_learned):
+    """Explicit correction, after live data showed both tribes permanently
+    blocked behind a Long House that itself needs a completed wall ring neither
+    reliably finishes: "the Sawmill is... online easily if they Gather Wood
+    successfully. We already have this scaling." Gated on a real proven success
+    (tribe.wood_ever_gathered) instead of Long House/fishing/a scouted site --
+    the multiplier payoff (config.SAWMILL_WOOD_MULTIPLIER) was always correct,
+    only the gate was too far downstream. A scouted stand of trees
+    (tribe.lumber_sites) is no longer required, but still used opportunistically
+    for Simulation._advance_resource_trails if one happens to exist -- not
+    required to exist first. One-way, like dock_built."""
+    if tribe.sawmill_built or not tribe.wood_ever_gathered:
         return None
-    if not tribe.lumber_sites:
-        return "no stand of trees has been scouted yet -- a sawmill needs a real stand to work"
     if tribe.wood < config.SAWMILL_WOOD_COST or tribe.stone < config.SAWMILL_STONE_COST:
         return None
     slot = architect.find_free_slot(sim.world, tribe, "sawmill")
@@ -552,26 +562,20 @@ def _build_sawmill(sim, tribe, biome, target):
     w, h = config.BUILDING_FOOTPRINTS["sawmill"]
     architect.record_building(tribe, "sawmill", slot[0], slot[1], w, h, sim.cycle)
     tribe.sawmill_built = True
-    tribe.lumber_site = tribe.lumber_sites[-1]
+    if tribe.lumber_sites:
+        tribe.lumber_site = tribe.lumber_sites[-1]
     sim._award_trophy(tribe, "Sawyer")
     return "a sawmill rises -- every load of wood gathered from here on is worth three times as much"
 
 
 def _build_quarry(sim, tribe, biome, target):
-    """Mirrors _build_sawmill, for stone instead of wood -- plus one further real
-    gate _build_sawmill has no equivalent of: explicit correction, "once they
-    know where a quarry is, they need to just use it to get stone... they might
-    consider building one closer to their establishment." A quarry is only
-    worth building once a real stone-rich site has actually been scouted
-    (tribe.quarry_sites), same real-discovery gate _build_mine already uses --
-    built at the settlement itself (the "closer to their establishment" choice),
-    not requiring the tribe to relocate to the exact discovered tile. Locks in
-    the exact site used (tribe.quarry_site) so Simulation._advance_resource_
-    trails knows where to wear a route to."""
-    if tribe.quarry_built or not (tribe.long_houses_built > 0 and tribe.fishing_learned):
+    """Mirrors _build_sawmill's own simplification exactly, for stone instead of
+    wood: gated on a real proven success (tribe.stone_ever_gathered) instead of
+    Long House/fishing/a scouted site. A stone-rich site (tribe.quarry_sites) is
+    no longer required, but still used opportunistically for Simulation.
+    _advance_resource_trails if one happens to exist."""
+    if tribe.quarry_built or not tribe.stone_ever_gathered:
         return None
-    if not tribe.quarry_sites:
-        return "no stone-rich site has been scouted yet -- a quarry needs a real deposit to work"
     if tribe.wood < config.QUARRY_WOOD_COST or tribe.stone < config.QUARRY_STONE_COST:
         return None
     slot = architect.find_free_slot(sim.world, tribe, "quarry")
@@ -582,7 +586,8 @@ def _build_quarry(sim, tribe, biome, target):
     w, h = config.BUILDING_FOOTPRINTS["quarry"]
     architect.record_building(tribe, "quarry", slot[0], slot[1], w, h, sim.cycle)
     tribe.quarry_built = True
-    tribe.quarry_site = tribe.quarry_sites[-1]
+    if tribe.quarry_sites:
+        tribe.quarry_site = tribe.quarry_sites[-1]
     sim._award_trophy(tribe, "Quarrier")
     return "a quarry opens -- every load of stone harvested from here on is worth three times as much"
 
@@ -661,16 +666,15 @@ def _build_mine(sim, tribe, biome, target):
 
 def _build_tannery(sim, tribe, biome, target):
     """Explicit request: "maybe some hunters want a Tannery and they can trade
-    furs too." Mirrors _build_mine exactly -- gated on a real discovered site,
-    here a Rabbit Warren from tribe.wildlife_sites, rather than era alone.
-    Locks in the exact site used (tribe.tannery_site) and pays Fur into the
-    same tribe.unique_resources dict mines already use, not a second parallel
-    resource system."""
-    if tribe.tannery_built or not (tribe.long_houses_built > 0 and tribe.fishing_learned):
+    furs too." Explicit correction, same simplification as _build_sawmill/
+    _build_quarry: "the Tannery should come online easily, as they only need
+    to have hunted." Gated on tribe.hunt_ever_succeeded instead of Long House/
+    fishing/a scouted Rabbit Warren. A warren site is no longer required, but
+    still used opportunistically for Simulation._advance_resource_trails if
+    one happens to be scouted. Pays Fur into the same tribe.unique_resources
+    dict mines already use, not a second parallel resource system."""
+    if tribe.tannery_built or not tribe.hunt_ever_succeeded:
         return None
-    warren_sites = [s for s in tribe.wildlife_sites if s["type"] == "Rabbit Warren"]
-    if not warren_sites:
-        return "no rabbit warren has been scouted yet -- a tannery needs real pelts to work"
     if tribe.wood < config.TANNERY_WOOD_COST or tribe.stone < config.TANNERY_STONE_COST:
         return None
     slot = architect.find_free_slot(sim.world, tribe, "tannery")
@@ -681,8 +685,10 @@ def _build_tannery(sim, tribe, biome, target):
     w, h = config.BUILDING_FOOTPRINTS["tannery"]
     architect.record_building(tribe, "tannery", slot[0], slot[1], w, h, sim.cycle)
     tribe.tannery_built = True
-    chosen_site = warren_sites[-1]
-    tribe.tannery_site = (chosen_site["x"], chosen_site["y"])
+    warren_sites = [s for s in tribe.wildlife_sites if s["type"] == "Rabbit Warren"]
+    if warren_sites:
+        chosen_site = warren_sites[-1]
+        tribe.tannery_site = (chosen_site["x"], chosen_site["y"])
     sim._award_trophy(tribe, "Tanner")
     return "a tannery is built -- Fur will flow in steadily from now on"
 
@@ -1513,10 +1519,10 @@ ACTION_DESCRIPTIONS = {
     "EXPAND_TERRITORY": "Grow your settlement's real owned territory using stored wood and stone, unlocking the next wall section to build. Repeatable -- once a whole wall ring is fully unlocked and reinforced, this opens a brand new ring further out instead.",
     "BUILD_DOCK": "Build a dock at your current tile using stored wood -- only possible once the tribe has settled here and has already learned to fish (a real successful catch). A one-time, permanent structure: every future fish caught here pays out more from then on.",
     "BUILD_FISHERY": "Build a fishery using stored wood and stone -- only possible once a dock already stands. A one-time, permanent structure: the settlement's passive daily fish supply flows in even more steadily from then on.",
-    "BUILD_SAWMILL": "Build a sawmill using stored wood and stone -- only possible once a long house stands, fishing is mastered, and a stand of trees has actually been scouted. A one-time, permanent structure at your settlement: every future load of gathered wood is worth three times as much from then on.",
-    "BUILD_QUARRY": "Build a quarry using stored wood and stone -- only possible once a long house stands, fishing is mastered, and a stone-rich site has actually been scouted. A one-time, permanent structure at your settlement: every future load of harvested stone is worth three times as much from then on.",
+    "BUILD_SAWMILL": "Build a sawmill using stored wood and stone -- only possible once wood has actually been gathered here at least once. A one-time, permanent structure at your settlement: every future load of gathered wood is worth three times as much from then on.",
+    "BUILD_QUARRY": "Build a quarry using stored wood and stone -- only possible once stone has actually been gathered here at least once. A one-time, permanent structure at your settlement: every future load of harvested stone is worth three times as much from then on.",
     "BUILD_MINE": "Excavate a mine at a vein your scouts have already found, using stored wood and stone -- only possible once a quarry stands and at least one vein is known. A one-time, permanent structure: its unique resource flows in steadily from then on.",
-    "BUILD_TANNERY": "Build a tannery using stored wood and stone -- only possible once a long house stands, fishing is mastered, and a rabbit warren has actually been scouted. A one-time, permanent structure at your settlement: Fur flows in steadily from then on.",
+    "BUILD_TANNERY": "Build a tannery using stored wood and stone -- only possible once a hunt has actually succeeded. A one-time, permanent structure at your settlement: Fur flows in steadily from then on, and every successful hunt yields extra meat from then on.",
     "BUILD_WAREHOUSE": "Build a warehouse using stored wood and stone. Raises how much of every resource can be stored at once -- gathering more than storage allows is wasted. Repeatable: each one raises the limit further.",
     "BUILD_FORGE": "Build a forge using stored wood and stone -- only possible once a mine stands and at least one unit of its ore is already in stock. A one-time, permanent structure: from then on, ore can be worked into real tools, weapons, and inventions.",
     "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. No durability to track: each item just carries a flat value, usable later or given away in a trade.",

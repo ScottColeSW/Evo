@@ -907,6 +907,12 @@ MINE_YIELD_PER_CYCLE = 5
 TANNERY_WOOD_COST = 15
 TANNERY_STONE_COST = 15
 TANNERY_YIELD_PER_CYCLE = 4
+# Explicit request: "it also gives the meat to the kitchen (2 meat per catch)
+# which cooks it (multiplier)" -- a flat bonus added to every successful hunt's
+# food yield once the Tannery is built (see actions.py._hunt_deer and
+# Simulation._report_hunting_party_home), on the theory that a real tannery
+# means less of the catch goes to waste.
+TANNERY_MEAT_BONUS_PER_HUNT = 2
 
 # BUILD_KITCHEN (backend/actions.py): explicit follow-up -- "we might have to let
 # them build a kitchen which improves cooked food to excellent food yielding 3

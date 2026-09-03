@@ -134,9 +134,12 @@ AFFORDABILITY_CHECKS = {
     "BUILD_DOCK": lambda t: t.wood >= config.DOCK_WOOD_COST,
     "CONSTRUCT_WALL": _can_afford_construct_wall,
     "BUILD_FISHERY": lambda t: t.wood >= config.FISHERY_WOOD_COST and t.stone >= config.FISHERY_STONE_COST,
-    "BUILD_SAWMILL": lambda t: t.wood >= config.SAWMILL_WOOD_COST and t.stone >= config.SAWMILL_STONE_COST,
-    "BUILD_QUARRY": lambda t: t.wood >= config.QUARRY_WOOD_COST and t.stone >= config.QUARRY_STONE_COST,
-    "BUILD_TANNERY": lambda t: t.wood >= config.TANNERY_WOOD_COST and t.stone >= config.TANNERY_STONE_COST,
+    # Real prerequisite AND cost checked together -- see actions.py._build_sawmill/
+    # _build_quarry/_build_tannery's own simplified gates (a proven success, not a
+    # Long House/scouted site).
+    "BUILD_SAWMILL": lambda t: t.wood_ever_gathered and t.wood >= config.SAWMILL_WOOD_COST and t.stone >= config.SAWMILL_STONE_COST,
+    "BUILD_QUARRY": lambda t: t.stone_ever_gathered and t.wood >= config.QUARRY_WOOD_COST and t.stone >= config.QUARRY_STONE_COST,
+    "BUILD_TANNERY": lambda t: t.hunt_ever_succeeded and t.wood >= config.TANNERY_WOOD_COST and t.stone >= config.TANNERY_STONE_COST,
     "BUILD_KITCHEN": lambda t: t.wood >= config.KITCHEN_WOOD_COST and t.stone >= config.KITCHEN_STONE_COST,
     "BUILD_MOAT": lambda t: t.wood >= config.MOAT_WOOD_COST and t.stone >= config.MOAT_STONE_COST,
     "BUILD_WAREHOUSE": lambda t: t.wood >= config.WAREHOUSE_WOOD_COST and t.stone >= config.WAREHOUSE_STONE_COST,
@@ -466,6 +469,15 @@ class Tribe:
         # the first time it's ever chosen at all, not on some stricter "good yield"
         # bar.
         self.foraged_ever_succeeded = False
+        # See actions.py._build_sawmill/_build_quarry -- explicit request, "the
+        # Sawmill is also online easily if they Gather Wood successfully" (and the
+        # same for Quarry/stone): a real proven success, not a scouted site or a
+        # Long House, is what actually should gate these now. Live data showed both
+        # tribes permanently blocked from Sawmill/Tannery/Quarry behind a Long House
+        # that itself needs a completed wall ring neither tribe reliably finishes --
+        # this removes that chain for these three specifically.
+        self.wood_ever_gathered = False
+        self.stone_ever_gathered = False
         self.fire_ever_built = False
         # See actions.py._build_moat -- one-way, gated on the first wall ring being
         # fully reinforced (backend/city_layout.py.ring_fully_reinforced). A cheaper
@@ -656,6 +668,8 @@ class Tribe:
             "cooking_learned": self.cooking_learned,
             "hunt_ever_succeeded": self.hunt_ever_succeeded,
             "foraged_ever_succeeded": self.foraged_ever_succeeded,
+            "wood_ever_gathered": self.wood_ever_gathered,
+            "stone_ever_gathered": self.stone_ever_gathered,
             "fire_ever_built": self.fire_ever_built,
             "moat_built": self.moat_built,
             "long_houses_built": self.long_houses_built,
@@ -2096,33 +2110,32 @@ class Simulation:
                 )
 
         if "BUILD_SAWMILL" in available_actions and not tribe.sawmill_built:
-            if tribe.long_houses_built > 0 and tribe.fishing_learned:
+            if tribe.wood_ever_gathered:
                 if tribe.lumber_sites:
                     lx, ly = tribe.lumber_sites[-1]
                     visible_entities.append(
-                        f"A stand of trees is known at ({lx},{ly}) -- farming and fishing are both "
-                        "established and real shelter stands, so a sawmill built here at the "
-                        "settlement would triple every future load of gathered wood."
+                        f"A stand of trees is known at ({lx},{ly}) -- and wood has been gathered here "
+                        "before, so a sawmill built at the settlement would triple every future load "
+                        "of gathered wood."
                     )
                 else:
                     visible_entities.append(
-                        "Farming and fishing are both established, and real shelter stands, but no "
-                        "stand of trees has been scouted yet -- a sawmill needs a real stand to work."
+                        "Wood has been gathered here before -- a sawmill built at the settlement would "
+                        "triple every future load of gathered wood."
                     )
         if "BUILD_TANNERY" in available_actions and not tribe.tannery_built:
-            if tribe.long_houses_built > 0 and tribe.fishing_learned:
+            if tribe.hunt_ever_succeeded:
                 warren_sites = [s for s in tribe.wildlife_sites if s["type"] == "Rabbit Warren"]
                 if warren_sites:
                     wx, wy = warren_sites[-1]["x"], warren_sites[-1]["y"]
                     visible_entities.append(
-                        f"A rabbit warren is known at ({wx},{wy}) -- farming and fishing are both "
-                        "established and real shelter stands, so a tannery built here at the "
-                        "settlement would bring in a steady supply of Fur."
+                        f"A rabbit warren is known at ({wx},{wy}) -- and a hunt has already succeeded, "
+                        "so a tannery built at the settlement would bring in a steady supply of Fur."
                     )
                 else:
                     visible_entities.append(
-                        "Farming and fishing are both established, and real shelter stands, but no "
-                        "rabbit warren has been scouted yet -- a tannery needs real pelts to work."
+                        "A hunt has already succeeded -- a tannery built at the settlement would bring "
+                        "in a steady supply of Fur, and extra meat from every future hunt."
                     )
         if "BUILD_KITCHEN" in available_actions and not tribe.kitchen_built:
             if tribe.cooking_learned and tribe.long_houses_built > 0:
@@ -2131,18 +2144,18 @@ class Simulation:
                     "excellent food, stretching stores even further."
                 )
         if "BUILD_QUARRY" in available_actions and not tribe.quarry_built:
-            if tribe.long_houses_built > 0 and tribe.fishing_learned:
+            if tribe.stone_ever_gathered:
                 if tribe.quarry_sites:
                     qx, qy = tribe.quarry_sites[-1]
                     visible_entities.append(
-                        f"A stone-rich site is known at ({qx},{qy}) -- farming and fishing are both "
-                        "established and real shelter stands, so a quarry built here at the "
-                        "settlement would triple the value of every future load of harvested stone."
+                        f"A stone-rich site is known at ({qx},{qy}) -- and stone has been gathered here "
+                        "before, so a quarry built at the settlement would triple the value of every "
+                        "future load of harvested stone."
                     )
                 else:
                     visible_entities.append(
-                        "Farming and fishing are both established, and real shelter stands, but no "
-                        "stone-rich site has been scouted yet -- a quarry needs a real deposit to work."
+                        "Stone has been gathered here before -- a quarry built at the settlement would "
+                        "triple the value of every future load of harvested stone."
                     )
         if "BUILD_MINE" in available_actions and not tribe.mine_built:
             if tribe.quarry_built and tribe.mine_sites:
@@ -3037,7 +3050,13 @@ class Simulation:
             )
 
     def _report_hunting_party_home(self, tribe: Tribe, exp: dict, scout: str, forage_note: str, recipient: str) -> None:
-        caught = round(exp.get("food_caught", 0) * _food_multiplier(tribe))
+        # See actions.py._hunt_deer's own matching Tannery meat bonus comment --
+        # same flat pre-multiplier addition, applied here too so a multi-day
+        # hunting party's catch benefits the same way an instant hunt does.
+        base_caught = exp.get("food_caught", 0)
+        if base_caught and tribe.tannery_built:
+            base_caught += config.TANNERY_MEAT_BONUS_PER_HUNT
+        caught = round(base_caught * _food_multiplier(tribe))
         if caught:
             tribe.food += caught
             tribe.expeditions_succeeded += 1

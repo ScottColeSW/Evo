@@ -801,7 +801,9 @@ def test_cooking_stacks_with_docks_fish_bonus():
     assert tribe.food == 90  # 20 * 1.5 (dock) * 3 (cooking) = 90
 
 
-def test_build_sawmill_requires_long_house_and_fishing_first():
+def test_build_sawmill_requires_a_real_successful_wood_gather():
+    """Explicit correction: "the Sawmill is... online easily if they Gather Wood
+    successfully" -- replaced the old Long House/fishing/scouted-site gate."""
     from backend import config
 
     sim = _bare_simulation()
@@ -813,21 +815,31 @@ def test_build_sawmill_requires_long_house_and_fishing_first():
     assert ACTION_REGISTRY["BUILD_SAWMILL"](sim, tribe, "plains", _NO_TARGET) is None
     assert tribe.sawmill_built is False
 
-    tribe.long_houses_built = 1
-    tribe.fishing_learned = True
-    result = ACTION_REGISTRY["BUILD_SAWMILL"](sim, tribe, "plains", _NO_TARGET)
-    assert tribe.sawmill_built is False
-    assert "no stand of trees has been scouted yet" in result
-
-    tribe.lumber_sites.append((7, 7))
+    tribe.wood_ever_gathered = True
     result = ACTION_REGISTRY["BUILD_SAWMILL"](sim, tribe, "plains", _NO_TARGET)
 
     assert tribe.sawmill_built is True
-    assert tribe.lumber_site == (7, 7)
+    assert tribe.lumber_site is None  # no site required, none was ever scouted
     assert "sawmill rises" in result
 
 
-def test_build_quarry_requires_long_house_and_fishing_first():
+def test_build_sawmill_uses_a_scouted_site_opportunistically():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = config.SAWMILL_WOOD_COST
+    tribe.stone = config.SAWMILL_STONE_COST
+    tribe.wood_ever_gathered = True
+    tribe.lumber_sites.append((7, 7))
+
+    ACTION_REGISTRY["BUILD_SAWMILL"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.lumber_site == (7, 7)
+
+
+def test_build_quarry_requires_a_real_successful_stone_gather():
     from backend import config
 
     sim = _bare_simulation()
@@ -839,16 +851,11 @@ def test_build_quarry_requires_long_house_and_fishing_first():
     assert ACTION_REGISTRY["BUILD_QUARRY"](sim, tribe, "plains", _NO_TARGET) is None
     assert tribe.quarry_built is False
 
-    tribe.long_houses_built = 1
-    tribe.fishing_learned = True
-    result = ACTION_REGISTRY["BUILD_QUARRY"](sim, tribe, "plains", _NO_TARGET)
-    assert tribe.quarry_built is False
-    assert "no stone-rich site has been scouted yet" in result
-
-    tribe.quarry_sites.append((10, 10))
+    tribe.stone_ever_gathered = True
     result = ACTION_REGISTRY["BUILD_QUARRY"](sim, tribe, "plains", _NO_TARGET)
 
     assert tribe.quarry_built is True
+    assert tribe.quarry_site is None  # no site required, none was ever scouted
     assert "quarry opens" in result
 
 
@@ -891,9 +898,10 @@ def test_build_mine_locks_in_the_most_recently_discovered_site():
     assert tribe.mine_resource_name == "Whisperwood Amber"
 
 
-def test_build_tannery_requires_a_scouted_rabbit_warren():
-    """Explicit request: "maybe some hunters want a Tannery and they can trade
-    furs too." Mirrors _build_mine's real-discovery gate."""
+def test_build_tannery_requires_a_real_successful_hunt():
+    """Explicit correction: "the Tannery should come online easily, as they only
+    need to have hunted" -- replaced the old Long House/fishing/scouted-Rabbit-
+    Warren gate."""
     from backend import config
 
     sim = _bare_simulation()
@@ -901,25 +909,59 @@ def test_build_tannery_requires_a_scouted_rabbit_warren():
     _settle(sim, tribe)
     tribe.wood = config.TANNERY_WOOD_COST
     tribe.stone = config.TANNERY_STONE_COST
-    tribe.long_houses_built = 1
-    tribe.fishing_learned = True
 
-    result = ACTION_REGISTRY["BUILD_TANNERY"](sim, tribe, "plains", _NO_TARGET)
-    assert tribe.tannery_built is False
-    assert "no rabbit warren has been scouted yet" in result
-
-    # A Deer Stand alone doesn't count -- only a Rabbit Warren produces fur.
-    tribe.wildlife_sites.append({"x": 5, "y": 5, "type": "Deer Stand"})
-    result = ACTION_REGISTRY["BUILD_TANNERY"](sim, tribe, "plains", _NO_TARGET)
-    assert "no rabbit warren has been scouted yet" in result
+    assert ACTION_REGISTRY["BUILD_TANNERY"](sim, tribe, "plains", _NO_TARGET) is None
     assert tribe.tannery_built is False
 
-    tribe.wildlife_sites.append({"x": 10, "y": 12, "type": "Rabbit Warren"})
+    tribe.hunt_ever_succeeded = True
     result = ACTION_REGISTRY["BUILD_TANNERY"](sim, tribe, "plains", _NO_TARGET)
 
     assert tribe.tannery_built is True
-    assert tribe.tannery_site == (10, 12)
+    assert tribe.tannery_site is None  # no site required, none was ever scouted
     assert "tannery is built" in result
+
+
+def test_build_tannery_uses_a_scouted_rabbit_warren_opportunistically():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = config.TANNERY_WOOD_COST
+    tribe.stone = config.TANNERY_STONE_COST
+    tribe.hunt_ever_succeeded = True
+    # A Deer Stand alone doesn't count -- only a Rabbit Warren produces fur.
+    tribe.wildlife_sites.append({"x": 5, "y": 5, "type": "Deer Stand"})
+    tribe.wildlife_sites.append({"x": 10, "y": 12, "type": "Rabbit Warren"})
+
+    ACTION_REGISTRY["BUILD_TANNERY"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.tannery_site == (10, 12)
+
+
+def test_hunt_deer_yields_a_meat_bonus_once_tannery_is_built():
+    """Explicit request: "it also gives the meat to the kitchen (2 meat per
+    catch) which cooks it (multiplier)"."""
+    from unittest import mock
+
+    from backend import config
+
+    # Two separate sims/tribes, not one reused across both calls -- _harvest
+    # depletes world state on every call, so reusing one would understate the
+    # second hunt's real yield and mask the bonus.
+    sim_a = _bare_simulation()
+    tribe_a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    with mock.patch("backend.actions.random.random", return_value=1.0):
+        ACTION_REGISTRY["HUNT_DEER"](sim_a, tribe_a, "forest", _NO_TARGET)
+    without_tannery = tribe_a.food
+
+    sim_b = _bare_simulation()
+    tribe_b = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe_b.tannery_built = True
+    with mock.patch("backend.actions.random.random", return_value=1.0):
+        ACTION_REGISTRY["HUNT_DEER"](sim_b, tribe_b, "forest", _NO_TARGET)
+
+    assert tribe_b.food == without_tannery + config.TANNERY_MEAT_BONUS_PER_HUNT
 
 
 def test_build_forge_requires_mine_and_at_least_one_ore():

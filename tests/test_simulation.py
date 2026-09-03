@@ -409,41 +409,39 @@ def test_confirmed_water_nudge_recognizes_already_being_there():
     assert "Water has already been found at" not in request["prompt"]
 
 
-def test_quarry_nudge_requires_a_scouted_site_not_just_the_other_prerequisites():
-    """Explicit correction: "once they know where a quarry is, they need to just
-    use it to get stone... they might consider building one closer to their
-    establishment." A quarry is only worth building once a real stone-rich site
-    has actually been scouted (tribe.quarry_sites), the same real-discovery gate
-    _build_mine already used -- built at the settlement, not requiring travel to
-    the exact discovered tile."""
+def test_quarry_nudge_requires_a_real_successful_stone_gather():
+    """Explicit correction: "the Sawmill is... online easily if they Gather Wood
+    successfully" (and the same for Quarry/stone) replaced the old Long House/
+    fishing/scouted-site gate -- the nudge follows the same real success flag."""
     sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.has_ever_settled = True
-    tribe.long_houses_built = 1
-    tribe.fishing_learned = True
 
     request, _ctx = sim._prepare_turn(tribe)
-    assert "no stone-rich site has been scouted yet" in request["prompt"]
+    assert "a quarry built at the settlement" not in request["prompt"]
+
+    tribe.stone_ever_gathered = True
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "Stone has been gathered here before" in request["prompt"]
 
     tribe.quarry_sites.append((12, 34))
     request, _ctx = sim._prepare_turn(tribe)
     assert "A stone-rich site is known at (12,34)" in request["prompt"]
 
 
-def test_sawmill_nudge_requires_a_scouted_site_not_just_the_other_prerequisites():
-    """Explicit correction: "if they have found a... Stand of Trees to
-    Harvest, these are collectables that must be fetched" -- mirrors the
-    quarry nudge above exactly, for lumber_sites instead of quarry_sites."""
+def test_sawmill_nudge_requires_a_real_successful_wood_gather():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.has_ever_settled = True
-    tribe.long_houses_built = 1
-    tribe.fishing_learned = True
 
     request, _ctx = sim._prepare_turn(tribe)
-    assert "no stand of trees has been scouted yet" in request["prompt"]
+    assert "a sawmill built at the settlement" not in request["prompt"]
+
+    tribe.wood_ever_gathered = True
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "Wood has been gathered here before" in request["prompt"]
 
     tribe.lumber_sites.append((12, 34))
     request, _ctx = sim._prepare_turn(tribe)
