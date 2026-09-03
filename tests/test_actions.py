@@ -1719,6 +1719,33 @@ def test_scout_rotation_starts_southwest_and_advances_by_a_fixed_step():
     assert second_target != first_target
 
 
+def test_second_tribes_opening_scout_heads_a_different_way_than_the_first():
+    """Live report: "the scouts went exact the same way" -- confirmed against a
+    fresh run's own snapshots: two tribes' opening SCOUT (both starting at
+    scout_rotation_index=0 before this fix) computed the identical (dx,dy)
+    offset off their own position, so every tribe's very first scout walked
+    the same heading regardless of where it started. Tribe.__init__ now seeds
+    scout_rotation_index from the tribe's own spawn index (config.
+    SCOUT_ROTATION_TRIBE_STAGGER_STEPS) so this can't happen."""
+    from backend import config
+    from backend.simulation import _compass_direction
+
+    sim = _bare_simulation()
+    tribe_0 = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe_1 = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 50, 50, "#fb923c")
+
+    ACTION_REGISTRY["SCOUT"](sim, tribe_0, "plains", (0, 0))
+    ACTION_REGISTRY["SCOUT"](sim, tribe_1, "plains", (0, 0))
+
+    target_0 = tribe_0.expeditions[0]["target"]
+    target_1 = tribe_1.expeditions[0]["target"]
+    heading_0 = _compass_direction(target_0[0] - 50, target_0[1] - 50)
+    heading_1 = _compass_direction(target_1[0] - 50, target_1[1] - 50)
+    assert heading_0 != heading_1
+    # +1 each: _scout advances the index by one step after every real dispatch.
+    assert tribe_1.scout_rotation_index == config.SCOUT_ROTATION_TRIBE_STAGGER_STEPS + 1
+
+
 def test_scout_rotation_ignores_target_vector_entirely():
     sim = _bare_simulation()
     same_target = (77, 3)

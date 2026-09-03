@@ -328,12 +328,15 @@ def test_resolve_toll_free_passage_once_the_owner_is_extinct():
     assert traveler.wood == 0  # no one left to collect from
 
 
-def test_unfinished_wall_nudges_against_a_premature_long_house():
-    """Explicit bug report: live logs showed the chief repeatedly choosing
-    BUILD_LONG_HOUSE against an unfinished wall, over and over, each attempt
-    silently rejected inside _build_long_house -- CONSTRUCT_WALL and
-    BUILD_LONG_HOUSE both unlock at the same era, so nothing ever told the chief
-    the wall wasn't done."""
+def test_unfinished_wall_hides_long_house_from_the_menu_without_nagging_about_it():
+    """Explicit bug report (original): live logs showed the chief repeatedly
+    choosing BUILD_LONG_HOUSE against an unfinished wall, over and over, each
+    attempt silently rejected inside _build_long_house. Explicit follow-up
+    correction: "keep the Long House blocked note hidden until [the wall's
+    done and] they build one" -- BUILD_LONG_HOUSE is already absent from
+    available_actions this whole stretch (_can_afford_build_long_house), so a
+    prose reminder about it every single cycle was pure nag, not a real fix
+    for anything the menu-hiding didn't already solve."""
     from backend import config
 
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, farmable
@@ -353,8 +356,9 @@ def test_unfinished_wall_nudges_against_a_premature_long_house():
     real_sections = [s for s in tribe.wall_rings[0]["sections"] if not s["natural_barrier"]]
     built = sum(1 for s in real_sections if s["progress"] >= 100)
     assert "CONSTRUCT_WALL" in ctx["available_actions"]
+    assert "BUILD_LONG_HOUSE" not in ctx["available_actions"]
     assert f"{built}/{len(real_sections)} real sections built" in request["prompt"]
-    assert "a long house is not worth attempting until every real section is finished" in request["prompt"]
+    assert "long house" not in request["prompt"].lower()
 
 
 def test_wall_progress_fact_notes_natural_barriers_separately_from_the_real_count():

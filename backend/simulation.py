@@ -499,12 +499,23 @@ class Tribe:
         # step (config.SCOUT_ROTATION_STEP_DEGREES) every real SCOUT dispatch,
         # guaranteeing coverage spreads out over time regardless of the
         # model's own (frequently unreliable) sense of direction.
-        self.scout_rotation_index = 0
+        # Live report: "the scouts went exact the same way" -- every tribe used
+        # to start this at a flat 0, so any two tribes' opening (or later,
+        # coincidentally-aligned) SCOUT computed the identical heading off their
+        # own position. Seeded from the tribe's own spawn index instead (see
+        # config.SCOUT_ROTATION_TRIBE_STAGGER_STEPS) so tribes rotate in
+        # permanently offset lockstep rather than in unison.
+        try:
+            tribe_index = int(tribe_id.rsplit("_", 1)[-1])
+        except ValueError:
+            tribe_index = 0
+        stagger = tribe_index * config.SCOUT_ROTATION_TRIBE_STAGGER_STEPS
+        self.scout_rotation_index = stagger
         # See actions.py._exploration_party -- its own separate rotating heading
         # (offset from SCOUT's own sweep) so the two don't retrace each other's
         # ground. landmarks: {"x", "y", "resource"} entries, one per Landmark
         # actually found (Simulation._advance_exploration_party_outbound).
-        self.explore_rotation_index = 0
+        self.explore_rotation_index = stagger
         self.landmarks: list[dict] = []
         # Farming (backend/actions.py PLANT_CROP, Simulation._advance_farming). Growth
         # is a passive per-cycle tick once at least one plot exists, not a discrete
@@ -2183,16 +2194,16 @@ class Simulation:
                     f" ({natural_count} more section{'s' if natural_count != 1 else ''} already stand for "
                     "free, thanks to natural terrain)" if natural_count else ""
                 )
-                if tribe.long_houses_built == 0:
-                    visible_entities.append(
-                        f"The settlement's first wall ring has {built}/{real_total} real sections built"
-                        f"{natural_note} -- a long house is not worth attempting until every real section "
-                        "is finished."
-                    )
-                else:
-                    visible_entities.append(
-                        f"The settlement's first wall ring has {built}/{real_total} real sections built{natural_note}."
-                    )
+                # Explicit request: "keep the Long House blocked note hidden
+                # until [the wall is done and] they build one" -- BUILD_LONG_HOUSE
+                # is already absent from available_actions for this entire
+                # stretch (_can_afford_build_long_house), so naming it here every
+                # single cycle just nagged about an option the tribe can't even
+                # see yet. The "now worth building" callout below already fires
+                # at the one moment it's actually true.
+                visible_entities.append(
+                    f"The settlement's first wall ring has {built}/{real_total} real sections built{natural_note}."
+                )
             elif not ring0_reinforced:
                 if tribe.long_houses_built == 0:
                     visible_entities.append(

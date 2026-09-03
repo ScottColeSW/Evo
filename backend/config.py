@@ -561,6 +561,19 @@ WATER_SENSING_RADIUS = 6
 SCOUT_ROTATION_START_ANGLE_DEGREES = 135
 SCOUT_ROTATION_STEP_DEGREES = 20
 
+# Live report (2026-09-03): "the scouts went exact the same way" -- confirmed
+# against a fresh run's own snapshots (Forest Tribe's opening SCOUT and Mountain
+# Tribe's opening SCOUT computed the identical (dx,dy) offset from their own
+# position, both at scout_rotation_index=0). The comment above already flagged
+# this exact gap ("every tribe's rotation starts at index 0, so this is the one
+# heading every tribe's opening scout shares") but only nudged the shared angle
+# away from one bad map corner, never gave tribes distinct rotations. Tribe.
+# __init__ now seeds scout_rotation_index/explore_rotation_index at
+# tribe_index * this stagger instead of always 0 -- 7 is coprime with the
+# 18-step full rotation (360/20), so no two tribes' sequences realign for any
+# tribe count this project supports (config.MAX_TRIBES).
+SCOUT_ROTATION_TRIBE_STAGGER_STEPS = 7
+
 # Live bug report (2026-09-02): "they go big long lines like they are flying,
 # possibly too far." A fresh dispatch used to target the grid's true edge (up to ~99
 # tiles away) and get pushed even further if it arrived early with days left --
