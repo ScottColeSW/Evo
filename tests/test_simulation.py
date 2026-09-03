@@ -1499,6 +1499,26 @@ def test_affordability_gate_hides_forge_item_once_the_item_storage_cap_is_reache
     assert "FORGE_ITEM" in ctx["available_actions"]
 
 
+def test_affordability_gate_hides_gather_ore_without_a_real_mine():
+    """Live-run correction: GATHER_ORE showed up in a tribe's menu and got
+    chosen before it had a mine at all -- a guaranteed no-op the same way an
+    unaffordable BUILD_* action would be."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"
+
+    _, ctx = sim._prepare_turn(tribe)
+    assert "GATHER_ORE" not in ctx["available_actions"]
+
+    tribe.mine_built = True
+    _, ctx = sim._prepare_turn(tribe)
+    assert "GATHER_ORE" in ctx["available_actions"]
+
+
 def test_farming_and_eggs_available_once_settled_next_to_real_water():
     from backend import config
 

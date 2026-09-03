@@ -141,6 +141,9 @@ AFFORDABILITY_CHECKS = {
     "BUILD_QUARRY": lambda t: t.stone_ever_gathered and t.wood >= config.QUARRY_WOOD_COST and t.stone >= config.QUARRY_STONE_COST,
     "BUILD_TANNERY": lambda t: t.hunt_ever_succeeded and t.wood >= config.TANNERY_WOOD_COST and t.stone >= config.TANNERY_STONE_COST,
     "BUILD_HATCHERY": lambda t: t.eggs_ever_gathered and t.wood >= config.HATCHERY_WOOD_COST and t.stone >= config.HATCHERY_STONE_COST,
+    # GATHER_ORE has no wood/stone cost of its own -- the real prerequisite is
+    # a mine existing at all (see actions.py._gather_ore's own guard clause).
+    "GATHER_ORE": lambda t: t.mine_built,
     "BUILD_KITCHEN": lambda t: t.wood >= config.KITCHEN_WOOD_COST and t.stone >= config.KITCHEN_STONE_COST,
     "BUILD_MOAT": lambda t: t.wood >= config.MOAT_WOOD_COST and t.stone >= config.MOAT_STONE_COST,
     "BUILD_WAREHOUSE": lambda t: t.wood >= config.WAREHOUSE_WOOD_COST and t.stone >= config.WAREHOUSE_STONE_COST,
