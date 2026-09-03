@@ -1134,6 +1134,42 @@ EXPEDITION_OUTBOUND_DAILY_WATER = 2
 EXPEDITION_RETURN_DAILY_FOOD = 1
 EXPEDITION_RETURN_DAILY_WATER = 1
 
+# EXPLORATION_PARTY (backend/actions.py._exploration_party, Simulation.
+# _advance_exploration_party_outbound): explicit request -- "a smart Chief
+# will send one Scout and one Exploration Party... anything out there can be
+# discovered including settlements, raider camps, ocean, whatever they
+# find... leave Landmarks (with a reason to go there)... some limits on how
+# long they can stay out and how much they can carry." Where SCOUT is a fast,
+# discovery-only dash, an Exploration Party is a deeper, deliberate trip:
+# real wood/stone gathered along the way (on top of the food/water every
+# expedition already forages), a real carrying-capacity limit (not just a day
+# count), and a chance at spotting a rival settlement or a Landmark. It shares
+# everything SCOUT's own return already discovers (water, resource sites,
+# raider camps) via Simulation._advance_one_expedition's shared fallthrough --
+# this only adds what SCOUT doesn't.
+EXPLORATION_PARTY_MAX_DAYS = 6
+EXPLORATION_PARTY_DAILY_WOOD = 3
+EXPLORATION_PARTY_DAILY_STONE = 3
+EXPLORATION_PARTY_CARRY_CAPACITY = 60  # combined wood+stone+food+water before forced return
+SETTLEMENT_SIGHTING_RADIUS = 12
+
+# A Landmark is a real, persistent point of interest (drawn on the map like
+# any other site) with its own one-time reward -- a fun, flavorful unique
+# resource, deliberately not ore (Mine already owns that niche). The place
+# name and the thing found there are separate on purpose: you don't carry
+# home "12 units of a sacred spring," you carry home a relic found near one.
+LANDMARK_DISCOVERY_CHANCE = 0.08  # per outbound day
+LANDMARK_REWARD_MIN = 10
+LANDMARK_REWARD_MAX = 25
+LANDMARK_NAMES = (
+    "Ancient Grove", "Sacred Spring", "Sunken Idol", "Whispering Stones",
+    "Old Watchtower", "Hidden Falls", "Standing Stones", "Forgotten Shrine",
+)
+LANDMARK_RESOURCE_NAMES = (
+    "Amber Charm", "Carved Totem", "Silver Trinket", "Bone Flute",
+    "Painted Shell", "Gilded Feather", "Polished Stone", "Woven Talisman",
+)
+
 # Action-repetition throttle (Simulation._apply_turn/_prepare_turn): explicit
 # request, after a live run showed one tribe choose GATHER_STONE on 49% of all
 # 728 turns (and a different run's tribe choose BREED on 63.8%) while other real

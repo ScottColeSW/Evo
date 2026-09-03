@@ -498,6 +498,12 @@ class Tribe:
         # guaranteeing coverage spreads out over time regardless of the
         # model's own (frequently unreliable) sense of direction.
         self.scout_rotation_index = 0
+        # See actions.py._exploration_party -- its own separate rotating heading
+        # (offset from SCOUT's own sweep) so the two don't retrace each other's
+        # ground. landmarks: {"x", "y", "resource"} entries, one per Landmark
+        # actually found (Simulation._advance_exploration_party_outbound).
+        self.explore_rotation_index = 0
+        self.landmarks: list[dict] = []
         # Farming (backend/actions.py PLANT_CROP, Simulation._advance_farming). Growth
         # is a passive per-cycle tick once at least one plot exists, not a discrete
         # action -- same category as upkeep/population growth.
@@ -763,6 +769,7 @@ class Tribe:
             "mine_resource_name": self.mine_resource_name,
             "unique_resources": self.unique_resources,
             "scout_rotation_index": self.scout_rotation_index,
+            "landmarks": self.landmarks,
             "kitchen_built": self.kitchen_built,
             "tannery_built": self.tannery_built,
             "forge_built": self.forge_built,
@@ -2758,6 +2765,8 @@ class Simulation:
             if exp.get("kind") == "trade":
                 self._advance_trade_emissary_outbound(tribe, exp, scout)
                 return False
+            if exp.get("kind") == "explore" and self._advance_exploration_party_outbound(tribe, exp, reached_biome, scout):
+                return False  # forced home early (carry capacity or day limit) -- already flipped to returning
             # Explicit request: "the find water scouting needs to be removed
             # from available actions after they Settle. The scouts can still
             # explore and report sightings and discoveries." Water-sensing used
@@ -2845,6 +2854,13 @@ class Simulation:
                 tribe.water += exp["water_gathered"]
                 scout = exp["lead_scout"]
                 forage_note = f"bringing back {food_home} food and {exp['water_gathered']} water foraged along the way"
+                # Only EXPLORATION_PARTY ever populates these -- see actions.py.
+                # _exploration_party. .get(..., 0) leaves scout/hunt/trade untouched.
+                wood_home, stone_home = exp.get("wood_gathered", 0), exp.get("stone_gathered", 0)
+                if wood_home or stone_home:
+                    tribe.wood += wood_home
+                    tribe.stone += stone_home
+                    forage_note += f", {wood_home} wood and {stone_home} stone"
                 recipient = f"Chief {tribe.chief_name}" if tribe.chief_name else "the tribe"
 
                 if exp.get("kind") == "hunt":
@@ -3127,6 +3143,64 @@ class Simulation:
                     f"{scout}'s emissary reaches the edge of explored land after {exp['day']} days "
                     "with no one to trade with -- they turn back"
                 )
+
+    def _advance_exploration_party_outbound(self, tribe: Tribe, exp: dict, current_biome: str, scout: str) -> bool:
+        """One outbound day for an EXPLORATION_PARTY (see actions.py.
+        _exploration_party). Adds everything SCOUT's own outbound/return
+        doesn't already do: real wood/stone gathered along the way (on top of
+        the food/water every expedition already forages), a real
+        carrying-capacity limit (not just a day count), a chance to spot a
+        rival tribe's settlement, and a chance to discover a Landmark.
+        Returns True if the day's outbound processing should stop here
+        (already decided to head home -- carry capacity or day limit hit),
+        False to fall through to the same water/terrain discovery every other
+        kind shares (see the caller, _advance_one_expedition)."""
+        px, py = exp["pos"]
+        exp["wood_gathered"] += round(
+            config.EXPLORATION_PARTY_DAILY_WOOD * BIOME_YIELD_MULTIPLIER["wood"].get(current_biome, 1.0)
+        )
+        exp["stone_gathered"] += round(
+            config.EXPLORATION_PARTY_DAILY_STONE * BIOME_YIELD_MULTIPLIER["stone"].get(current_biome, 1.0)
+        )
+
+        carried = exp["wood_gathered"] + exp["stone_gathered"] + exp["food_gathered"] + exp["water_gathered"]
+        if carried >= config.EXPLORATION_PARTY_CARRY_CAPACITY or exp["day"] >= exp["max_days"]:
+            exp["phase"] = "returning"
+            reason = (
+                "laden with all they can carry" if carried >= config.EXPLORATION_PARTY_CARRY_CAPACITY
+                else f"after {exp['day']} days out"
+            )
+            tribe.history.append(f"{scout}'s exploration party turns back {reason}")
+            return True
+
+        # Explicit request: "anything out there can be discovered including
+        # settlements... whatever they find." A rival's settlement, spotted
+        # from a real distance -- doesn't require the tight physical contact
+        # DECLARE_ALLIANCE/RAID/TRADE need, just line of sight while passing by.
+        for other in self.tribes.values():
+            if other.id == tribe.id or other.extinct:
+                continue
+            if (other.x - px) ** 2 + (other.y - py) ** 2 <= config.SETTLEMENT_SIGHTING_RADIUS ** 2:
+                note = f"{scout}'s exploration party spots {other.name}'s settlement in the distance"
+                if not tribe.history or tribe.history[-1] != note:
+                    tribe.history.append(note)
+                break
+
+        # A Landmark -- a real, persistent discovery with its own one-time
+        # reward, distinct from Mine's ore (explicit request).
+        if random.random() < config.LANDMARK_DISCOVERY_CHANCE and not any(
+            lm["x"] == px and lm["y"] == py for lm in tribe.landmarks
+        ):
+            name = random.choice(config.LANDMARK_NAMES)
+            resource = random.choice(config.LANDMARK_RESOURCE_NAMES)
+            reward = random.randint(config.LANDMARK_REWARD_MIN, config.LANDMARK_REWARD_MAX)
+            tribe.landmarks.append({"x": px, "y": py, "resource": name})
+            self._capped_unique_add(tribe, resource, reward)
+            self.trauma.radiate_event_wave(px, py, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+            tribe.history.append(
+                f"{scout}'s exploration party discovers {name} at ({px},{py}) -- {reward} {resource} claimed"
+            )
+        return False
 
     def _report_trade_emissary_home(self, tribe: Tribe, exp: dict, scout: str, forage_note: str, recipient: str) -> None:
         """Arrival-home report for a SEND_TRADE_EMISSARY expedition -- the trade

@@ -1698,6 +1698,170 @@ def test_scout_rotation_ignores_target_vector_entirely():
     assert same_target not in headings
 
 
+def test_exploration_party_dispatches_with_its_own_rotation_and_a_longer_patience():
+    """Explicit request: "a smart Chief will send one Scout and one
+    Exploration Party" -- a real, distinct expedition kind, not SCOUT renamed."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    result = ACTION_REGISTRY["EXPLORATION_PARTY"](sim, tribe, "plains", (0, 0))
+
+    assert len(tribe.expeditions) == 1
+    exp = tribe.expeditions[0]
+    assert exp["kind"] == "explore"
+    assert exp["wood_gathered"] == 0 and exp["stone_gathered"] == 0
+    assert tribe.explore_rotation_index == 1
+    assert tribe.scout_rotation_index == 0  # its own separate counter, untouched
+    assert "exploration party" in result
+
+
+def test_exploration_party_shares_expedition_capacity_with_scout():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    for _ in range(config.MAX_CONCURRENT_EXPEDITIONS):
+        ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (0, 0))
+
+    result = ACTION_REGISTRY["EXPLORATION_PARTY"](sim, tribe, "plains", (0, 0))
+
+    assert "no one left to send" in result
+
+
+def test_advance_exploration_party_outbound_gathers_real_wood_and_stone():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    exp = {
+        "pos": [50, 50], "day": 1, "max_days": 6, "wood_gathered": 0, "stone_gathered": 0,
+        "food_gathered": 0, "water_gathered": 0, "phase": "outbound", "lead_scout": "Rivenna",
+    }
+
+    ended = sim._advance_exploration_party_outbound(tribe, exp, "plains", "Rivenna")
+
+    assert ended is False
+    assert exp["wood_gathered"] > 0
+    assert exp["stone_gathered"] > 0
+    assert exp["phase"] == "outbound"
+
+
+def test_advance_exploration_party_outbound_turns_back_at_carry_capacity():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    exp = {
+        "pos": [50, 50], "day": 1, "max_days": 6,
+        "wood_gathered": config.EXPLORATION_PARTY_CARRY_CAPACITY, "stone_gathered": 0,
+        "food_gathered": 0, "water_gathered": 0, "phase": "outbound", "lead_scout": "Rivenna",
+    }
+
+    ended = sim._advance_exploration_party_outbound(tribe, exp, "plains", "Rivenna")
+
+    assert ended is True
+    assert exp["phase"] == "returning"
+    assert any("laden with all they can carry" in e for e in tribe.history)
+
+
+def test_advance_exploration_party_outbound_turns_back_at_the_day_limit():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    exp = {
+        "pos": [50, 50], "day": 6, "max_days": 6, "wood_gathered": 0, "stone_gathered": 0,
+        "food_gathered": 0, "water_gathered": 0, "phase": "outbound", "lead_scout": "Rivenna",
+    }
+
+    ended = sim._advance_exploration_party_outbound(tribe, exp, "plains", "Rivenna")
+
+    assert ended is True
+    assert exp["phase"] == "returning"
+    assert any("after 6 days out" in e for e in tribe.history)
+
+
+def test_advance_exploration_party_outbound_spots_a_nearby_rival_settlement():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 55, 50, "#fb923c")
+    sim.tribes = {"tribe_0": tribe, "tribe_1": rival}
+    exp = {
+        "pos": [50, 50], "day": 1, "max_days": 6, "wood_gathered": 0, "stone_gathered": 0,
+        "food_gathered": 0, "water_gathered": 0, "phase": "outbound", "lead_scout": "Rivenna",
+    }
+
+    sim._advance_exploration_party_outbound(tribe, exp, "plains", "Rivenna")
+
+    assert any("spots Mountain Tribe's settlement" in e for e in tribe.history)
+
+
+def test_advance_exploration_party_outbound_discovers_a_landmark():
+    """Explicit request: "leave Landmarks (with a reason to go there - maybe a
+    fun unique resource but not ore) as they find them.\""""
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    exp = {
+        "pos": [50, 50], "day": 1, "max_days": 6, "wood_gathered": 0, "stone_gathered": 0,
+        "food_gathered": 0, "water_gathered": 0, "phase": "outbound", "lead_scout": "Rivenna",
+    }
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_exploration_party_outbound(tribe, exp, "plains", "Rivenna")
+
+    assert len(tribe.landmarks) == 1
+    landmark = tribe.landmarks[0]
+    assert landmark["x"] == 50 and landmark["y"] == 50
+    assert landmark["resource"] in config.LANDMARK_NAMES
+    assert sum(tribe.unique_resources.values()) > 0
+    assert any("discovers" in e for e in tribe.history)
+
+
+def test_advance_exploration_party_outbound_does_not_rediscover_the_same_spot():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.landmarks = [{"x": 50, "y": 50, "resource": "Ancient Grove"}]
+    exp = {
+        "pos": [50, 50], "day": 1, "max_days": 6, "wood_gathered": 0, "stone_gathered": 0,
+        "food_gathered": 0, "water_gathered": 0, "phase": "outbound", "lead_scout": "Rivenna",
+    }
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_exploration_party_outbound(tribe, exp, "plains", "Rivenna")
+
+    assert len(tribe.landmarks) == 1  # unchanged -- already known at this exact spot
+
+
+def test_exploration_party_credits_real_wood_and_stone_home():
+    """Only EXPLORATION_PARTY should ever bring real wood/stone home -- SCOUT/
+    HUNTING_PARTY/SEND_TRADE_EMISSARY never populate these fields at all."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 50, "y": 50}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.wood = 0
+    tribe.stone = 0
+    exp = {
+        "kind": "explore", "pos": [50, 50], "origin": [50, 50], "target": [50, 50],
+        "day": 3, "phase": "returning", "found": None, "terrain_report": None,
+        "food_gathered": 5, "water_gathered": 5, "wood_gathered": 12, "stone_gathered": 9,
+        "lead_scout": "Rivenna", "determination": 0.5, "max_days": 6, "path": [[50, 50]],
+    }
+    tribe.expeditions = [exp]
+
+    sim._advance_one_expedition(tribe, exp)
+
+    assert tribe.wood == 12
+    assert tribe.stone == 9
+
+
 def test_scout_launch_gives_the_expedition_a_named_lead_and_determination_trait():
     """The exploration party isn't a second LLM agent making its own choices (that
     would double Ollama calls per tribe per cycle for a party the tribe already

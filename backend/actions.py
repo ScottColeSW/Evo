@@ -1020,6 +1020,55 @@ def _scout(sim, tribe, biome, target):
     return f"scouts led by {scout['name']} depart camp to explore toward ({tx},{ty})"
 
 
+def _exploration_party(sim, tribe, biome, target):
+    """A deeper, more deliberate expedition than SCOUT -- explicit request:
+    "a smart Chief will send one Scout and one Exploration Party." Where SCOUT
+    is a fast, discovery-only dash, an Exploration Party travels longer,
+    gathers real wood/stone along the way (Simulation._advance_exploration_
+    party_outbound) up to a real carrying-capacity limit, and can stumble on
+    a rival settlement or a Landmark -- on top of everything SCOUT's own
+    return already discovers (water, resource sites, raider camps), shared
+    via Simulation._advance_one_expedition's common fallthrough. Own rotating
+    heading (tribe.explore_rotation_index, offset from SCOUT's own sweep) so
+    the two parties don't retrace each other's ground."""
+    if len(tribe.expeditions) >= expedition_capacity(tribe):
+        fields = ", ".join(
+            f"{e['lead_scout']} (day {e['day']}/{e['max_days']}, {e['phase']})" for e in tribe.expeditions
+        )
+        return f"no one left to send -- every party is already out: {fields}"
+
+    angle_degrees = (
+        config.SCOUT_ROTATION_START_ANGLE_DEGREES
+        + config.SCOUT_ROTATION_STEP_DEGREES * tribe.explore_rotation_index
+        + 180  # offset from SCOUT's own sweep so the two don't retrace each other
+    ) % 360
+    tribe.explore_rotation_index += 1
+    angle_radians = math.radians(angle_degrees)
+    tx = _reflect_into_grid(tribe.x + round(math.cos(angle_radians) * config.SCOUT_PATROL_DISTANCE), sim.world.grid_size)
+    ty = _reflect_into_grid(tribe.y + round(math.sin(angle_radians) * config.SCOUT_PATROL_DISTANCE), sim.world.grid_size)
+    scout = _generate_scout(tribe, sim.cycle, base_days=config.EXPLORATION_PARTY_MAX_DAYS)
+    tribe.expeditions.append({
+        "kind": "explore",
+        "pos": [tribe.x, tribe.y],
+        "origin": [tribe.x, tribe.y],
+        "target": [tx, ty],
+        "day": 0,
+        "phase": "outbound",
+        "found": None,
+        "terrain_report": None,
+        "food_gathered": 0,
+        "water_gathered": 0,
+        "wood_gathered": 0,
+        "stone_gathered": 0,
+        "lead_scout": scout["name"],
+        "determination": scout["determination"],
+        "max_days": scout["max_days"],
+        "path": [[tribe.x, tribe.y]],
+    })
+    tribe.expeditions_launched += 1
+    return f"an exploration party led by {scout['name']} departs camp to chart new ground toward ({tx},{ty})"
+
+
 def _hunting_party(sim, tribe, biome, target):
     """A multi-day alternative to instant HUNT_DEER, sharing the exact same expedition
     list and day-by-day travel machinery as SCOUT (up to config.MAX_CONCURRENT_
@@ -1568,6 +1617,7 @@ ACTION_REGISTRY = {
     "GATHER_EGGS": _gather_eggs,
     "CATCH_FISH": _catch_fish,
     "SCOUT": _scout,
+    "EXPLORATION_PARTY": _exploration_party,
     "HUNTING_PARTY": _hunting_party,
     "RELOCATE": _relocate,
     "BREED": _breed,
@@ -1619,6 +1669,7 @@ ACTION_DESCRIPTIONS = {
     "GATHER_EGGS": "Search for wild fowl nests near your current tile -- only possible once the tribe has settled here. A found egg is set aside and hatches on its own, growing the tribe's flock by one.",
     "CATCH_FISH": "Attempt to harvest food by fishing at your current tile -- only possible once the tribe has settled here. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",
     "SCOUT": "Dispatch an expedition to explore -- the direction is chosen automatically to spread coverage out over time, not from target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home. Your tribe can have a couple of parties out at once (scouting or hunting, any mix) -- choosing SCOUT again sends another one if there's room, or just reports on whoever's already out once you're at capacity.",
+    "EXPLORATION_PARTY": "Dispatch a deeper, longer-ranging expedition than SCOUT -- direction chosen automatically, its own sweep separate from SCOUT's. Gathers real wood and stone along the way on top of the food and water any expedition forages, until they're carrying as much as they can manage, then heads home. Can discover anything SCOUT can (water, resource sites, raider camps) plus rival settlements and Landmarks -- rare points of interest that yield a real, unique treasure the moment they're found. Shares the same expedition capacity as SCOUT/HUNTING_PARTY/SEND_TRADE_EMISSARY.",
     "HUNTING_PARTY": "Send a hunting party toward target_vector -- shares the same expedition capacity as SCOUT (a couple of parties, scouting or hunting in any mix, can be out at once). They travel and hunt on their own supply for up to several days, facing the same wolf-pack risk as an instant hunt on every day out, until they catch something or give up. Any food caught only becomes real, usable food once they've walked all the way home -- a hunt still in the field does nothing for hunger right now, no matter how promising.",
     "RELOCATE": "Move your whole tribe several tiles toward target_vector this cycle, possibly over several cycles for a far destination. Produces no resources while traveling and costs extra food and water for the effort.",
     "BREED": "Your chief and whoever currently holds a trophy start a family together, costing food and water and growing your population by one child if it succeeds. Does nothing if fewer than two named individuals (a chief plus at least one trophy-holder) exist yet, or if food/water can't cover the cost.",

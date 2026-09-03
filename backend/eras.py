@@ -57,7 +57,7 @@ ERAS: tuple[Era, ...] = (
             # no-op (see backend/simulation.py._resolve_action) -- there's no IDLE
             # concept anywhere anymore, defensive fallback or otherwise.
             "GATHER_WOOD", "GATHER_STONE", "GATHER_WATER", "GATHER_FOOD", "HUNT_DEER",
-            "BUILD_FIRE", "SCOUT", "HUNTING_PARTY", "RELOCATE", "RAID", "TRADE", "SEND_TRADE_EMISSARY", "BREED",
+            "BUILD_FIRE", "SCOUT", "EXPLORATION_PARTY", "HUNTING_PARTY", "RELOCATE", "RAID", "TRADE", "SEND_TRADE_EMISSARY", "BREED",
             # Explicit request: "this can happen early" -- COOK_FOOD moved out of
             # Tribal Synapse's era gate entirely. Its own real prerequisites (a
             # successful hunt and a successfully-built fire, ever -- see
