@@ -450,6 +450,7 @@ def test_quarry_nudge_requires_a_real_successful_stone_gather():
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.has_ever_settled = True
+    sim._found_territory(tribe)  # real game always pairs these -- BUILD_QUARRY's own placement check needs it
 
     request, _ctx = sim._prepare_turn(tribe)
     assert "a quarry built at the settlement" not in request["prompt"]
@@ -468,6 +469,7 @@ def test_sawmill_nudge_requires_a_real_successful_wood_gather():
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.has_ever_settled = True
+    sim._found_territory(tribe)  # real game always pairs these -- BUILD_SAWMILL's own placement check needs it
 
     request, _ctx = sim._prepare_turn(tribe)
     assert "a sawmill built at the settlement" not in request["prompt"]
@@ -1084,6 +1086,7 @@ def test_one_time_buildings_retire_from_available_actions_once_built():
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
+    sim._found_territory(tribe)  # real game always pairs these -- every build check here needs real placement room
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"  # unlocks every action in the table
     tribe.fishing_learned = True  # BUILD_DOCK also requires this now -- isolate that gate
@@ -1117,6 +1120,7 @@ def test_build_dock_is_not_offered_until_fishing_is_learned():
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
+    sim._found_territory(tribe)  # real game always pairs these -- BUILD_DOCK's own placement check needs it
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"  # unlocks BUILD_DOCK
 
@@ -1449,6 +1453,7 @@ def test_affordability_gate_reappears_once_the_cost_is_covered():
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
+    sim._found_territory(tribe)  # real game always pairs these -- BUILD_WAREHOUSE's own placement check needs it
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"
     tribe.wood = 1
@@ -1494,6 +1499,34 @@ def test_affordability_gate_hides_every_registered_action_below_its_own_cost():
     _, ctx = sim._prepare_turn(tribe)
     assert tribe.food_crisis_active is False and tribe.water_crisis_active is False
     assert "BREED" not in ctx["available_actions"]
+
+
+def test_affordability_gate_hides_a_buildable_action_once_territory_has_no_room():
+    """Live report (2026-09-03): "good calls but they are failing, probably
+    resources... maybe something else." Confirmed against a live run: Forest
+    Tribe repeated BUILD_WAREHOUSE ~23 times with wood/stone in the hundreds
+    the entire time, spending nothing, because its territory (25 buildings
+    already packed into radius 12) had no room left for a 15th warehouse --
+    architect.find_free_slot silently returning None every time, exactly the
+    same guaranteed-no-op shape an unaffordable wood/stone cost already gets
+    hidden for. AFFORDABILITY_CHECKS now runs that same placement scan too
+    (see _can_place)."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"
+    tribe.wood = tribe.stone = 1000  # affordability is not the problem here
+
+    _, ctx_roomy = sim._prepare_turn(tribe)
+    assert "BUILD_WAREHOUSE" in ctx_roomy["available_actions"]
+
+    tribe.territory_radius = 0  # no room for a fresh 3x3 footprint anywhere
+    _, ctx_full = sim._prepare_turn(tribe)
+    assert "BUILD_WAREHOUSE" not in ctx_full["available_actions"]
 
 
 def test_affordability_gate_hides_construct_wall_when_the_next_section_is_unaffordable():

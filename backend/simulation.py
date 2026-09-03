@@ -123,7 +123,7 @@ def _wall_next_afford_cost(tribe) -> tuple[int, int] | None:
     return round(config.WALL_WOOD_COST_TOTAL * added / 100), round(config.WALL_STONE_COST_TOTAL * added / 100)
 
 
-def _can_afford_construct_wall(tribe) -> bool:
+def _can_afford_construct_wall(tribe, world) -> bool:
     cost = _wall_next_afford_cost(tribe)
     if cost is None:
         return True  # let the action's own "nothing to build" message surface instead
@@ -131,7 +131,22 @@ def _can_afford_construct_wall(tribe) -> bool:
     return tribe.wood >= wood_cost and tribe.stone >= stone_cost
 
 
-def _can_afford_build_long_house(tribe) -> bool:
+def _can_place(tribe, world, building_type: str) -> bool:
+    """Live-run correction (2026-09-03): "good calls but they are failing,
+    probably resources... maybe something else." Turned out to be something
+    else -- a live run showed Forest Tribe repeat BUILD_WAREHOUSE ~23 times
+    with wood/stone in the hundreds the whole time, never spending a thing,
+    because its territory (25 buildings already packed into radius 12) had no
+    room left for a 15th warehouse. Every build action already no-ops for free
+    when architect.find_free_slot returns None (see each one's own guard
+    clause in actions.py) -- this just runs that same cheap, deterministic,
+    side-effect-free scan here too, so a territory with no room left hides the
+    option instead of dangling a guaranteed no-op, the same treatment an
+    unaffordable wood/stone cost already gets below."""
+    return architect.find_free_slot(world, tribe, building_type) is not None
+
+
+def _can_afford_build_long_house(tribe, world) -> bool:
     """Explicit request: "the option to build a long house should not even
     come up if they don't have a full Wall built" -- mirrors actions.
     _build_long_house's own real prerequisite (ring_fully_built) and repeat
@@ -142,7 +157,10 @@ def _can_afford_build_long_house(tribe) -> bool:
     houses_needed = max(1, -(-tribe.population // config.HOUSING_POPULATION_PER_LONG_HOUSE))
     if tribe.long_houses_built >= houses_needed:
         return False
-    return tribe.wood >= config.LONG_HOUSE_WOOD_COST and tribe.stone >= config.LONG_HOUSE_STONE_COST
+    return (
+        tribe.wood >= config.LONG_HOUSE_WOOD_COST and tribe.stone >= config.LONG_HOUSE_STONE_COST
+        and _can_place(tribe, world, "long_house")
+    )
 
 
 AFFORDABILITY_CHECKS = {
@@ -152,64 +170,92 @@ AFFORDABILITY_CHECKS = {
     # real structural prerequisite (a building or proven success) their own
     # action function already gates on -- the exact guaranteed-no-op class this
     # whole table exists to close, just missed on these specific entries.
-    "BUILD_DOCK": lambda t: t.fishing_learned and t.wood >= config.DOCK_WOOD_COST,
+    "BUILD_DOCK": lambda t, w: t.fishing_learned and t.wood >= config.DOCK_WOOD_COST and _can_place(t, w, "dock"),
     "CONSTRUCT_WALL": _can_afford_construct_wall,
     "BUILD_LONG_HOUSE": _can_afford_build_long_house,
-    "BUILD_FISHERY": lambda t: (
+    "BUILD_FISHERY": lambda t, w: (
         t.dock_built and t.wood >= config.FISHERY_WOOD_COST and t.stone >= config.FISHERY_STONE_COST
+        and _can_place(t, w, "fishery")
     ),
     # Real prerequisite AND cost checked together -- see actions.py._build_sawmill/
     # _build_quarry/_build_tannery's own simplified gates (a proven success, not a
     # Long House/scouted site).
-    "BUILD_SAWMILL": lambda t: t.wood_ever_gathered and t.wood >= config.SAWMILL_WOOD_COST and t.stone >= config.SAWMILL_STONE_COST,
-    "BUILD_QUARRY": lambda t: t.stone_ever_gathered and t.wood >= config.QUARRY_WOOD_COST and t.stone >= config.QUARRY_STONE_COST,
-    "BUILD_TANNERY": lambda t: t.hunt_ever_succeeded and t.wood >= config.TANNERY_WOOD_COST and t.stone >= config.TANNERY_STONE_COST,
-    "BUILD_HATCHERY": lambda t: t.eggs_ever_gathered and t.wood >= config.HATCHERY_WOOD_COST and t.stone >= config.HATCHERY_STONE_COST,
-    "BUILD_BATH_HOUSE": lambda t: t.wood >= config.BATH_HOUSE_WOOD_COST and t.stone >= config.BATH_HOUSE_STONE_COST,
+    "BUILD_SAWMILL": lambda t, w: (
+        t.wood_ever_gathered and t.wood >= config.SAWMILL_WOOD_COST and t.stone >= config.SAWMILL_STONE_COST
+        and _can_place(t, w, "sawmill")
+    ),
+    "BUILD_QUARRY": lambda t, w: (
+        t.stone_ever_gathered and t.wood >= config.QUARRY_WOOD_COST and t.stone >= config.QUARRY_STONE_COST
+        and _can_place(t, w, "quarry")
+    ),
+    "BUILD_TANNERY": lambda t, w: (
+        t.hunt_ever_succeeded and t.wood >= config.TANNERY_WOOD_COST and t.stone >= config.TANNERY_STONE_COST
+        and _can_place(t, w, "tannery")
+    ),
+    "BUILD_HATCHERY": lambda t, w: (
+        t.eggs_ever_gathered and t.wood >= config.HATCHERY_WOOD_COST and t.stone >= config.HATCHERY_STONE_COST
+        and _can_place(t, w, "hatchery")
+    ),
+    "BUILD_BATH_HOUSE": lambda t, w: (
+        t.wood >= config.BATH_HOUSE_WOOD_COST and t.stone >= config.BATH_HOUSE_STONE_COST
+        and _can_place(t, w, "bath_house")
+    ),
     # GATHER_ORE has no wood/stone cost of its own -- the real prerequisite is
     # a mine existing at all (see actions.py._gather_ore's own guard clause).
-    "GATHER_ORE": lambda t: t.mine_built,
-    "BUILD_KITCHEN": lambda t: (
+    "GATHER_ORE": lambda t, w: t.mine_built,
+    "BUILD_KITCHEN": lambda t, w: (
         t.cooking_learned and t.long_houses_built > 0
         and t.wood >= config.KITCHEN_WOOD_COST and t.stone >= config.KITCHEN_STONE_COST
+        and _can_place(t, w, "kitchen")
     ),
-    "BUILD_MOAT": lambda t: (
+    "BUILD_MOAT": lambda t, w: (
         bool(t.wall_rings) and city_layout.ring_fully_reinforced(t.wall_rings[0])
         and t.wood >= config.MOAT_WOOD_COST and t.stone >= config.MOAT_STONE_COST
     ),
-    "BUILD_WAREHOUSE": lambda t: t.wood >= config.WAREHOUSE_WOOD_COST and t.stone >= config.WAREHOUSE_STONE_COST,
-    "BUILD_KEEP": lambda t: (
+    "BUILD_WAREHOUSE": lambda t, w: (
+        t.wood >= config.WAREHOUSE_WOOD_COST and t.stone >= config.WAREHOUSE_STONE_COST
+        and _can_place(t, w, "warehouse")
+    ),
+    "BUILD_KEEP": lambda t, w: (
         t.long_houses_built >= config.KEEP_LONG_HOUSES_REQUIRED
         and t.wood >= config.KEEP_WOOD_COST and t.stone >= config.KEEP_STONE_COST
+        and _can_place(t, w, "keep")
     ),
-    "BUILD_FORTRESS": lambda t: (
+    "BUILD_FORTRESS": lambda t, w: (
         t.keep_built and t.long_houses_built >= config.FORTRESS_LONG_HOUSES_REQUIRED
         and t.wood >= config.FORTRESS_WOOD_COST and t.stone >= config.FORTRESS_STONE_COST
+        and _can_place(t, w, "fortress")
     ),
-    "BUILD_CASTLE": lambda t: (
+    "BUILD_CASTLE": lambda t, w: (
         t.fortress_built and t.long_houses_built >= config.CASTLE_LONG_HOUSES_REQUIRED
         and t.wood >= config.CASTLE_WOOD_COST and t.stone >= config.CASTLE_STONE_COST
+        and _can_place(t, w, "castle")
     ),
-    "BUILD_MINE": lambda t: (
+    "BUILD_MINE": lambda t, w: (
         t.quarry_built and bool(t.mine_sites)
         and t.wood >= config.MINE_WOOD_COST and t.stone >= config.MINE_STONE_COST
+        and _can_place(t, w, "mine")
     ),
-    "BUILD_FORGE": lambda t: (
+    "BUILD_FORGE": lambda t, w: (
         t.mine_built and t.unique_resources.get(t.mine_resource_name, 0) >= config.FORGE_ITEM_ORE_COST
         and t.wood >= config.FORGE_WOOD_COST and t.stone >= config.FORGE_STONE_COST
+        and _can_place(t, w, "forge")
     ),
-    "BUILD_ROAD": lambda t: t.wood >= config.ROAD_WOOD_COST and t.stone >= config.ROAD_STONE_COST,
-    "EXPAND_TERRITORY": lambda t: t.wood >= config.TERRITORY_EXPANSION_WOOD_COST and t.stone >= config.TERRITORY_EXPANSION_STONE_COST,
-    "PLANT_CROP": lambda t: t.farm_plots < config.MAX_FARM_PLOTS and t.wood >= config.PLANT_CROP_WOOD_COST,
-    "BREED": lambda t: t.food >= config.BREED_FOOD_COST and t.water >= config.BREED_WATER_COST,
+    "BUILD_ROAD": lambda t, w: t.wood >= config.ROAD_WOOD_COST and t.stone >= config.ROAD_STONE_COST,
+    "EXPAND_TERRITORY": lambda t, w: t.wood >= config.TERRITORY_EXPANSION_WOOD_COST and t.stone >= config.TERRITORY_EXPANSION_STONE_COST,
+    "PLANT_CROP": lambda t, w: (
+        t.farm_plots < config.MAX_FARM_PLOTS and t.wood >= config.PLANT_CROP_WOOD_COST
+        and _can_place(t, w, "farm_plot")
+    ),
+    "BREED": lambda t, w: t.food >= config.BREED_FOOD_COST and t.water >= config.BREED_WATER_COST,
     # Explicit request: "it's unwise to Trade before we have a full Wall" --
     # see actions.py._send_trade_emissary's matching real prerequisite. Instant
     # TRADE is left alone (a chance encounter, not a deliberate choice to
     # expose the tribe) -- only the deliberate, multi-day search is gated.
-    "SEND_TRADE_EMISSARY": lambda t: bool(t.wall_rings) and city_layout.ring_fully_built(t.wall_rings[0]),
+    "SEND_TRADE_EMISSARY": lambda t, w: bool(t.wall_rings) and city_layout.ring_fully_built(t.wall_rings[0]),
     # Both a real resource cost AND config.ITEM_STORAGE_CAP_BASE's own ceiling --
     # see _forge_item's matching "item stores are already full" no-op message.
-    "FORGE_ITEM": lambda t: (
+    "FORGE_ITEM": lambda t, w: (
         len(t.items) < _item_storage_cap(t)
         and t.wood >= config.FORGE_ITEM_WOOD_COST
         and t.unique_resources.get(t.mine_resource_name, 0) >= config.FORGE_ITEM_ORE_COST
@@ -1948,7 +1994,7 @@ class Simulation:
         # would just silently no-op it anyway.
         available_actions = [
             a for a in available_actions
-            if a not in AFFORDABILITY_CHECKS or AFFORDABILITY_CHECKS[a](tribe)
+            if a not in AFFORDABILITY_CHECKS or AFFORDABILITY_CHECKS[a](tribe, self.world)
         ]
 
         # See config.ACTION_REPETITION_THROTTLE_THRESHOLD/COOLDOWN and
