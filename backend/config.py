@@ -937,6 +937,17 @@ ITEM_NAMES_BY_TYPE = {
     "innovation": ("Geared Wheel", "Pressure Valve", "Tempered Spring", "Balanced Hinge"),
 }
 ITEM_VALUE_BY_TYPE = {"tool": 8, "weapon": 12, "innovation": 15}
+
+# FORGE_ITEM's own storage cap (backend/actions.py._item_storage_cap): explicit
+# follow-up to the passive-income storage-cap fix -- that one closed the gap for
+# wood/stone/food/water/unique_resources, but tribe.items (crafted tools/weapons/
+# innovations) was left as a plain list with no ceiling at all, the same
+# unbounded-hoarding shape STORAGE_CAP_BASE was built to close. A much smaller
+# scale than STORAGE_CAP_BASE (150) is deliberate -- each item already represents
+# a real investment (FORGE_ITEM_ORE_COST + FORGE_ITEM_WOOD_COST spent per craft),
+# unlike a bulk resource; 5 uncashed items sitting around is already a lot.
+ITEM_STORAGE_CAP_BASE = 5
+ITEM_STORAGE_CAP_PER_WAREHOUSE = 1
 # USE_ITEM redeems a crafted item for its value, split across wood/stone -- the
 # straightforward cash-out for a value that otherwise just sits on the tribe.
 USE_ITEM_STONE_SHARE = 0.5

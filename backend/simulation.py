@@ -7,8 +7,8 @@ import random
 from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
-    _eligible_breeding_pair, _execute_trade, _find_trade_partner, _food_multiplier, _labor_multiplier,
-    _storage_cap, expedition_capacity,
+    _eligible_breeding_pair, _execute_trade, _find_trade_partner, _food_multiplier, _item_storage_cap,
+    _labor_multiplier, _storage_cap, expedition_capacity,
 )
 from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
@@ -150,6 +150,13 @@ AFFORDABILITY_CHECKS = {
     "EXPAND_TERRITORY": lambda t: t.wood >= config.TERRITORY_EXPANSION_WOOD_COST and t.stone >= config.TERRITORY_EXPANSION_STONE_COST,
     "PLANT_CROP": lambda t: t.wood >= config.PLANT_CROP_WOOD_COST,
     "BREED": lambda t: t.food >= config.BREED_FOOD_COST and t.water >= config.BREED_WATER_COST,
+    # Both a real resource cost AND config.ITEM_STORAGE_CAP_BASE's own ceiling --
+    # see _forge_item's matching "item stores are already full" no-op message.
+    "FORGE_ITEM": lambda t: (
+        len(t.items) < _item_storage_cap(t)
+        and t.wood >= config.FORGE_ITEM_WOOD_COST
+        and t.unique_resources.get(t.mine_resource_name, 0) >= config.FORGE_ITEM_ORE_COST
+    ),
 }
 
 

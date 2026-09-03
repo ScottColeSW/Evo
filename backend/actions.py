@@ -711,6 +711,13 @@ def _build_forge(sim, tribe, biome, target):
     return f"a forge is built -- {tribe.mine_resource_name} can now be worked into real tools, weapons, and inventions"
 
 
+def _item_storage_cap(tribe) -> int:
+    """See config.ITEM_STORAGE_CAP_BASE's own comment -- a much smaller ceiling
+    than _storage_cap's bulk-resource one, since each item already represents a
+    real spent investment rather than something freely re-gathered."""
+    return config.ITEM_STORAGE_CAP_BASE + tribe.warehouses_built * config.ITEM_STORAGE_CAP_PER_WAREHOUSE
+
+
 def _forge_item(sim, tribe, biome, target):
     """Turns stored ore into a real, permanent item -- a tool, a weapon, or a small
     innovation, picked at random each time (like a mine site's own resource name,
@@ -719,6 +726,8 @@ def _forge_item(sim, tribe, biome, target):
     later via USE_ITEM or handed over in a TRADE."""
     if not tribe.forge_built:
         return None
+    if len(tribe.items) >= _item_storage_cap(tribe):
+        return "the item stores are already full -- USE_ITEM or a TRADE must free up room before another can be forged"
     if tribe.unique_resources.get(tribe.mine_resource_name, 0) < config.FORGE_ITEM_ORE_COST:
         return None
     if tribe.wood < config.FORGE_ITEM_WOOD_COST:

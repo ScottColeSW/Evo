@@ -1425,6 +1425,30 @@ def test_affordability_gate_does_not_hide_construct_wall_when_nothing_needs_buil
     assert "CONSTRUCT_WALL" in ctx["available_actions"]
 
 
+def test_affordability_gate_hides_forge_item_once_the_item_storage_cap_is_reached():
+    """Even with plenty of ore and wood on hand, a full item store is still a
+    guaranteed no-op -- see config.ITEM_STORAGE_CAP_BASE's own comment."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"
+    tribe.forge_built = True
+    tribe.mine_resource_name = "Orosite Ore"
+    tribe.unique_resources["Orosite Ore"] = 100
+    tribe.wood = tribe.stone = 1000
+    tribe.items = [{"name": "Whetstone", "type": "tool", "value": 8, "cycle_made": 0}] * config.ITEM_STORAGE_CAP_BASE
+
+    _, ctx = sim._prepare_turn(tribe)
+    assert "FORGE_ITEM" not in ctx["available_actions"]
+
+    tribe.items = tribe.items[:-1]
+    _, ctx = sim._prepare_turn(tribe)
+    assert "FORGE_ITEM" in ctx["available_actions"]
+
+
 def test_farming_and_eggs_available_once_settled_next_to_real_water():
     from backend import config
 

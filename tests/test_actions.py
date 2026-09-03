@@ -1000,6 +1000,37 @@ def test_forge_item_is_a_no_op_without_enough_ore_or_wood():
     assert tribe.items == []
 
 
+def test_forge_item_is_capped_and_the_cap_rises_with_warehouses():
+    """Explicit follow-up to the passive-income storage-cap fix: tribe.items had
+    no ceiling at all, the same unbounded-hoarding shape that fix closed for bulk
+    resources."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Mountain Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.forge_built = True
+    tribe.mine_resource_name = "Orosite Ore"
+    tribe.unique_resources["Orosite Ore"] = 100
+    tribe.wood = 1000
+    tribe.items = [{"name": "Whetstone", "type": "tool", "value": 8, "cycle_made": 0}] * config.ITEM_STORAGE_CAP_BASE
+
+    result = ACTION_REGISTRY["FORGE_ITEM"](sim, tribe, "plains", _NO_TARGET)
+
+    assert len(tribe.items) == config.ITEM_STORAGE_CAP_BASE  # nothing added
+    assert "already full" in result
+    assert tribe.wood == 1000  # no cost spent on a no-op
+    assert tribe.unique_resources["Orosite Ore"] == 100
+
+    tribe.warehouses_built = 1
+    with mock.patch("backend.actions.random.choice", side_effect=["tool", "Whetstone"]):
+        result = ACTION_REGISTRY["FORGE_ITEM"](sim, tribe, "plains", _NO_TARGET)
+
+    assert len(tribe.items) == config.ITEM_STORAGE_CAP_BASE + 1
+    assert "already full" not in result
+
+
 def test_use_item_converts_value_to_wood_and_stone():
     from backend import config
 
