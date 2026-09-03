@@ -311,7 +311,7 @@ BUILDING_FOOTPRINTS = {
     "warehouse": (3, 3),
     "kitchen": (2, 2), "tannery": (2, 2), "dock": (2, 2), "fishery": (2, 4),
     "farm_plot": (3, 3), "flock_pen": (2, 2), "fire": (1, 1), "hatchery": (2, 2),
-    "boat": (2, 3), "bath_house": (2, 2), "library": (3, 3),
+    "boat": (2, 3), "bath_house": (2, 2), "library": (3, 3), "well": (2, 2),
 }
 
 # BUILD_FISHERY (backend/actions.py): a new building, unlocked once a Dock already
@@ -382,6 +382,17 @@ INNOVATION_ERA_DISCOUNT_CAP = 0.5
 # entry -- a real distillation (see TribeMemory.consolidate's own top-3 taboo
 # ranking, which this deliberately mirrors), not the full raw log dumped in.
 LIBRARY_ENTRY_MEMORY_COUNT = 3
+
+# BUILD_WELL (backend/actions.py, Simulation._advance_water_supply): explicit
+# request -- water's only passive-income lever was a single flat formula tied to
+# population, with no equivalent of Fishery/Dock's stacking bonus for food. Same
+# "infrastructure from the moment it's unlocked" shape Bath House/Warehouse
+# already use (no proven-success gate), stacking onto SETTLED_WATER_SUPPLY_
+# MULTIPLIER exactly the way FISHERY_SUPPLY_BONUS_MULTIPLIER stacks onto
+# FISHING_SUPPLY_MULTIPLIER for food.
+WELL_WOOD_COST = 20
+WELL_STONE_COST = 20
+WELL_SUPPLY_BONUS_MULTIPLIER = 1.5
 
 EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR = 5  # 1 egg per 5 flock members per cycle
 LIVESTOCK_SURPLUS_THRESHOLD = 12

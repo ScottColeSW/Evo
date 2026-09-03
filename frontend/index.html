@@ -1816,7 +1816,7 @@ const BUILDING_ICONS = {
   sawmill: "🪵", quarry: "⛏️", mine: "💎", kitchen: "🍲", tannery: "🦫", forge: "🔨",
   warehouse: "🏬",
   dock: "⚓", fishery: "🎣", farm_plot: "🌾", flock_pen: "🐔", fire: "🔥",
-  hatchery: "🐣", boat: "⛵", bath_house: "🛁", library: "📚",
+  hatchery: "🐣", boat: "⛵", bath_house: "🛁", library: "📚", well: "🪣",
 };
 
 function drawBuildings(t) {
@@ -2348,7 +2348,7 @@ function farmingPanel(t) {
     || t.moat_built || t.road_built || t.dock_built
     || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built || t.tannery_built
     || t.forge_built || t.warehouses_built || t.founded_city || (t.cooking_learned && !t.kitchen_built)
-    || t.hatchery_built || t.boat_built || t.bath_house_built || t.library_built;
+    || t.hatchery_built || t.boat_built || t.bath_house_built || t.library_built || t.well_built;
   if (!hasAny) return "";
   const parts = [];
   if (t.farm_plots > 0) {
@@ -2391,6 +2391,7 @@ function farmingPanel(t) {
   }
   if (t.hatchery_built) parts.push("🐣 Hatchery — the flock hatches on its own much more reliably");
   if (t.bath_house_built) parts.push("🛁 Bath House — daily food and water consumption reduced");
+  if (t.well_built) parts.push("🪣 Well — daily passive water supply flows in faster");
   if (t.library_built) {
     // 4% per research, capped at 50% -- mirrors config.INNOVATION_ERA_DISCOUNT_PER_RESEARCH/_CAP.
     parts.push(`📚 Library — ${t.research_completed} insight${t.research_completed === 1 ? "" : "s"} recorded, next era ${Math.min(50, t.research_completed * 4)}% closer`);

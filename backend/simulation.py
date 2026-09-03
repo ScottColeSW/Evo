@@ -82,6 +82,7 @@ ONE_TIME_BUILD_FLAGS = {
     "BUILD_MINE": "mine_built", "BUILD_FORGE": "forge_built",
     "BUILD_ROAD": "road_built", "BUILD_HATCHERY": "hatchery_built",
     "BUILD_BATH_HOUSE": "bath_house_built", "BUILD_LIBRARY": "library_built",
+    "BUILD_WELL": "well_built",
 }
 
 # See _prepare_turn's survival-crisis filter. A live run showed a tribe stay at 0
@@ -217,6 +218,10 @@ AFFORDABILITY_CHECKS = {
         t.long_houses_built > 0
         and t.wood >= config.LIBRARY_WOOD_COST and t.stone >= config.LIBRARY_STONE_COST
         and _can_place(t, w, "library")
+    ),
+    "BUILD_WELL": lambda t, w: (
+        t.wood >= config.WELL_WOOD_COST and t.stone >= config.WELL_STONE_COST
+        and _can_place(t, w, "well")
     ),
     # Deliberately NOT gated on the tribe having any memory yet -- same as
     # CONSTRUCT_WALL's own "let the action's own message surface instead" case:
@@ -643,6 +648,11 @@ class Tribe:
         self.library_built = False
         self.library_entries: list[dict] = []
         self.research_completed = 0
+        # See actions.py._build_well/Simulation._advance_water_supply -- explicit
+        # request: water's passive income had no equivalent of Fishery/Dock's
+        # stacking bonus. No prerequisite beyond being settled and affordable, same
+        # shape as Bath House/Warehouse.
+        self.well_built = False
         # See actions.py._build_moat -- one-way, gated on the first wall ring being
         # fully reinforced (backend/city_layout.py.ring_fully_reinforced). A cheaper
         # alternative defense investment, not a wall replacement.
@@ -882,6 +892,7 @@ class Tribe:
             "library_built": self.library_built,
             "library_entries": self.library_entries,
             "research_completed": self.research_completed,
+            "well_built": self.well_built,
             "flock_lineage": self.flock_lineage,
             "settlement_name": self.settlement_name,
             "has_ever_settled": self.has_ever_settled,
@@ -3784,7 +3795,8 @@ class Simulation:
         GATHER_WATER still works and still adds more on top of this."""
         if self._is_settled_near_water(tribe):
             upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
-            self._capped_add(tribe, "water", round(upkeep * config.SETTLED_WATER_SUPPLY_MULTIPLIER))
+            well_bonus = config.WELL_SUPPLY_BONUS_MULTIPLIER if tribe.well_built else 1.0
+            self._capped_add(tribe, "water", round(upkeep * config.SETTLED_WATER_SUPPLY_MULTIPLIER * well_bonus))
 
     def _advance_fish_supply(self, tribe: Tribe) -> None:
         """Once fishing is learned (the first successful CATCH_FISH), food flows in

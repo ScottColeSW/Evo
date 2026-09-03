@@ -1094,6 +1094,40 @@ def test_research_with_no_memory_yet_is_a_real_no_op_not_a_silent_one():
     assert "worth recording" in result
 
 
+def test_build_well_has_no_prerequisite_beyond_being_settled_and_affordable():
+    """Explicit request: a Well boosts water's passive income, no proven-success
+    gate needed, the same "infrastructure from the moment it's unlocked" shape
+    Bath House/Warehouse already use."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    assert ACTION_REGISTRY["BUILD_WELL"](sim, tribe, "plains", _NO_TARGET) is None  # not settled yet
+    assert tribe.well_built is False
+
+    _settle(sim, tribe)
+    tribe.wood = config.WELL_WOOD_COST
+    tribe.stone = config.WELL_STONE_COST
+    result = ACTION_REGISTRY["BUILD_WELL"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.well_built is True
+    assert "well is dug" in result
+
+
+def test_build_well_is_a_no_op_once_already_built():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.well_built = True
+    tribe.wood = config.WELL_WOOD_COST
+    tribe.stone = config.WELL_STONE_COST
+
+    assert ACTION_REGISTRY["BUILD_WELL"](sim, tribe, "plains", _NO_TARGET) is None
+
+
 def test_gather_ore_requires_a_real_mine():
     """Explicit correction: "GATHER_ORE only comes in if they Discover a Mine.
     They do not harvest on a Discovery, so they have to fetch it once."""

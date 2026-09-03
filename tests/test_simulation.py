@@ -5192,6 +5192,28 @@ def test_advance_water_supply_scales_with_population_not_a_flat_amount():
     assert tribe.water > upkeep  # a real surplus, not just barely keeping pace
 
 
+def test_advance_water_supply_stacks_a_well_bonus():
+    """Explicit request: a Well gives water the same kind of stacking supply
+    bonus Fishery/Dock already give food (_advance_fish_supply's fishery_bonus),
+    since water previously had only the flat settled-near-water formula with no
+    way to scale further."""
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.population = 100  # large enough that the bonus isn't lost to rounding
+    tribe.well_built = True
+    tribe.water = 10
+
+    sim._advance_water_supply(tribe)
+
+    upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+    expected = round(upkeep * config.SETTLED_WATER_SUPPLY_MULTIPLIER * config.WELL_SUPPLY_BONUS_MULTIPLIER)
+    assert tribe.water == 10 + expected
+    assert expected > round(upkeep * config.SETTLED_WATER_SUPPLY_MULTIPLIER)  # a real boost over the bare formula
+
+
 def test_advance_water_supply_is_capped_by_storage():
     """Live-run correction: passive settled-water income used to bypass the storage
     cap entirely, which is exactly how a live run reached 540 water on one tribe --
