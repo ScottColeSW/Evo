@@ -427,6 +427,11 @@ class Tribe:
         # Simulation._advance_raider_approach. None means no attack is currently
         # approaching. {"start_x", "start_y", "x", "y", "cycles_left", "total_cycles"}.
         self.raiders_approaching: dict | None = None
+        # See Simulation._advance_wall_security -- explicit request: "once the
+        # Wall is complete all Raiders are kicked out of the area or absorbed."
+        # One-way, like every other real-milestone flag here: once the first
+        # wall ring is genuinely finished, this tribe stops being raided at all.
+        self.raiders_repelled_by_wall = False
         # Honors a chief has personally proposed via the night cycle (see
         # reflection.py's AWARD_CATEGORIES). Simulation._check_custom_awards hands one
         # out to whoever first earns it after it's proposed.
@@ -794,6 +799,7 @@ class Tribe:
             "raider_sightings": self.raider_sightings,
             "last_raider_attack_cycle": self.last_raider_attack_cycle,
             "raiders_approaching": self.raiders_approaching,
+            "raiders_repelled_by_wall": self.raiders_repelled_by_wall,
             "stance_toward": self.stance_toward,
             "wellbeing": self.wellbeing,
             "next_era": next_era_info,
@@ -1343,6 +1349,7 @@ class Simulation:
             self._apply_turn(tribe, outcome["intent"], outcome["latency_ms"], contexts[tid])
             self._advance_automatic_fire(tribe)
             self._advance_automatic_boat(tribe)
+            self._advance_wall_security(tribe)
             self._apply_upkeep(tribe)
             self._check_raider_attack(tribe)
             self._advance_raider_approach(tribe)
@@ -3204,6 +3211,8 @@ class Simulation:
         the same category as _apply_upkeep."""
         if not tribe.has_ever_settled or tribe.extinct or tribe.raiders_approaching:
             return
+        if tribe.raiders_repelled_by_wall:
+            return
         if self.cycle - tribe.last_raider_attack_cycle < config.RAIDER_HAZARD_COOLDOWN_CYCLES:
             return
 
@@ -3527,6 +3536,23 @@ class Simulation:
         self.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS
         )
+
+    def _advance_wall_security(self, tribe: Tribe) -> None:
+        """Explicit request: "once the Wall is complete all Raiders are kicked
+        out of the area or absorbed. either is fine by me." A one-time
+        transition the first cycle the first wall ring is genuinely finished
+        (city_layout.ring_fully_built) -- any raider camps already known
+        nearby are cleared (driven off/absorbed either reading is consistent
+        with wiping the list), and _check_raider_attack's own matching guard
+        means this tribe is never raided again from here on."""
+        if tribe.raiders_repelled_by_wall or not tribe.wall_rings:
+            return
+        if not city_layout.ring_fully_built(tribe.wall_rings[0]):
+            return
+        tribe.raiders_repelled_by_wall = True
+        tribe.raider_sightings = []
+        tribe.raiders_approaching = None
+        tribe.history.append(f"{tribe.name}'s completed wall drives every raider from the area for good")
 
     def _advance_water_supply(self, tribe: Tribe) -> None:
         """Explicit request: "like relocate, gather water becomes irrelevant once they

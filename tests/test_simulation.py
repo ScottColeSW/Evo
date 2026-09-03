@@ -1192,6 +1192,44 @@ def test_automatic_boat_places_a_real_footprint_once_settled():
     assert (boats[0]["w"], boats[0]["h"]) == config.BUILDING_FOOTPRINTS["boat"]
 
 
+def test_advance_wall_security_repels_raiders_once_the_wall_is_complete():
+    """Explicit request: "once the Wall is complete all Raiders are kicked out
+    of the area or absorbed. either is fine by me.\""""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    sim._found_territory(tribe)
+    tribe.raider_sightings = [(10, 10), (20, 20)]
+    tribe.raiders_approaching = {"start_x": 30, "start_y": 30, "x": 30, "y": 30, "cycles_left": 2, "total_cycles": 5}
+
+    sim._advance_wall_security(tribe)
+    assert tribe.raiders_repelled_by_wall is False  # wall not finished yet
+    assert tribe.raider_sightings == [(10, 10), (20, 20)]
+
+    for sec in tribe.wall_rings[0]["sections"]:
+        sec["unlocked"] = True
+        sec["progress"] = 100
+    sim._advance_wall_security(tribe)
+
+    assert tribe.raiders_repelled_by_wall is True
+    assert tribe.raider_sightings == []
+    assert tribe.raiders_approaching is None
+    assert any("drives every raider from the area" in e for e in tribe.history)
+
+
+def test_check_raider_attack_never_triggers_once_repelled_by_wall():
+    from unittest import mock
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.raiders_repelled_by_wall = True
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._check_raider_attack(tribe)
+
+    assert tribe.raiders_approaching is None
+
+
 def test_hunting_party_wolf_attack_marks_a_map_encounter():
     """Same fix as the instant HUNT_DEER hazard -- the multi-day HUNTING_PARTY
     wolf-pack hazard never reported a map encounter either."""
