@@ -670,6 +670,18 @@ def test_expand_territory_opens_a_new_ring_once_the_current_one_is_maxed():
     assert "territory expands" in result
 
 
+def test_build_dock_is_a_no_op_before_fishing_is_learned():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 50
+
+    result = ACTION_REGISTRY["BUILD_DOCK"](sim, tribe, "plains", _NO_TARGET)
+
+    assert result is None
+    assert tribe.dock_built is False
+    assert tribe.wood == 50  # no wood spent on a no-op
+
+
 def test_build_dock_boosts_future_fish_catches():
     from unittest import mock
 

@@ -481,11 +481,17 @@ def _expand_territory(sim, tribe, biome, target):
 
 
 def _build_dock(sim, tribe, biome, target):
-    """Explicit request: "once they have Settled in hopes they will figure out
-    fishing." A real fishing yield bonus once built (config.
-    DOCK_FISH_CATCH_BONUS_FRACTION applied in _catch_fish), not just flavor --
-    rewards betting on fishing early rather than only narrating the hope."""
-    if tribe.dock_built or tribe.wood < config.DOCK_WOOD_COST:
+    """Used to be reachable the moment a tribe settled, on the theory that
+    building it would be a hopeful bet that pushed the tribe toward figuring out
+    fishing. Explicit correction, after live data showed models spending wood on
+    it (and other buildings) while genuinely starving, with fishing still
+    unlearned: gate it on tribe.fishing_learned instead, the same "real proven
+    capability, not a hopeful bet" pattern Sawmill/Quarry/Tannery already use.
+    CATCH_FISH itself never required a dock (see _catch_fish) so this doesn't
+    create a deadlock -- fishing gets learned first, and the dock becomes a real
+    reward (config.DOCK_FISH_CATCH_BONUS_FRACTION applied in _catch_fish) rather
+    than a bet placed before the tribe has ever caught anything."""
+    if tribe.dock_built or not tribe.fishing_learned or tribe.wood < config.DOCK_WOOD_COST:
         return None
     tribe.wood -= config.DOCK_WOOD_COST
     tribe.dock_built = True
@@ -1491,7 +1497,7 @@ ACTION_DESCRIPTIONS = {
     "BUILD_CASTLE": "Build a castle at your current tile using stored wood and stone -- only possible once a fortress stands and enough long houses have been built. A one-time, permanent structure that adds real defense on top of whatever your wall already provides.",
     "BUILD_ROAD": "Build a road at your current tile using stored wood and stone. A one-time, permanent improvement: every future scouting party, hunting party, or trade emissary you send out travels faster from then on.",
     "EXPAND_TERRITORY": "Grow your settlement's real owned territory using stored wood and stone, unlocking the next wall section to build. Repeatable -- once a whole wall ring is fully unlocked and reinforced, this opens a brand new ring further out instead.",
-    "BUILD_DOCK": "Build a dock at your current tile using stored wood -- only possible once the tribe has settled here. A one-time, permanent structure: every future fish caught here pays out more from then on.",
+    "BUILD_DOCK": "Build a dock at your current tile using stored wood -- only possible once the tribe has settled here and has already learned to fish (a real successful catch). A one-time, permanent structure: every future fish caught here pays out more from then on.",
     "BUILD_FISHERY": "Build a fishery using stored wood and stone -- only possible once a dock already stands. A one-time, permanent structure: the settlement's passive daily fish supply flows in even more steadily from then on.",
     "BUILD_SAWMILL": "Build a sawmill using stored wood and stone -- only possible once a long house stands, fishing is mastered, and a stand of trees has actually been scouted. A one-time, permanent structure at your settlement: every future load of gathered wood is worth three times as much from then on.",
     "BUILD_QUARRY": "Build a quarry using stored wood and stone -- only possible once a long house stands, fishing is mastered, and a stone-rich site has actually been scouted. A one-time, permanent structure at your settlement: every future load of harvested stone is worth three times as much from then on.",

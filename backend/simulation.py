@@ -70,6 +70,23 @@ ONE_TIME_BUILD_FLAGS = {
     "BUILD_ROAD": "road_built",
 }
 
+# See _prepare_turn's survival-crisis filter. A live run showed a tribe stay at 0
+# food for ~24 consecutive cycles, correctly naming "we are starving" in its own
+# rationale while still choosing EXPAND_TERRITORY/GATHER_STONE/BUILD_LONG_HOUSE/
+# BUILD_WAREHOUSE -- consistent with this project's documented "a prompt fact
+# doesn't reliably redirect a small model" pattern (instincts.py's
+# survival_bias_string already names this exact set of actions as a fact, and
+# that clearly wasn't enough on its own). Once a real crisis is active, the menu
+# itself is cut down to only actions that can plausibly help -- building,
+# expansion, trade, and family plans can wait. RELOCATE is deliberately excluded
+# here even though it's exempt from the repetition throttle: it carries a real
+# food/water cost of its own (see its ACTION_DESCRIPTIONS entry), which could
+# make an active crisis worse rather than better.
+SURVIVAL_CRISIS_ACTIONS = {
+    "GATHER_FOOD", "HUNT_DEER", "CATCH_FISH", "HUNTING_PARTY", "GATHER_EGGS", "COOK_FOOD",
+    "GATHER_WATER", "SCOUT",
+}
+
 
 def _interpolated_path(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
     """Every whole tile on the straight line from (x0, y0) to (x1, y1), inclusive
@@ -204,6 +221,13 @@ class Tribe:
         self.action_streak_name = ""
         self.action_streak_count = 0
         self.throttled_actions: dict[str, int] = {}
+        # See _prepare_turn's survival-crisis filter (SURVIVAL_CRISIS_ACTIONS above).
+        # Hysteresis, not a plain threshold check: entering requires crossing the
+        # critical line, but clearing requires climbing back past the (higher)
+        # warning line, so the menu doesn't flicker in and out every cycle right at
+        # the boundary.
+        self.food_crisis_active = False
+        self.water_crisis_active = False
         # Set by _apply_turn whenever _resolve_action couldn't match the model's raw
         # visual_action text to anything real; surfaced once as a correction fact by
         # _prepare_turn next cycle, then cleared. {"raw", "guess", "fallback"} or None
@@ -535,6 +559,8 @@ class Tribe:
             "last_broadcast": self.last_broadcast,
             "last_action": self.last_action,
             "throttled_actions": list(self.throttled_actions.keys()),
+            "food_crisis_active": self.food_crisis_active,
+            "water_crisis_active": self.water_crisis_active,
             "last_decision_target": self.last_decision_target,
             "history": self.history[-6:],
             "cycles_since_relocate": self.cycles_since_relocate,
@@ -1595,6 +1621,17 @@ class Simulation:
                 a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "BUILD_DOCK")
             ]
 
+        # Explicit correction ("they shouldn't build a dock until they learn to
+        # fish"): BUILD_DOCK used to be reachable the moment a tribe settled, a bet
+        # that building it would nudge the tribe toward fishing -- live data showed
+        # wood spent on it (among other buildings) while genuinely starving with
+        # fishing still unlearned. CATCH_FISH itself never required a dock, so
+        # gating the dock on fishing_learned instead (matching how Sawmill/Quarry/
+        # Tannery already gate on it) doesn't create a deadlock -- it just reorders
+        # which comes first.
+        if not tribe.fishing_learned:
+            available_actions = [a for a in available_actions if a != "BUILD_DOCK"]
+
         # Explicit request: "they do not have to build_fire after they have it
         # once. it should leave the action list after discovered and be known
         # ubiquitously." Fire used to stay in available_actions forever, so a
@@ -1659,7 +1696,44 @@ class Simulation:
         tribe.throttled_actions = {a: until for a, until in tribe.throttled_actions.items() if until > self.cycle}
         available_actions = [a for a in available_actions if a not in tribe.throttled_actions]
 
+        # See SURVIVAL_CRISIS_ACTIONS's comment -- the same threshold instincts.py's
+        # survival_bias_string already uses (kept in sync deliberately, not
+        # duplicated as a new number), but enforced as a menu cut instead of only a
+        # fact. Hysteresis via tribe.food_crisis_active/water_crisis_active: entering
+        # needs the critical line, clearing needs the warning line.
+        upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+        if tribe.food <= upkeep * config.HUNGER_CRITICAL_CYCLES_LEFT:
+            tribe.food_crisis_active = True
+        elif tribe.food > upkeep * config.HUNGER_WARNING_CYCLES_LEFT:
+            tribe.food_crisis_active = False
+        if tribe.water <= upkeep * config.THIRST_CRITICAL_CYCLES_LEFT:
+            tribe.water_crisis_active = True
+        elif tribe.water > upkeep * config.THIRST_WARNING_CYCLES_LEFT:
+            tribe.water_crisis_active = False
+
+        survival_crisis = tribe.food_crisis_active or tribe.water_crisis_active
+        if survival_crisis:
+            # Fail-open guard: never cut the menu down to nothing (e.g. an
+            # unusual pre-settlement gating combination) -- a soft-lock is worse
+            # than an occasional bad choice getting through.
+            survival_only = [a for a in available_actions if a in SURVIVAL_CRISIS_ACTIONS]
+            if survival_only:
+                available_actions = survival_only
+            else:
+                survival_crisis = False
+
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
+        if survival_crisis:
+            # Same "don't keep them in the dark" reasoning as the repetition
+            # throttle's own fact just below -- instincts.py's survival_bias
+            # already explains WHY, this explains why the menu itself just got
+            # shorter, so a suddenly narrower list doesn't read as an unexplained
+            # gap the way BUILD_DOCK re-appearing forever once did.
+            visible_entities.append(
+                "The crisis is severe enough that only actions which could directly help right now "
+                "are being offered -- building, expansion, trade, and family plans can wait until the "
+                "tribe is safely fed and watered again."
+            )
         if tribe.throttled_actions:
             # See "should we always keep them in the dark like this?" -- unlike
             # tribe.history (spectator/chronicle-only, never reaches the model's own

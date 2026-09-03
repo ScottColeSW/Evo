@@ -1055,6 +1055,7 @@ def test_one_time_buildings_retire_from_available_actions_once_built():
     tribe.has_ever_settled = True
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"  # unlocks every action in the table
+    tribe.fishing_learned = True  # BUILD_DOCK also requires this now -- isolate that gate
 
     _, ctx_before = sim._prepare_turn(tribe)
     assert "BUILD_DOCK" in ctx_before["available_actions"]
@@ -1073,6 +1074,27 @@ def test_one_time_buildings_retire_from_available_actions_once_built():
     _, ctx_all = sim._prepare_turn(tribe)
     for action in ONE_TIME_BUILD_FLAGS:
         assert action not in ctx_all["available_actions"]
+
+
+def test_build_dock_is_not_offered_until_fishing_is_learned():
+    """Explicit correction ("they shouldn't build a dock until they learn to
+    fish"): BUILD_DOCK used to be reachable the moment a tribe settled, a bet that
+    it would nudge the tribe toward fishing -- live data showed wood spent on it
+    while genuinely starving with fishing still unlearned."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"  # unlocks BUILD_DOCK
+
+    _, ctx_before = sim._prepare_turn(tribe)
+    assert "BUILD_DOCK" not in ctx_before["available_actions"]
+
+    tribe.fishing_learned = True
+    _, ctx_after = sim._prepare_turn(tribe)
+    assert "BUILD_DOCK" in ctx_after["available_actions"]
 
 
 def test_automatic_fire_ignites_after_a_successful_hunt():
@@ -1198,6 +1220,79 @@ def test_action_repetition_throttle_expires_and_filters_available_actions():
     sim.cycle += 3
     _, ctx_after = sim._prepare_turn(tribe)
     assert "GATHER_STONE" in ctx_after["available_actions"]
+
+
+def test_survival_crisis_filters_menu_to_survival_actions_only():
+    """Live-run correction: a tribe stayed at 0 food for ~24 consecutive cycles,
+    correctly naming "we are starving" in its own rationale, while still choosing
+    EXPAND_TERRITORY/GATHER_STONE/BUILD_LONG_HOUSE/BUILD_WAREHOUSE. The existing
+    survival_bias_string fact wasn't enough on its own -- this cuts the menu itself
+    down to actions that could plausibly help."""
+    from backend import config
+    from backend.simulation import SURVIVAL_CRISIS_ACTIONS
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"  # unlocks every action, so the filter is doing the work
+    tribe.population = 10
+    tribe.food = 1  # upkeep = max(1, 10//10) = 1; HUNGER_CRITICAL_CYCLES_LEFT = 1 -> critical
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert tribe.food_crisis_active is True
+    assert "BUILD_LONG_HOUSE" not in ctx["available_actions"]
+    assert "EXPAND_TERRITORY" not in ctx["available_actions"]
+    assert "RELOCATE" not in ctx["available_actions"]  # has its own food/water cost
+    assert "GATHER_FOOD" in ctx["available_actions"]
+    assert "HUNT_DEER" in ctx["available_actions"]
+    assert set(ctx["available_actions"]) <= SURVIVAL_CRISIS_ACTIONS
+    assert "only actions which could directly help" in request["prompt"]
+
+
+def test_survival_crisis_hysteresis_requires_recovery_past_the_warning_line():
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.population = 10  # upkeep = 1
+
+    tribe.food = 1  # <= CRITICAL (1) -> enters crisis
+    sim._prepare_turn(tribe)
+    assert tribe.food_crisis_active is True
+
+    tribe.food = config.HUNGER_WARNING_CYCLES_LEFT  # exactly at the warning line, not past it
+    sim._prepare_turn(tribe)
+    assert tribe.food_crisis_active is True  # doesn't flicker off right at the boundary
+
+    tribe.food = config.HUNGER_WARNING_CYCLES_LEFT + 1  # now genuinely past it
+    sim._prepare_turn(tribe)
+    assert tribe.food_crisis_active is False
+
+
+def test_survival_crisis_fails_open_when_no_survival_action_survives_filtering():
+    """Never cut the menu down to nothing -- an occasional bad choice getting
+    through is far better than a soft-lock."""
+    from backend import config
+    from backend.simulation import SURVIVAL_CRISIS_ACTIONS
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.population = 10
+    tribe.food = 1  # critical
+    # Every actually-reachable survival action already thrown out by the repetition
+    # throttle -- the crisis filter's intersection would otherwise be empty.
+    tribe.throttled_actions = {a: sim.cycle + 100 for a in SURVIVAL_CRISIS_ACTIONS}
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert ctx["available_actions"]  # never an empty menu
+    assert not set(ctx["available_actions"]) & SURVIVAL_CRISIS_ACTIONS
 
 
 def test_farming_and_eggs_available_once_settled_next_to_real_water():
