@@ -68,6 +68,7 @@ ONE_TIME_BUILD_FLAGS = {
     "BUILD_CASTLE": "castle_built", "BUILD_TANNERY": "tannery_built",
     "BUILD_MINE": "mine_built", "BUILD_FORGE": "forge_built",
     "BUILD_ROAD": "road_built", "BUILD_HATCHERY": "hatchery_built",
+    "BUILD_BATH_HOUSE": "bath_house_built",
 }
 
 # See _prepare_turn's survival-crisis filter. A live run showed a tribe stay at 0
@@ -164,6 +165,7 @@ AFFORDABILITY_CHECKS = {
     "BUILD_QUARRY": lambda t: t.stone_ever_gathered and t.wood >= config.QUARRY_WOOD_COST and t.stone >= config.QUARRY_STONE_COST,
     "BUILD_TANNERY": lambda t: t.hunt_ever_succeeded and t.wood >= config.TANNERY_WOOD_COST and t.stone >= config.TANNERY_STONE_COST,
     "BUILD_HATCHERY": lambda t: t.eggs_ever_gathered and t.wood >= config.HATCHERY_WOOD_COST and t.stone >= config.HATCHERY_STONE_COST,
+    "BUILD_BATH_HOUSE": lambda t: t.wood >= config.BATH_HOUSE_WOOD_COST and t.stone >= config.BATH_HOUSE_STONE_COST,
     # GATHER_ORE has no wood/stone cost of its own -- the real prerequisite is
     # a mine existing at all (see actions.py._gather_ore's own guard clause).
     "GATHER_ORE": lambda t: t.mine_built,
@@ -547,6 +549,9 @@ class Tribe:
         # movement speed through river/lake tiles (backend/physics.py.
         # terrain_aware_step), never ocean access.
         self.boat_built = False
+        # See actions.py._build_bath_house/Simulation._apply_upkeep -- explicit
+        # request: "bath house bolsters Well-Being upkeep once built."
+        self.bath_house_built = False
         # See actions.py._build_moat -- one-way, gated on the first wall ring being
         # fully reinforced (backend/city_layout.py.ring_fully_reinforced). A cheaper
         # alternative defense investment, not a wall replacement.
@@ -782,6 +787,7 @@ class Tribe:
             "eggs": self.eggs,
             "hatchery_built": self.hatchery_built,
             "boat_built": self.boat_built,
+            "bath_house_built": self.bath_house_built,
             "flock_lineage": self.flock_lineage,
             "settlement_name": self.settlement_name,
             "has_ever_settled": self.has_ever_settled,
@@ -3255,8 +3261,15 @@ class Simulation:
         only ever go up. Cooking no longer reduces this drain -- see config.
         COOKING_FOOD_MULTIPLIER's own comment: it multiplies food production at the
         harvest point instead (actions._food_multiplier), the same shape every other
-        resource-mastery building already uses."""
+        resource-mastery building already uses.
+
+        Explicit request: "bath house bolsters Well-Being upkeep once built" --
+        a real reduction to this same per-cycle drain (config.
+        BATH_HOUSE_UPKEEP_MULTIPLIER), which also directly raises wellbeing.py's
+        physiological tier score since that's computed from this exact buffer."""
         upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+        if tribe.bath_house_built:
+            upkeep = max(1, round(upkeep * config.BATH_HOUSE_UPKEEP_MULTIPLIER))
         tribe.food -= upkeep
         tribe.water -= upkeep
 

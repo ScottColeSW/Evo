@@ -44,6 +44,19 @@ def test_physiological_tier_is_unaffected_by_cooking_for_the_same_stockpile():
     assert cooking["tiers"]["physiological"] == not_cooking["tiers"]["physiological"]
 
 
+def test_physiological_tier_improves_with_a_bath_house_for_the_same_stockpile():
+    """Explicit request: "bath house bolsters Well-Being upkeep once built" --
+    a real reduction to the upkeep this tier's buffer is computed from, unlike
+    cooking (which changes production, not this score's own formula)."""
+    low_food = 6
+    without = compute_wellbeing(_tribe(food=low_food, water=30, population=50), wall_fraction=0.0)
+    with_bath_house = compute_wellbeing(
+        _tribe(food=low_food, water=30, population=50, bath_house_built=True), wall_fraction=0.0
+    )
+
+    assert with_bath_house["tiers"]["physiological"] > without["tiers"]["physiological"]
+
+
 def test_safety_tier_is_lower_for_a_nomadic_tribe_than_a_settled_undefended_one():
     nomadic = compute_wellbeing(_tribe(has_ever_settled=False), wall_fraction=0.0)
     settled_bare = compute_wellbeing(_tribe(has_ever_settled=True), wall_fraction=0.0)

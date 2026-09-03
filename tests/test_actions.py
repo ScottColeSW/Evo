@@ -974,6 +974,40 @@ def test_build_hatchery_requires_a_real_wild_egg_find():
     assert "hatchery is built" in result
 
 
+def test_build_bath_house_has_no_prerequisite_beyond_being_settled_and_affordable():
+    """Explicit request: "bath house bolsters Well-Being upkeep once built" --
+    no proven-success gate the way Sawmill/Quarry/Tannery/Hatchery need, the
+    same "infrastructure from the moment it's unlocked" shape Warehouse uses."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    assert ACTION_REGISTRY["BUILD_BATH_HOUSE"](sim, tribe, "plains", _NO_TARGET) is None  # not settled yet
+    assert tribe.bath_house_built is False
+
+    _settle(sim, tribe)
+    tribe.wood = config.BATH_HOUSE_WOOD_COST
+    tribe.stone = config.BATH_HOUSE_STONE_COST
+    result = ACTION_REGISTRY["BUILD_BATH_HOUSE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.bath_house_built is True
+    assert "bath house is built" in result
+
+
+def test_build_bath_house_is_a_no_op_once_already_built():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.bath_house_built = True
+    tribe.wood = config.BATH_HOUSE_WOOD_COST
+    tribe.stone = config.BATH_HOUSE_STONE_COST
+
+    assert ACTION_REGISTRY["BUILD_BATH_HOUSE"](sim, tribe, "plains", _NO_TARGET) is None
+
+
 def test_gather_ore_requires_a_real_mine():
     """Explicit correction: "GATHER_ORE only comes in if they Discover a Mine.
     They do not harvest on a Discovery, so they have to fetch it once."""

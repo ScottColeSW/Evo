@@ -1771,7 +1771,7 @@ const BUILDING_ICONS = {
   sawmill: "🪵", quarry: "⛏️", mine: "💎", kitchen: "🍲", tannery: "🦫", forge: "🔨",
   warehouse: "🏬",
   dock: "⚓", fishery: "🎣", farm_plot: "🌾", flock_pen: "🐔", fire: "🔥",
-  hatchery: "🐣", boat: "⛵",
+  hatchery: "🐣", boat: "⛵", bath_house: "🛁",
 };
 
 function drawBuildings(t) {
@@ -2302,7 +2302,8 @@ function farmingPanel(t) {
     || t.long_houses_built || t.keep_built || t.fortress_built || t.castle_built
     || t.moat_built || t.road_built || t.dock_built
     || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built || t.tannery_built
-    || t.forge_built || t.warehouses_built || t.founded_city || (t.cooking_learned && !t.kitchen_built);
+    || t.forge_built || t.warehouses_built || t.founded_city || (t.cooking_learned && !t.kitchen_built)
+    || t.hatchery_built || t.boat_built || t.bath_house_built;
   if (!hasAny) return "";
   const parts = [];
   if (t.farm_plots > 0) {
@@ -2344,6 +2345,7 @@ function farmingPanel(t) {
     parts.push(`🥚 Eggs in store — ${t.eggs}${t.eggs > LIVESTOCK_SURPLUS_THRESHOLD ? " · surplus feasted on" : ""}`);
   }
   if (t.hatchery_built) parts.push("🐣 Hatchery — the flock hatches on its own much more reliably");
+  if (t.bath_house_built) parts.push("🛁 Bath House — daily food and water consumption reduced");
   if (t.fishing_learned) parts.push("🎣 Fishing — mastered, fish now caught for food");
   if (t.fishery_built) parts.push(`🐟 Fishery — ${fishSupplyPerCycle(t)} food/day flows in automatically`);
   if (t.fire_ever_built) parts.push("🔥 Fire — mastered, enables cooking");

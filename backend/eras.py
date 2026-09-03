@@ -108,7 +108,7 @@ ERAS: tuple[Era, ...] = (
             "CONSTRUCT_WALL", "EXPAND_TERRITORY", "PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "STRIKE_RAIDER_CAMP",
             "BUILD_LONG_HOUSE", "DECLARE_ALLIANCE", "DECLARE_WAR", "BUILD_DOCK", "BUILD_FISHERY",
             "BUILD_SAWMILL", "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_MOAT", "BUILD_KEEP", "BUILD_TANNERY",
-            "BUILD_WAREHOUSE", "BUILD_HATCHERY",
+            "BUILD_WAREHOUSE", "BUILD_HATCHERY", "BUILD_BATH_HOUSE",
         ),
         announcement="{tribe} has forged the Tribal Synapse -- true society begins!",
     ),

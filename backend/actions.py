@@ -750,6 +750,31 @@ def _build_hatchery(sim, tribe, biome, target):
     return "a hatchery is built -- the flock grows on its own much more reliably from now on"
 
 
+def _build_bath_house(sim, tribe, biome, target):
+    """Explicit request: "bath house bolsters Well-Being upkeep once built."
+    No special prerequisite beyond being settled and affordable, the same
+    "infrastructure every tribe can use from the moment it's unlocked" shape
+    Warehouse/Road already use -- hygiene isn't gated behind a proven success
+    the way hunting/fishing/mining are. Its real effect lives in Simulation.
+    _apply_upkeep (a genuine reduction to per-cycle food/water consumption,
+    mirrored into wellbeing.py's physiological tier so that score reflects
+    the real number being charged)."""
+    if tribe.bath_house_built:
+        return None
+    if tribe.wood < config.BATH_HOUSE_WOOD_COST or tribe.stone < config.BATH_HOUSE_STONE_COST:
+        return None
+    slot = architect.find_free_slot(sim.world, tribe, "bath_house")
+    if slot is None:
+        return None
+    tribe.wood -= config.BATH_HOUSE_WOOD_COST
+    tribe.stone -= config.BATH_HOUSE_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["bath_house"]
+    architect.record_building(tribe, "bath_house", slot[0], slot[1], w, h, sim.cycle)
+    tribe.bath_house_built = True
+    sim._award_trophy(tribe, "Keeper of Hygiene")
+    return "a bath house is built -- the tribe's stores stretch further from now on"
+
+
 def _build_forge(sim, tribe, biome, target):
     """Explicit request: a Mine's named ore had nowhere real to go once excavated --
     "we skipped a beat" between production and doing anything with it. Gated on
@@ -1605,6 +1630,7 @@ ACTION_REGISTRY = {
     "GATHER_ORE": _gather_ore,
     "BUILD_TANNERY": _build_tannery,
     "BUILD_HATCHERY": _build_hatchery,
+    "BUILD_BATH_HOUSE": _build_bath_house,
     "BUILD_WAREHOUSE": _build_warehouse,
     "BUILD_FORGE": _build_forge,
     "FORGE_ITEM": _forge_item,
@@ -1657,6 +1683,7 @@ ACTION_DESCRIPTIONS = {
     "GATHER_ORE": "Fetch the Mine's unique resource -- only possible once a mine has been excavated. The first successful fetch also starts a small, permanent daily supply from then on, the same way fishing works once learned.",
     "BUILD_TANNERY": "Build a tannery using stored wood and stone -- only possible once a hunt has actually succeeded. A one-time, permanent structure at your settlement: Fur flows in steadily from then on, and every successful hunt yields extra meat from then on.",
     "BUILD_HATCHERY": "Build a hatchery using stored wood and stone -- only possible once a wild egg has actually been found and hatched. A one-time, permanent structure at your settlement: the flock grows on its own much more reliably from then on.",
+    "BUILD_BATH_HOUSE": "Build a bath house using stored wood and stone -- no prerequisite beyond being settled. A one-time, permanent structure at your settlement: the tribe's daily food and water consumption drops from then on.",
     "BUILD_WAREHOUSE": "Build a warehouse using stored wood and stone. Raises how much of every resource can be stored at once -- gathering more than storage allows is wasted. Repeatable: each one raises the limit further.",
     "BUILD_FORGE": "Build a forge using stored wood and stone -- only possible once a mine stands and at least one unit of its ore is already in stock. A one-time, permanent structure: from then on, ore can be worked into real tools, weapons, and inventions.",
     "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. No durability to track: each item just carries a flat value, usable later or given away in a trade.",

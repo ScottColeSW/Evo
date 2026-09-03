@@ -39,8 +39,13 @@ def compute_wellbeing(tribe, wall_fraction: float) -> dict:
     # layer already alarms on) rather than a second, different notion of hunger.
     # Cooking no longer changes this buffer -- it multiplies food production at the
     # harvest point instead (config.COOKING_FOOD_MULTIPLIER, actions._food_multiplier),
-    # which already shows up here as a larger tribe.food stockpile.
+    # which already shows up here as a larger tribe.food stockpile. A Bath House
+    # (Simulation._apply_upkeep) genuinely lowers the same real per-cycle drain --
+    # mirrored here so this score reflects the real number being charged, not a
+    # stale unmultiplied one.
     upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+    if tribe.bath_house_built:
+        upkeep = max(1, round(upkeep * config.BATH_HOUSE_UPKEEP_MULTIPLIER))
     buffer_cycles = min(tribe.food / upkeep, tribe.water / upkeep)
     physiological = min(1.0, buffer_cycles / (config.HUNGER_WARNING_CYCLES_LEFT * 2))
 

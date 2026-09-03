@@ -311,7 +311,7 @@ BUILDING_FOOTPRINTS = {
     "warehouse": (3, 3),
     "kitchen": (2, 2), "tannery": (2, 2), "dock": (2, 2), "fishery": (2, 4),
     "farm_plot": (3, 3), "flock_pen": (2, 2), "fire": (1, 1), "hatchery": (2, 2),
-    "boat": (2, 3),
+    "boat": (2, 3), "bath_house": (2, 2),
 }
 
 # BUILD_FISHERY (backend/actions.py): a new building, unlocked once a Dock already
@@ -349,6 +349,17 @@ FLOCK_NATURAL_HATCH_CHANCE = 0.15
 # instead of piling up forever with no payoff -- the same "don't let it just
 # sit there" shape the storage cap already applies to bulk resources, except
 # here the overflow becomes real food instead of being capped away.
+# BUILD_BATH_HOUSE (backend/actions.py, Simulation._apply_upkeep): explicit
+# request -- "bath house bolsters Well-Being upkeep once built." No special
+# prerequisite beyond being settled and affordable (same as Warehouse/Road) --
+# hygiene isn't gated behind a proven success the way hunting/fishing/mining
+# are. Reduces the tribe's real per-cycle food/water consumption, which
+# directly raises wellbeing.py's physiological tier score too (it's computed
+# straight from the same upkeep-buffer formula this multiplies).
+BATH_HOUSE_WOOD_COST = 20
+BATH_HOUSE_STONE_COST = 15
+BATH_HOUSE_UPKEEP_MULTIPLIER = 0.85
+
 EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR = 5  # 1 egg per 5 flock members per cycle
 LIVESTOCK_SURPLUS_THRESHOLD = 12
 EGG_FEAST_FOOD_VALUE = 2  # food per surplus egg eaten

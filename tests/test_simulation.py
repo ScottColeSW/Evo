@@ -5724,6 +5724,25 @@ def test_upkeep_consumes_food_and_water_proportional_to_population():
     assert tribe.water == 38
 
 
+def test_bath_house_reduces_upkeep():
+    """Explicit request: "bath house bolsters Well-Being upkeep once built.\""""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 100  # base upkeep = max(1, 100 // 10) = 10
+    tribe.food = 100
+    tribe.water = 100
+    tribe.bath_house_built = True
+
+    sim._apply_upkeep(tribe)
+
+    reduced_upkeep = max(1, round(10 * config.BATH_HOUSE_UPKEEP_MULTIPLIER))
+    assert tribe.food == 100 - reduced_upkeep
+    assert tribe.water == 100 - reduced_upkeep
+    assert reduced_upkeep < 10  # a real reduction, not a no-op
+
+
 def test_upkeep_is_unaffected_by_cooking():
     """Redesigned 2026-09-02 ("that's a mess, let's build it back up properly"):
     cooking used to reduce food *consumption* here -- it now multiplies food
