@@ -32,40 +32,21 @@ from .world import (
     BIOME_LABELS, UNIQUE_RESOURCE_BY_BIOME, WILDLIFE_SITE_TYPES, Landscape, biome_at, find_nearby_site,
 )
 
-# One spawn per land biome (forest, mountains, plains, river -- not ocean, nothing spawns
-# at sea) so the default picker order (Forest Tribe, Mountain Tribe, ...) actually starts
-# tribes in the biome their name implies. Coordinates match backend/world.py's geography:
-# mountains in the northwest, forest along the north/east, plains in the south, and a
-# river cutting from the highlands down to the eastern coast.
+# Historically one spawn per land biome (forest, mountains, plains, river), each chosen
+# to sit within real reach of fresh water (roughly 11-16 tiles by nearest_water) and with
+# real clearance from every grid edge (see actions.py._reflect_into_grid's own comment --
+# a spawn too close to an edge compresses two genuinely different SCOUT headings back
+# toward each other when both clip the same boundary, read live as "the scouts basically
+# follow the first one").
 #
-# Each point is also chosen to sit within real reach of fresh river water (roughly
-# 11-13 tiles by nearest_water, verified directly rather than eyeballed) -- the original
-# points were picked purely to land in the right-named biome and turned out to be 36-42
-# tiles from any river, well beyond what a 3-day/speed-6 scouting expedition can ever
-# reach (see config.EXPEDITION_MAX_DAYS/EXPEDITION_SPEED). No amount of good in-fiction
-# reasoning could have found water from there; real settlements cluster near water for
-# the same reason, so this is a world-geography fix, not a difficulty adjustment.
-#
-# The Mountain Tribe point moved a second time: (25, 34) sat one tile from the river
-# where it cuts through the range's original northern corner, so "confirmed nearby" was
-# never a real test of scouting. Now that the range runs much further south (see
-# world.MOUNTAIN_Y_END), it sits along its eastern/grassy edge, back in the same 11-13
-# tile band the other spawns already use, but now an actual discovery instead of a
-# freebie.
-#
-# Moved a third time (2026-09-03), live report: "the Mountain Scouts left at day break
-# both leaving in the very very nearly the same direction" -- traced to actions.py.
-# _reflect_into_grid: a SCOUT heading that overshoots the grid edge bounces back inward
-# (deliberately, see that function's own comment -- clamping instead used to collapse
-# every overshooting heading onto the identical boundary tile, a worse version of this
-# same symptom), but the bounce compresses two genuinely ~20-degree-apart headings back
-# toward each other when the spawn sits close enough to an edge for both to clip it.
-# (18, 43) was only 18 tiles from the west edge, well under SCOUT_PATROL_DISTANCE=25 --
-# any westward-leaning heading clipped and got folded back near its neighbor. Every
-# point below now keeps at least ~22-25 tiles of clearance from every grid edge (the
-# real ceiling for Mountains specifically, boxed in by both the west edge and the
-# 11-13-tile water band above), so an overshoot is rare and, worst case, mild.
-SPAWN_POINTS = [(74, 37), (22, 49), (50, 55), (40, 37)]
+# Explicit placement request (2026-09-03) replaced the first two slots with a direct,
+# landmark-relative brief instead of "pick a point in the right-named biome": the first
+# slot southeast of world.LAKE_CENTER, the second in the north-center, above the river --
+# both still far enough from that water to need a real scouting trip (not a freebie), and
+# both still clearing SCOUT_PATROL_DISTANCE=25 from the grid edge (or as close to it as
+# the requested position allows -- 22-24 here, same real ceiling the old Mountains slot
+# hit, not a regression). Slots 2/3 are unchanged fallbacks for a 3rd/4th tribe.
+SPAWN_POINTS = [(37, 75), (50, 22), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 
 # See _prepare_turn's own use of this -- every one-time structure with a single

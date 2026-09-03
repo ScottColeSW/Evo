@@ -883,7 +883,7 @@ def test_visible_entities_ignores_a_distant_lightning_strike():
 
 
 def test_wildlife_sighting_appears_when_roll_succeeds_in_game_rich_terrain():
-    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # default spawn is forest
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 74, "y": 37}])  # forest
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True  # HUNT_DEER isn't in the pre-settlement action set
 
@@ -963,7 +963,7 @@ def test_settled_tribe_on_farmable_ground_can_gather_wood_and_stone():
 def test_settled_long_enough_but_on_unfarmable_ground_still_cannot_gather():
     from backend import config
 
-    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # forest, not farmable
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 74, "y": 37}])  # forest, not farmable
     tribe = sim.tribes["tribe_0"]
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES + 50
 
@@ -1821,7 +1821,7 @@ def test_settled_but_not_near_water_can_still_relocate():
 
 
 def test_choosing_relocate_resets_settlement_progress():
-    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 74, "y": 37}])  # forest, not farmable
     tribe = sim.tribes["tribe_0"]
     tribe.cycles_since_relocate = 8
 
@@ -3146,16 +3146,19 @@ def test_every_spawn_point_is_within_a_single_expeditions_reach_of_water():
     right-named biome and turned out to be 36-42 tiles from any river -- unreachable
     within EXPEDITION_MAX_DAYS at EXPEDITION_SPEED no matter how well a tribe reasoned.
     Every default spawn should be close enough that a genuine, well-aimed expedition can
-    actually succeed."""
+    actually succeed. river+lake, not just river -- a scout's own water-sensing
+    (Simulation._sense_nearby_water) treats a lake as real, reportable water too (only
+    ocean is excluded), and the first slot is now deliberately placed near world.
+    LAKE_CENTER rather than the river."""
     from backend import config
     from backend.world import Landscape
 
     land = Landscape(100)
     max_reach = config.EXPEDITION_SPEED * config.EXPEDITION_MAX_DAYS
     for x, y in SPAWN_POINTS:
-        if land.biome(x, y) == "river":
+        if land.biome(x, y) in ("river", "lake"):
             continue
-        nx, ny = land.nearest_water(x, y, kinds=("river",))
+        nx, ny = land.nearest_water(x, y, kinds=("river", "lake"))
         dist = ((nx - x) ** 2 + (ny - y) ** 2) ** 0.5
         assert dist <= max_reach, f"({x},{y}) is {dist:.1f} tiles from water, beyond a {max_reach}-tile expedition"
 
