@@ -1362,8 +1362,8 @@ def test_affordability_gate_hides_every_registered_action_below_its_own_cost():
     tribe.food = tribe.water = 200
     _, ctx = sim._prepare_turn(tribe)
     for action in AFFORDABILITY_CHECKS:
-        if action == "BREED":
-            continue
+        if action in ("BREED", "CONSTRUCT_WALL"):
+            continue  # covered separately below -- CONSTRUCT_WALL needs a real section set up first
         assert action not in ctx["available_actions"], f"{action} should be hidden at wood=stone=0"
 
     # BREED specifically: plenty of wood/stone, food/water short of its cost but
@@ -1373,6 +1373,56 @@ def test_affordability_gate_hides_every_registered_action_below_its_own_cost():
     _, ctx = sim._prepare_turn(tribe)
     assert tribe.food_crisis_active is False and tribe.water_crisis_active is False
     assert "BREED" not in ctx["available_actions"]
+
+
+def test_affordability_gate_hides_construct_wall_when_the_next_section_is_unaffordable():
+    """Live-run correction: CONSTRUCT_WALL was originally left out of the
+    affordability table on the theory that its per-section, progress-scaled cost
+    'degrades gracefully' -- wrong at wood=0 specifically. Confirmed live: a wall
+    section's progress was bit-for-bit identical 100 cycles apart while
+    CONSTRUCT_WALL kept getting chosen 16% of the time -- a guaranteed no-op,
+    same as any other unaffordable action."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"
+    tribe.food = tribe.water = 200
+    # A single unlocked, unfinished, non-natural section -- exactly what
+    # city_layout.next_wall_work_section picks up first.
+    tribe.wall_rings = [{"radius": config.WALL_RING_RADIUS_STEP, "sections": [
+        {"index": 0, "direction": "N", "x": 10, "y": 10, "w": 5, "h": 1,
+         "natural_barrier": False, "unlocked": True, "progress": 0, "tier": 0},
+    ]}]
+
+    tribe.wood = tribe.stone = 0
+    _, ctx = sim._prepare_turn(tribe)
+    assert "CONSTRUCT_WALL" not in ctx["available_actions"]
+
+    tribe.wood = tribe.stone = config.WALL_WOOD_COST_TOTAL + config.WALL_STONE_COST_TOTAL
+    _, ctx = sim._prepare_turn(tribe)
+    assert "CONSTRUCT_WALL" in ctx["available_actions"]
+
+
+def test_affordability_gate_does_not_hide_construct_wall_when_nothing_needs_building():
+    """No unlocked, unfinished section at all isn't a cost problem -- the
+    action's own 'no wall section is currently unlocked' message should still
+    surface instead of the menu entry silently vanishing."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"
+    tribe.wood = tribe.stone = 0
+    tribe.wall_rings = []  # nothing built yet -- not a cost issue
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "CONSTRUCT_WALL" in ctx["available_actions"]
 
 
 def test_farming_and_eggs_available_once_settled_next_to_real_water():

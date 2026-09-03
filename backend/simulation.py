@@ -100,11 +100,39 @@ SURVIVAL_CRISIS_ACTIONS = {
 # from the menu entirely, the same "don't dangle an impossible choice" logic
 # ONE_TIME_BUILD_FLAGS already applies to a satisfied one-time flag. Each
 # lambda reads the exact same config constant its own action function already
-# guards on, so the two can't drift out of sync. CONSTRUCT_WALL is deliberately
-# excluded -- its cost scales with partial progress rather than being a flat
-# all-or-nothing amount, and it already degrades gracefully.
+# guards on, so the two can't drift out of sync.
+#
+# Live-run correction: this originally left CONSTRUCT_WALL out on the theory
+# that its per-section, progress-scaled cost "degrades gracefully" instead of
+# being a flat all-or-nothing amount -- wrong at wood=0 specifically, where it
+# fails outright exactly like every other action here (confirmed live: a wall
+# section's progress was bit-for-bit identical 100 cycles apart while
+# CONSTRUCT_WALL kept getting chosen, the exact same no-op-oscillation bug this
+# whole table exists to close). _wall_next_afford_cost mirrors actions.
+# _construct_wall's own cost computation exactly, without mutating any state.
+def _wall_next_afford_cost(tribe) -> tuple[int, int] | None:
+    target = city_layout.next_wall_work_section(tribe)
+    if target is None:
+        return None  # nothing left to build/reinforce -- not a cost problem
+    ring_i, sec_i = target
+    section = tribe.wall_rings[ring_i]["sections"][sec_i]
+    if section["progress"] >= 100:
+        return config.WALL_LAYER_WOOD_COST, config.WALL_LAYER_STONE_COST
+    added = min(100 - section["progress"], round(config.WALL_PROGRESS_PER_ACTION_BASE * _labor_multiplier(tribe.population)))
+    return round(config.WALL_WOOD_COST_TOTAL * added / 100), round(config.WALL_STONE_COST_TOTAL * added / 100)
+
+
+def _can_afford_construct_wall(tribe) -> bool:
+    cost = _wall_next_afford_cost(tribe)
+    if cost is None:
+        return True  # let the action's own "nothing to build" message surface instead
+    wood_cost, stone_cost = cost
+    return tribe.wood >= wood_cost and tribe.stone >= stone_cost
+
+
 AFFORDABILITY_CHECKS = {
     "BUILD_DOCK": lambda t: t.wood >= config.DOCK_WOOD_COST,
+    "CONSTRUCT_WALL": _can_afford_construct_wall,
     "BUILD_FISHERY": lambda t: t.wood >= config.FISHERY_WOOD_COST and t.stone >= config.FISHERY_STONE_COST,
     "BUILD_SAWMILL": lambda t: t.wood >= config.SAWMILL_WOOD_COST and t.stone >= config.SAWMILL_STONE_COST,
     "BUILD_QUARRY": lambda t: t.wood >= config.QUARRY_WOOD_COST and t.stone >= config.QUARRY_STONE_COST,
