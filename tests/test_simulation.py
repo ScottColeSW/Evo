@@ -1295,6 +1295,86 @@ def test_survival_crisis_fails_open_when_no_survival_action_survives_filtering()
     assert not set(ctx["available_actions"]) & SURVIVAL_CRISIS_ACTIONS
 
 
+def test_affordability_gate_reproduces_the_diagnosed_wood_neglect_scenario():
+    """Live-run correction: a tribe sat at wood=1 for 150+ cycles, cycling
+    BUILD_WAREHOUSE/BUILD_FISHERY/BREED -- the first two cost wood it never had,
+    so they were silently failing every time, but never crossed the repetition
+    throttle since it alternates between actions instead of repeating one."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"  # unlocks every action, so the filter is doing the work
+    tribe.dock_built = True  # BUILD_FISHERY's own real prerequisite, unrelated to cost
+    tribe.wood = 1
+    tribe.stone = 200
+    tribe.food = 200
+    tribe.water = 200
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_WAREHOUSE" not in ctx["available_actions"]
+    assert "BUILD_FISHERY" not in ctx["available_actions"]
+    assert "BREED" in ctx["available_actions"]  # food/water only, unaffected by low wood
+    assert "GATHER_WOOD" in ctx["available_actions"]
+    assert "GATHER_STONE" in ctx["available_actions"]
+
+
+def test_affordability_gate_reappears_once_the_cost_is_covered():
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"
+    tribe.wood = 1
+    tribe.stone = 200
+
+    _, ctx_before = sim._prepare_turn(tribe)
+    assert "BUILD_WAREHOUSE" not in ctx_before["available_actions"]
+
+    tribe.wood = config.WAREHOUSE_WOOD_COST
+    _, ctx_after = sim._prepare_turn(tribe)
+    assert "BUILD_WAREHOUSE" in ctx_after["available_actions"]
+
+
+def test_affordability_gate_hides_every_registered_action_below_its_own_cost():
+    """Spot-checks every entry in AFFORDABILITY_CHECKS, not just the two that
+    triggered this fix -- each is hidden once its own cost can't be covered.
+    Deliberately keeps food/water (or wood/stone, for BREED) well clear of the
+    survival-crisis thresholds so that filter can't be the one doing the work
+    here -- this test is only meaningful if it isolates the affordability gate."""
+    from backend import config
+    from backend.simulation import AFFORDABILITY_CHECKS
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"
+    tribe.population = 10  # upkeep = 1, so critical thresholds are just 1
+
+    # Every wood/stone-costed action: plenty of food/water so no crisis kicks in.
+    tribe.wood = tribe.stone = 0
+    tribe.food = tribe.water = 200
+    _, ctx = sim._prepare_turn(tribe)
+    for action in AFFORDABILITY_CHECKS:
+        if action == "BREED":
+            continue
+        assert action not in ctx["available_actions"], f"{action} should be hidden at wood=stone=0"
+
+    # BREED specifically: plenty of wood/stone, food/water short of its cost but
+    # above the critical-crisis line (2 > upkeep * HUNGER_CRITICAL_CYCLES_LEFT).
+    tribe.wood = tribe.stone = 200
+    tribe.food = tribe.water = 2
+    _, ctx = sim._prepare_turn(tribe)
+    assert tribe.food_crisis_active is False and tribe.water_crisis_active is False
+    assert "BREED" not in ctx["available_actions"]
+
+
 def test_farming_and_eggs_available_once_settled_next_to_real_water():
     from backend import config
 

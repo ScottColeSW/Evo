@@ -87,6 +87,43 @@ SURVIVAL_CRISIS_ACTIONS = {
     "GATHER_WATER", "SCOUT",
 }
 
+# See _prepare_turn's affordability filter. A live run showed a tribe stuck at
+# wood=1 for 150+ cycles, cycling BUILD_WAREHOUSE/BUILD_FISHERY/BREED without
+# ever choosing GATHER_WOOD -- BUILD_WAREHOUSE and BUILD_FISHERY both cost wood
+# it never had, so those two were silently failing (each action's own guard
+# clause already returns None below the cost) every single time they were
+# picked. Never crossed the repetition throttle because it alternates between
+# actions instead of repeating one 4x straight. Same category of bug as the
+# very first diagnostic run's finding ("EXPAND_TERRITORY failed all 80 attempts
+# on affordability") -- this closes it generally instead of one action at a
+# time: a flat, guaranteed-no-op cost is checked here and the action is hidden
+# from the menu entirely, the same "don't dangle an impossible choice" logic
+# ONE_TIME_BUILD_FLAGS already applies to a satisfied one-time flag. Each
+# lambda reads the exact same config constant its own action function already
+# guards on, so the two can't drift out of sync. CONSTRUCT_WALL is deliberately
+# excluded -- its cost scales with partial progress rather than being a flat
+# all-or-nothing amount, and it already degrades gracefully.
+AFFORDABILITY_CHECKS = {
+    "BUILD_DOCK": lambda t: t.wood >= config.DOCK_WOOD_COST,
+    "BUILD_FISHERY": lambda t: t.wood >= config.FISHERY_WOOD_COST and t.stone >= config.FISHERY_STONE_COST,
+    "BUILD_SAWMILL": lambda t: t.wood >= config.SAWMILL_WOOD_COST and t.stone >= config.SAWMILL_STONE_COST,
+    "BUILD_QUARRY": lambda t: t.wood >= config.QUARRY_WOOD_COST and t.stone >= config.QUARRY_STONE_COST,
+    "BUILD_TANNERY": lambda t: t.wood >= config.TANNERY_WOOD_COST and t.stone >= config.TANNERY_STONE_COST,
+    "BUILD_KITCHEN": lambda t: t.wood >= config.KITCHEN_WOOD_COST and t.stone >= config.KITCHEN_STONE_COST,
+    "BUILD_MOAT": lambda t: t.wood >= config.MOAT_WOOD_COST and t.stone >= config.MOAT_STONE_COST,
+    "BUILD_WAREHOUSE": lambda t: t.wood >= config.WAREHOUSE_WOOD_COST and t.stone >= config.WAREHOUSE_STONE_COST,
+    "BUILD_LONG_HOUSE": lambda t: t.wood >= config.LONG_HOUSE_WOOD_COST and t.stone >= config.LONG_HOUSE_STONE_COST,
+    "BUILD_KEEP": lambda t: t.wood >= config.KEEP_WOOD_COST and t.stone >= config.KEEP_STONE_COST,
+    "BUILD_FORTRESS": lambda t: t.wood >= config.FORTRESS_WOOD_COST and t.stone >= config.FORTRESS_STONE_COST,
+    "BUILD_CASTLE": lambda t: t.wood >= config.CASTLE_WOOD_COST and t.stone >= config.CASTLE_STONE_COST,
+    "BUILD_MINE": lambda t: t.wood >= config.MINE_WOOD_COST and t.stone >= config.MINE_STONE_COST,
+    "BUILD_FORGE": lambda t: t.wood >= config.FORGE_WOOD_COST and t.stone >= config.FORGE_STONE_COST,
+    "BUILD_ROAD": lambda t: t.wood >= config.ROAD_WOOD_COST and t.stone >= config.ROAD_STONE_COST,
+    "EXPAND_TERRITORY": lambda t: t.wood >= config.TERRITORY_EXPANSION_WOOD_COST and t.stone >= config.TERRITORY_EXPANSION_STONE_COST,
+    "PLANT_CROP": lambda t: t.wood >= config.PLANT_CROP_WOOD_COST,
+    "BREED": lambda t: t.food >= config.BREED_FOOD_COST and t.water >= config.BREED_WATER_COST,
+}
+
 
 def _interpolated_path(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
     """Every whole tile on the straight line from (x0, y0) to (x1, y1), inclusive
@@ -1688,6 +1725,14 @@ class Simulation:
         available_actions = [
             a for a in available_actions
             if not (a in ONE_TIME_BUILD_FLAGS and getattr(tribe, ONE_TIME_BUILD_FLAGS[a]))
+        ]
+
+        # See AFFORDABILITY_CHECKS's own comment -- never dangle an action the
+        # tribe cannot possibly afford right now; each action's own guard clause
+        # would just silently no-op it anyway.
+        available_actions = [
+            a for a in available_actions
+            if a not in AFFORDABILITY_CHECKS or AFFORDABILITY_CHECKS[a](tribe)
         ]
 
         # See config.ACTION_REPETITION_THROTTLE_THRESHOLD/COOLDOWN and
