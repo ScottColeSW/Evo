@@ -1656,6 +1656,12 @@ function drawSettlementMarker(t) {
 // draws at its own real (x, y, w, h) tile rect, styled by what it actually is:
 // a natural barrier (terrain, always "built"), locked (not yet unlocked by
 // EXPAND_TERRITORY), under construction (progress < 100), or complete/reinforced.
+// Stone gray at tier 0 (freshly built), warming toward bronze then gold as
+// reinforcement tiers stack -- indices beyond WALL_MAX_LAYERS never occur,
+// but the array is clamped to just in case.
+const WALL_TIER_COLORS = ["#e7e5e4", "#d4a373", "#fbbf24"];
+const WALL_TIER_WIDTH_STEP = 0.12; // TILE fraction added per reinforcement tier
+
 function drawSettlementWall(t) {
   (t.wall_rings || []).forEach(ring => {
     ring.sections.forEach(sec => {
@@ -1676,11 +1682,23 @@ function drawSettlementWall(t) {
         ctx.globalAlpha = 0.35 + 0.5 * (sec.progress / 100);
         ctx.setLineDash([4, 3]);
       } else {
-        // Complete -- brighter and thicker per reinforcement tier.
-        ctx.strokeStyle = "#e7e5e4";
-        ctx.globalAlpha = 0.85;
+        // Complete -- explicit correction: "the Wall itself has not manifested
+        // visually to mirror our sections buildout" -- the old per-tier width
+        // step (0.06 * TILE) was real but too subtle to read at a glance.
+        // WALL_TIER_COLORS/WIDTH_STEP make each reinforcement tier (0..
+        // WALL_MAX_LAYERS) a genuinely distinct color, not just a few extra
+        // fractional pixels of stroke.
+        const tier = sec.tier || 0;
+        ctx.strokeStyle = WALL_TIER_COLORS[Math.min(tier, WALL_TIER_COLORS.length - 1)];
+        ctx.globalAlpha = 0.9;
+        if (tier > 0) {
+          ctx.shadowColor = ctx.strokeStyle;
+          ctx.shadowBlur = TILE * 0.4 * tier;
+        }
       }
-      ctx.lineWidth = Math.max(1.5, TILE * (0.12 + 0.06 * (sec.tier || 0)));
+      ctx.lineWidth = sec.progress >= 100
+        ? Math.max(1.5, TILE * (0.14 + WALL_TIER_WIDTH_STEP * (sec.tier || 0)))
+        : Math.max(1.5, TILE * 0.12);
       ctx.strokeRect(px, py, pw, ph);
       ctx.restore();
     });
@@ -2166,6 +2184,8 @@ function landmarkCounts(t) {
 // real, passive daily yields _advance_mine_yield/_advance_tannery_yield pay out,
 // same numbers the lines below report rather than a vaguer "mastered" label.
 const MINE_YIELD_PER_CYCLE = 5;
+const CROP_HARVEST_YIELD_PER_PLOT = 15; // mirrors backend/config.py's CROP_HARVEST_YIELD
+const LIVESTOCK_SURPLUS_THRESHOLD = 12; // mirrors backend/config.py's LIVESTOCK_SURPLUS_THRESHOLD
 const TANNERY_YIELD_PER_CYCLE = 4;
 // Mirrors backend/config.py's STORAGE_CAP_BASE/WAREHOUSE_STORAGE_BONUS_PER_BUILDING
 // -- explicit request, after a live run showed unbounded hoarding (200+ wood while
@@ -2194,7 +2214,7 @@ const WALL_MAX_LAYERS = 2;
 function farmingPanel(t) {
   const ring0 = (t.wall_rings || [])[0];
   const ring0Reinforced = !!ring0 && ring0.sections.every(s => s.natural_barrier || s.tier >= WALL_MAX_LAYERS);
-  const hasAny = t.farm_plots || t.flock || t.fishing_learned || t.fishery_built || t.fire_ever_built || ring0
+  const hasAny = t.farm_plots || t.flock || t.eggs || t.fishing_learned || t.fishery_built || t.fire_ever_built || ring0
     || t.long_houses_built || t.keep_built || t.fortress_built || t.castle_built
     || t.moat_built || t.road_built || t.dock_built
     || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built || t.tannery_built
@@ -2202,8 +2222,18 @@ function farmingPanel(t) {
   if (!hasAny) return "";
   const parts = [];
   if (t.farm_plots > 0) {
+    // Explicit correction: "farm plot yields are showing as x/100 even if they
+    // have more than 1 plot" -- crop_growth is one shared clock for the whole
+    // farm (Simulation._advance_farming), not per-plot, and the eventual
+    // harvest scales by plot count; the old label didn't say either of those
+    // things, reading as if growth or yield were capped at 100 regardless of
+    // plot count.
     const stage = t.crop_growth < 33 ? "🌱 sprouting" : t.crop_growth < 66 ? "🌿 growing" : "🌾 ready to harvest";
-    parts.push(`🌾 Farm — ${t.farm_plots} plot${t.farm_plots > 1 ? "s" : ""} · ${stage} (${t.crop_growth}/100)`);
+    const nextYield = t.farm_plots * CROP_HARVEST_YIELD_PER_PLOT;
+    parts.push(
+      `🌾 Farm — ${t.farm_plots} plot${t.farm_plots > 1 ? "s" : ""} · ${stage} ` +
+      `(${t.crop_growth}/100 shared growth → ${nextYield} food at harvest)`
+    );
   }
   if (t.flock > 0) {
     // Explicit request: "we should see an 'eggs hatching' line in the sidebar
@@ -2219,9 +2249,17 @@ function farmingPanel(t) {
     if (justHatched) {
       parts.push(`🥚 An egg just hatched! — ${escapeHtml(last.trait)} (flock now ${t.flock})`);
     } else {
-      parts.push(`🐔 Flock — ${t.flock}${last ? ` · latest: ${escapeHtml(last.trait)}` : ""}`);
+      const surplusNote = t.flock > LIVESTOCK_SURPLUS_THRESHOLD ? " · surplus feasted on" : "";
+      parts.push(`🐔 Flock — ${t.flock}${last ? ` · latest: ${escapeHtml(last.trait)}` : ""}${surplusNote}`);
     }
   }
+  if (t.eggs > 0) {
+    // Explicit request: "we aren't showing counts on either [eggs or flock]"
+    // -- a real, separate stockpile from flock (Simulation._advance_flock_eggs),
+    // eaten off automatically past LIVESTOCK_SURPLUS_THRESHOLD (a dozen).
+    parts.push(`🥚 Eggs in store — ${t.eggs}${t.eggs > LIVESTOCK_SURPLUS_THRESHOLD ? " · surplus feasted on" : ""}`);
+  }
+  if (t.hatchery_built) parts.push("🐣 Hatchery — the flock hatches on its own much more reliably");
   if (t.fishing_learned) parts.push("🎣 Fishing — mastered, fish now caught for food");
   if (t.fishery_built) parts.push(`🐟 Fishery — ${fishSupplyPerCycle(t)} food/day flows in automatically`);
   if (t.fire_ever_built) parts.push("🔥 Fire — mastered, enables cooking");
@@ -2247,6 +2285,14 @@ function farmingPanel(t) {
   if (t.moat_built) parts.push("💧 Moat — a further defense bonus");
   if (t.long_houses_built > 0) {
     parts.push(`🏠 Long House — ${t.long_houses_built} standing, real lasting shelter`);
+  } else if (ring0) {
+    // Explicit correction: "the long houses or just housing, isn't showing on
+    // the establishment block" -- it only ever appeared once the first one
+    // stood, unlike the Wall line above which shows real progress even at 0.
+    const ring0Built = ring0.sections.every(s => s.natural_barrier || s.progress >= 100);
+    parts.push(ring0Built
+      ? "🏠 Long House — ready to build now that the wall is complete"
+      : "🏠 Long House — blocked until the wall is complete");
   }
   if (t.keep_built) parts.push("🏯 Keep — a further defense bonus");
   if (t.fortress_built) parts.push("🏰 Fortress — a further defense bonus");

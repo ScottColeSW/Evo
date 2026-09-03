@@ -5342,6 +5342,95 @@ def test_advance_flock_does_nothing_with_an_empty_flock():
     assert tribe.pending_hatch is None
 
 
+def test_advance_flock_hatchery_boosts_the_natural_hatch_chance():
+    """Explicit follow-up: a Hatchery is where eggs get incubated into new
+    flock faster -- boosts the natural-hatch chance, not the passive laying
+    rate."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = config.FLOCK_MIN_SIZE_TO_BREED
+    tribe.food = 1000
+    tribe.hatchery_built = True
+    # Between the base chance and the hatchery-boosted chance -- only hatches
+    # with the multiplier applied.
+    midpoint = config.FLOCK_NATURAL_HATCH_CHANCE * (config.HATCHERY_HATCH_CHANCE_MULTIPLIER + 1) / 2
+
+    with mock.patch("backend.simulation.random.random", return_value=midpoint):
+        sim._advance_flock(tribe)
+
+    assert tribe.pending_hatch == {"parents": None}
+
+
+def test_advance_flock_eggs_lays_passively_from_a_living_flock():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = config.EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR * 3
+
+    sim._advance_flock_eggs(tribe)
+
+    assert tribe.eggs == 3
+
+
+def test_advance_flock_eggs_does_nothing_with_an_empty_flock():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    sim._advance_flock_eggs(tribe)
+
+    assert tribe.eggs == 0
+
+
+def test_advance_livestock_feast_converts_surplus_eggs_to_food():
+    """Explicit request: "let them feast and use Eggs and Chickens/Flock for
+    food after the stock grows... let them use everything more than a dozen
+    each."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.eggs = config.LIVESTOCK_SURPLUS_THRESHOLD + 5
+    tribe.food = 0
+
+    sim._advance_livestock_feast(tribe)
+
+    assert tribe.eggs == config.LIVESTOCK_SURPLUS_THRESHOLD
+    assert tribe.food == 5 * config.EGG_FEAST_FOOD_VALUE
+
+
+def test_advance_livestock_feast_converts_surplus_flock_to_food():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = config.LIVESTOCK_SURPLUS_THRESHOLD + 3
+    tribe.food = 0
+
+    sim._advance_livestock_feast(tribe)
+
+    assert tribe.flock == config.LIVESTOCK_SURPLUS_THRESHOLD
+    assert tribe.food == 3 * config.FLOCK_FEAST_FOOD_VALUE
+
+
+def test_advance_livestock_feast_does_nothing_below_the_surplus_threshold():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.eggs = config.LIVESTOCK_SURPLUS_THRESHOLD
+    tribe.flock = config.LIVESTOCK_SURPLUS_THRESHOLD
+    tribe.food = 0
+
+    sim._advance_livestock_feast(tribe)
+
+    assert tribe.eggs == config.LIVESTOCK_SURPLUS_THRESHOLD
+    assert tribe.flock == config.LIVESTOCK_SURPLUS_THRESHOLD
+    assert tribe.food == 0
+
+
 def test_celebrate_settling_fires_once_a_tribe_settles_near_real_water():
     """Explicit request: settling somewhere for good deserves its own celebration,
     not just whatever unrelated surplus/discovery celebration happens to fire next."""

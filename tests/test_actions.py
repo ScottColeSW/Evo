@@ -964,6 +964,39 @@ def test_hunt_deer_yields_a_meat_bonus_once_tannery_is_built():
     assert tribe_b.food == without_tannery + config.TANNERY_MEAT_BONUS_PER_HUNT
 
 
+def test_gather_eggs_success_sets_the_hatchery_prerequisite():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.eggs_ever_gathered is True
+
+
+def test_build_hatchery_requires_a_real_wild_egg_find():
+    """Explicit follow-up: "the Flock and the Eggs self generate. So, maybe
+    after they GATHER_EGGS in the wild, they can have a Hatchery."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = config.HATCHERY_WOOD_COST
+    tribe.stone = config.HATCHERY_STONE_COST
+
+    assert ACTION_REGISTRY["BUILD_HATCHERY"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.hatchery_built is False
+
+    tribe.eggs_ever_gathered = True
+    result = ACTION_REGISTRY["BUILD_HATCHERY"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.hatchery_built is True
+    assert "hatchery is built" in result
+
+
 def test_build_forge_requires_mine_and_at_least_one_ore():
     from backend import config
 

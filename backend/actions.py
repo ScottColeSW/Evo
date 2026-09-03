@@ -693,6 +693,30 @@ def _build_tannery(sim, tribe, biome, target):
     return "a tannery is built -- Fur will flow in steadily from now on"
 
 
+def _build_hatchery(sim, tribe, biome, target):
+    """Explicit follow-up: "the Flock and the Eggs self generate. So, maybe
+    after they GATHER_EGGS in the wild, they can have a Hatchery." Gated on a
+    real wild find (tribe.eggs_ever_gathered), the same "proven success, not
+    flock size alone" pattern Sawmill/Quarry/Tannery use. Boosts Simulation.
+    _advance_flock's own natural-hatch chance rather than the passive
+    egg-laying rate (_advance_flock_eggs) -- a hatchery is where eggs get
+    incubated into new flock faster, not where more eggs get laid."""
+    if tribe.hatchery_built or not tribe.eggs_ever_gathered:
+        return None
+    if tribe.wood < config.HATCHERY_WOOD_COST or tribe.stone < config.HATCHERY_STONE_COST:
+        return None
+    slot = architect.find_free_slot(sim.world, tribe, "hatchery")
+    if slot is None:
+        return None
+    tribe.wood -= config.HATCHERY_WOOD_COST
+    tribe.stone -= config.HATCHERY_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["hatchery"]
+    architect.record_building(tribe, "hatchery", slot[0], slot[1], w, h, sim.cycle)
+    tribe.hatchery_built = True
+    sim._award_trophy(tribe, "Hatchery Keeper")
+    return "a hatchery is built -- the flock grows on its own much more reliably from now on"
+
+
 def _build_forge(sim, tribe, biome, target):
     """Explicit request: a Mine's named ore had nowhere real to go once excavated --
     "we skipped a beat" between production and doing anything with it. Gated on
@@ -800,6 +824,7 @@ def _gather_eggs(sim, tribe, biome, target):
         return "no eggs found this time"
     parents = tribe.flock_lineage[-2:] if len(tribe.flock_lineage) >= 2 else None
     tribe.pending_hatch = {"parents": parents}
+    tribe.eggs_ever_gathered = True  # see actions.py._build_hatchery's own prerequisite
     return "an egg is found and set aside to hatch"
 
 
@@ -1474,6 +1499,7 @@ ACTION_REGISTRY = {
     "BUILD_QUARRY": _build_quarry,
     "BUILD_MINE": _build_mine,
     "BUILD_TANNERY": _build_tannery,
+    "BUILD_HATCHERY": _build_hatchery,
     "BUILD_WAREHOUSE": _build_warehouse,
     "BUILD_FORGE": _build_forge,
     "FORGE_ITEM": _forge_item,
@@ -1523,6 +1549,7 @@ ACTION_DESCRIPTIONS = {
     "BUILD_QUARRY": "Build a quarry using stored wood and stone -- only possible once stone has actually been gathered here at least once. A one-time, permanent structure at your settlement: every future load of harvested stone is worth three times as much from then on.",
     "BUILD_MINE": "Excavate a mine at a vein your scouts have already found, using stored wood and stone -- only possible once a quarry stands and at least one vein is known. A one-time, permanent structure: its unique resource flows in steadily from then on.",
     "BUILD_TANNERY": "Build a tannery using stored wood and stone -- only possible once a hunt has actually succeeded. A one-time, permanent structure at your settlement: Fur flows in steadily from then on, and every successful hunt yields extra meat from then on.",
+    "BUILD_HATCHERY": "Build a hatchery using stored wood and stone -- only possible once a wild egg has actually been found and hatched. A one-time, permanent structure at your settlement: the flock grows on its own much more reliably from then on.",
     "BUILD_WAREHOUSE": "Build a warehouse using stored wood and stone. Raises how much of every resource can be stored at once -- gathering more than storage allows is wasted. Repeatable: each one raises the limit further.",
     "BUILD_FORGE": "Build a forge using stored wood and stone -- only possible once a mine stands and at least one unit of its ore is already in stock. A one-time, permanent structure: from then on, ore can be worked into real tools, weapons, and inventions.",
     "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. No durability to track: each item just carries a flat value, usable later or given away in a trade.",

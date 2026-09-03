@@ -317,7 +317,7 @@ BUILDING_FOOTPRINTS = {
     "sawmill": (3, 3), "quarry": (3, 3), "mine": (3, 3), "forge": (2, 2),
     "warehouse": (3, 3),
     "kitchen": (2, 2), "tannery": (2, 2), "dock": (2, 2), "fishery": (2, 4),
-    "farm_plot": (3, 3), "flock_pen": (2, 2), "fire": (1, 1),
+    "farm_plot": (3, 3), "flock_pen": (2, 2), "fire": (1, 1), "hatchery": (2, 2),
 }
 
 # BUILD_FISHERY (backend/actions.py): a new building, unlocked once a Dock already
@@ -344,6 +344,33 @@ GATHER_EGGS_SUCCESS_CHANCE = 0.4
 FLOCK_UPKEEP_FOOD_PER_MEMBER = 1
 FLOCK_MIN_SIZE_TO_BREED = 2
 FLOCK_NATURAL_HATCH_CHANCE = 0.15
+
+# Explicit request: "let them feast and use Eggs and Chickens/Flock for food
+# after the stock grows... let them use everything more than a dozen each."
+# tribe.eggs is a real, separate stockpile from tribe.flock (a living flock
+# lays eggs passively, distinct from GATHER_EGGS finding a wild nest to hatch
+# into a new flock member) -- see Simulation._advance_flock_eggs. Once either
+# stockpile grows past LIVESTOCK_SURPLUS_THRESHOLD ("a dozen"), the surplus is
+# automatically eaten as food each cycle (Simulation._advance_livestock_feast)
+# instead of piling up forever with no payoff -- the same "don't let it just
+# sit there" shape the storage cap already applies to bulk resources, except
+# here the overflow becomes real food instead of being capped away.
+EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR = 5  # 1 egg per 5 flock members per cycle
+LIVESTOCK_SURPLUS_THRESHOLD = 12
+EGG_FEAST_FOOD_VALUE = 2  # food per surplus egg eaten
+FLOCK_FEAST_FOOD_VALUE = 8  # food per surplus flock member eaten
+
+# BUILD_HATCHERY (backend/actions.py): explicit follow-up -- "the Flock and the
+# Eggs self generate. So, maybe after they GATHER_EGGS in the wild, they can
+# have a Hatchery." Same "a real proven success gates the building, not a
+# scouted site or another building" pattern as Sawmill/Quarry/Tannery -- gated
+# on tribe.eggs_ever_gathered (a real wild GATHER_EGGS find, see actions.py.
+# _gather_eggs), not flock size alone. A hatchery is where eggs get incubated
+# into new flock faster, so it boosts the natural-hatch chance (Simulation.
+# _advance_flock) rather than the passive laying rate (_advance_flock_eggs).
+HATCHERY_WOOD_COST = 15
+HATCHERY_STONE_COST = 10
+HATCHERY_HATCH_CHANCE_MULTIPLIER = 2.0
 
 # Fishing (backend/actions.py CATCH_FISH, Simulation._advance_fish_supply): gated the
 # same as farming/eggs -- once settled, no separate real-water check (explicit

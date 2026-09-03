@@ -67,7 +67,7 @@ ONE_TIME_BUILD_FLAGS = {
     "BUILD_KEEP": "keep_built", "BUILD_FORTRESS": "fortress_built",
     "BUILD_CASTLE": "castle_built", "BUILD_TANNERY": "tannery_built",
     "BUILD_MINE": "mine_built", "BUILD_FORGE": "forge_built",
-    "BUILD_ROAD": "road_built",
+    "BUILD_ROAD": "road_built", "BUILD_HATCHERY": "hatchery_built",
 }
 
 # See _prepare_turn's survival-crisis filter. A live run showed a tribe stay at 0
@@ -140,6 +140,7 @@ AFFORDABILITY_CHECKS = {
     "BUILD_SAWMILL": lambda t: t.wood_ever_gathered and t.wood >= config.SAWMILL_WOOD_COST and t.stone >= config.SAWMILL_STONE_COST,
     "BUILD_QUARRY": lambda t: t.stone_ever_gathered and t.wood >= config.QUARRY_WOOD_COST and t.stone >= config.QUARRY_STONE_COST,
     "BUILD_TANNERY": lambda t: t.hunt_ever_succeeded and t.wood >= config.TANNERY_WOOD_COST and t.stone >= config.TANNERY_STONE_COST,
+    "BUILD_HATCHERY": lambda t: t.eggs_ever_gathered and t.wood >= config.HATCHERY_WOOD_COST and t.stone >= config.HATCHERY_STONE_COST,
     "BUILD_KITCHEN": lambda t: t.wood >= config.KITCHEN_WOOD_COST and t.stone >= config.KITCHEN_STONE_COST,
     "BUILD_MOAT": lambda t: t.wood >= config.MOAT_WOOD_COST and t.stone >= config.MOAT_STONE_COST,
     "BUILD_WAREHOUSE": lambda t: t.wood >= config.WAREHOUSE_WOOD_COST and t.stone >= config.WAREHOUSE_STONE_COST,
@@ -577,6 +578,15 @@ class Tribe:
         self.flock = 0
         self.flock_lineage: list[dict] = []
         self.pending_hatch: dict | None = None
+        # See Simulation._advance_flock_eggs/_advance_livestock_feast -- a real,
+        # separate stockpile a living flock lays into passively each cycle,
+        # distinct from GATHER_EGGS finding a wild nest to hatch (which grows
+        # flock directly, never touches this count).
+        self.eggs = 0
+        # See actions.py._gather_eggs/_build_hatchery -- a real wild find, the
+        # Hatchery's own prerequisite (not flock size alone).
+        self.eggs_ever_gathered = False
+        self.hatchery_built = False
         # Set the first time this tribe genuinely settles next to real water (see
         # Simulation._is_settled_near_water) -- the chief names the place via a real
         # LLM call (backend/leadership.py's name_settlement), the same pending_X/
@@ -694,6 +704,8 @@ class Tribe:
             "watering_retired": self.watering_retired,
             "last_harvest_cycle": self.last_harvest_cycle,
             "flock": self.flock,
+            "eggs": self.eggs,
+            "hatchery_built": self.hatchery_built,
             "flock_lineage": self.flock_lineage,
             "settlement_name": self.settlement_name,
             "has_ever_settled": self.has_ever_settled,
@@ -1280,6 +1292,8 @@ class Simulation:
             self._advance_resource_trails(tribe)
             self._advance_farming(tribe)
             self._advance_flock(tribe)
+            self._advance_flock_eggs(tribe)
+            self._advance_livestock_feast(tribe)
             self._advance_city_founding(tribe)
             self._check_chief_trophies(tribe)
             self._check_for_celebration(tribe)
@@ -3549,13 +3563,40 @@ class Simulation:
             tribe.history.append("part of the flock is lost for lack of feed")
             return
         tribe.food -= feed_needed
+        hatch_chance = config.FLOCK_NATURAL_HATCH_CHANCE
+        if tribe.hatchery_built:
+            hatch_chance = min(1.0, hatch_chance * config.HATCHERY_HATCH_CHANCE_MULTIPLIER)
         if (
             tribe.flock >= config.FLOCK_MIN_SIZE_TO_BREED
             and tribe.pending_hatch is None
-            and random.random() < config.FLOCK_NATURAL_HATCH_CHANCE
+            and random.random() < hatch_chance
         ):
             parents = tribe.flock_lineage[-2:] if len(tribe.flock_lineage) >= 2 else None
             tribe.pending_hatch = {"parents": parents}
+
+    def _advance_flock_eggs(self, tribe: Tribe) -> None:
+        """A living flock lays eggs passively each cycle into tribe.eggs -- see
+        config.EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR's own comment. Entirely
+        separate from GATHER_EGGS/_advance_flock's natural-hatch chance, both of
+        which grow tribe.flock directly and never touch this stockpile."""
+        if tribe.flock <= 0:
+            return
+        laid = tribe.flock // config.EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR
+        if laid:
+            tribe.eggs += laid
+
+    def _advance_livestock_feast(self, tribe: Tribe) -> None:
+        """See config.LIVESTOCK_SURPLUS_THRESHOLD's own comment -- once eggs or
+        flock grow past a dozen, the surplus is automatically eaten as food each
+        cycle rather than piling up forever with no payoff."""
+        if tribe.eggs > config.LIVESTOCK_SURPLUS_THRESHOLD:
+            surplus = tribe.eggs - config.LIVESTOCK_SURPLUS_THRESHOLD
+            tribe.eggs = config.LIVESTOCK_SURPLUS_THRESHOLD
+            self._capped_add(tribe, "food", surplus * config.EGG_FEAST_FOOD_VALUE)
+        if tribe.flock > config.LIVESTOCK_SURPLUS_THRESHOLD:
+            surplus = tribe.flock - config.LIVESTOCK_SURPLUS_THRESHOLD
+            tribe.flock = config.LIVESTOCK_SURPLUS_THRESHOLD
+            self._capped_add(tribe, "food", surplus * config.FLOCK_FEAST_FOOD_VALUE)
 
     def _advance_city_founding(self, tribe: Tribe) -> None:
         """Real gate on Era.founds_city eligibility (see _advance_era_if_ready): a
