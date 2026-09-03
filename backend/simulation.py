@@ -130,10 +130,33 @@ def _can_afford_construct_wall(tribe) -> bool:
     return tribe.wood >= wood_cost and tribe.stone >= stone_cost
 
 
+def _can_afford_build_long_house(tribe) -> bool:
+    """Explicit request: "the option to build a long house should not even
+    come up if they don't have a full Wall built" -- mirrors actions.
+    _build_long_house's own real prerequisite (ring_fully_built) and repeat
+    gate (real housing need, not a flat one-time flag) exactly, so a
+    guaranteed no-op never dangles in the menu."""
+    if not tribe.wall_rings or not city_layout.ring_fully_built(tribe.wall_rings[0]):
+        return False
+    houses_needed = max(1, -(-tribe.population // config.HOUSING_POPULATION_PER_LONG_HOUSE))
+    if tribe.long_houses_built >= houses_needed:
+        return False
+    return tribe.wood >= config.LONG_HOUSE_WOOD_COST and tribe.stone >= config.LONG_HOUSE_STONE_COST
+
+
 AFFORDABILITY_CHECKS = {
-    "BUILD_DOCK": lambda t: t.wood >= config.DOCK_WOOD_COST,
+    # Live-run correction ("the Ore collection did not trigger the Forge" led
+    # to auditing every entry below against its action's own real guard clause):
+    # several of these only ever checked wood/stone, silently missing the same
+    # real structural prerequisite (a building or proven success) their own
+    # action function already gates on -- the exact guaranteed-no-op class this
+    # whole table exists to close, just missed on these specific entries.
+    "BUILD_DOCK": lambda t: t.fishing_learned and t.wood >= config.DOCK_WOOD_COST,
     "CONSTRUCT_WALL": _can_afford_construct_wall,
-    "BUILD_FISHERY": lambda t: t.wood >= config.FISHERY_WOOD_COST and t.stone >= config.FISHERY_STONE_COST,
+    "BUILD_LONG_HOUSE": _can_afford_build_long_house,
+    "BUILD_FISHERY": lambda t: (
+        t.dock_built and t.wood >= config.FISHERY_WOOD_COST and t.stone >= config.FISHERY_STONE_COST
+    ),
     # Real prerequisite AND cost checked together -- see actions.py._build_sawmill/
     # _build_quarry/_build_tannery's own simplified gates (a proven success, not a
     # Long House/scouted site).
@@ -144,18 +167,38 @@ AFFORDABILITY_CHECKS = {
     # GATHER_ORE has no wood/stone cost of its own -- the real prerequisite is
     # a mine existing at all (see actions.py._gather_ore's own guard clause).
     "GATHER_ORE": lambda t: t.mine_built,
-    "BUILD_KITCHEN": lambda t: t.wood >= config.KITCHEN_WOOD_COST and t.stone >= config.KITCHEN_STONE_COST,
-    "BUILD_MOAT": lambda t: t.wood >= config.MOAT_WOOD_COST and t.stone >= config.MOAT_STONE_COST,
+    "BUILD_KITCHEN": lambda t: (
+        t.cooking_learned and t.long_houses_built > 0
+        and t.wood >= config.KITCHEN_WOOD_COST and t.stone >= config.KITCHEN_STONE_COST
+    ),
+    "BUILD_MOAT": lambda t: (
+        bool(t.wall_rings) and city_layout.ring_fully_reinforced(t.wall_rings[0])
+        and t.wood >= config.MOAT_WOOD_COST and t.stone >= config.MOAT_STONE_COST
+    ),
     "BUILD_WAREHOUSE": lambda t: t.wood >= config.WAREHOUSE_WOOD_COST and t.stone >= config.WAREHOUSE_STONE_COST,
-    "BUILD_LONG_HOUSE": lambda t: t.wood >= config.LONG_HOUSE_WOOD_COST and t.stone >= config.LONG_HOUSE_STONE_COST,
-    "BUILD_KEEP": lambda t: t.wood >= config.KEEP_WOOD_COST and t.stone >= config.KEEP_STONE_COST,
-    "BUILD_FORTRESS": lambda t: t.wood >= config.FORTRESS_WOOD_COST and t.stone >= config.FORTRESS_STONE_COST,
-    "BUILD_CASTLE": lambda t: t.wood >= config.CASTLE_WOOD_COST and t.stone >= config.CASTLE_STONE_COST,
-    "BUILD_MINE": lambda t: t.wood >= config.MINE_WOOD_COST and t.stone >= config.MINE_STONE_COST,
-    "BUILD_FORGE": lambda t: t.wood >= config.FORGE_WOOD_COST and t.stone >= config.FORGE_STONE_COST,
+    "BUILD_KEEP": lambda t: (
+        t.long_houses_built >= config.KEEP_LONG_HOUSES_REQUIRED
+        and t.wood >= config.KEEP_WOOD_COST and t.stone >= config.KEEP_STONE_COST
+    ),
+    "BUILD_FORTRESS": lambda t: (
+        t.keep_built and t.long_houses_built >= config.FORTRESS_LONG_HOUSES_REQUIRED
+        and t.wood >= config.FORTRESS_WOOD_COST and t.stone >= config.FORTRESS_STONE_COST
+    ),
+    "BUILD_CASTLE": lambda t: (
+        t.fortress_built and t.long_houses_built >= config.CASTLE_LONG_HOUSES_REQUIRED
+        and t.wood >= config.CASTLE_WOOD_COST and t.stone >= config.CASTLE_STONE_COST
+    ),
+    "BUILD_MINE": lambda t: (
+        t.quarry_built and bool(t.mine_sites)
+        and t.wood >= config.MINE_WOOD_COST and t.stone >= config.MINE_STONE_COST
+    ),
+    "BUILD_FORGE": lambda t: (
+        t.mine_built and t.unique_resources.get(t.mine_resource_name, 0) >= config.FORGE_ITEM_ORE_COST
+        and t.wood >= config.FORGE_WOOD_COST and t.stone >= config.FORGE_STONE_COST
+    ),
     "BUILD_ROAD": lambda t: t.wood >= config.ROAD_WOOD_COST and t.stone >= config.ROAD_STONE_COST,
     "EXPAND_TERRITORY": lambda t: t.wood >= config.TERRITORY_EXPANSION_WOOD_COST and t.stone >= config.TERRITORY_EXPANSION_STONE_COST,
-    "PLANT_CROP": lambda t: t.wood >= config.PLANT_CROP_WOOD_COST,
+    "PLANT_CROP": lambda t: t.farm_plots < config.MAX_FARM_PLOTS and t.wood >= config.PLANT_CROP_WOOD_COST,
     "BREED": lambda t: t.food >= config.BREED_FOOD_COST and t.water >= config.BREED_WATER_COST,
     # Both a real resource cost AND config.ITEM_STORAGE_CAP_BASE's own ceiling --
     # see _forge_item's matching "item stores are already full" no-op message.
@@ -1821,6 +1864,15 @@ class Simulation:
         elif not (tribe.hunt_ever_succeeded and tribe.fire_ever_built):
             available_actions = [a for a in available_actions if a != "COOK_FOOD"]
 
+        # Explicit request: "they don't need to CATCH_FISH once they know how."
+        # _advance_fish_supply's passive daily catch already covers it from the
+        # moment fishing_learned is set -- same one-way "generalist narrows once
+        # a proven passive replacement exists" shape BUILD_FIRE/COOK_FOOD use,
+        # retired silently since the fishing_learned milestone is already its
+        # own celebrated moment elsewhere.
+        if tribe.fishing_learned:
+            available_actions = [a for a in available_actions if a != "CATCH_FISH"]
+
         # Explicit request: GATHER_FOOD is too generic once a tribe has real
         # experience -- it kept acting as a catch-all "satisfy hunger" default even
         # after fishing was rebalanced to strictly outperform it (confirmed live:
@@ -3485,14 +3537,21 @@ class Simulation:
         """Once fishing is learned (the first successful CATCH_FISH), food flows in
         daily the same way water already does once settled -- not a second knowledge
         subsystem, just the same "action unlocks a passive system" shape applied to a
-        different resource. CATCH_FISH still works and still pays out its own catch
-        on top of this. Gated on the same general settled check CATCH_FISH's own
-        availability uses (see _prepare_turn), not the stricter settled_near_water --
-        explicit correction that the extra water-adjacency distinction was bogus."""
+        different resource. Explicit request: "they don't need to CATCH_FISH once
+        they know how" -- unlike GATHER_WATER (which stays available as a manual
+        top-up on top of the passive water supply), CATCH_FISH itself retires from
+        available_actions the moment fishing_learned is set (see _prepare_turn) --
+        this passive flow is the only source of fish food from then on. Gated on
+        the same general settled check CATCH_FISH's own availability used, not the
+        stricter settled_near_water -- explicit correction that the extra
+        water-adjacency distinction was bogus."""
         if tribe.fishing_learned and self._is_settled(tribe):
             upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
             fishery_bonus = config.FISHERY_SUPPLY_BONUS_MULTIPLIER if tribe.fishery_built else 1.0
-            amount = round(upkeep * config.FISHING_SUPPLY_MULTIPLIER * fishery_bonus * _food_multiplier(tribe))
+            dock_bonus = (1 + config.DOCK_FISH_CATCH_BONUS_FRACTION) if tribe.dock_built else 1.0
+            amount = round(
+                upkeep * config.FISHING_SUPPLY_MULTIPLIER * fishery_bonus * dock_bonus * _food_multiplier(tribe)
+            )
             self._capped_add(tribe, "food", amount)
 
     def _advance_mine_yield(self, tribe: Tribe) -> None:
@@ -3654,27 +3713,6 @@ class Simulation:
         if tribe.long_houses_built > 0:
             tribe.founded_city = True
             tribe.history.append(f"the first Long House stands -- {tribe.name} formally founds a city")
-
-    def _local_buildable_fraction(self, tribe: Tribe) -> float:
-        """Live bug report: a tribe wedged into a narrow forest strip between a river
-        and the coastal cliffs grew a full, maxed-out city there anyway -- nothing
-        checked whether there was actually room. Scans the (2*CITY_LAND_CHECK_RADIUS+1)
-        square centered on the tribe's own tile and returns what fraction of it is
-        real, buildable ground (not ocean/river/lake/cliffs/shoals). 1.0 on wide-open
-        plains; well under 1.0 on a narrow shoreline strip like the one that prompted
-        this."""
-        total = 0
-        buildable = 0
-        r = config.CITY_LAND_CHECK_RADIUS
-        for dx in range(-r, r + 1):
-            for dy in range(-r, r + 1):
-                x, y = tribe.x + dx, tribe.y + dy
-                if not (0 <= x < self.world.grid_size and 0 <= y < self.world.grid_size):
-                    continue
-                total += 1
-                if self.world.biome(x, y) not in config.UNBUILDABLE_BIOMES:
-                    buildable += 1
-        return buildable / total if total else 1.0
 
     def _found_territory(self, tribe: Tribe) -> None:
         """Grants a real, owned territory the instant a tribe first qualifies as

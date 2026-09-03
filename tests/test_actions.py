@@ -586,43 +586,30 @@ def test_expand_territory_no_op_without_any_territory_yet():
     assert ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET) is None
 
 
-def test_expand_territory_grows_radius_and_unlocks_one_section():
+def test_expand_territory_unlocks_one_section_without_moving_the_radius_yet():
+    """Live-run correction: "Wall Sections are being rendered on screen as a
+    box around the settlement instead of portions of Wall being placed just
+    inside the Territory dotted outline." territory_radius (what drawTerritory
+    actually draws) used to grow by its own separately-scaled increment on
+    every call, independent of the wall ring's real geometry -- now it only
+    ever moves when a whole new ring is actually created (see the test below),
+    not when a call merely unlocks one more section within the current ring."""
+    from backend import config
+
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     _settle(sim, tribe)
     tribe.wood = 200
     tribe.stone = 200
-    radius_before = tribe.territory_radius
     unlocked_before = sum(1 for s in tribe.wall_rings[0]["sections"] if s["unlocked"])
 
     result = ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
 
-    assert tribe.territory_radius > radius_before
+    assert tribe.territory_radius == config.WALL_RING_RADIUS_STEP  # unchanged -- still ring 0
     unlocked_after = sum(1 for s in tribe.wall_rings[0]["sections"] if s["unlocked"])
     assert unlocked_after == unlocked_before + 1
     assert any(t["name"] == "Territory Expander" for t in tribe.trophies)
     assert "territory expands" in result
-
-
-def test_expand_territory_radius_increment_scales_down_on_cramped_land():
-    from backend import config
-
-    sim = _bare_simulation()
-    open_land = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")  # wide-open plains
-    _settle(sim, open_land)
-    open_land.wood = 200
-    open_land.stone = 200
-    cramped = Tribe("tribe_1", "Coastal Tribe", "gemma2:2b", 83, 58, "#fb923c")  # narrow river/cliffs strip
-    _settle(sim, cramped)
-    cramped.wood = 200
-    cramped.stone = 200
-
-    ACTION_REGISTRY["EXPAND_TERRITORY"](sim, open_land, "plains", _NO_TARGET)
-    ACTION_REGISTRY["EXPAND_TERRITORY"](sim, cramped, "forest", _NO_TARGET)
-
-    open_increment = open_land.territory_radius - config.WALL_RING_RADIUS_STEP
-    cramped_increment = cramped.territory_radius - config.WALL_RING_RADIUS_STEP
-    assert cramped_increment < open_increment
 
 
 def test_expand_territory_no_op_when_unaffordable():
@@ -667,6 +654,9 @@ def test_expand_territory_opens_a_new_ring_once_the_current_one_is_maxed():
 
     assert len(tribe.wall_rings) == 2
     assert tribe.wall_rings[1]["radius"] > tribe.wall_rings[0]["radius"]
+    # See "wall sections rendered as a box inside the territory outline" fix --
+    # territory_radius now always matches the real outermost ring's own radius.
+    assert tribe.territory_radius == tribe.wall_rings[1]["radius"] == config.WALL_RING_RADIUS_STEP * 2
     assert "territory expands" in result
 
 
@@ -682,25 +672,24 @@ def test_build_dock_is_a_no_op_before_fishing_is_learned():
     assert tribe.wood == 50  # no wood spent on a no-op
 
 
-def test_build_dock_boosts_future_fish_catches():
-    from unittest import mock
-
+def test_build_dock_is_a_real_reward_even_though_it_cant_boost_a_manual_catch():
+    """Explicit correction: "they don't need to CATCH_FISH once they know how"
+    -- CATCH_FISH retires from available_actions the instant fishing_learned is
+    set (see Simulation._prepare_turn), and BUILD_DOCK requires fishing_learned
+    already, so a dock can never coexist with a reachable manual catch. Its own
+    bonus (config.DOCK_FISH_CATCH_BONUS_FRACTION) now applies to the passive
+    daily supply instead (see test_advance_fish_supply_dock_bonus_stacks_with_
+    fishery in test_simulation.py) -- this just confirms building it still
+    works and no longer touches CATCH_FISH's own yield at all."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.wood = 50
-    tribe.food = 0
-    tribe.fishing_learned = True  # isolate the catch-amount math from the first-catch/celebration path
+    tribe.fishing_learned = True
 
     dock_result = ACTION_REGISTRY["BUILD_DOCK"](sim, tribe, "plains", _NO_TARGET)
+
     assert tribe.dock_built is True
     assert "dock rises" in dock_result
-
-    with mock.patch("backend.actions.random.random", return_value=0.0), \
-         mock.patch("backend.actions.random.randint", return_value=20):
-        catch_result = ACTION_REGISTRY["CATCH_FISH"](sim, tribe, "river", _NO_TARGET)
-
-    assert tribe.food == 30  # 20 * 1.5 (DOCK_FISH_CATCH_BONUS_FRACTION = 0.5)
-    assert "30 food" in catch_result
 
 
 def test_sawmill_triples_every_future_wood_harvest():
@@ -782,23 +771,6 @@ def test_cooking_triples_every_future_hunt_deer_catch():
         ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "forest", _NO_TARGET)
 
     assert tribe.food == 45  # 15 * COOKING_FOOD_MULTIPLIER
-
-
-def test_cooking_stacks_with_docks_fish_bonus():
-    from unittest import mock
-
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.food = 0
-    tribe.fishing_learned = True  # isolate the catch-amount math from the first-catch path
-    tribe.dock_built = True
-    tribe.cooking_learned = True
-
-    with mock.patch("backend.actions.random.random", return_value=0.0), \
-         mock.patch("backend.actions.random.randint", return_value=20):
-        ACTION_REGISTRY["CATCH_FISH"](sim, tribe, "river", _NO_TARGET)
-
-    assert tribe.food == 90  # 20 * 1.5 (dock) * 3 (cooking) = 90
 
 
 def test_build_sawmill_requires_a_real_successful_wood_gather():
@@ -2109,6 +2081,20 @@ def test_declare_war_sets_symmetric_stance():
     assert "declares war" in result
 
 
+def test_declare_war_requires_real_contact_range():
+    from backend import config
+
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    far = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 50 + config.DIPLOMACY_CONTACT_RADIUS + 5, 50, "#fb923c")
+    sim.tribes = {"tribe_0": a, "tribe_1": far}
+
+    result = ACTION_REGISTRY["DECLARE_WAR"](sim, a, "plains", (far.x, far.y))
+
+    assert "no rival tribe has been encountered" in result
+    assert a.stance_toward == {}
+
+
 def test_declare_war_is_a_no_op_if_already_at_war():
     sim = _bare_simulation()
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
@@ -2145,7 +2131,24 @@ def test_declare_alliance_with_no_rival_tribe():
 
     result = ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
 
-    assert "no rival tribe exists" in result
+    assert "no rival tribe has been encountered" in result
+    assert a.stance_toward == {}
+
+
+def test_declare_alliance_requires_real_contact_range():
+    """Explicit correction: "they can't make an ALLIANCE if they have not made
+    contact with another Tribe or Settlement" -- a rival that exists but is far
+    outside config.DIPLOMACY_CONTACT_RADIUS shouldn't be a valid target."""
+    from backend import config
+
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    far = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 50 + config.DIPLOMACY_CONTACT_RADIUS + 5, 50, "#fb923c")
+    sim.tribes = {"tribe_0": a, "tribe_1": far}
+
+    result = ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (far.x, far.y))
+
+    assert "no rival tribe has been encountered" in result
     assert a.stance_toward == {}
 
 

@@ -1057,14 +1057,14 @@ def test_one_time_buildings_retire_from_available_actions_once_built():
 
     _, ctx_before = sim._prepare_turn(tribe)
     assert "BUILD_DOCK" in ctx_before["available_actions"]
-    assert "BUILD_CASTLE" in ctx_before["available_actions"]
+    assert "BUILD_ROAD" in ctx_before["available_actions"]  # no extra prerequisite beyond cost
 
     tribe.dock_built = True
-    tribe.castle_built = True
+    tribe.road_built = True
     _, ctx_after = sim._prepare_turn(tribe)
 
     assert "BUILD_DOCK" not in ctx_after["available_actions"]
-    assert "BUILD_CASTLE" not in ctx_after["available_actions"]
+    assert "BUILD_ROAD" not in ctx_after["available_actions"]
     # Every other flag in the table also retires its own action -- not just the
     # two spot-checked above.
     for action, flag in ONE_TIME_BUILD_FLAGS.items():
@@ -1517,6 +1517,24 @@ def test_affordability_gate_hides_gather_ore_without_a_real_mine():
     tribe.mine_built = True
     _, ctx = sim._prepare_turn(tribe)
     assert "GATHER_ORE" in ctx["available_actions"]
+
+
+def test_catch_fish_retires_once_fishing_is_learned():
+    """Explicit request: "they don't need to CATCH_FISH once they know how" --
+    _advance_fish_supply's passive daily catch already covers it from then on."""
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+
+    _, ctx = sim._prepare_turn(tribe)
+    assert "CATCH_FISH" in ctx["available_actions"]
+
+    tribe.fishing_learned = True
+    _, ctx = sim._prepare_turn(tribe)
+    assert "CATCH_FISH" not in ctx["available_actions"]
 
 
 def test_farming_and_eggs_available_once_settled_next_to_real_water():
@@ -5038,6 +5056,34 @@ def test_advance_fish_supply_scales_with_cooking_multiplier():
     assert tribe.food == 10 + round(upkeep * config.FISHING_SUPPLY_MULTIPLIER * config.COOKING_FOOD_MULTIPLIER)
 
 
+def test_advance_fish_supply_dock_bonus_stacks_with_fishery():
+    """Explicit correction: BUILD_DOCK's own bonus used to apply to CATCH_FISH's
+    manual yield, but CATCH_FISH retires from available_actions the instant
+    fishing_learned is set (see "they don't need to CATCH_FISH once they know
+    how"), and BUILD_DOCK requires fishing_learned already -- a dock could
+    never actually coexist with a reachable manual catch. Its bonus now applies
+    here instead, stacking with Fishery's own multiplier."""
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.fishing_learned = True
+    tribe.dock_built = True
+    tribe.fishery_built = True
+    tribe.food = 0
+
+    sim._advance_fish_supply(tribe)
+
+    upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+    expected = round(
+        upkeep * config.FISHING_SUPPLY_MULTIPLIER
+        * config.FISHERY_SUPPLY_BONUS_MULTIPLIER
+        * (1 + config.DOCK_FISH_CATCH_BONUS_FRACTION)
+    )
+    assert tribe.food == expected
+
+
 def test_advance_fish_supply_is_capped_by_storage():
     from backend import config
 
@@ -6139,25 +6185,6 @@ def test_advance_city_founding_does_nothing_before_the_era_milestone():
     sim._advance_city_founding(tribe)
 
     assert tribe.founded_city is False
-
-
-def test_local_buildable_fraction_is_full_on_open_land():
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")  # open plains
-
-    assert sim._local_buildable_fraction(tribe) == 1.0
-
-
-def test_local_buildable_fraction_is_reduced_on_a_narrow_shoreline_strip():
-    """Live bug report: a tribe wedged into a narrow forest strip between a river and
-    the coastal cliffs grew a full, maxed-out city there anyway. (83, 58) is real map
-    geography confirmed narrow -- river immediately west, cliffs/ocean two tiles east.
-    This fraction now scales EXPAND_TERRITORY's radius increment (actions._expand_
-    territory) instead of an abstract building cap."""
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 83, 58, "#c084fc")
-
-    assert sim._local_buildable_fraction(tribe) < 1.0
 
 
 _FAKE_CHIEF = {"chief_name": "Test Chief", "victory_method": "a coin flip", "guiding_philosophy": "test philosophy"}

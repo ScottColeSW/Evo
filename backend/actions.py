@@ -454,16 +454,28 @@ def _build_road(sim, tribe, biome, target):
 
 
 def _expand_territory(sim, tribe, biome, target):
-    """2026-09-02 redesign: grows the tribe's real territory_radius and unlocks
-    exactly one new wall section per call, in fixed compass order -- "expansion
-    must be done for each wall section," no exception for ring 0. The radius
-    increment is scaled down on cramped land (Simulation._local_buildable_fraction,
-    the same land-availability signal the old abstract city-growth cap used to
-    read), floored so even a badly cramped tribe keeps making some progress.
+    """2026-09-02 redesign: unlocks exactly one new wall section per call, in
+    fixed compass order -- "expansion must be done for each wall section," no
+    exception for ring 0. Once every section in the outermost ring is both
+    unlocked and fully reinforced, the next call opens a whole new ring
+    further out instead (backend/city_layout.build_ring) -- no limit on ring
+    count beyond land availability.
 
-    Once every section in the outermost ring is both unlocked and fully reinforced,
-    the next call opens a whole new ring further out instead (backend/
-    city_layout.build_ring) -- no limit on ring count beyond land availability."""
+    Live-run correction: "Wall Sections are being rendered on screen as a box
+    around the settlement instead of portions of Wall being placed just inside
+    the Territory dotted outline." tribe.territory_radius (what frontend/
+    index.html's drawTerritory actually draws) used to grow by its own
+    separately-scaled increment every single call, completely independent of
+    where the wall ring geometry actually sits -- a handful of calls could
+    balloon the dotted outline far past the fixed-radius ring inside it.
+    territory_radius is now simply derived from how many rings exist
+    (config.WALL_RING_RADIUS_STEP * ring count), so the dotted outline always
+    sits exactly at the current outermost ring's own real radius, matching
+    what _found_territory already sets it to at founding. The land-availability
+    scaling this replaced (Simulation._local_buildable_fraction) no longer has
+    anything left to scale -- natural-barrier substitution in city_layout.
+    build_ring and the one-section-per-call pace already self-limit expansion
+    on cramped land without it."""
     if not tribe.wall_rings:
         return None
     if tribe.wood < config.TERRITORY_EXPANSION_WOOD_COST or tribe.stone < config.TERRITORY_EXPANSION_STONE_COST:
@@ -478,12 +490,7 @@ def _expand_territory(sim, tribe, biome, target):
 
     tribe.wood -= config.TERRITORY_EXPANSION_WOOD_COST
     tribe.stone -= config.TERRITORY_EXPANSION_STONE_COST
-    fraction = sim._local_buildable_fraction(tribe)
-    increment = max(
-        config.TERRITORY_EXPANSION_RADIUS_MIN_INCREMENT,
-        round(config.TERRITORY_EXPANSION_RADIUS_INCREMENT_BASE * fraction),
-    )
-    tribe.territory_radius += increment
+    tribe.territory_radius = config.WALL_RING_RADIUS_STEP * len(tribe.wall_rings)
     if unlockable is not None:
         ring_i, sec_i = unlockable
         tribe.wall_rings[ring_i]["sections"][sec_i]["unlocked"] = True
@@ -500,8 +507,10 @@ def _build_dock(sim, tribe, biome, target):
     capability, not a hopeful bet" pattern Sawmill/Quarry/Tannery already use.
     CATCH_FISH itself never required a dock (see _catch_fish) so this doesn't
     create a deadlock -- fishing gets learned first, and the dock becomes a real
-    reward (config.DOCK_FISH_CATCH_BONUS_FRACTION applied in _catch_fish) rather
-    than a bet placed before the tribe has ever caught anything."""
+    reward (config.DOCK_FISH_CATCH_BONUS_FRACTION, applied in Simulation.
+    _advance_fish_supply's passive daily catch since CATCH_FISH itself retires
+    from available_actions the moment fishing_learned is set) rather than a bet
+    placed before the tribe has ever caught anything."""
     if tribe.dock_built or not tribe.fishing_learned or tribe.wood < config.DOCK_WOOD_COST:
         return None
     tribe.wood -= config.DOCK_WOOD_COST
@@ -854,10 +863,11 @@ def _catch_fish(sim, tribe, biome, target):
     if random.random() >= config.CATCH_FISH_SUCCESS_CHANCE:
         return "no fish caught this time"
     caught = random.randint(config.FISHING_CATCH_FOOD_MIN, config.FISHING_CATCH_FOOD_MAX)
-    # See actions.py._build_dock -- a real yield bonus for having bet on fishing
-    # early enough to build one, not just flavor text.
-    if tribe.dock_built:
-        caught = round(caught * (1 + config.DOCK_FISH_CATCH_BONUS_FRACTION))
+    # Dock's own bonus (config.DOCK_FISH_CATCH_BONUS_FRACTION) applies to the
+    # passive daily supply now (see Simulation._advance_fish_supply), not here --
+    # BUILD_DOCK requires fishing_learned already, and CATCH_FISH retires from
+    # available_actions the instant fishing_learned is set, so a dock could
+    # never actually exist while this manual catch was still reachable.
     caught = round(caught * _food_multiplier(tribe))
     tribe.food += caught
     if not tribe.fishing_learned:
@@ -1398,10 +1408,15 @@ def _trade(sim, tribe, biome, target):
 
 
 def _nearest_rival(sim, tribe, x, y):
-    """Unlike TRADE/RAID's proximity search, a geopolitical stance is a policy
-    declaration, not a physical encounter -- no radius cutoff, just whichever real
-    rival is closest to target_vector. Returns None only if no living rival exists
-    at all."""
+    """Explicit correction: "they can't make an ALLIANCE if they have not made
+    contact with another Tribe or Settlement." Used to have no radius cutoff at
+    all -- a geopolitical stance toward a rival nobody had ever actually gotten
+    close to. config.DIPLOMACY_CONTACT_RADIUS reuses the same "close enough to
+    exchange real information" distance BROADCAST_HEARING_RADIUS already
+    represents for linguistic convergence -- looser than RAID/TRADE's tight
+    physical-encounter radius (an envoy covering that ground is plausible;
+    outright combat/trade goods changing hands isn't at the same range), but
+    still a real contact requirement, not target_vector alone."""
     best, best_dist = None, None
     for other in sim.tribes.values():
         if other.id == tribe.id or other.extinct:
@@ -1409,6 +1424,14 @@ def _nearest_rival(sim, tribe, x, y):
         dist = (other.x - x) ** 2 + (other.y - y) ** 2
         if best is None or dist < best_dist:
             best, best_dist = other, dist
+    if best is None:
+        return None
+    # The contact check is real distance between the two tribes themselves, not
+    # between target_vector and the candidate -- target_vector only disambiguates
+    # *which* rival is meant when more than one exists, same as before.
+    contact_dist = (best.x - tribe.x) ** 2 + (best.y - tribe.y) ** 2
+    if contact_dist > config.DIPLOMACY_CONTACT_RADIUS ** 2:
+        return None
     return best
 
 
@@ -1426,7 +1449,7 @@ def _declare_alliance(sim, tribe, biome, target):
     tx, ty = target
     rival = _nearest_rival(sim, tribe, tx, ty)
     if rival is None:
-        return "no rival tribe exists to declare a stance toward"
+        return "no rival tribe has been encountered nearby yet to declare a stance toward"
     was_war = tribe.stance_toward.get(rival.id) == "WAR"
     already_allied = tribe.stance_toward.get(rival.id) == "ALLIED"
     tribe.stance_toward[rival.id] = "ALLIED"
@@ -1448,7 +1471,7 @@ def _declare_war(sim, tribe, biome, target):
     tx, ty = target
     rival = _nearest_rival(sim, tribe, tx, ty)
     if rival is None:
-        return "no rival tribe exists to declare a stance toward"
+        return "no rival tribe has been encountered nearby yet to declare a stance toward"
     if tribe.stance_toward.get(rival.id) == "WAR":
         return f"{tribe.name} is already at war with {rival.name}"
     tribe.stance_toward[rival.id] = "WAR"

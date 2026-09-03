@@ -245,13 +245,6 @@ CROP_GROWTH_PER_CYCLE = 10  # a plot matures in ~10 cycles once planted
 CROP_HARVEST_YIELD = 15  # food per plot, per harvest
 CROP_WATER_PER_PLOT_PER_CYCLE = 2  # a plot that goes unwatered withers outright
 
-# Live bug report: a tribe wedged into a narrow forest strip between a river and the
-# coastal cliffs grew a full, maxed-out city there anyway -- nothing checked whether
-# there was actually room. Simulation._local_buildable_fraction scans a
-# (2*CITY_LAND_CHECK_RADIUS+1)^2 square centered on the tribe's tile and counts how
-# much of it isn't open water/cliff -- reused by actions._expand_territory to scale
-# how much a tribe on cramped land can grow its territory per call.
-CITY_LAND_CHECK_RADIUS = 4
 UNBUILDABLE_BIOMES = ("ocean", "river", "lake", "cliffs", "shoals")
 
 # Redesigned 2026-09-02 ("these shouldn't be disconnected... look at it as a whole"):
@@ -271,12 +264,12 @@ UNBUILDABLE_BIOMES = ("ocean", "river", "lake", "cliffs", "shoals")
 TERRITORY_FOUNDING_REGION = 3  # base radius = SETTLEMENT_WATER_TERRITORY_RADIUS * this = 12 tiles
 WALL_RING_RADIUS_STEP = SETTLEMENT_WATER_TERRITORY_RADIUS * TERRITORY_FOUNDING_REGION  # 12; ring i sits at 12*(i+1)
 
-# EXPAND_TERRITORY grows the real territory radius (scaled down on cramped land via
-# _local_buildable_fraction, same idea the old MIN_CITY_BUILDINGS_ON_CRAMPED_LAND
-# floor protected) and unlocks exactly one new wall section per call, in fixed compass
+# EXPAND_TERRITORY unlocks exactly one new wall section per call, in fixed compass
 # order -- "expansion must be done for each wall section," no exception for ring 0.
-TERRITORY_EXPANSION_RADIUS_INCREMENT_BASE = 12
-TERRITORY_EXPANSION_RADIUS_MIN_INCREMENT = 3  # floor even on badly cramped land
+# tribe.territory_radius (see actions._expand_territory) is always derived as
+# WALL_RING_RADIUS_STEP * (ring count) -- explicit correction after live data showed
+# it drifting far past the wall's own real geometry when it used to grow by its own
+# separately-scaled increment every call instead.
 
 # The wall is a real polygon of positioned sections around the territory, not one
 # progress-bar tile. WALL_RING_SECTION_COUNT=8 (a compass octagon) needs
@@ -1013,6 +1006,13 @@ STRIKE_RAIDER_CAMP_LOOT_FRACTION = 0.15  # of the tribe's own food, representing
 # were audible map-wide regardless of distance, which gave away free information and
 # removed any incentive to actually travel toward another tribe.
 BROADCAST_HEARING_RADIUS = 15
+
+# DECLARE_ALLIANCE/DECLARE_WAR (backend/actions.py._nearest_rival): explicit
+# correction -- "they can't make an ALLIANCE if they have not made contact with
+# another Tribe or Settlement." Reuses BROADCAST_HEARING_RADIUS's own "close
+# enough to exchange real information" distance rather than inventing a second
+# number for the same underlying idea.
+DIPLOMACY_CONTACT_RADIUS = BROADCAST_HEARING_RADIUS
 
 # Cross-tribe proximity awareness, independent of whether the other tribe has ever
 # broadcast anything -- real data this session showed every single run (25/25 tribe-
