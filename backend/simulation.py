@@ -3557,19 +3557,21 @@ class Simulation:
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
         self._lose_population(tribe, loss, cause="raider_attack")
         # Explicit request: a wall that fails to stop a raid doesn't stay standing at
-        # whatever progress it had -- the tribe has to rebuild it, the same as any
-        # other real defensive structure that gets breached. Only removed on an
+        # whatever progress it had -- the tribe has to do some rebuilding, the same as
+        # any other real defensive structure that gets breached. Only removed on an
         # actual failed defense, not on a successful repel (wall_fraction > 0 branch
         # above returns before reaching here).
         #
-        # 2026-09-02 redesign: a breach now resets only the outermost ring's real
-        # (non-natural) sections -- the newest perimeter is what got breached; older,
-        # inner rings/fortification survive. Natural-barrier sections are terrain,
-        # never reset.
+        # 2026-09-02 redesign: a breach reset the outermost ring's every real
+        # (non-natural) section to 0. Live feedback: with only one ring built (the
+        # common early-game case), that read as "the whole wall falls" -- overly
+        # harsh. city_layout.breach_outer_ring now knocks down exactly one layer of
+        # the single weakest real section in the outer ring, leaving the rest of that
+        # ring and every inner ring standing.
         if wall_fraction > 0:
             city_layout.breach_outer_ring(tribe)
         tribe.history.append(
-            "raiders struck the camp -- the wall blunted the worst of it, but was breached and must be rebuilt" if wall_fraction > 0.3 else
+            "raiders struck the camp -- the wall blunted the worst of it, but a section was breached" if wall_fraction > 0.3 else
             "raiders struck the camp -- defenses failed, supplies stolen"
         )
         self.recent_encounters.append({

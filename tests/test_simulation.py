@@ -4006,52 +4006,62 @@ def test_full_wall_reduces_population_loss_more_than_a_partial_wall():
     assert (10 - full.population) < (10 - partial.population)
 
 
-def test_failed_wall_defense_destroys_the_wall_forcing_a_rebuild():
-    """Explicit request: a wall that fails to stop a raid doesn't stay standing --
-    the tribe has to rebuild it, the same as any real defensive structure that gets
-    breached. 2026-09-02 redesign: a breach resets only the outermost ring's real
-    (non-natural) sections back to progress=0 -- terrain-barrier sections are never
-    reset."""
+def test_failed_wall_defense_knocks_down_one_section_by_one_layer():
+    """Explicit request: a wall that fails to stop a raid doesn't stay standing at
+    full strength -- some rebuilding is owed, the same as any real defensive
+    structure that gets breached. Live feedback (2026-09-04): the earlier
+    2026-09-02 redesign still wiped *every* real section in the outer ring back to
+    progress=0, which read as "the whole wall falls" -- overly harsh, especially
+    with only one ring built. A breach now costs exactly one layer on the single
+    weakest real section, leaving the rest standing (see
+    city_layout.breach_outer_ring and its own unit tests for the exact rule)."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.population = 10
     tribe.food = tribe.water = tribe.wood = tribe.stone = 100
     tribe.has_ever_settled = True
     sim._found_territory(tribe)
-    for sec in tribe.wall_rings[0]["sections"]:
-        if not sec["natural_barrier"]:
-            sec["unlocked"] = True
-            sec["progress"] = 80
+    real_sections = [sec for sec in tribe.wall_rings[0]["sections"] if not sec["natural_barrier"]]
+    for sec in real_sections:
+        sec["unlocked"] = True
+        sec["progress"] = 80
 
     with mock.patch("backend.simulation.random.random", return_value=0.99):  # defense fails
         sim._resolve_raider_attack(tribe)
 
-    assert all(sec["progress"] == 0 for sec in tribe.wall_rings[0]["sections"] if not sec["natural_barrier"])
+    damaged = [sec for sec in real_sections if sec["progress"] != 80]
+    assert len(damaged) == 1
+    assert damaged[0]["progress"] == 30  # 80 - 50, tier was already 0
+    assert all(sec["progress"] == 80 for sec in real_sections if sec is not damaged[0])
 
 
-def test_failed_wall_defense_also_resets_reinforcement_layers():
+def test_failed_wall_defense_costs_a_reinforcement_layer_not_the_whole_section():
     """Live bug report: "the forest tribe has built walls and then they got
     destroyed? and they built them again" -- a breach used to delete the wall
     construction but left tribe.wall_layers at whatever it was (e.g. 2, after a
-    reinforcement), out of sync with "no wall actually stands." Now
-    city_layout.breach_outer_ring resets both progress and tier together on every
-    real section of the breached (outermost) ring."""
+    reinforcement), out of sync with "no wall actually stands." Now a failed
+    defense costs the weakest reinforced section exactly one tier, not a full
+    reset -- see city_layout.breach_outer_ring."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.population = 10
     tribe.food = tribe.water = tribe.wood = tribe.stone = 100
     tribe.has_ever_settled = True
     sim._found_territory(tribe)
-    for sec in tribe.wall_rings[0]["sections"]:
-        if not sec["natural_barrier"]:
-            sec["unlocked"] = True
-            sec["progress"] = 100
-            sec["tier"] = 2  # already reinforced once
+    real_sections = [sec for sec in tribe.wall_rings[0]["sections"] if not sec["natural_barrier"]]
+    for sec in real_sections:
+        sec["unlocked"] = True
+        sec["progress"] = 100
+        sec["tier"] = 2  # already reinforced once
 
     with mock.patch("backend.simulation.random.random", return_value=0.99):  # defense fails
         sim._resolve_raider_attack(tribe)
 
-    assert all(sec["tier"] == 0 for sec in tribe.wall_rings[0]["sections"] if not sec["natural_barrier"])
+    damaged = [sec for sec in real_sections if sec["tier"] != 2]
+    assert len(damaged) == 1
+    assert damaged[0]["tier"] == 1
+    assert damaged[0]["progress"] == 100
+    assert all(sec["tier"] == 2 for sec in real_sections if sec is not damaged[0])
 
 
 def test_successful_wall_defense_leaves_the_wall_standing():

@@ -202,7 +202,12 @@ def test_inner_ring_defense_bonus_counts_only_fully_reinforced_inner_rings():
     assert inner_ring_defense_bonus(tribe) == config.RAIDER_DEFENSE_PER_INNER_RING_BONUS
 
 
-def test_breach_outer_ring_resets_only_the_outermost_non_natural_sections():
+def test_breach_outer_ring_knocks_down_only_the_single_weakest_section_by_one_layer():
+    """Live feedback: wiping every real section in the outer ring back to 0 read as
+    "the whole wall falls" -- overly harsh, especially for a tribe on its first ring
+    (where the outer ring is the whole wall). A breach now damages exactly one
+    section -- the weakest one that's actually been worked on -- by one layer, and
+    leaves everything else (inner rings, every other outer section) standing."""
     tribe = _tribe_at()
     inner_ring = _plain_ring()
     for sec in inner_ring["sections"]:
@@ -210,17 +215,45 @@ def test_breach_outer_ring_resets_only_the_outermost_non_natural_sections():
         sec["tier"] = config.WALL_MAX_LAYERS
     outer_ring = _plain_ring()
     outer_ring["sections"][0]["natural_barrier"] = True
-    outer_ring["sections"][0]["progress"] = 100  # should never be reset -- terrain
+    outer_ring["sections"][0]["progress"] = 100  # should never be touched -- terrain
     for sec in outer_ring["sections"][1:]:
         sec["progress"] = 100
         sec["tier"] = config.WALL_MAX_LAYERS
+    # The weakest real section -- lower tier than every other real section, so it's
+    # the one that should take the hit.
+    weakest = outer_ring["sections"][1]
+    weakest["tier"] = 1
     tribe.wall_rings = [inner_ring, outer_ring]
 
     breach_outer_ring(tribe)
 
     assert all(sec["progress"] == 100 and sec["tier"] == config.WALL_MAX_LAYERS for sec in inner_ring["sections"])
     assert outer_ring["sections"][0]["progress"] == 100  # natural barrier untouched
-    assert all(sec["progress"] == 0 and sec["tier"] == 0 for sec in outer_ring["sections"][1:])
+    assert weakest["progress"] == 100 and weakest["tier"] == 0  # the one section that lost a layer
+    untouched = [sec for sec in outer_ring["sections"][2:]]
+    assert all(sec["progress"] == 100 and sec["tier"] == config.WALL_MAX_LAYERS for sec in untouched)
+
+
+def test_breach_outer_ring_halves_progress_instead_of_tier_when_not_yet_reinforced():
+    tribe = _tribe_at()
+    ring = _plain_ring()
+    ring["sections"][0]["progress"] = 100  # tier 0 -- just completed, never reinforced
+    tribe.wall_rings = [ring]
+
+    breach_outer_ring(tribe)
+
+    assert ring["sections"][0]["progress"] == 50
+    assert ring["sections"][0]["tier"] == 0
+
+
+def test_breach_outer_ring_ignores_untouched_sections_with_no_progress_at_all():
+    tribe = _tribe_at()
+    ring = _plain_ring()  # every section starts at progress=0, tier=0
+    tribe.wall_rings = [ring]
+
+    breach_outer_ring(tribe)  # nothing to breach -- must not raise or mutate
+
+    assert all(sec["progress"] == 0 and sec["tier"] == 0 for sec in ring["sections"])
 
 
 def test_breach_outer_ring_does_nothing_without_any_rings():

@@ -738,9 +738,13 @@ TRADE_EMISSARY_MAX_DAYS = 4
 # has nothing worth raiding yet. Chance scales with population up to a cap rather than
 # applying full force the moment a tribe settles; a cooldown (mirrors
 # CELEBRATION_COOLDOWN_CYCLES) keeps this reading as discrete events, not noise.
-RAIDER_HAZARD_MAX_CHANCE = 0.12
+# Live feedback: "we have introduced about 75% too many Raiders on the map, they
+# are interfering." Most of that was the sighting-marker list never getting
+# pruned (see RAIDER_SIGHTING_MAX_REMEMBERED) -- but actual attack frequency gets
+# a modest tune-down here too, not a redesign.
+RAIDER_HAZARD_MAX_CHANCE = 0.09
 RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE = 60
-RAIDER_HAZARD_COOLDOWN_CYCLES = 25
+RAIDER_HAZARD_COOLDOWN_CYCLES = 35
 
 # Defense resolution once an attack triggers. Population alone gives some defensive
 # chance (more hands to fight back -- same shape as RAID's own population-ratio win
@@ -936,9 +940,15 @@ DOCK_FISH_CATCH_BONUS_FRACTION = 0.5
 # wood, a permanent multiplier on every future GATHER_WOOD/GATHER_STONE. Gated on
 # tribe.long_house_built ("building homes") and tribe.fishing_learned ("fishing
 # down"), the two real facts named in the request, not era alone.
+# Live data (day 86 run): a tribe with a Sawmill built still sat at wood: 6 vs.
+# stone: 1618 after 1700+ cycles -- wood is a cost on far more building types than
+# stone is (nearly every building spends some wood; far fewer spend stone), so the
+# same multiplier as Quarry's wasn't enough to keep up. Doubled as a first pass --
+# revisit with a real building-cost audit only if a future run still shows the
+# same imbalance.
 SAWMILL_WOOD_COST = 30
 SAWMILL_STONE_COST = 15
-SAWMILL_WOOD_MULTIPLIER = 3
+SAWMILL_WOOD_MULTIPLIER = 6
 QUARRY_WOOD_COST = 15
 QUARRY_STONE_COST = 30
 QUARRY_STONE_MULTIPLIER = 3

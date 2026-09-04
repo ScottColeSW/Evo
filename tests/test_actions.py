@@ -697,8 +697,10 @@ def test_build_dock_is_a_real_reward_even_though_it_cant_boost_a_manual_catch():
     assert "dock rises" in dock_result
 
 
-def test_sawmill_triples_every_future_wood_harvest():
+def test_sawmill_multiplies_every_future_wood_harvest():
     from unittest import mock
+
+    from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
@@ -710,7 +712,7 @@ def test_sawmill_triples_every_future_wood_harvest():
 
         tribe.sawmill_built = True
         ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "forest", _NO_TARGET)
-        assert tribe.wood == 40  # +10 unboosted, then +30 (10 * SAWMILL_WOOD_MULTIPLIER)
+        assert tribe.wood == 10 + 10 * config.SAWMILL_WOOD_MULTIPLIER
 
 
 def test_quarry_triples_every_future_stone_harvest():

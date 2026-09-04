@@ -122,12 +122,26 @@ def inner_ring_defense_bonus(tribe) -> float:
 
 
 def breach_outer_ring(tribe) -> None:
-    """A failed defense takes down the newest (outermost) perimeter -- reset its
-    real construction/reinforcement, forcing a rebuild -- but leaves older, inner
-    rings standing. Natural-barrier sections are terrain, never reset."""
+    """A failed defense damages the newest (outermost) perimeter, but not the whole
+    thing. Explicit feedback (live playtest): wiping every real section back to 0
+    read as "the whole wall falls" -- overly harsh, especially for a tribe still on
+    its first ring, where the outer ring *is* the whole wall. Now finds the single
+    weakest real (non-natural) section that's actually taken any damage-worthy
+    progress (skips untouched sections -- nothing to breach there) and knocks it
+    down exactly one layer: a reinforced section loses one tier, a merely-complete
+    (tier 0) section loses half its construction progress. Older, inner rings and
+    every other section of the outer ring are untouched. Natural-barrier sections
+    are terrain, never touched."""
     if not tribe.wall_rings:
         return
-    for sec in tribe.wall_rings[-1]["sections"]:
-        if not sec["natural_barrier"]:
-            sec["progress"] = 0
-            sec["tier"] = 0
+    candidates = [
+        sec for sec in tribe.wall_rings[-1]["sections"]
+        if not sec["natural_barrier"] and (sec["progress"] > 0 or sec["tier"] > 0)
+    ]
+    if not candidates:
+        return
+    weakest = min(candidates, key=lambda sec: sec["progress"] / 100 + sec["tier"])
+    if weakest["tier"] > 0:
+        weakest["tier"] -= 1
+    else:
+        weakest["progress"] = max(0, weakest["progress"] - 50)

@@ -1561,23 +1561,24 @@ function trackNewLandmarks(state) {
 // Neutral, non-AI raid/trade targets (backend/simulation.py._spawn_minor_
 // settlements) -- unowned, so no tribe color to borrow; a dim, terracotta-ish
 // stroke instead so it reads as a real place, not a landmark someone found.
-// Depleted (raided out, mid-respawn) reads as dim/hollow rather than vanishing
-// outright, so it's still visible on the map while it recovers.
+// Explicit request: "Defeated Raider bubbles should disappear after they are
+// absorbed/defeated." Used to render a dim/hollow "recovering" ghost marker in
+// place the whole time it was depleted -- now just doesn't draw at all until it's
+// back with raids to offer (Simulation._advance_minor_settlements relocates it to
+// a new site on respawn, so there's no old marker worth leaving behind anyway).
 function drawMinorSettlements() {
   (latestState.minor_settlements || []).forEach(ms => {
+    if (ms.raids_remaining <= 0) return;
     const cx = ms.x * TILE + TILE / 2;
     const cy = ms.y * TILE + TILE / 2;
     const r = Math.max(8, TILE * 0.55);
-    const depleted = ms.raids_remaining <= 0;
     ctx.save();
-    ctx.globalAlpha = depleted ? 0.4 : 1.0;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, 2 * Math.PI);
     ctx.fillStyle = "rgba(10,14,26,0.92)";
     ctx.fill();
     ctx.strokeStyle = "#c2703d";
     ctx.lineWidth = Math.max(1.5, TILE * 0.14);
-    if (depleted) ctx.setLineDash([2, 2]);
     ctx.stroke();
     ctx.font = `${Math.max(13, TILE * 0.95)}px sans-serif`;
     ctx.textAlign = "center";
@@ -1585,11 +1586,15 @@ function drawMinorSettlements() {
     ctx.fillText("🏚️", cx, cy + 1);
 
     ctx.font = `bold ${Math.max(9, TILE * 0.5)}px sans-serif`;
-    const label = depleted ? "recovering" : `${ms.raids_remaining} raid(s) left`;
+    const label = `${ms.raids_remaining} raid(s) left`;
     const tagWidth = ctx.measureText(label).width + 6;
-    const tagY = cy + r + 2;
+    const tagHeight = Math.max(11, TILE * 0.6);
+    // Explicit request: "we have overlapping object/resources/etc. bubbles, they
+    // should be spread out" -- same claimBubbleSlot collision-avoidance the
+    // thought/speech bubbles and landmark tags already use.
+    const tagY = claimBubbleSlot(cx - tagWidth / 2, cy + r + 2, tagWidth, tagHeight);
     ctx.fillStyle = "rgba(10,14,26,0.85)";
-    ctx.fillRect(cx - tagWidth / 2, tagY, tagWidth, Math.max(11, TILE * 0.6));
+    ctx.fillRect(cx - tagWidth / 2, tagY, tagWidth, tagHeight);
     ctx.fillStyle = "#e2e8f0";
     ctx.textBaseline = "top";
     ctx.fillText(label, cx, tagY + 1);
@@ -1634,9 +1639,13 @@ function drawLandmarks() {
         // itself to a viewer looking at the map cold.
         ctx.font = `bold ${Math.max(9, TILE * 0.5)}px sans-serif`;
         const tagWidth = ctx.measureText(entryLabel).width + 6;
-        const tagY = cy + r + 2;
+        const tagHeight = Math.max(11, TILE * 0.6);
+        // Explicit request: "we have overlapping object/resources/etc. bubbles,
+        // they should be spread out" -- claimBubbleSlot already exists for this
+        // (thought/speech bubbles), just wasn't wired into landmark tags yet.
+        const tagY = claimBubbleSlot(cx - tagWidth / 2, cy + r + 2, tagWidth, tagHeight);
         ctx.fillStyle = "rgba(10,14,26,0.85)";
-        ctx.fillRect(cx - tagWidth / 2, tagY, tagWidth, Math.max(11, TILE * 0.6));
+        ctx.fillRect(cx - tagWidth / 2, tagY, tagWidth, tagHeight);
         ctx.fillStyle = "#e2e8f0";
         ctx.textBaseline = "top";
         ctx.fillText(entryLabel, cx, tagY + 1);
@@ -2484,8 +2493,6 @@ function drawFrame() {
       }
     });
 
-    drawLandmarks();
-    drawMinorSettlements();
     const now = Date.now();
     heldEncounters = heldEncounters.filter(e => e.expiresAt > now);
     heldEncounters.forEach(e => {
@@ -2539,10 +2546,19 @@ function drawFrame() {
       drawBoat(id, t);
     });
     Object.entries(latestState.tribes || {}).forEach(([id, t]) => drawTribeIndividuals(id, t));
-    // Drawn last, on top of everything -- a trail at a tribe's own home tile (very
-    // common, since journeys start and end there) was getting completely hidden under
-    // that tribe's own dot cluster when drawn earlier in the pass.
+    // A trail at a tribe's own home tile (very common, since journeys start and end
+    // there) was getting completely hidden under that tribe's own dot cluster when
+    // drawn earlier in the pass -- drawn after individuals so a trail/toll road
+    // still reads through a busy camp.
     drawTrails();
+    // Explicit request: "the new Toll Road is visually overlapping with the start
+    // and end object bubble, so I can't read it." Landmarks/minor-settlement tags
+    // used to draw before trails, so a toll road painted right over them. Drawn
+    // after trails instead -- labels stay on top of the road, the road still stays
+    // on top of the dot cluster (the fix above), full stack from bottom to top is
+    // terrain -> tribes/buildings -> trails -> labels.
+    drawLandmarks();
+    drawMinorSettlements();
     // The day/night tint goes over literally everything (tribes, trails, structures
     // included) so night actually reads as night across the whole scene, not just an
     // absent sun icon up top.
@@ -2749,6 +2765,11 @@ function farmingPanel(t) {
   }
   if (t.fishing_learned) parts.push("🎣 Fishing — mastered, fish now caught for food");
   if (t.fishery_built) parts.push(`🐟 Fishery — ${fishSupplyPerCycle(t)} food/day flows in automatically`);
+  // Explicit request: "I love the Boat. Please add it to the Establishments." --
+  // boat_built already gated the map icon (drawBoat) and whether this whole panel
+  // shows at all (hasAny, above), but never got a descriptive line of its own the
+  // way every other Establishment does.
+  if (t.boat_built) parts.push("⛵ Boat — river and lake crossings move at full speed instead of wading through");
   if (t.fire_ever_built) parts.push("🔥 Fire — mastered, enables cooking");
   if (t.cooking_learned && !t.kitchen_built) parts.push("🍳 Cooking — mastered, stored food goes much further");
   if (t.founded_city) {
