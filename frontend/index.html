@@ -1728,21 +1728,35 @@ function drawSettlementWall(t) {
   const cx = ccx * TILE + TILE / 2, cy = ccy * TILE + TILE / 2;
   (t.wall_rings || []).forEach(ring => {
     const radius = ring.radius * TILE;
+    // Live report: a genuinely complete ring "just is ugly on the map, leaving holes
+    // in the defence and looking pretty easy to defeat" -- a natural-barrier section
+    // (terrain doing the wall's job for free) always drew dim and dashed, forever,
+    // even once every real section around it had finished, so a fully defended ring
+    // still looked full of gaps. "we fill that as a freebie" -- once the ring is
+    // actually done, a natural section gets the same solid, complete look as a real
+    // one; the dim/dashed treatment now only applies while there's still real work
+    // left in this ring, so it keeps meaning "here's what's missing" during
+    // construction instead of forever.
+    const ringComplete = ring.sections.every(s => s.natural_barrier || s.progress >= 100);
     ring.sections.forEach(sec => {
       const [x1, y1] = wallVertex(cx, cy, radius, sec.index);
       const [x2, y2] = wallVertex(cx, cy, radius, sec.index + 1);
+      // A natural barrier's own progress never leaves 0 (it needs no construction),
+      // so "done" for it means the ring around it is done, not its own progress.
+      const sectionComplete = sec.progress >= 100 || (sec.natural_barrier && ringComplete);
       ctx.save();
-      if (sec.natural_barrier) {
+      if (sec.natural_barrier && !ringComplete) {
         // Terrain doing the wall's job for free -- a weaker, distinct look (dotted,
-        // dim) rather than reading as a real built section.
+        // dim) rather than reading as a real built section, while the ring still has
+        // real work left elsewhere.
         ctx.strokeStyle = "#38bdf8";
         ctx.globalAlpha = 0.4;
         ctx.setLineDash([2, 3]);
-      } else if (!sec.unlocked) {
+      } else if (!sec.unlocked && !sec.natural_barrier) {
         ctx.strokeStyle = "#57534e";
         ctx.globalAlpha = 0.25;
         ctx.setLineDash([3, 4]);
-      } else if (sec.progress < 100) {
+      } else if (!sectionComplete) {
         ctx.strokeStyle = "#a8a29e";
         ctx.globalAlpha = 0.35 + 0.5 * (sec.progress / 100);
         ctx.setLineDash([4, 3]);
@@ -1761,7 +1775,7 @@ function drawSettlementWall(t) {
           ctx.shadowBlur = TILE * 0.4 * tier;
         }
       }
-      ctx.lineWidth = sec.progress >= 100
+      ctx.lineWidth = sectionComplete
         ? Math.max(1.5, TILE * (0.14 + WALL_TIER_WIDTH_STEP * (sec.tier || 0)))
         : Math.max(1.5, TILE * 0.12);
       ctx.beginPath();
@@ -1825,6 +1839,14 @@ function drawBuildings(t) {
     // A boat roams nearby water instead of sitting at its placed footprint --
     // see drawBoat, drawn separately so it isn't also rendered as a static tile here.
     if (b.type === "boat") return;
+    // Live request: "keep the townhall icon hidden until they actually build a
+    // townhall." The town_hall building record itself is placed automatically the
+    // instant territory is founded (Simulation._found_territory) -- a real
+    // reservation of the tile so nothing else gets placed on top of it, but not
+    // itself an earned milestone. tribe.founded_city is the real one (Simulation.
+    // _advance_city_founding: Monolithic Era reached AND at least one Long House
+    // actually standing) -- the icon waits for that, the placement doesn't need to.
+    if (b.type === "town_hall" && !t.founded_city) return;
     const px = b.x * TILE, py = b.y * TILE, pw = b.w * TILE, ph = b.h * TILE;
     ctx.save();
     ctx.fillStyle = "rgba(15,23,42,0.55)";
@@ -1896,6 +1918,13 @@ function drawBoat(tribeId, t) {
   ctx.restore();
 }
 
+// Live request: a toll road should look "better," not just a gold outline over the
+// same worn-dirt tint every ordinary trail gets -- a real paved color/texture, since
+// its wear value freezes the moment it evolves (World.decay_trails exempts it from
+// further fading) and no longer means anything to render against.
+const TOLL_ROAD_BASE = [150, 143, 130]; // cobblestone gray-tan, distinct from dirt-brown TRAIL_COLOR_LOW
+const TOLL_ROAD_JOINT = [104, 98, 88]; // darker mortar-line tone for the block pattern below
+
 function drawTrails() {
   // Regression fix: each trail tile used to draw at 1.6x the actual tile size with a
   // heavy dark border -- neighboring trail tiles (very common; that's what a worn
@@ -1905,6 +1934,28 @@ function drawTrails() {
     const cx = tr.x * TILE + TILE / 2;
     const cy = tr.y * TILE + TILE / 2;
     const size = TILE * 0.85;
+    if (tr.is_toll_road) {
+      const [br, bg, bb] = TOLL_ROAD_BASE;
+      ctx.fillStyle = `rgb(${br}, ${bg}, ${bb})`;
+      ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
+      // A cheap 2x2 cobblestone-block suggestion -- mortar lines through the middle,
+      // no per-tile geometry beyond what's already being drawn.
+      const [jr, jg, jb] = TOLL_ROAD_JOINT;
+      ctx.strokeStyle = `rgba(${jr}, ${jg}, ${jb}, 0.6)`;
+      ctx.lineWidth = Math.max(0.5, TILE * 0.04);
+      ctx.beginPath();
+      ctx.moveTo(cx - size / 2, cy);
+      ctx.lineTo(cx + size / 2, cy);
+      ctx.moveTo(cx, cy - size / 2);
+      ctx.lineTo(cx, cy + size / 2);
+      ctx.stroke();
+      // The owner's own color still marks whose toll road this is -- kept as the
+      // outline rather than the fill now that the fill is a real paved color.
+      ctx.strokeStyle = "#fbbf24";
+      ctx.lineWidth = Math.max(1, TILE * 0.08);
+      ctx.strokeRect(cx - size / 2, cy - size / 2, size, size);
+      return;
+    }
     const w = Math.max(0, Math.min(1, tr.wear));
     const high = tr.color ? hexToRgb(tr.color) : TRAIL_COLOR_FALLBACK_HIGH;
     const r = Math.round(TRAIL_COLOR_LOW[0] + (high[0] - TRAIL_COLOR_LOW[0]) * w);
@@ -1916,15 +1967,6 @@ function drawTrails() {
     // guesswork against the green.
     ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${Math.min(0.8, 0.45 + w * 0.35)})`;
     ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
-    // Explicit request: a trail crossed enough times "automatically evolves
-    // into visible and owned roads that others may travel for a fee." A gold
-    // outline (the owner's own color would blend into the fill above) marks a
-    // tile as a real, permanent toll road rather than an ordinary worn path.
-    if (tr.is_toll_road) {
-      ctx.strokeStyle = "#fbbf24";
-      ctx.lineWidth = Math.max(1, TILE * 0.08);
-      ctx.strokeRect(cx - size / 2, cy - size / 2, size, size);
-    }
   });
 }
 
