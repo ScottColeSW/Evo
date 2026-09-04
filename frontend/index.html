@@ -221,7 +221,7 @@
           <div class="icon-key-row"><span class="icon-key-icon">🛖</span> Camp (not yet founded)</div>
           <div class="icon-key-row"><span class="icon-key-icon">🏛️</span> Town Hall (city founded)</div>
           <div class="icon-key-row"><span class="icon-key-swatch icon-key-swatch-dashed"></span> Territory boundary</div>
-          <div class="icon-key-row"><span class="icon-key-icon">🧱</span> Wall (lighter → gold as reinforced)</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🧱</span> Wall — solid once complete, a faint dashed line while a section is still locked/under construction</div>
           <div class="icon-key-row"><span class="icon-key-icon">🔥</span> Torch (lit wall, Fire known)</div>
 
           <div class="icon-key-section">Buildings</div>
@@ -1864,7 +1864,7 @@ function drawTerritory(t) {
 }
 
 function drawSettlementMarker(t) {
-  if (!isSettled(t)) return;
+  if (!isCamped(t)) return;
   // Explicit visual note: "it looks better when the Territory boundaries
   // encompass the Hut." drawTerritory's circle is centered on territory_center
   // (the fixed founding anchor -- see Simulation._found_territory), but this
@@ -2077,15 +2077,21 @@ function drawSettlementWall(t) {
         // real work left elsewhere.
         ctx.strokeStyle = "#38bdf8";
         ctx.globalAlpha = 0.4;
-        ctx.setLineDash([2, 3]);
+        // Live report: "I don't know what the dots are that lay on the
+        // Territory boundary." A fixed 2-4px dash (regardless of TILE) renders
+        // as isolated dots rather than a readable dashed line at typical map
+        // zoom (TILE ~3-8px) -- scaled to TILE, same as drawPavedSwath's own
+        // toll-road centerline dash, so it reads as a real dashed line at any
+        // zoom instead of a scatter of dots.
+        ctx.setLineDash([TILE * 0.35, TILE * 0.5]);
       } else if (!sec.unlocked && !sec.natural_barrier) {
         ctx.strokeStyle = "#57534e";
         ctx.globalAlpha = 0.25;
-        ctx.setLineDash([3, 4]);
+        ctx.setLineDash([TILE * 0.45, TILE * 0.6]);
       } else if (!sectionComplete) {
         ctx.strokeStyle = "#a8a29e";
         ctx.globalAlpha = 0.35 + 0.5 * (sec.progress / 100);
-        ctx.setLineDash([4, 3]);
+        ctx.setLineDash([TILE * 0.6, TILE * 0.45]);
       } else {
         // Complete -- explicit correction: "the Wall itself has not manifested
         // visually to mirror our sections buildout" -- the old per-tier width
@@ -2714,6 +2720,17 @@ function drawFrame() {
       ctx.fillStyle = "#fca5a5";
       ctx.fillText(`${approach.cycles_left}`, cx, cy + TILE * 0.85);
     });
+    Object.entries(latestState.tribes || {}).forEach(([id, t]) => drawTribeIndividuals(id, t));
+    // A trail at a tribe's own home tile (very common, since journeys start and end
+    // there) was getting completely hidden under that tribe's own dot cluster when
+    // drawn earlier in the pass -- drawn after individuals so a trail/toll road
+    // still reads through a busy camp.
+    drawTrails();
+    // Live report: "roads still show over other objects in some places but not
+    // others" -- buildings/walls/the settlement marker used to draw *before*
+    // trails, so a road crossing a building's footprint sliced visibly over it.
+    // Drawn after trails instead, same "stay on top of the ground path" treatment
+    // individuals just got above.
     Object.entries(latestState.tribes || {}).forEach(([id, t]) => {
       drawSettlementMarker(t);
       drawSettlementWall(t);
@@ -2721,18 +2738,11 @@ function drawFrame() {
       drawFarmPlot(t);
       drawBoat(id, t);
     });
-    Object.entries(latestState.tribes || {}).forEach(([id, t]) => drawTribeIndividuals(id, t));
-    // A trail at a tribe's own home tile (very common, since journeys start and end
-    // there) was getting completely hidden under that tribe's own dot cluster when
-    // drawn earlier in the pass -- drawn after individuals so a trail/toll road
-    // still reads through a busy camp.
-    drawTrails();
     // Explicit request: "the new Toll Road is visually overlapping with the start
     // and end object bubble, so I can't read it." Landmarks/minor-settlement tags
     // used to draw before trails, so a toll road painted right over them. Drawn
-    // after trails instead -- labels stay on top of the road, the road still stays
-    // on top of the dot cluster (the fix above), full stack from bottom to top is
-    // terrain -> tribes/buildings -> trails -> labels.
+    // after everything else instead -- labels always stay on top, full stack from
+    // bottom to top is terrain -> individuals -> trails -> buildings/walls -> labels.
     drawLandmarks();
     drawMinorSettlements();
     // The day/night tint goes over literally everything (tribes, trails, structures
@@ -2808,21 +2818,25 @@ function nearConfirmedWater(t) {
   );
 }
 
-function isSettled(t) {
+function isCamped(t) {
   const n = t.cycles_since_relocate || 0;
   if (n < SETTLEMENT_STABILITY_CYCLES) return false;
   return FARMABLE_BIOMES.includes(biomeNameAt(t.x, t.y)) || nearConfirmedWater(t);
 }
 
 function settlementLine(t) {
-  // Regression: this used to call a tribe "settled" purely on cycles_since_relocate,
-  // ignoring ground -- a tribe that stayed put on mountains for 10 cycles read as
-  // "settled" even though Simulation._is_settled (which actually gates farming) also
-  // requires standing on FARMABLE_BIOMES, so GATHER_WOOD/STONE stayed locked the whole
-  // time. Reuse isSettled() so the label can't lie about that.
+  // Live report: "the line... 🏕️ settled... is confusing me since they have not
+  // moved to water yet." This mirrors backend.Simulation._is_camped (renamed
+  // from _is_settled this session for the exact same reason) -- it only ever
+  // tests camp viability (stable on workable ground long enough to gather/
+  // farm), not real settlement. tribe.has_ever_settled/founding a real city is
+  // a separate, stricter thing (see drawTerritory/drawSettlementMarker's own
+  // Hut vs. Town Hall distinction) -- this label said "settled" when it only
+  // ever meant "camped," which is exactly the confusion the backend rename
+  // already fixed on that side.
   const n = t.cycles_since_relocate || 0;
   if (n < SETTLEMENT_STABILITY_CYCLES) return `🚶 nomadic (${n}/${SETTLEMENT_STABILITY_CYCLES})`;
-  return isSettled(t) ? "🏕️ settled" : "🚶 nomadic (unfarmable ground)";
+  return isCamped(t) ? "🏕️ camped" : "🚶 nomadic (unfarmable ground)";
 }
 
 function landmarkCounts(t) {
@@ -2998,7 +3012,7 @@ function farmingPanel(t) {
   if (t.castle_built) parts.push("🏯 Castle — a further defense bonus");
   if (t.road_built) parts.push("🛣️ Road — every future expedition travels faster");
   if (t.dock_built) parts.push("⚓ Dock — boosts every manual fish catch");
-  if (t.sawmill_built) parts.push("🪵 Sawmill — every load of gathered wood is worth 3x");
+  if (t.sawmill_built) parts.push("🪵 Sawmill — every load of gathered wood is worth 6x");
   if (t.quarry_built) parts.push("⛏️ Quarry — every load of harvested stone is worth 3x");
   if (t.kitchen_built) parts.push("🍲 Kitchen — cooked meals count as excellent food");
   if (t.mine_built) {
