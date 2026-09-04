@@ -17,7 +17,7 @@ import math
 import random
 
 from . import architect, city_layout, config, physics
-from .world import BIOME_LABELS, biome_at, mark_visited_sector
+from .world import BIOME_LABELS, biome_at, mark_visited_sector, sector_of
 
 
 # Real biomes don't hand out every resource equally -- a mountain has essentially no
@@ -1061,6 +1061,29 @@ def _expedition_launch_point(tribe, angle_radians: float, grid_size: int) -> tup
     return lx, ly
 
 
+def _push_past_visited_ground(
+    tribe, ox: int, oy: int, angle_radians: float, base_distance: float, grid_size: int,
+) -> tuple[int, int]:
+    """Explicit request: prevent "incessant 'survey's an area' nonsense... they
+    found it, it's good for XYZ, move on, no need to explore it again." Once a
+    heading's own target would land in a Tribe Map sector already marked
+    visited, pushes farther out along that exact same heading instead of
+    settling for already-covered ground -- the same "keep walking this
+    direction" idea physics.extend_ray_to_grid_edge already uses once an
+    ordinary search reaches its target early with days left. Bounded (6 tries)
+    and fails open: if every attempt is still visited (a small or heavily
+    covered map), returns the farthest one tried rather than refusing to
+    launch."""
+    tx = ty = None
+    for step in range(6):
+        distance = base_distance * (1 + step * 0.5)
+        tx = _reflect_into_grid(ox + round(math.cos(angle_radians) * distance), grid_size)
+        ty = _reflect_into_grid(oy + round(math.sin(angle_radians) * distance), grid_size)
+        if sector_of(tx, ty) not in tribe.visited_sectors:
+            break
+    return tx, ty
+
+
 def _scout(sim, tribe, biome, target):
     """Dispatches an expedition -- your most capable people, out searching, not an
     instant look. They travel and camp under their own supply (no drain on the
@@ -1115,8 +1138,12 @@ def _scout(sim, tribe, biome, target):
     # a new direction each real dispatch, so coverage keeps spreading over many
     # shorter trips rather than one long one. EXPEDITION_SPEED is untouched -- this
     # is deliberately about how far a trip is aimed, not how fast it's walked.
-    tx = _reflect_into_grid(tribe.x + round(math.cos(angle_radians) * config.SCOUT_PATROL_DISTANCE), sim.world.grid_size)
-    ty = _reflect_into_grid(tribe.y + round(math.sin(angle_radians) * config.SCOUT_PATROL_DISTANCE), sim.world.grid_size)
+    # Explicit request: "I want to prevent this incessant 'survey's an area'
+    # nonsense" -- pushes past the Tribe Map's already-visited ground along this
+    # same heading instead of landing on a sector already confirmed.
+    tx, ty = _push_past_visited_ground(
+        tribe, tribe.x, tribe.y, angle_radians, config.SCOUT_PATROL_DISTANCE, sim.world.grid_size
+    )
     lx, ly = _expedition_launch_point(tribe, angle_radians, sim.world.grid_size)
     scout = _generate_scout(tribe, sim.cycle)
     tribe.expeditions.append({
@@ -1168,8 +1195,14 @@ def _exploration_party(sim, tribe, biome, target):
     ) % 360
     tribe.explore_rotation_index += 1
     angle_radians = math.radians(angle_degrees)
-    tx = _reflect_into_grid(tribe.x + round(math.cos(angle_radians) * config.SCOUT_PATROL_DISTANCE), sim.world.grid_size)
-    ty = _reflect_into_grid(tribe.y + round(math.sin(angle_radians) * config.SCOUT_PATROL_DISTANCE), sim.world.grid_size)
+    # Live-run finding: 829 EXPLORATION_PARTY dispatches averaged 1.02 days
+    # before turning back, against a 6-day budget -- reusing SCOUT_PATROL_
+    # DISTANCE meant it never actually went any farther than a plain SCOUT.
+    # EXPLORATION_PARTY_PATROL_DISTANCE gives it a real, longer reach of its
+    # own, and the same Tribe Map push-past used for SCOUT.
+    tx, ty = _push_past_visited_ground(
+        tribe, tribe.x, tribe.y, angle_radians, config.EXPLORATION_PARTY_PATROL_DISTANCE, sim.world.grid_size
+    )
     lx, ly = _expedition_launch_point(tribe, angle_radians, sim.world.grid_size)
     scout = _generate_scout(tribe, sim.cycle, base_days=config.EXPLORATION_PARTY_MAX_DAYS)
     tribe.expeditions.append({

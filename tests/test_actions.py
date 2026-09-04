@@ -1960,6 +1960,50 @@ def test_hunting_party_launches_from_the_territory_edge_toward_its_own_target():
     assert lx > cx  # launched toward the east, same direction as the target
 
 
+def test_push_past_visited_ground_extends_distance_past_an_already_visited_sector():
+    """Explicit request: "I want to prevent this incessant 'survey's an area'
+    nonsense... they found it, it's good for XYZ, move on, no need to explore
+    it again.\""""
+    from backend.actions import _push_past_visited_ground
+    from backend.world import sector_of
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    angle_radians = 0.0  # due east
+    naive_tx = 50 + 25
+    tribe.visited_sectors = {sector_of(naive_tx, 50)}
+
+    tx, ty = _push_past_visited_ground(tribe, 50, 50, angle_radians, 25, 100)
+
+    assert sector_of(tx, ty) != sector_of(naive_tx, 50)
+    assert tx > naive_tx  # pushed farther out along the same heading
+
+
+def test_push_past_visited_ground_uses_the_base_distance_when_nothing_is_visited():
+    from backend.actions import _push_past_visited_ground
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    tx, ty = _push_past_visited_ground(tribe, 50, 50, 0.0, 25, 100)
+
+    assert (tx, ty) == (75, 50)
+
+
+def test_push_past_visited_ground_fails_open_when_every_attempt_is_still_visited():
+    from backend.actions import _push_past_visited_ground
+    from backend.world import sector_of
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    angle_radians = 0.0
+    # Mark every distance _push_past_visited_ground will try as visited.
+    for step in range(6):
+        distance = 25 * (1 + step * 0.5)
+        tribe.visited_sectors.add(sector_of(50 + round(distance), 50))
+
+    tx, ty = _push_past_visited_ground(tribe, 50, 50, angle_radians, 25, 100)
+
+    assert tx is not None and ty is not None  # never refuses to launch
+
+
 def test_reflect_into_grid_leaves_in_bounds_values_alone():
     from backend.actions import _reflect_into_grid
 
@@ -2078,6 +2122,24 @@ def test_exploration_party_dispatches_with_its_own_rotation_and_a_longer_patienc
     assert tribe.explore_rotation_index == 1
     assert tribe.scout_rotation_index == 0  # its own separate counter, untouched
     assert "exploration party" in result
+
+
+def test_exploration_party_travels_farther_than_a_plain_scout():
+    """Live-run finding: "Long Explorations have not manifested" -- 829
+    EXPLORATION_PARTY dispatches averaged 1.02 days before turning back against
+    a 6-day budget, because it reused SCOUT_PATROL_DISTANCE and never actually
+    went any farther than a plain SCOUT."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    ACTION_REGISTRY["EXPLORATION_PARTY"](sim, tribe, "plains", (0, 0))
+
+    tx, ty = tribe.expeditions[0]["target"]
+    dist = ((tx - 50) ** 2 + (ty - 50) ** 2) ** 0.5
+    assert dist > config.SCOUT_PATROL_DISTANCE
+    assert abs(dist - config.EXPLORATION_PARTY_PATROL_DISTANCE) <= 1  # rounding
 
 
 def test_exploration_party_shares_expedition_capacity_with_scout():

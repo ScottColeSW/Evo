@@ -630,6 +630,17 @@ SCOUT_ROTATION_TRIBE_STAGGER_STEPS = 7
 # finishes its patrol before giving up.
 SCOUT_PATROL_DISTANCE = 25
 
+# Live-run finding: "Long Explorations have not manifested" -- confirmed against
+# a real run's own logs, 829 EXPLORATION_PARTY dispatches averaged 1.02 days
+# before turning back, against a 6-day budget (EXPLORATION_PARTY_MAX_DAYS).
+# Root cause: _exploration_party reused this same SCOUT_PATROL_DISTANCE, so it
+# never actually went any farther than a plain SCOUT and always "arrived"
+# almost immediately. Sized so a full outbound leg at EXPEDITION_SPEED (10/day)
+# takes ~4.5 days -- genuinely uses most of the day budget without regularly
+# blowing past it before determination variance/trail bonuses are even
+# considered.
+EXPLORATION_PARTY_PATROL_DISTANCE = 45
+
 # A wandering storm cloud (Simulation._advance_weather) -- weather that exists whether
 # or not any tribe is watching, not triggered by or aimed at anyone. Rare to spawn
 # (checked once per cycle only while no storm is active), rare to strike once present,
