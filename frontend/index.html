@@ -427,6 +427,18 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
 
 const RESOURCE_ICON = { wood: "🪵", stone: "🪨", food: "🍖", water: "💧" };
 
+// Explicit request: "The Forge isn't recognizing all the different types of
+// Ore so it's stockpiling yet, we do not have it on the resources icon/count
+// line in the sidebar, which we should." Ore was never a dedicated field --
+// it lives in t.unique_resources[t.mine_resource_name] (a single, per-biome
+// named resource per tribe, not multiple distinct ore types) -- surfaced here
+// the same way wood/stone/food/water already are, once a Mine actually stands.
+function oreLine(t) {
+  if (!t.mine_built || !t.mine_resource_name) return "";
+  const amount = (t.unique_resources && t.unique_resources[t.mine_resource_name]) || 0;
+  return `&nbsp;💎 ${amount} ${escapeHtml(t.mine_resource_name)}`;
+}
+
 function renderEraLadder(state) {
   const ladder = document.getElementById("era-ladder");
   if (!ladder) return;
@@ -3016,6 +3028,7 @@ function updateSidebar(state) {
           <div class="resources">
             (${t.x}, ${t.y}) · ${t.model} · Pop ${t.population}<br>
             🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${t.food} &nbsp;💧 ${t.water}
+            ${oreLine(t)}
             ${t.chief_name ? `<br><span class="chief-line">👑 ${t.chief_name} — ${t.chief_philosophy}</span>` : ""}
             ${t.chief_victory ? `<br><span class="chief-line">⚔️ ${t.chief_victory}</span>` : ""}
             ${t.chief_decree ? `<br><span class="chief-line">📜 decreed: ${t.chief_decree}</span>` : ""}
