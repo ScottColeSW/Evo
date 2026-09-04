@@ -2257,6 +2257,22 @@ def test_apply_turn_records_last_decision_target_for_every_action():
     assert tribe.last_decision_target == [20, 30]
 
 
+def test_apply_turn_bounces_a_wildly_out_of_range_target_back_into_the_grid():
+    """Live feedback: "the bounds-safe function is too loose at the edges of our
+    board." A hallucinated out-of-range target_vector used to ride through
+    completely unclamped into tribe.last_target (and every action handler) -- only
+    last_decision_target, which exists purely for offline analysis, is meant to
+    keep the raw, untouched submission."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    ctx = {"biome": "forest", "available_actions": ["RELOCATE"]}
+
+    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [500, -50]}, 10.0, ctx)
+
+    assert tribe.last_decision_target == [500, -50]  # raw model output preserved for analysis
+    assert tribe.last_target == [0, 50]  # 500 -> 2*99-500 clamped to 0; -50 -> 50
+
+
 def test_only_relocate_moves_the_tribe_via_apply_turn():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]

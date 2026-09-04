@@ -2636,6 +2636,19 @@ class Simulation:
         # holding a mechanically-corrected value instead.
         tribe.last_decision_target = [target[0], target[1]]
 
+        # Explicit request: "the bounds-safe function is too loose at the edges of
+        # our board." Everything from here down used `target` completely unclamped
+        # -- a hallucinated out-of-range coordinate from a small model rode straight
+        # through into tribe.last_target and every action handler. last_decision_
+        # target (above) deliberately keeps the untouched raw value for offline
+        # analysis; `target` itself now bounces back inward the same way SCOUT/
+        # EXPLORATION_PARTY's own compass targets already do, instead of nothing at
+        # all.
+        target = (
+            physics.reflect_into_grid(target[0], self.world.grid_size),
+            physics.reflect_into_grid(target[1], self.world.grid_size),
+        )
+
         # Only RELOCATE actually moves the tribe -- everything else happens wherever it
         # currently stands. last_target/journey_note (see _prepare_turn) specifically
         # track an in-progress relocation, not just whatever coordinate a GATHER_WOOD

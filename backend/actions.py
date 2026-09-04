@@ -1015,22 +1015,11 @@ def _generate_scout(tribe, cycle: int, base_days: int = None) -> dict:
     }
 
 
-def _reflect_into_grid(value: int, grid_size: int) -> int:
-    """Bug report: "at least 5 quarries on the map edge... this random distribution
-    of stuff to find is wrong." A raw SCOUT target beyond the grid used to be
-    hard-clamped straight onto the boundary value (0 or grid_size-1) -- every
-    heading whose patrol distance overshot the same edge collapsed onto that
-    identical coordinate, so a tribe scouting repeatedly toward real mountains near
-    the map's own edge kept "discovering" the exact same x=0 quarry site over and
-    over, only the other axis varying. Reflecting the overshoot back inward instead
-    (like a ray bouncing off a wall, not sliding down it) gives each distinct
-    heading a genuinely different landing point."""
-    bound = grid_size - 1
-    if value < 0:
-        return min(bound, -value)
-    if value > bound:
-        return max(0, 2 * bound - value)
-    return value
+# Moved to physics.reflect_into_grid so RELOCATE's raw model target (simulation.py)
+# and _hunting_party's own target (below) can reuse it too -- kept as a thin alias
+# here since this is where it originated and existing callers/tests import it from
+# this module.
+_reflect_into_grid = physics.reflect_into_grid
 
 
 def _scout(sim, tribe, biome, target):
@@ -1186,8 +1175,12 @@ def _hunting_party(sim, tribe, biome, target):
         return f"no one left to send -- every party is already out: {fields}"
 
     tx, ty = target
-    tx = max(0, min(sim.world.grid_size - 1, tx))
-    ty = max(0, min(sim.world.grid_size - 1, ty))
+    # Explicit request: "the bounds-safe function is too loose at the edges of our
+    # board." A plain clamp here collapsed any model-chosen overshoot onto the exact
+    # boundary tile -- the same class of bug _reflect_into_grid was already built to
+    # fix for SCOUT/EXPLORATION_PARTY's own targets.
+    tx = _reflect_into_grid(tx, sim.world.grid_size)
+    ty = _reflect_into_grid(ty, sim.world.grid_size)
     scout = _generate_scout(tribe, sim.cycle, base_days=config.HUNTING_PARTY_MAX_DAYS)
     tribe.expeditions.append({
         "kind": "hunt",

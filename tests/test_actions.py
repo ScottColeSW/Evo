@@ -2814,6 +2814,20 @@ def test_hunting_party_does_not_move_the_tribe_but_launches_an_expedition():
     assert "depart" in note
 
 
+def test_hunting_party_bounces_an_out_of_range_target_instead_of_clamping_to_the_edge():
+    """Live feedback: "the bounds-safe function is too loose at the edges of our
+    board." A plain clamp collapsed every overshoot onto the identical boundary
+    tile -- the same bug _reflect_into_grid already fixed for SCOUT. HUNTING_PARTY
+    trusts the model's own target_vector (unlike SCOUT's compass math), so it needs
+    the same treatment for whatever wild coordinate a small model might submit."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (-9, 108))
+
+    assert tribe.expeditions[0]["target"] == [9, 90]  # -9 -> 9; 108 -> 2*99 - 108 = 90
+
+
 def test_hunting_party_launch_uses_its_own_max_days_baseline():
     from backend import config
 

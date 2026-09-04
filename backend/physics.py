@@ -41,6 +41,27 @@ def terrain_aware_step(
     return x, y  # boxed in by ocean on every axis -- stay put rather than swim
 
 
+def reflect_into_grid(value: int, grid_size: int) -> int:
+    """Bounces an out-of-range coordinate back inward off the grid edge, like a ray
+    bouncing off a wall, rather than hard-clamping it onto the boundary value.
+
+    Originally actions.py._reflect_into_grid, built for SCOUT's own compass-sweep
+    target (bug report: "at least 5 quarries on the map edge... this random
+    distribution of stuff to find is wrong" -- every overshooting heading collapsed
+    onto the identical x=0/x=grid_size-1 coordinate under a plain clamp, so a tribe
+    scouting repeatedly toward real terrain near the map's edge kept "discovering"
+    the exact same site over and over). Moved here so it's reusable anywhere a raw
+    coordinate needs to land safely in-grid, not just from actions.py's own compass
+    math -- actions.py keeps a thin `_reflect_into_grid` alias for its existing
+    callers/tests."""
+    bound = grid_size - 1
+    if value < 0:
+        return min(bound, -value)
+    if value > bound:
+        return max(0, 2 * bound - value)
+    return value
+
+
 def extend_ray_to_grid_edge(ox: int, oy: int, tx: int, ty: int, grid_size: int) -> tuple[int, int]:
     """Projects the ray from (ox, oy) through (tx, ty) out to wherever it first hits
     the edge of the grid, preserving direction. Used when a scouting expedition
