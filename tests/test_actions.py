@@ -1724,6 +1724,46 @@ def test_relocate_moves_five_times_as_fast_from_an_evolved_toll_road():
     assert expected_speed > config.MOVEMENT_SPEED * config.TOLL_ROAD_SPEED_MULTIPLIER - 1  # genuinely ~5x, not 1x
 
 
+def test_relocate_clamps_to_the_tribes_own_territory_once_founded():
+    """Live bug: a single RELOCATE step can cover 15-20+ tiles with trail/toll-road
+    speed bonuses stacked -- a live run showed this carrying an already-settled
+    tribe clean outside its own walls in one turn, permanently detached from its
+    own territory_center (every future build kept landing back at the old,
+    abandoned spot). Once territory is founded, RELOCATE should never be able to
+    step the tribe outside its own territory_radius."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.territory_radius = 12
+    # A toll road under them plus a maxed trail bonus -- the same stacked-speed
+    # scenario that produced the live 19-tile jump.
+    for _ in range(config.ROAD_EVOLVE_CROSSINGS + 1):
+        sim.world.wear_trail(50, 50, 0.01, tribe_id=tribe.id)
+
+    ACTION_REGISTRY["RELOCATE"](sim, tribe, "plains", (99, 50))
+
+    dist = ((tribe.x - 50) ** 2 + (tribe.y - 50) ** 2) ** 0.5
+    assert dist <= tribe.territory_radius + 0.01  # rounding slack only
+    assert tribe.x > 50  # still moved meaningfully toward the target, just capped
+
+
+def test_relocate_is_unbounded_before_any_territory_is_founded():
+    """The clamp only applies once a tribe actually has a territory_center
+    (Simulation._found_territory) -- ordinary pre-settlement wandering, which
+    this project has always left deliberately free, is untouched."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    assert tribe.territory_center is None
+
+    ACTION_REGISTRY["RELOCATE"](sim, tribe, "plains", (80, 50))
+
+    assert tribe.x == 50 + config.MOVEMENT_SPEED  # plain speed, no clamp applied
+
+
 def test_relocate_costs_stamina():
     """Without a cost here, RELOCATE would be strictly free compared to every gathering
     action, which all cost time and risk -- marching should be tiring."""

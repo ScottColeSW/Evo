@@ -1225,6 +1225,26 @@ def _relocate(sim, tribe, biome, target):
         base_speed *= config.TOLL_ROAD_SPEED_MULTIPLIER
     nx, ny = physics.terrain_aware_step(tribe.x, tribe.y, tx, ty, base_speed=base_speed, has_boat=tribe.boat_built)
     nx, ny = sim._resolve_toll(tribe, tribe.x, tribe.y, nx, ny)
+    # Live bug: territory/wall_rings/buildings are placed once, permanently, at
+    # tribe.territory_center the instant a tribe first settles (Simulation.
+    # _found_territory) -- "territory is not founded until settled," so this only
+    # ever applies afterward, never during ordinary pre-settlement wandering. A
+    # single RELOCATE step can cover 15-20+ tiles with trail/toll-road speed
+    # bonuses stacked, which a live run showed carrying an already-settled tribe
+    # clean outside its own walls in one turn -- cycles_since_relocate didn't even
+    # reset (both ends of the jump independently qualified as "settled enough"
+    # ground), so the tribe was left permanently detached from its own city:
+    # every future build kept landing back at the abandoned territory_center,
+    # nowhere near where the tribe actually stood. Clamped to the tribe's own
+    # territory_radius instead of left unbounded -- a settled tribe can still
+    # move freely anywhere within its own city, just can't step outside it.
+    if tribe.territory_center is not None:
+        tcx, tcy = tribe.territory_center
+        dist = ((nx - tcx) ** 2 + (ny - tcy) ** 2) ** 0.5
+        if dist > tribe.territory_radius:
+            scale = tribe.territory_radius / dist
+            nx = round(tcx + (nx - tcx) * scale)
+            ny = round(tcy + (ny - tcy) * scale)
     sim.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
     tribe.x, tribe.y = nx, ny
     return None

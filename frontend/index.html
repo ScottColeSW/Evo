@@ -86,6 +86,13 @@
   #inject-tribe-row select { flex: 1; }
   #btn-inject-tribe { background: #4338ca; color: white; padding: 6px 10px; font-size: 12px; flex-shrink: 0; }
 
+  /* Live report: "The Establishments section is reversed" / "All clearly in the
+     Forest Tribe" -- #tribe-stats had no layout of its own, so its multiple
+     .stat-card children (one per tribe, appended via innerHTML +=) stacked with
+     zero gap and no border between them. Against the same dark background,
+     two tribes' cards ran together into what read as one merged block --
+     never a data or ordering bug, just no visible seam telling them apart. */
+  #tribe-stats { display: flex; flex-direction: column; gap: 12px; }
   .stat-card { background: #222232; padding: 10px; border-radius: 6px; font-size: 12px; border-left: 4px solid #6366f1; }
   .stat-card .stat-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
   .stat-card .era-pill { font-size: 10px; background: #2a2a3a; color: #a5b4fc; padding: 2px 6px; border-radius: 10px; white-space: nowrap; }
@@ -2161,20 +2168,45 @@ function orderRoutePoints(component) {
 
 function drawPavedSwath(points) {
   if (points.length === 0) return;
-  const px = points.map(p => [p.x * TILE + TILE / 2, p.y * TILE + TILE / 2]);
   const roadWidth = TILE * 0.85;
+  if (points.length === 1) {
+    // An isolated toll tile with no connected neighbor left (its own crossing
+    // count never decays, but a never-toll neighbor can still wear away --
+    // World.decay_trails) -- a butt-capped zero-length stroke would render as
+    // nothing at all, so draw it as a small paved disc instead of a line.
+    const [cx, cy] = [points[0].x * TILE + TILE / 2, points[0].y * TILE + TILE / 2];
+    const [er, eg, eb] = TOLL_ROAD_JOINT;
+    const [br, bg, bb] = TOLL_ROAD_BASE;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, roadWidth / 2 + Math.max(1, TILE * 0.08), 0, Math.PI * 2);
+    ctx.fillStyle = `rgb(${er}, ${eg}, ${eb})`;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy, roadWidth / 2, 0, Math.PI * 2);
+    ctx.fillStyle = `rgb(${br}, ${bg}, ${bb})`;
+    ctx.fill();
+    ctx.strokeStyle = "#fbbf24";
+    ctx.globalAlpha = 0.85;
+    ctx.lineWidth = Math.max(1, TILE * 0.08);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  const px = points.map(p => [p.x * TILE + TILE / 2, p.y * TILE + TILE / 2]);
   const tracePx = () => {
     ctx.beginPath();
-    if (px.length === 1) {
-      ctx.moveTo(px[0][0] - 0.01, px[0][1]);
-      ctx.lineTo(px[0][0] + 0.01, px[0][1]);
-    } else {
-      ctx.moveTo(px[0][0], px[0][1]);
-      for (let i = 1; i < px.length; i++) ctx.lineTo(px[i][0], px[i][1]);
-    }
+    ctx.moveTo(px[0][0], px[0][1]);
+    for (let i = 1; i < px.length; i++) ctx.lineTo(px[i][0], px[i][1]);
   };
   ctx.save();
-  ctx.lineCap = "round";
+  // Live report: "we need to visually clip the ends of the roads so we don't
+  // have object overlap" -- a round cap extends the stroke roughly half the
+  // road's own width past its real start/end tile, bleeding into whatever
+  // sits right there (a tribe's own camp, a building). Butt caps end the
+  // swath exactly at its real endpoints; interior joints stay round (lineJoin,
+  // unaffected by this) so the path itself still reads as one smooth line.
+  ctx.lineCap = "butt";
   ctx.lineJoin = "round";
   // Darker edge first (wider), then the paved fill on top (narrower) -- same
   // "border, then fill" trick the wall's own stroke uses to read as a defined
