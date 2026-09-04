@@ -214,14 +214,64 @@ def test_regeneration_fully_clears_a_tile_eventually():
     assert ("wood", 10, 10) not in land.depletion  # cleaned up, not just floored at 0
 
 
-def test_biome_at_covers_all_six_regions():
+def test_biome_at_covers_all_eight_regions():
+    # (10, 10) moved from "mountains" to "volcano" once VOLCANO_CENTER=(10, 12)/
+    # VOLCANO_RADIUS=4 was added (map dream, phase 1) -- (10, 40) is still real
+    # mountains, comfortably outside the volcano's radius. (50, 90) moved from
+    # "plains" to "desert" once DESERT_NORTH_BOUNDARY_BASE=78 carved out the
+    # southern band -- (50, 70) is still real plains, north of that boundary.
     assert biome_at(80, 10) == "forest"
-    assert biome_at(10, 10) == "mountains"
-    assert biome_at(50, 90) == "plains"
+    assert biome_at(10, 40) == "mountains"
+    assert biome_at(50, 70) == "plains"
     assert biome_at(40, 37) == "river"
     assert biome_at(95, 50) == "ocean"
+    assert biome_at(50, 90) == "desert"
+    assert biome_at(10, 10) == "volcano"
     from backend.world import LAKE_CENTER
     assert biome_at(*LAKE_CENTER) == "lake"
+
+
+def test_desert_zone_does_not_swallow_ground_north_of_its_boundary():
+    """Map dream, phase 1: Desert claims the southern band that would otherwise
+    fall through to forest/plains -- a point clearly north of
+    DESERT_NORTH_BOUNDARY_BASE (78) at the same x must stay whatever it already
+    was, not flip to desert."""
+    from backend.world import _desert_north_boundary
+
+    x = 50
+    boundary = _desert_north_boundary(x)
+    assert biome_at(x, round(boundary) + 5) == "desert"
+    assert biome_at(x, round(boundary) - 5) != "desert"
+
+
+def test_volcano_zone_is_a_clean_circle_around_its_center():
+    """Map dream, phase 1: "the volcano is a Hazard they will die if they go
+    there" -- a small, fixed circle (not a wavy boundary, this is a one-off
+    feature, not an organic terrain type)."""
+    from backend.world import VOLCANO_CENTER, VOLCANO_RADIUS
+
+    vx, vy = VOLCANO_CENTER
+    assert biome_at(vx, vy) == "volcano"
+    assert biome_at(vx + VOLCANO_RADIUS, vy) == "volcano"  # right at the edge
+    assert biome_at(vx + VOLCANO_RADIUS + 3, vy) != "volcano"  # clearly outside
+
+
+def test_desert_and_volcano_movement_and_yields_are_harsh():
+    """Explicit request: Desert is a real, harsh biome (slower, low-yield), not
+    just a recolor. Volcano keeps a real, non-zero movement multiplier -- a 0.0
+    (like ocean's) would make physics.terrain_aware_step treat it as impassable
+    and deflect around it, making the hazard (config.VOLCANO_HAZARD_CHANCE)
+    unreachable and moot."""
+    from backend.actions import BIOME_YIELD_MULTIPLIER
+
+    assert config.TERRAIN_MOVEMENT_MULTIPLIER["desert"] < config.TERRAIN_MOVEMENT_MULTIPLIER["plains"]
+    assert 0.0 < config.TERRAIN_MOVEMENT_MULTIPLIER["volcano"] < config.TERRAIN_MOVEMENT_MULTIPLIER["plains"]
+    for resource in ("wood", "stone", "game", "forage"):
+        assert "desert" in BIOME_YIELD_MULTIPLIER[resource]
+        assert "volcano" in BIOME_YIELD_MULTIPLIER[resource]
+    assert "desert" not in config.FARMABLE_BIOMES
+    assert "desert" not in config.UNBUILDABLE_BIOMES  # harsh, but buildable -- mirrors mountains
+    assert "volcano" in config.UNBUILDABLE_BIOMES  # lethal ground, unlike mountains
 
 
 def test_lake_center_and_its_tributary_are_lake_biome():

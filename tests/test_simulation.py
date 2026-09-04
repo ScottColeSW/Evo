@@ -346,7 +346,7 @@ def test_unfinished_wall_hides_long_house_from_the_menu_without_nagging_about_it
     for anything the menu-hiding didn't already solve."""
     from backend import config
 
-    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, farmable
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])  # plains, farmable
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
@@ -377,7 +377,7 @@ def test_wall_progress_fact_notes_natural_barriers_separately_from_the_real_coun
     fraction that reads as partial progress."""
     from backend import config
 
-    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, farmable
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])  # plains, farmable
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
@@ -401,7 +401,7 @@ def test_no_wall_started_yet_nudges_toward_construct_wall():
     specifically."""
     from backend import config
 
-    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
@@ -453,7 +453,7 @@ def test_quarry_nudge_requires_a_real_successful_stone_gather():
     """Explicit correction: "the Sawmill is... online easily if they Gather Wood
     successfully" (and the same for Quarry/stone) replaced the old Long House/
     fishing/scouted-site gate -- the nudge follows the same real success flag."""
-    sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])
+    sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.has_ever_settled = True
@@ -472,7 +472,7 @@ def test_quarry_nudge_requires_a_real_successful_stone_gather():
 
 
 def test_sawmill_nudge_requires_a_real_successful_wood_gather():
-    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.has_ever_settled = True
@@ -493,7 +493,7 @@ def test_sawmill_nudge_requires_a_real_successful_wood_gather():
 def test_finished_wall_nudges_toward_a_long_house_then_reinforcement():
     from backend import config
 
-    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, farmable
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])  # plains, farmable
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
@@ -514,7 +514,7 @@ def test_finished_wall_nudges_toward_a_long_house_then_reinforcement():
 def test_long_house_count_nudges_toward_keep_then_fortress_then_castle():
     from backend import config
 
-    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
     tribe = sim.tribes["tribe_0"]
     tribe.era = "monolithic_era"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
@@ -538,7 +538,7 @@ def test_long_house_count_nudges_toward_keep_then_fortress_then_castle():
 def test_torches_and_moat_nudge_once_wall_is_fully_reinforced():
     from backend import config
 
-    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
@@ -929,7 +929,7 @@ def test_wildlife_sighting_names_a_species_from_the_richest_nearby_biomes_pool()
     """Regression guard: the sighting used to always say 'deer' regardless of where the
     tribe actually stood, keyed only off whichever hunting action was unlocked. It
     should now reflect the biome that actually produced the sighting."""
-    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True  # HUNT_DEER isn't in the pre-settlement action set
 
@@ -956,7 +956,7 @@ def test_unsettled_tribe_cannot_gather_wood_or_stone():
 def test_settled_tribe_on_farmable_ground_can_gather_wood_and_stone():
     from backend import config
 
-    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])  # plains
     tribe = sim.tribes["tribe_0"]
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.has_ever_settled = True  # isolate this test from the pre-settlement gate
@@ -985,7 +985,7 @@ def test_farming_and_eggs_available_once_settled_even_away_from_water():
     Settled gate," same general condition GATHER_WOOD/STONE already use."""
     from backend import config
 
-    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])  # plains, not water
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
@@ -997,7 +997,7 @@ def test_farming_and_eggs_available_once_settled_even_away_from_water():
 
 
 def test_farming_and_eggs_locked_before_any_settling():
-    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])  # plains, not water
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     assert tribe.cycles_since_relocate == 0  # freshly founded, not yet settled
@@ -1993,7 +1993,7 @@ def test_settled_but_not_near_water_can_still_relocate():
     can still choose to move on."""
     from backend import config
 
-    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])  # plains, not water
     tribe = sim.tribes["tribe_0"]
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.has_ever_settled = True  # isolate this test from the pre-settlement gate
@@ -2808,12 +2808,15 @@ def test_expedition_gives_up_upon_reaching_the_edge_of_the_world():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.expeditions = [{
-        # One EXPEDITION_SPEED (10) step from here lands exactly on the target, which
-        # happens to be the grid's literal edge -- same unified "reached the assigned
-        # point, turn back" handling as reaching an ordinary (non-edge) patrol target.
-        # South (increasing y) rather than east: x=99 is past OCEAN_X_START and would
-        # be deflected by the impassable-ocean physics, never actually arriving.
-        "pos": [50, 89], "origin": [50, 50], "target": [50, 99],
+        # One day's step from here lands exactly on the target, which happens to
+        # be the grid's literal edge -- same unified "reached the assigned
+        # point, turn back" handling as reaching an ordinary (non-edge) patrol
+        # target. South (increasing y) rather than east: x=99 is past
+        # OCEAN_X_START and would be deflected by the impassable-ocean physics,
+        # never actually arriving. Distance is 5, not EXPEDITION_SPEED's full 10
+        # -- (50, 94)-(50, 99) is desert (map dream, phase 1), whose
+        # TERRAIN_MOVEMENT_MULTIPLIER (0.5) halves the effective daily speed.
+        "pos": [50, 94], "origin": [50, 50], "target": [50, 99],
         "day": 4, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
@@ -4923,7 +4926,7 @@ def test_night_inventory_reports_the_real_state_of_affairs():
 def test_night_inventory_reports_settlement_when_actually_settled():
     from backend import config
 
-    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])  # plains
     tribe = sim.tribes["tribe_0"]
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
 
@@ -5974,7 +5977,7 @@ def test_catch_fish_gated_the_same_as_farming_and_eggs():
     """Explicit correction: PLANT_CROP/GATHER_EGGS/CATCH_FISH used to require the
     stricter settled_near_water check -- "the requirement of 'real' water is bogus,
     this is a Settled gate," same general condition as GATHER_WOOD/STONE."""
-    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])  # plains, not water
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     assert tribe.cycles_since_relocate == 0  # freshly founded, not yet settled
@@ -5987,7 +5990,7 @@ def test_catch_fish_gated_the_same_as_farming_and_eggs():
 def test_catch_fish_available_once_settled_even_away_from_water():
     from backend import config
 
-    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 85}])  # plains, not water
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])  # plains, not water
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
@@ -6929,7 +6932,74 @@ def test_drowning_hazard_never_fires_off_river():
 
     assert note is None
     assert tribe.population == 10
-    assert tribe.water == 34  # 30 + round(3 * 1.25 labor multiplier at population 10)
+
+
+def test_volcano_hazard_fires_on_volcano_ground():
+    """Explicit correction: "the volcano is a Hazard they will die if they go
+    there." Same shape as the river's own drowning hazard, far more severe."""
+    from backend import config
+    from backend.world import VOLCANO_CENTER
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    vx, vy = VOLCANO_CENTER
+
+    with mock.patch("backend.simulation.random.random", return_value=0.01):
+        fired = sim._volcano_hazard(tribe, vx, vy)
+
+    assert fired is True
+    assert tribe.population == 10 - config.VOLCANO_HAZARD_POPULATION_LOSS
+    assert any("volcano" in entry for entry in tribe.history)
+    assert "DREAD" in sim.trauma.bias_string(vx, vy)
+
+
+def test_volcano_hazard_never_fires_off_volcano_ground():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+
+    with mock.patch("backend.simulation.random.random", return_value=0.01):
+        fired = sim._volcano_hazard(tribe, 50, 50)  # plains, not volcano ground
+
+    assert fired is False
+    assert tribe.population == 10
+
+
+def test_volcano_hazard_respects_its_own_chance_roll():
+    from backend.world import VOLCANO_CENTER
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    vx, vy = VOLCANO_CENTER
+
+    with mock.patch("backend.simulation.random.random", return_value=0.99):  # misses even the 75% chance
+        fired = sim._volcano_hazard(tribe, vx, vy)
+
+    assert fired is False
+    assert tribe.population == 10
+
+
+def test_relocate_onto_volcano_ground_costs_population():
+    """Explicit correction: unlike the river's drowning hazard (expedition
+    movement only), RELOCATE landing a tribe on the volcano carries the same
+    real risk -- "if they go there" has to cover every real way a tribe's
+    people could end up on that tile."""
+    from backend import config
+    from backend.actions import ACTION_REGISTRY
+    from backend.world import VOLCANO_CENTER
+
+    sim = _bare_simulation()
+    vx, vy = VOLCANO_CENTER
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", vx - 1, vy, "#c084fc")
+    tribe.population = 10
+
+    with mock.patch("backend.simulation.random.random", return_value=0.01):
+        ACTION_REGISTRY["RELOCATE"](sim, tribe, "plains", (vx, vy))
+
+    assert (tribe.x, tribe.y) == (vx, vy)
+    assert tribe.population == 10 - config.VOLCANO_HAZARD_POPULATION_LOSS
 
 
 def test_reaching_monolithic_era_marks_city_founding_eligible_but_not_yet_founded():

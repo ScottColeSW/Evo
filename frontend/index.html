@@ -259,6 +259,7 @@
           <div class="icon-key-row"><span class="icon-key-icon">🐺</span> Wolf pack attack</div>
           <div class="icon-key-row"><span class="icon-key-icon">🏚️</span> Raidable minor settlement</div>
           <div class="icon-key-row"><span class="icon-key-icon">💀</span> Extinct tribe</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🌋</span> Volcano — deadly ground, real risk of loss</div>
 
           <div class="icon-key-section">Movement</div>
           <div class="icon-key-row"><span class="icon-key-swatch icon-key-swatch-dot"></span> A tribe's own people (tribe color)</div>
@@ -893,6 +894,10 @@ const LAKE_TRIBUTARY_BRANCH_X = 35, LAKE_CENTER = [25, 65], LAKE_RADIUS = 7, LAK
 // The coast is wavy, not a straight line -- mirrors world.py's _coast_boundary_x/
 // _coast_is_headland exactly.
 const COAST_BAND_WIDTH = 3;
+// Map dream, phase 1 -- mirrors world.py's VOLCANO_CENTER/_RADIUS and
+// DESERT_NORTH_BOUNDARY_BASE exactly.
+const VOLCANO_CENTER = [10, 12], VOLCANO_RADIUS = 4;
+const DESERT_NORTH_BOUNDARY_BASE = 78;
 
 function riverCenterY(x) {
   const span = OCEAN_X_START - RIVER_SOURCE_X;
@@ -918,6 +923,17 @@ function isLake(x, y) {
   const t = Math.max(0, Math.min(1, ((x - bx) * dx + (y - by) * dy) / lengthSq));
   const projX = bx + t * dx, projY = by + t * dy;
   return Math.hypot(x - projX, y - projY) <= LAKE_TRIBUTARY_HALF_WIDTH;
+}
+
+// Mirrors world.py's _is_volcano exactly.
+function isVolcano(x, y) {
+  const [vx, vy] = VOLCANO_CENTER;
+  return Math.hypot(x - vx, y - vy) <= VOLCANO_RADIUS;
+}
+
+// Mirrors world.py's _desert_north_boundary exactly.
+function desertNorthBoundary(x) {
+  return DESERT_NORTH_BOUNDARY_BASE + 5 * Math.sin(x * 0.06) + 2 * Math.sin(x * 0.17 + 0.6);
 }
 
 function coastBoundaryX(y) {
@@ -1003,7 +1019,9 @@ function biomeNameAt(x, y) {
   if (x >= boundary) return "ocean";
   if (boundary - x <= COAST_BAND_WIDTH) return coastIsHeadland(y) ? "cliffs" : "shoals";
   if (isLake(x, y)) return "lake";
+  if (isVolcano(x, y)) return "volcano";
   if (x < mountainXBoundary(y) && y < mountainYBoundary(x)) return "mountains";
+  if (y >= desertNorthBoundary(x)) return "desert";
   if (y < forestNorthBoundary(x) || x >= forestEastBoundary(y)) return "forest";
   return "plains";
 }
@@ -1037,6 +1055,12 @@ function biomeColor(biome) {
     case "shoals": return "#c9b285";
     case "mountains": return "#3a3a42";
     case "forest": return "#14321e";
+    // Map dream, phase 1. Desert: warm orange-tan, distinct from shoals' cooler
+    // sandy tan above. Volcano: dark red/maroon -- a real hazard, not a mountain
+    // reskin (see config.VOLCANO_HAZARD_CHANCE), so it needs to read as
+    // dangerous at a glance, not just "different."
+    case "desert": return "#c17a4a";
+    case "volcano": return "#4a1414";
     default: return "#224d1a";
   }
 }
@@ -1075,6 +1099,29 @@ function drawResourceDecoration(tctx, x, y, biome, px, py) {
     tctx.moveTo(px + TILE * 0.62, py + TILE * 0.9);
     tctx.lineTo(px + TILE * 0.67, py + TILE * 0.4);
     tctx.stroke();
+  } else if (biome === "desert" && roll < 0.2) {
+    // Explicit request: Desert is a real, harsh biome -- sparse scrub/rock, not
+    // the lush look forest/plains get. Low chance, since a desert should read
+    // as mostly bare ground with the occasional feature, not tiled vegetation.
+    tctx.fillStyle = "#8a5a35";
+    tctx.beginPath();
+    tctx.arc(px + TILE * 0.5, py + TILE * 0.65, TILE * 0.12, 0, 2 * Math.PI);
+    tctx.fill();
+  } else if (biome === "shoals" && roll < 0.35) {
+    // Explicit request: "Beach is only in name, nothing to find" -- shoals
+    // already has the right sandy color and mechanics; it just had zero
+    // decorative texture before this. A light grain speckle, not a shape, so it
+    // reads as sand rather than another biome's tileable flora.
+    // Live-verified (pixel sampling): TILE*0.05 rendered sub-pixel and nearly
+    // invisible at typical map zoom (TILE ~8px) -- sized up to match the other
+    // decorations' scale (desert's own dot above is TILE*0.12).
+    tctx.fillStyle = "rgba(255,255,255,0.4)";
+    tctx.beginPath();
+    tctx.arc(px + TILE * 0.3, py + TILE * 0.4, TILE * 0.1, 0, 2 * Math.PI);
+    tctx.fill();
+    tctx.beginPath();
+    tctx.arc(px + TILE * 0.65, py + TILE * 0.7, TILE * 0.1, 0, 2 * Math.PI);
+    tctx.fill();
   }
 }
 
@@ -1091,6 +1138,14 @@ function renderTerrainCache() {
       drawResourceDecoration(tctx, x, y, biome, px, py);
     }
   }
+  // Explicit request: "I added an inactive volcano for a look." One single
+  // marker at its exact center, not a per-tile repeated texture like the
+  // biomes above -- this is one decorative feature, not a tileable biome look.
+  const [volcX, volcY] = VOLCANO_CENTER;
+  tctx.font = `${TILE * 3}px sans-serif`;
+  tctx.textAlign = "center";
+  tctx.textBaseline = "middle";
+  tctx.fillText("🌋", volcX * TILE + TILE / 2, volcY * TILE + TILE / 2);
 }
 
 // Deterministic pseudo-random in [0, 1) from a string -- same tribe+index always gets the

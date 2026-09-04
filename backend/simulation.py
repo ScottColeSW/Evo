@@ -3018,6 +3018,13 @@ class Simulation:
             self._check_road_evolution(nx, ny)
             exp["pos"] = [nx, ny]
             exp["path"].append([nx, ny])
+            # Explicit correction: "the volcano is a Hazard they will die if they
+            # go there." Unlike the river's drowning risk (only ever checked on
+            # the outbound leg inside the water-sensing branch below, since a
+            # volcano tile can never register as "sensed water"), this needs an
+            # unconditional check here so an outbound leg crossing volcano ground
+            # carries the same real risk the returning leg already does (below).
+            self._volcano_hazard(tribe, nx, ny)
             exp["food_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_FOOD
             # Explicit correction: "foragers do not need to bring water back
             # once they are settled, they should start bringing back
@@ -3139,6 +3146,7 @@ class Simulation:
             if not self._is_settled_near_water(tribe):  # see the matching outbound-leg comment above
                 exp["water_gathered"] += config.EXPEDITION_RETURN_DAILY_WATER
             self._expedition_river_hazard(tribe, nx, ny)
+            self._volcano_hazard(tribe, nx, ny)
             self._expedition_raider_ambush(tribe, exp, nx, ny)
             if [nx, ny] == [ox, oy]:
                 # Whatever was foraged along the way comes home regardless of whether the
@@ -3340,6 +3348,28 @@ class Simulation:
         )
         return True
 
+    def _volcano_hazard(self, tribe: Tribe, x: int, y: int) -> bool:
+        """Explicit correction: "the volcano is a Hazard they will die if they go
+        there." Same shape as _expedition_river_hazard just above, far more
+        severe (config.VOLCANO_HAZARD_CHANCE/_POPULATION_LOSS vs. drowning's own
+        DROWNING_HAZARD_CHANCE/_POPULATION_LOSS) -- this needs to read as a
+        serious, well-known danger, not a mild river crossing. Called from every
+        real way a tribe's people could end up on that tile: expedition movement
+        (the same two call sites _expedition_river_hazard already hooks) and
+        RELOCATE (actions._relocate) -- broader coverage than the river hazard
+        gets, since "if they go there" has to mean any of them, not just an
+        expedition passing through."""
+        if biome_at(x, y) != "volcano" or random.random() >= config.VOLCANO_HAZARD_CHANCE:
+            return False
+        self.trauma.radiate_event_wave(x, y, config.VOLCANO_TRAUMA_MAGNITUDE, config.VOLCANO_TRAUMA_RADIUS)
+        self._lose_population(tribe, config.VOLCANO_HAZARD_POPULATION_LOSS, cause="volcano")
+        tribe.history.append(f"the volcano's toxic fumes and scalding ground claimed lives near ({x},{y}) -- the survivors flee, warning the rest to stay away")
+        tribe.memory.remember(
+            f"The volcano near ({x},{y}) is deadly -- real danger there, stay away.",
+            self.cycle, weight=0.9,
+        )
+        return True
+
     def _record_raider_sighting(self, tribe: Tribe, x: int, y: int) -> None:
         """Shared by both places a raider sighting gets logged (a scout's report and
         an in-field ambush). Caps the list at config.RAIDER_SIGHTING_MAX_REMEMBERED,
@@ -3409,6 +3439,9 @@ class Simulation:
         the party makes it all the way home (see _report_hunting_party_home)."""
         px, py = exp["pos"]
         if self._expedition_river_hazard(tribe, px, py):
+            exp["phase"] = "returning"
+            return
+        if self._volcano_hazard(tribe, px, py):
             exp["phase"] = "returning"
             return
 

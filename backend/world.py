@@ -13,6 +13,8 @@ BIOME_LABELS = {
     "ocean": "The Boundless Deep",
     "cliffs": "The Shattered Brink",
     "shoals": "The Glass Shallows",
+    "desert": "The Sunbaked Wastes",
+    "volcano": "The Smoldering Maw",
 }
 
 # Explicit request: "Mines can contain the Unique Resource of the Biome... you can
@@ -41,6 +43,11 @@ UNIQUE_RESOURCE_BY_BIOME = {
     "ocean": "Abyssal Pearl",
     "cliffs": "Brinkspar Crystal",
     "shoals": "Shoalglass",
+    "desert": "Duneglass",
+    # Dead code today, same as ocean/cliffs/shoals above -- volcano is in
+    # UNBUILDABLE_BIOMES (real hazard, see config.VOLCANO_HAZARD_CHANCE), so no
+    # Mine site can ever seed there. Kept only for symmetry with every other entry.
+    "volcano": "Cindermarrow",
 }
 
 # Earth-like hydrology: the river originates in the mountains (west) and winds its way
@@ -93,6 +100,15 @@ LAKE_CENTER = (25, 65)
 LAKE_RADIUS = 7
 LAKE_TRIBUTARY_HALF_WIDTH = 2
 
+# Map dream, phase 1: "the volcano is a Hazard they will die if they go there" --
+# a single, small, fixed decorative-but-lethal feature inside the existing
+# mountain region, not a wavy zone boundary (this is one place, not an organic
+# terrain type that should look different every map). Same circle-test shape as
+# the lake above, deliberately simpler than the sine-wave boundaries -- a one-off
+# feature reads better as a clean circle than an "organic" wobbly one.
+VOLCANO_CENTER = (10, 12)
+VOLCANO_RADIUS = 4
+
 
 def _river_center_y(x: int) -> float:
     span = OCEAN_X_START - RIVER_SOURCE_X
@@ -128,6 +144,11 @@ def _is_lake(x: int, y: int) -> bool:
     return math.hypot(x - proj_x, y - proj_y) <= LAKE_TRIBUTARY_HALF_WIDTH
 
 
+def _is_volcano(x: int, y: int) -> bool:
+    vx, vy = VOLCANO_CENTER
+    return math.hypot(x - vx, y - vy) <= VOLCANO_RADIUS
+
+
 # Mountains/forest/plains used to meet along perfectly straight, axis-aligned lines --
 # a real range or treeline never does. Same technique as the coastline above (two
 # overlapping sine waves of different periods, so the edge doesn't just repeat itself):
@@ -151,6 +172,14 @@ def _forest_east_boundary(y: float) -> float:
     return 70 + 4 * math.sin(y * 0.07 + 0.5) + 2 * math.sin(y * 0.21)
 
 
+def _desert_north_boundary(x: float) -> float:
+    """Map dream, phase 1: a real Desert zone in the south of the map. Same
+    "fixed constant + two sine waves" shape as every other wavy boundary above --
+    south of this line is desert, carved out of what would otherwise be
+    forest/plains fallthrough (checked before those two in biome_at, below)."""
+    return config.DESERT_NORTH_BOUNDARY_BASE + 5 * math.sin(x * 0.06) + 2 * math.sin(x * 0.17 + 0.6)
+
+
 def biome_at(x: int, y: int) -> str:
     # River is checked before the coast texture so its mouth cuts straight through to
     # the sea rather than being interrupted by a cliff/shoal band -- real river mouths
@@ -165,8 +194,17 @@ def biome_at(x: int, y: int) -> str:
         return "cliffs" if _coast_is_headland(y) else "shoals"
     if _is_lake(x, y):
         return "lake"
+    # Checked before mountains -- the volcano sits inside the mountain region and
+    # must win there (see VOLCANO_CENTER/_RADIUS's own comment).
+    if _is_volcano(x, y):
+        return "volcano"
     if x < _mountain_x_boundary(y) and y < _mountain_y_boundary(x):
         return "mountains"
+    # Checked before forest -- desert claims the southern band out of what would
+    # otherwise be forest/plains fallthrough; mountains (above) still wins
+    # regardless of geography since it's checked first.
+    if y >= _desert_north_boundary(x):
+        return "desert"
     if y < _forest_north_boundary(x) or x >= _forest_east_boundary(y):
         return "forest"
     return "plains"

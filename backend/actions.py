@@ -29,7 +29,7 @@ from .world import BIOME_LABELS, biome_at, mark_visited_sector, sector_of
 # this brings the other three in line with it.
 BIOME_YIELD_MULTIPLIER = {
     "wood": {"forest": 1.0, "plains": 0.4, "river": 0.3, "lake": 0.3, "mountains": 0.15,
-             "cliffs": 0.0, "shoals": 0.05, "ocean": 0.0},
+             "cliffs": 0.0, "shoals": 0.05, "ocean": 0.0, "desert": 0.05, "volcano": 0.0},
     # Live data, 2026-09-01: a tribe settled near a lake (not mountains -- settling is
     # already pulled hard toward confirmed water, which mountains rarely coincide with)
     # accumulated wood 4712 vs. stone 11 over ~600 cycles, and never built Quarry or
@@ -39,9 +39,14 @@ BIOME_YIELD_MULTIPLIER = {
     # stone, but a lake- or forest-settled tribe can now actually bootstrap a Quarry
     # instead of being structurally locked out of the entire stone-building tree.
     "stone": {"mountains": 1.0, "forest": 0.25, "plains": 0.25, "river": 0.25, "lake": 0.25,
-              "cliffs": 0.5, "shoals": 0.05, "ocean": 0.0},
+              "cliffs": 0.5, "shoals": 0.05, "ocean": 0.0, "desert": 0.15,
+              # Deliberately low, not mirrored from mountains' 1.0 -- the volcano
+              # is a hazard to avoid (config.VOLCANO_HAZARD_CHANCE), not a resource
+              # destination; a strong stone yield there would wrongly incentivize
+              # walking into it.
+              "volcano": 0.1},
     "game": {"forest": 1.0, "plains": 0.6, "river": 0.3, "lake": 0.3, "mountains": 0.15,
-             "cliffs": 0.05, "shoals": 0.1, "ocean": 0.0},
+             "cliffs": 0.05, "shoals": 0.1, "ocean": 0.0, "desert": 0.05, "volcano": 0.0},
     # Foraging (berries, fruit, wild plants) used to not exist at all -- food only ever
     # came from HUNT_DEER/HUNTING_PARTY, both carrying the same wolf-pack risk, so there
     # was no low-risk food option the way GATHER_WATER is a low-risk (if lower-yield)
@@ -50,7 +55,7 @@ BIOME_YIELD_MULTIPLIER = {
     # real tension between forest's higher-risk/higher-yield hunting and plains' safe,
     # steady foraging, rather than one biome just being strictly best at everything.
     "forage": {"plains": 1.0, "forest": 0.6, "river": 0.4, "lake": 0.4, "mountains": 0.1,
-               "cliffs": 0.0, "shoals": 0.1, "ocean": 0.0},
+               "cliffs": 0.0, "shoals": 0.1, "ocean": 0.0, "desert": 0.1, "volcano": 0.0},
 }
 
 # Which species word to use in a wildlife sighting (see Simulation._build_visible_entities)
@@ -69,6 +74,7 @@ GAME_SPECIES_BY_BIOME = {
     "river": ("waterfowl",),
     "lake": ("waterfowl",),
     "mountains": ("mountain goats",),
+    "desert": ("desert hares", "sand lizards"),
 }
 
 
@@ -1322,6 +1328,12 @@ def _relocate(sim, tribe, biome, target):
     sim.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
     mark_visited_sector(tribe, nx, ny)
     tribe.x, tribe.y = nx, ny
+    # Explicit correction: "the volcano is a Hazard they will die if they go
+    # there." Unlike the river's drowning hazard (Simulation._expedition_river_
+    # hazard, expedition movement only), RELOCATE moving the whole camp onto/
+    # through the volcano needs the same real consequence -- this is exactly the
+    # kind of "they went there" the hazard is meant to catch.
+    sim._volcano_hazard(tribe, nx, ny)
     return None
 
 

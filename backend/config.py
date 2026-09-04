@@ -253,7 +253,27 @@ CROP_GROWTH_PER_CYCLE = 10  # a plot matures in ~10 cycles once planted
 CROP_HARVEST_YIELD = 15  # food per plot, per harvest
 CROP_WATER_PER_PLOT_PER_CYCLE = 2  # a plot that goes unwatered withers outright
 
-UNBUILDABLE_BIOMES = ("ocean", "river", "lake", "cliffs", "shoals")
+UNBUILDABLE_BIOMES = ("ocean", "river", "lake", "cliffs", "shoals", "volcano")
+
+# Map dream, phase 1 (user's own sketch): a new Desert biome in the south of the
+# map, harsh but real -- same "buildable but not farmable, slow and low-yield"
+# treatment mountains already gets (see TERRAIN_MOVEMENT_MULTIPLIER/
+# BIOME_YIELD_MULTIPLIER below), not just a recolor. world._desert_north_boundary
+# uses this as its base, the same "fixed constant + two sine waves" shape every
+# other wavy zone boundary in world.py already follows.
+DESERT_NORTH_BOUNDARY_BASE = 78
+
+# The volcano is a real hazard, not decoration -- explicit correction: "the
+# volcano is a Hazard they will die if they go there." "Inactive" describes its
+# look (dormant, not erupting on screen), not its danger -- a real inactive
+# volcano still kills via toxic gas/heat/unstable ground. Chance/loss set far
+# above DROWNING_HAZARD_CHANCE/_POPULATION_LOSS (0.08 / 1) -- this needs to read
+# as a serious, well-known danger, not a mild river crossing. See
+# Simulation._volcano_hazard.
+VOLCANO_HAZARD_CHANCE = 0.75
+VOLCANO_HAZARD_POPULATION_LOSS = 5
+VOLCANO_TRAUMA_MAGNITUDE = -0.6  # more severe dread than DROWNING_TRAUMA_MAGNITUDE (-0.4)
+VOLCANO_TRAUMA_RADIUS = 8  # wider than DROWNING_TRAUMA_RADIUS (6) -- a bigger, more memorable disaster
 
 # Redesigned 2026-09-02 ("these shouldn't be disconnected... look at it as a whole"):
 # retires the old abstract city_buildings counter (population-driven, unrelated to any
@@ -1206,6 +1226,12 @@ TERRAIN_MOVEMENT_MULTIPLIER = {
     "mountains": 0.4,
     "river": 0.3,
     "ocean": 0.0,
+    "desert": 0.5,  # tough sand, harsher than plains/forest but not a climb
+    # Deliberately non-zero -- unlike ocean's 0.0 (which makes physics.
+    # terrain_aware_step treat it as impassable and deflect around it), the
+    # volcano hazard (Simulation._volcano_hazard) needs a tribe to actually be
+    # able to step onto the tile to be killed by it.
+    "volcano": 0.4,
 }
 
 # Boat (Simulation._advance_automatic_boat, backend/physics.py.terrain_aware_step):
