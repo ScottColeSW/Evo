@@ -1253,6 +1253,28 @@ def test_advance_wall_security_repels_raiders_once_the_wall_is_complete():
     assert any("drives every raider from the area" in e for e in tribe.history)
 
 
+def test_advance_wall_security_also_celebrates_the_wall_completion():
+    """Live report: "one wall should be 100% and celebrate... I don't think it
+    fell together" -- finishing the first ring used to only get the plain
+    raiders-driven-out history line above, never the real "celebrates" banner
+    every other named milestone (settling, a harvest, learning to fish) gets."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    sim._found_territory(tribe)
+    tribe.food = 100
+    for sec in tribe.wall_rings[0]["sections"]:
+        sec["unlocked"] = True
+        sec["progress"] = 100
+
+    sim._advance_wall_security(tribe)
+
+    assert any("celebrates the wall's completion" in e for e in tribe.history)
+    assert tribe.food < 100  # a real feast cost, same as every other celebration
+    assert any(t["name"] == "Wall Warden" for t in tribe.trophies)
+    assert tribe.last_celebration_cycle == sim.cycle
+    assert "PRIDE" in sim.trauma.bias_string(tribe.x, tribe.y)
+
+
 def test_check_raider_attack_never_triggers_once_repelled_by_wall():
     from unittest import mock
 

@@ -3767,6 +3767,30 @@ class Simulation:
         tribe.raider_sightings = []
         tribe.raiders_approaching = None
         tribe.history.append(f"{tribe.name}'s completed wall drives every raider from the area for good")
+        self._celebrate_wall_complete(tribe)
+
+    def _celebrate_wall_complete(self, tribe: Tribe) -> None:
+        """Live report: "one wall should be 100% and celebrate... I don't think it
+        fell together" -- finishing the first wall ring only ever got a plain
+        history line (the raiders-driven-out one above), never the real "🎉 X is
+        celebrating" banner every other named milestone gets (settling, a
+        harvest, learning to fish). Same shape as _celebrate_settling/
+        _celebrate_harvest -- called from _advance_wall_security, the one place
+        that already fires exactly once when the ring first finishes."""
+        tribe.last_celebration_cycle = self.cycle
+        spent = _celebration_cost(tribe)
+        tribe.food -= spent
+        self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.history.append(
+            f"\U0001f389 {tribe.name} celebrates the wall's completion, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
+        )
+        self._award_trophy(tribe, "Wall Warden")
+        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+            pair = _eligible_breeding_pair(tribe)
+            if pair is not None:
+                parent_a, parent_b = pair
+                tribe.pending_birth = {"parent_a": parent_a, "parent_b": parent_b}
+                tribe.history.append(f"amid the celebration, {parent_a} and {parent_b} decide to start a family together")
 
     def _advance_water_supply(self, tribe: Tribe) -> None:
         """Explicit request: "like relocate, gather water becomes irrelevant once they
