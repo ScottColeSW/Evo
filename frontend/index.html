@@ -1720,7 +1720,18 @@ function drawTerritory(t) {
 
 function drawSettlementMarker(t) {
   if (!isSettled(t)) return;
-  const [landX, landY] = landAnchor(t.x, t.y);
+  // Explicit visual note: "it looks better when the Territory boundaries
+  // encompass the Hut." drawTerritory's circle is centered on territory_center
+  // (the fixed founding anchor -- see Simulation._found_territory), but this
+  // used to draw the Hut/Town Hall icon at the tribe's own live t.x/t.y --
+  // once territory exists, that's wherever the tribe currently happens to be
+  // standing within it, which drifts away from the circle's actual center as
+  // it wanders (post-settlement RELOCATE only clamps to within the radius, it
+  // doesn't recenter). The city's real anchor is territory_center once it
+  // exists; t.x/t.y is the fallback for a not-yet-settled tribe with no
+  // territory at all.
+  const [anchorX, anchorY] = t.territory_center || [t.x, t.y];
+  const [landX, landY] = landAnchor(anchorX, anchorY);
   const cx = landX * TILE + TILE / 2;
   const cy = landY * TILE + TILE / 2;
   // Sized at 1/3 of the moon's own disc (MOON_CORE_RADIUS_TILES, see
