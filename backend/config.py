@@ -799,6 +799,14 @@ RAIDER_SIGHTING_TRAUMA_RADIUS = 4
 # trip" doesn't have to mean "at the identical spot." Nudges the raider sighting by
 # up to this many tiles off the target instead, still nearby, no longer stacked.
 RAIDER_SIGHTING_OFFSET = 5
+# Bug report: "we introduced about 75% too many Raiders on the map, they are
+# interfering." Unlike the other LANDMARK_TYPES lists (a lumber/water/quarry site
+# stays a real, permanently-true fact), a raider sighting is transient danger --
+# tribe.raider_sightings was append-only with nothing ever trimming it, so a long
+# run (day 86, this report) accumulated dozens of permanent (frontend/index.html
+# LANDMARK_TYPES) swords markers per tribe that were never actually cleaned up.
+# Kept small and most-recent-first: old sighting are stale intel, not history.
+RAIDER_SIGHTING_MAX_REMEMBERED = 6
 
 # Explicit request: "I do want to see RAIDERs ride in over time" -- an attack used to
 # resolve entirely in one invisible instant (roll, resolve, done). Now a triggered

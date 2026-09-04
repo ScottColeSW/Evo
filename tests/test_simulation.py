@@ -13,6 +13,7 @@ def _bare_simulation():
     sim.world = Landscape(100)
     sim.trauma = AncestralTraumaMatrix(100)
     sim.cycle = 1
+    sim.paused = False
     sim.immortality_cycles = 0
     sim.storm_cloud = None
     sim.lightning_strike = None
@@ -2842,6 +2843,36 @@ def test_expedition_raider_ambush_never_fires_before_has_ever_settled():
 
     assert ambushed is False
     assert tribe.raider_sightings == []
+
+
+def test_record_raider_sighting_caps_the_list_keeping_the_most_recent():
+    """Bug report (live playtest, day 86): "we introduced about 75% too many
+    Raiders on the map, they are interfering" -- tribe.raider_sightings was
+    append-only forever (one tribe had accumulated 67 permanent map markers).
+    Unlike a resource site, a raider sighting is stale intel, not a standing
+    fact, so the list is capped at config.RAIDER_SIGHTING_MAX_REMEMBERED,
+    dropping the oldest entries first."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    for i in range(config.RAIDER_SIGHTING_MAX_REMEMBERED + 3):
+        sim._record_raider_sighting(tribe, i, i)
+
+    assert len(tribe.raider_sightings) == config.RAIDER_SIGHTING_MAX_REMEMBERED
+    assert tribe.raider_sightings[0] == (3, 3)
+    assert tribe.raider_sightings[-1] == (config.RAIDER_SIGHTING_MAX_REMEMBERED + 2, config.RAIDER_SIGHTING_MAX_REMEMBERED + 2)
+
+
+def test_record_raider_sighting_does_not_duplicate_or_evict_for_a_repeat_tile():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim._record_raider_sighting(tribe, 5, 5)
+    sim._record_raider_sighting(tribe, 6, 6)
+    sim._record_raider_sighting(tribe, 5, 5)
+
+    assert tribe.raider_sightings == [(5, 5), (6, 6)]
 
 
 def test_outbound_expedition_flees_home_immediately_when_ambushed():

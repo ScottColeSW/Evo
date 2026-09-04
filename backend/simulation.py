@@ -1372,6 +1372,7 @@ class Simulation:
         return {
             "cycle": self.cycle,
             "status": self.status,
+            "paused": self.paused,
             "immortality_cycles": self.immortality_cycles,
             "storm_cloud": {"x": self.storm_cloud["x"], "y": self.storm_cloud["y"]} if self.storm_cloud else None,
             "lightning_strike": list(self.lightning_strike) if self.lightning_strike else None,
@@ -3020,8 +3021,7 @@ class Simulation:
                     # own comment) means no specific biome is required, not that
                     # literally underwater counts.
                     if biome_at(rx, ry) not in config.UNBUILDABLE_BIOMES:
-                        if (rx, ry) not in tribe.raider_sightings:
-                            tribe.raider_sightings.append((rx, ry))
+                        self._record_raider_sighting(tribe, rx, ry)
                         self.trauma.radiate_event_wave(
                             rx, ry, config.RAIDER_SIGHTING_TRAUMA_MAGNITUDE, config.RAIDER_SIGHTING_TRAUMA_RADIUS
                         )
@@ -3162,6 +3162,18 @@ class Simulation:
         )
         return True
 
+    def _record_raider_sighting(self, tribe: Tribe, x: int, y: int) -> None:
+        """Shared by both places a raider sighting gets logged (a scout's report and
+        an in-field ambush). Caps the list at config.RAIDER_SIGHTING_MAX_REMEMBERED,
+        most-recent-first -- see that constant's own comment for why this list needs
+        trimming at all when the other LANDMARK_TYPES lists don't."""
+        if (x, y) in tribe.raider_sightings:
+            return
+        tribe.raider_sightings.append((x, y))
+        overflow = len(tribe.raider_sightings) - config.RAIDER_SIGHTING_MAX_REMEMBERED
+        if overflow > 0:
+            del tribe.raider_sightings[:overflow]
+
     def _expedition_raider_ambush(self, tribe: Tribe, exp: dict, x: int, y: int) -> bool:
         """Explicit request: "It would be interesting to see a Scout encounter a
         RAIDER group" -- a real, in-the-field ambush during travel, distinct from the
@@ -3176,8 +3188,7 @@ class Simulation:
             return False
         self.trauma.radiate_event_wave(x, y, config.RAIDER_SIGHTING_TRAUMA_MAGNITUDE, config.RAIDER_SIGHTING_TRAUMA_RADIUS)
         self._lose_population(tribe, config.EXPEDITION_RAIDER_AMBUSH_POPULATION_LOSS, cause="raider_ambush")
-        if (x, y) not in tribe.raider_sightings:
-            tribe.raider_sightings.append((x, y))
+        self._record_raider_sighting(tribe, x, y)
         tribe.history.append(f"{exp['lead_scout']}'s party was ambushed by raiders near ({x},{y}) and flees for home")
         tribe.memory.remember(
             f"Raiders ambushed our party near ({x},{y}) -- real danger there.", self.cycle, weight=0.85,

@@ -2431,7 +2431,24 @@ function drawBattleTheater(e, cx, cy, progress) {
   };
 }
 
+// Bug report: "something is really crunching hard on the CPU while in 'pause'
+// still." PAUSE (backend/simulation.py.toggle_pause) only ever stopped the
+// simulation from stepping -- the frontend had no idea it was paused at all, so
+// this loop kept redrawing the full scene (every building, wall ring, trail
+// tile, raider sighting...) at a full, uncapped requestAnimationFrame rate
+// forever. Nothing on a paused board ever changes, so once the first
+// post-pause frame is drawn (to reflect wherever it landed), later frames are
+// only worth checking for a lot less often -- still responsive to unpausing or
+// a resize, just not burning a whole CPU core doing it.
+let pausedFrameAlreadyDrawn = false;
+
 function drawFrame() {
+  const isPaused = !!(latestState && latestState.paused);
+  if (isPaused && pausedFrameAlreadyDrawn) {
+    setTimeout(() => requestAnimationFrame(drawFrame), 500);
+    return;
+  }
+  pausedFrameAlreadyDrawn = isPaused;
   animFrame++;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(terrainCanvas, 0, 0);
