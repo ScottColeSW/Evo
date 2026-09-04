@@ -5249,6 +5249,28 @@ def test_era_does_not_advance_without_meeting_resource_requirements():
     assert tribe.era == "primitive_dawn"
 
 
+def test_snapshot_surfaces_the_stance_between_two_tribes():
+    """Explicit request: "I think they might have an Alliance or even Trading
+    with each other now but there is little to no readout of that status and
+    condition... are they at war instead? I don't know." tribe.stance_toward
+    already existed (DECLARE_ALLIANCE/DECLARE_WAR) and was already serialized on
+    the tribe itself -- just never surfaced in the linguistic_consensus list the
+    frontend actually renders."""
+    sim = Simulation([
+        {"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37},
+        {"name": "Mountain Tribe", "model": "gemma2:2b", "x": 60, "y": 60},
+    ])
+    a, b = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+
+    neutral_pair = next(p for p in sim.snapshot()["linguistic_consensus"] if p["a"] == a.name)
+    assert neutral_pair["stance"] == "NEUTRAL"
+
+    a.stance_toward[b.id] = "ALLIED"
+    b.stance_toward[a.id] = "ALLIED"
+    allied_pair = next(p for p in sim.snapshot()["linguistic_consensus"] if p["a"] == a.name)
+    assert allied_pair["stance"] == "ALLIED"
+
+
 def test_snapshot_includes_worn_trails_for_the_frontend_to_render():
     sim = _bare_simulation()
     sim.world.wear_trail(12, 34, 0.5, color="#c084fc")

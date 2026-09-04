@@ -1404,7 +1404,17 @@ class Simulation:
             for j in range(i + 1, len(tribe_ids)):
                 a_id, b_id = tribe_ids[i], tribe_ids[j]
                 summary = self.translation.pair_summary(a_id, b_id)
-                consensus.append({"a": self.tribes[a_id].name, "b": self.tribes[b_id].name, **summary})
+                # Explicit request: "I think they might have an Alliance or even
+                # Trading with each other now but there is little to no readout
+                # of that status and condition." tribe.stance_toward already
+                # exists (DECLARE_ALLIANCE/DECLARE_WAR, actions.py) and is
+                # symmetric -- was just never surfaced anywhere in the UI.
+                stance = self.tribes[a_id].stance_toward.get(b_id, "NEUTRAL")
+                consensus.append({
+                    "a": self.tribes[a_id].name, "b": self.tribes[b_id].name,
+                    "stance": stance,
+                    **summary,
+                })
 
         return {
             "cycle": self.cycle,

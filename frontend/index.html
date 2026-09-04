@@ -140,6 +140,7 @@
   .log-box .log-gathering { color: #a3e635; }
   .log-box .log-vram { color: #f59e0b; }
   .consensus-row { background: #222232; padding: 8px; border-radius: 6px; font-size: 11px; }
+  .stance-badge { font-weight: bold; margin-right: 6px; }
   .consensus-bar { height: 4px; background: #333344; border-radius: 2px; margin-top: 4px; overflow: hidden; }
   .consensus-fill { height: 100%; background: #34d399; }
   .empty-hint { color: #6b7280; font-size: 12px; padding: 8px 0; }
@@ -2846,6 +2847,12 @@ function farmingPanel(t) {
 // Well-Being measurement." Fame rides in the same panel/tiers dict as the 5
 // real Maslow needs (backend/wellbeing.py) but is never wb.focus -- it's a
 // prestige score, not a survival need, so it can never preempt a real one.
+const STANCE_BADGES = {
+  ALLIED: { icon: "🤝", label: "Allied", color: "#4ade80" },
+  WAR: { icon: "⚔️", label: "At War", color: "#f87171" },
+  NEUTRAL: { icon: "🏳️", label: "Neutral", color: "#94a3b8" },
+};
+
 const WELLBEING_TIER_ORDER = ["physiological", "safety", "belonging", "esteem", "self_actualization", "fame"];
 const WELLBEING_TIER_ICONS = { physiological: "🍖", safety: "🛡️", belonging: "🤝", esteem: "🏆", self_actualization: "🏛️", fame: "🌟" };
 const WELLBEING_TIER_LABELS = { physiological: "Physiological", safety: "Safety", belonging: "Belonging", esteem: "Esteem", self_actualization: "Self-Actual.", fame: "Fame" };
@@ -3023,8 +3030,14 @@ function updateSidebar(state) {
   }
   pairs.forEach(pair => {
     const pct = Math.round((pair.mean_confidence || 0) * 100);
+    // Explicit request: "I think they might have an Alliance or even Trading
+    // with each other now but there is little to no readout of that status and
+    // condition... are they at war instead? I don't know." tribe.stance_toward
+    // already existed and was already serialized -- just never shown anywhere.
+    const stance = STANCE_BADGES[pair.stance] || STANCE_BADGES.NEUTRAL;
     consensus.innerHTML += `
       <div class="consensus-row">
+        <span class="stance-badge" style="color:${stance.color}">${stance.icon} ${stance.label}</span>
         ${pair.a} ↔ ${pair.b}: ${pct}% (${pair.stabilized_tokens}/${pair.tracked_tokens} stabilized)
         <div class="consensus-bar"><div class="consensus-fill" style="width:${pct}%"></div></div>
       </div>`;
