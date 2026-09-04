@@ -73,6 +73,22 @@
   @keyframes spawn-spin { to { transform: rotate(360deg); } }
   #spawn-splash .spawn-text { color: #c7d2fe; font-size: 13px; font-family: monospace; letter-spacing: 0.3px; }
 
+  #icon-key { position: absolute; top: 12px; right: 12px; width: 240px; max-height: calc(100% - 24px); background: rgba(17,17,17,0.95); border: 2px solid #2a2a3a; border-radius: 6px; z-index: 15; display: flex; flex-direction: column; }
+  #icon-key.hidden { display: none; }
+  .icon-key-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #2a2a3a; font-weight: bold; font-size: 13px; color: #e2e8f0; flex-shrink: 0; }
+  .icon-key-header button { background: none; border: none; color: #94a3b8; font-size: 14px; cursor: pointer; line-height: 1; padding: 2px 4px; }
+  .icon-key-header button:hover { color: #e2e8f0; }
+  .icon-key-body { overflow-y: auto; padding: 8px 12px 12px; }
+  .icon-key-section { font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; color: #7c7c94; margin: 10px 0 4px; }
+  .icon-key-section:first-child { margin-top: 0; }
+  .icon-key-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #cbd5e1; padding: 2px 0; }
+  .icon-key-icon { width: 18px; text-align: center; flex-shrink: 0; font-size: 13px; }
+  .icon-key-swatch { width: 18px; height: 10px; flex-shrink: 0; border-radius: 2px; }
+  .icon-key-swatch-dashed { border: 1.5px dashed #a78bfa; background: transparent; }
+  .icon-key-swatch-dot { border-radius: 50%; width: 8px; height: 8px; background: #c084fc; margin: 0 5px; }
+  .icon-key-swatch-trail { background: #78350f; }
+  .icon-key-swatch-toll { background: linear-gradient(90deg, #b45309, #fbbf24); }
+
   #sidebar { width: 360px; flex-shrink: 0; background: #1a1a24; border-left: 2px solid #2a2a3a; padding: 14px; display: flex; flex-direction: column; min-height: 0; }
   #sidebar-tabs { display: flex; gap: 4px; margin-bottom: 12px; flex-shrink: 0; }
   .tab-btn { flex: 1; background: #202030; color: #8a8a9a; padding: 8px 4px; font-size: 12px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -177,6 +193,7 @@
     <div id="status-banner">OPERATIONAL</div>
     <div id="day-banner">Day 1</div>
     <div id="immortal-banner" class="hidden"></div>
+    <button id="btn-icon-key">🗺️ KEY</button>
     <button id="btn-pause">PAUSE</button>
     <button id="btn-quit">QUIT</button>
   </div>
@@ -189,6 +206,66 @@
         <div class="spawn-text" id="spawn-splash-text">Tribes are forming their first councils...</div>
       </div>
       <canvas id="simCanvas"></canvas>
+      <!-- Explicit request: "it would be great to be able to change the map to
+           include... and Icon Key" -- a reference legend for everything drawn on
+           the map itself. Static content (nothing here needs live state), toggled
+           by btn-icon-key, positioned over the canvas it's explaining rather than
+           eating permanent sidebar space. -->
+      <div id="icon-key" class="hidden">
+        <div class="icon-key-header">
+          <span>Map Key</span>
+          <button id="btn-icon-key-close">✕</button>
+        </div>
+        <div class="icon-key-body">
+          <div class="icon-key-section">Settlement</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🛖</span> Camp (not yet founded)</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🏛️</span> Town Hall (city founded)</div>
+          <div class="icon-key-row"><span class="icon-key-swatch icon-key-swatch-dashed"></span> Territory boundary</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🧱</span> Wall (lighter → gold as reinforced)</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🔥</span> Torch (lit wall, Fire known)</div>
+
+          <div class="icon-key-section">Buildings</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🏠</span> Long House</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🏯</span> Keep / Castle</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🏰</span> Fortress</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🪵</span> Sawmill</div>
+          <div class="icon-key-row"><span class="icon-key-icon">⛏️</span> Quarry</div>
+          <div class="icon-key-row"><span class="icon-key-icon">💎</span> Mine</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🍲</span> Kitchen</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🦫</span> Tannery</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🔨</span> Forge</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🏬</span> Warehouse</div>
+          <div class="icon-key-row"><span class="icon-key-icon">⚓</span> Dock</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🎣</span> Fishery</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🌾</span> Farm Plot</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🐔</span> Flock Pen</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🐣</span> Hatchery</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🛁</span> Bath House</div>
+          <div class="icon-key-row"><span class="icon-key-icon">📚</span> Library</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🪣</span> Well</div>
+          <div class="icon-key-row"><span class="icon-key-icon">⛵</span> Boat (roams nearby water once built)</div>
+
+          <div class="icon-key-section">Discoveries</div>
+          <div class="icon-key-row"><span class="icon-key-icon">💧</span> Confirmed water source</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🌲</span> Lumber-rich site</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🐾</span> Wildlife/game site</div>
+          <div class="icon-key-row"><span class="icon-key-icon">⛏️</span> Stone-rich site</div>
+          <div class="icon-key-row"><span class="icon-key-icon">💎</span> Ore vein</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🗿</span> Landmark</div>
+
+          <div class="icon-key-section">Hazards</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🏴</span> Raiders approaching camp</div>
+          <div class="icon-key-row"><span class="icon-key-icon">⚔️</span> Raider attack / sighting</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🐺</span> Wolf pack attack</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🏚️</span> Raidable minor settlement</div>
+          <div class="icon-key-row"><span class="icon-key-icon">💀</span> Extinct tribe</div>
+
+          <div class="icon-key-section">Movement</div>
+          <div class="icon-key-row"><span class="icon-key-swatch icon-key-swatch-dot"></span> A tribe's own people (tribe color)</div>
+          <div class="icon-key-row"><span class="icon-key-swatch icon-key-swatch-trail"></span> Worn trail</div>
+          <div class="icon-key-row"><span class="icon-key-swatch icon-key-swatch-toll"></span> Evolved toll road</div>
+        </div>
+      </div>
     </div>
     <div id="sidebar">
       <div id="sidebar-tabs">
@@ -393,6 +470,15 @@ function hideSpawnSplash() {
 }
 
 /* ---------- Theater chrome: header, tabs, resize ---------- */
+
+// Explicit request: "it would be great to be able to... Icon Key." Purely
+// static reference content (see the #icon-key markup) -- no live state to
+// wire up, just a show/hide toggle.
+function toggleIconKey() {
+  document.getElementById("icon-key").classList.toggle("hidden");
+}
+document.getElementById("btn-icon-key").addEventListener("click", toggleIconKey);
+document.getElementById("btn-icon-key-close").addEventListener("click", toggleIconKey);
 
 document.getElementById("btn-pause").addEventListener("click", () => {
   if (!socket) return;
@@ -1539,7 +1625,11 @@ const LANDMARK_TYPES = [
   ["quarry_sites", "⛏️", [0, 0.55], "Quarry"],           // pick, lower-center
   ["mine_sites", "\u{1F48E}", [0.55, 0.55], "Mine"],       // gem, lower-right
   ["raider_sightings", "\u{2694}\u{FE0F}", [-0.55, 0.55], "Raiders"], // crossed swords, lower-left
-  ["landmarks", "\u{1F3DB}\u{FE0F}", [0, -0.7], "Landmark"], // classical building, top-center
+  // Explicit request (building the Icon Key surfaced this): a discovered
+  // Landmark used to share the exact classical-building emoji with the Town
+  // Hall marker (drawSettlementMarker) and the sidebar's founded_city badge --
+  // a moai reads clearly as "a notable monument," not a building.
+  ["landmarks", "\u{1F5FF}", [0, -0.7], "Landmark"], // moai statue, top-center
 ];
 
 // Explicit request: "we have to name the 'discovery' when it is celebrated so
