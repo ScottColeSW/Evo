@@ -2800,7 +2800,16 @@ function farmingPanel(t) {
   if (t.fire_ever_built && ring0Reinforced) parts.push("🔥🧱 Torches — lining the wall, a free defense bonus");
   if (t.moat_built) parts.push("💧 Moat — a further defense bonus");
   if (t.long_houses_built > 0) {
-    parts.push(`🏠 Long House — ${t.long_houses_built} standing, real lasting shelter`);
+    // Explicit request: "It needs to say housed/unhoused... so the Tribe knows
+    // how many more they will need to build until everyone is housed
+    // comfortably." housing_capacity is computed backend-side (Tribe.to_dict)
+    // from the same figure _build_long_house's own repeat-gate uses.
+    const housed = Math.min(t.population, t.housing_capacity);
+    const unhoused = Math.max(0, t.population - t.housing_capacity);
+    const housingNote = unhoused > 0
+      ? `${housed}/${t.population} housed, ${unhoused} still need shelter`
+      : "everyone housed comfortably";
+    parts.push(`🏠 Long House — ${t.long_houses_built} standing, ${housingNote}`);
   } else if (ring0 && ring0.sections.every(s => s.natural_barrier || s.progress >= 100)) {
     // Explicit correction: "keep the Long House blocked note hidden until
     // [the wall's done and] they build one" -- this used to also show a

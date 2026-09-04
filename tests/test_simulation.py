@@ -5249,6 +5249,18 @@ def test_era_does_not_advance_without_meeting_resource_requirements():
     assert tribe.era == "primitive_dawn"
 
 
+def test_to_dict_computes_housing_capacity_from_long_houses_built():
+    """Explicit request: "It needs to say housed/unhoused in a way on the
+    Establishments and so the Tribe knows how many more they will need to build
+    until everyone is housed comfortably.\""""
+    from backend import config
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.long_houses_built = 3
+
+    assert tribe.to_dict()["housing_capacity"] == 3 * config.HOUSING_POPULATION_PER_LONG_HOUSE
+
+
 def test_snapshot_surfaces_the_stance_between_two_tribes():
     """Explicit request: "I think they might have an Alliance or even Trading
     with each other now but there is little to no readout of that status and

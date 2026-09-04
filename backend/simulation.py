@@ -878,6 +878,12 @@ class Tribe:
             "fire_ever_built": self.fire_ever_built,
             "moat_built": self.moat_built,
             "long_houses_built": self.long_houses_built,
+            # Explicit request: "It needs to say housed/unhoused... so the Tribe
+            # knows how many more they will need to build until everyone is
+            # housed comfortably." Computed here (not left for the frontend to
+            # duplicate) from the same HOUSING_POPULATION_PER_LONG_HOUSE
+            # _build_long_house's own repeat-gate already uses.
+            "housing_capacity": self.long_houses_built * config.HOUSING_POPULATION_PER_LONG_HOUSE,
             "keep_built": self.keep_built,
             "fortress_built": self.fortress_built,
             "castle_built": self.castle_built,
