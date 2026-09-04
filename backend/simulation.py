@@ -3323,6 +3323,29 @@ class Simulation:
         immediately, the same way the wolf-pack hazard ends a hunt outright."""
         if not tribe.has_ever_settled or random.random() >= config.EXPEDITION_RAIDER_AMBUSH_CHANCE:
             return False
+        # Explicit request: "When a Boat encounters a Raider on the Water, the
+        # Boat wins automatically and goes home to deliver the counter-raid
+        # loot." Same loot shape _resolve_raider_attack's own defended branch
+        # already uses, but always wins here -- a boat on the water it was
+        # actually built for beats raiders on foot outright, no roll needed.
+        if tribe.boat_built and biome_at(x, y) in config.BOAT_WATER_BIOMES:
+            looted = {
+                resource: round(getattr(tribe, resource) * config.RAIDER_DEFEAT_LOOT_FRACTION)
+                for resource in ("wood", "stone", "food")
+            }
+            for resource, amount in looted.items():
+                setattr(tribe, resource, getattr(tribe, resource) + amount)
+            self.trauma.radiate_event_wave(x, y, config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
+            tribe.history.append(
+                f"{exp['lead_scout']}'s boat runs down a raider band on the water near ({x},{y}) and heads "
+                f"home with the counter-raid loot -- {looted['food']} food, {looted['wood']} wood, and "
+                f"{looted['stone']} stone recovered"
+            )
+            self.recent_encounters.append({
+                "x": x, "y": y, "kind": "raider_attack", "label": "Raiders routed by boat", "outcome": "repelled",
+            })
+            exp["phase"] = "returning"
+            return True
         self.trauma.radiate_event_wave(x, y, config.RAIDER_SIGHTING_TRAUMA_MAGNITUDE, config.RAIDER_SIGHTING_TRAUMA_RADIUS)
         self._lose_population(tribe, config.EXPEDITION_RAIDER_AMBUSH_POPULATION_LOSS, cause="raider_ambush")
         self._record_raider_sighting(tribe, x, y)
@@ -3473,9 +3496,27 @@ class Simulation:
             # A Landmark in your Territory gives you even more Fame."
             in_territory = self._site_in_own_territory(tribe, px, py)
             tribe.fame += config.FAME_PER_LANDMARK_IN_TERRITORY if in_territory else config.FAME_PER_LANDMARK
-            tribe.history.append(
-                f"{scout}'s exploration party discovers {name} at ({px},{py}) -- {reward} {resource} claimed"
-            )
+            # Explicit request: "When a Boat encounters a Landmark, it has a Boat
+            # Party (same look-effect as Settlement Celebration) celebrating the
+            # Landmark." Same shared cooldown/breeding-opportunity shape
+            # _celebrate_water_discovery/_celebrate_game_discovery already use
+            # for their own one-time discoveries.
+            if tribe.boat_built and current_biome in config.BOAT_WATER_BIOMES:
+                tribe.last_celebration_cycle = self.cycle
+                tribe.history.append(
+                    f"\U0001f389 {scout}'s crew holds a boat party on the water at ({px},{py}), celebrating "
+                    f"the discovery of {name} -- {reward} {resource} claimed"
+                )
+                if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+                    pair = _eligible_breeding_pair(tribe)
+                    if pair is not None:
+                        parent_a, parent_b = pair
+                        tribe.pending_birth = {"parent_a": parent_a, "parent_b": parent_b}
+                        tribe.history.append(f"amid the celebration, {parent_a} and {parent_b} decide to start a family together")
+            else:
+                tribe.history.append(
+                    f"{scout}'s exploration party discovers {name} at ({px},{py}) -- {reward} {resource} claimed"
+                )
         return False
 
     def _report_trade_emissary_home(self, tribe: Tribe, exp: dict, scout: str, forage_note: str, recipient: str) -> None:

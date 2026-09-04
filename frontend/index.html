@@ -661,6 +661,13 @@ function celebrationReason(t) {
   if (recent.some(e => e.includes("celebrates settling here for good"))) return "settling down for good";
   if (recent.some(e => e.includes("holds a harvest festival"))) return "a bountiful harvest";
   if (recent.some(e => e.includes("celebrates the wall's completion"))) return "the wall's completion";
+  // Explicit request: "When a Boat encounters a Landmark, it has a Boat Party
+  // (same look-effect as Settlement Celebration) celebrating the Landmark."
+  const boatPartyEntry = recent.find(e => e.includes("holds a boat party"));
+  if (boatPartyEntry) {
+    const match = boatPartyEntry.match(/celebrating the discovery of (.+?)(?:\s--\s|\.$)/);
+    return match ? `a boat party -- ${match[1]}` : "a boat party";
+  }
   // Bug report: "'a fresh Discover' of what? is what I ask everytime I see
   // that." Simulation._check_for_celebration already names the actual thing
   // discovered in the full chronicle line ("a fresh discovery: Scouts

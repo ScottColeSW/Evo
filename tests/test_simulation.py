@@ -1305,6 +1305,39 @@ def test_every_celebration_awards_fame():
     assert tribe.fame == 3 * config.FAME_PER_CELEBRATION
 
 
+def test_landmark_discovery_holds_a_boat_party_while_on_the_water_with_a_boat():
+    """Explicit request: "When a Boat encounters a Landmark, it has a Boat
+    Party (same look-effect as Settlement Celebration) celebrating the
+    Landmark.\""""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    sim._found_territory(tribe)
+    tribe.boat_built = True
+    exp = {"pos": [tribe.x, tribe.y], "wood_gathered": 0, "stone_gathered": 0, "food_gathered": 0, "water_gathered": 0,
+           "day": 0, "max_days": 6}
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_exploration_party_outbound(tribe, exp, "river", "Test Scout")
+
+    assert any("holds a boat party" in entry for entry in tribe.history)
+    assert tribe.last_celebration_cycle == sim.cycle
+
+
+def test_landmark_discovery_is_the_plain_report_without_a_boat_on_water():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    sim._found_territory(tribe)
+    tribe.boat_built = False
+    exp = {"pos": [tribe.x, tribe.y], "wood_gathered": 0, "stone_gathered": 0, "food_gathered": 0, "water_gathered": 0,
+           "day": 0, "max_days": 6}
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_exploration_party_outbound(tribe, exp, "river", "Test Scout")
+
+    assert not any("holds a boat party" in entry for entry in tribe.history)
+    assert any("exploration party discovers" in entry for entry in tribe.history)
+
+
 def test_landmark_discovery_awards_more_fame_inside_own_territory():
     """Explicit request: "A Landmark in your Territory gives you even more
     Fame.\""""
@@ -2975,6 +3008,44 @@ def test_expedition_raider_ambush_ends_the_trip_and_costs_population():
     assert any("ambushed by raiders" in entry for entry in tribe.history)
     assert "DREAD" in sim.trauma.bias_string(60, 60)
     assert sim.recent_encounters and sim.recent_encounters[0]["label"] == "Scouts ambushed"
+
+
+def test_expedition_raider_ambush_is_an_automatic_boat_win_on_the_water():
+    """Explicit request: "When a Boat encounters a Raider on the Water, the
+    Boat wins automatically and goes home to deliver the counter-raid loot.\""""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.population = 10
+    tribe.boat_built = True
+    tribe.wood = tribe.stone = tribe.food = 100
+    exp = {"lead_scout": "Test Scout", "phase": "outbound"}
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0), \
+         mock.patch("backend.simulation.biome_at", return_value="river"):
+        won = sim._expedition_raider_ambush(tribe, exp, 60, 60)
+
+    assert won is True
+    assert tribe.population == 10  # no population loss -- an automatic win
+    assert exp["phase"] == "returning"  # heads straight home with the loot
+    assert tribe.wood > 100 and tribe.stone > 100 and tribe.food > 100
+    assert any("boat runs down a raider band" in entry for entry in tribe.history)
+    assert sim.recent_encounters and sim.recent_encounters[0]["label"] == "Raiders routed by boat"
+
+
+def test_expedition_raider_ambush_is_a_normal_loss_without_a_boat_even_on_water():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.population = 10
+    tribe.boat_built = False
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0), \
+         mock.patch("backend.simulation.biome_at", return_value="river"):
+        ambushed = sim._expedition_raider_ambush(tribe, {"lead_scout": "Test Scout"}, 60, 60)
+
+    assert ambushed is True
+    assert tribe.population == 9  # the normal loss -- no boat, no automatic win
 
 
 def test_expedition_raider_ambush_never_fires_before_has_ever_settled():
