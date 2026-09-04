@@ -313,6 +313,15 @@ def _construct_wall(sim, tribe, biome, target):
         section["tier"] += 1
         return f"the {section['direction']} wall section is reinforced -- tier {section['tier']} of defense now stands there"
 
+    # Explicit request: "if they choose Wall, they have to complete it, no
+    # changing orders other than to collect what is needed to complete it."
+    # Engages the moment CONSTRUCT_WALL is chosen for a still-incomplete section,
+    # whether or not this particular call can actually afford to make progress --
+    # otherwise a tribe with nothing stockpiled yet would never actually get
+    # locked into "go gather, then come back." See Simulation._prepare_turn for
+    # the available_actions narrowing this drives.
+    tribe.wall_commitment_active = True
+
     added = min(100 - section["progress"], round(config.WALL_PROGRESS_PER_ACTION_BASE * _labor_multiplier(tribe.population)))
     wood_cost = round(config.WALL_WOOD_COST_TOTAL * added / 100)
     stone_cost = round(config.WALL_STONE_COST_TOTAL * added / 100)
@@ -323,6 +332,11 @@ def _construct_wall(sim, tribe, biome, target):
     tribe.stone -= stone_cost
     section["progress"] += added
     if section["progress"] >= 100:
+        tribe.wall_commitment_active = False
+        # User's own refinement: "allow 1 Long House per section, then once it is
+        # 100% Wall Ring 1 Layer, they can build the rest on demand" -- a banked
+        # credit so housing doesn't stall out during a long wall push.
+        tribe.wall_lock_long_house_credits += 1
         return f"the {section['direction']} wall section is complete"
     return f"the {section['direction']} wall section continues -- {section['progress']}% complete"
 
@@ -353,9 +367,16 @@ def _build_long_house(sim, tribe, biome, target):
     one-time flag, gated each time on real population need
     (config.HOUSING_POPULATION_PER_LONG_HOUSE) so a tribe can't spam housing it
     doesn't need. tribe.long_houses_built is also the real proxy the Keep/
-    Fortress/Castle tier reads for how established this settlement has become."""
-    if not tribe.wall_rings or not city_layout.ring_fully_built(tribe.wall_rings[0]):
-        return "the first wall ring must be finished before a long house is worth building here"
+    Fortress/Castle tier reads for how established this settlement has become.
+
+    User's own refinement on the wall-commitment lock (see Simulation._prepare_
+    turn): locking out housing for an entire ring's construction would stall it
+    too long, so a banked wall_lock_long_house_credits (one per section
+    completed, see _construct_wall) lets exactly one Long House through early,
+    before ring 0 is actually finished."""
+    ring0_done = bool(tribe.wall_rings) and city_layout.ring_fully_built(tribe.wall_rings[0])
+    if not ring0_done and tribe.wall_lock_long_house_credits <= 0:
+        return "the first wall ring must be finished before a long house is worth building here (or bank a credit by completing another wall section)"
     houses_needed = max(1, -(-tribe.population // config.HOUSING_POPULATION_PER_LONG_HOUSE))
     if tribe.long_houses_built >= houses_needed:
         return None
@@ -369,6 +390,8 @@ def _build_long_house(sim, tribe, biome, target):
     w, h = config.BUILDING_FOOTPRINTS["long_house"]
     architect.record_building(tribe, "long_house", slot[0], slot[1], w, h, sim.cycle)
     tribe.long_houses_built += 1
+    if not ring0_done:
+        tribe.wall_lock_long_house_credits -= 1
     if tribe.long_houses_built == 1:
         sim._award_trophy(tribe, "Master Builder")
         sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)

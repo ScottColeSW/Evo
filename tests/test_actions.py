@@ -297,6 +297,85 @@ def test_construct_wall_is_a_no_op_once_complete():
     assert (tribe.wood, tribe.stone) == (wood_before, stone_before)
 
 
+def test_construct_wall_engages_commitment_lock_while_a_section_is_incomplete():
+    """Explicit request: "if they choose Wall, they have to complete it, no
+    changing orders other than to collect what is needed to complete it." Choosing
+    CONSTRUCT_WALL for a still-incomplete section engages the lock (see
+    Simulation._prepare_turn for the actual available_actions narrowing)."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    _unlock_all_ring0_sections(sim, tribe)
+    tribe.wood = 50
+    tribe.stone = 50
+
+    ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.wall_commitment_active is True
+    assert tribe.wall_lock_long_house_credits == 0
+
+
+def test_construct_wall_engages_commitment_even_when_it_cannot_afford_progress():
+    """A tribe with nothing stockpiled yet still needs to get locked into "go
+    gather, then come back" -- otherwise a broke tribe could never actually
+    trigger the commitment in the first place."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    _unlock_all_ring0_sections(sim, tribe)
+    tribe.wood = 0
+    tribe.stone = 0
+
+    ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.wall_commitment_active is True
+
+
+def test_construct_wall_clears_commitment_and_banks_a_long_house_credit_on_completion():
+    """User's own refinement: "allow 1 Long House per section, then once it is
+    100% Wall Ring 1 Layer, they can build the rest on demand" -- completing a
+    section clears the lock and banks exactly one Long House credit."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    _unlock_all_ring0_sections(sim, tribe)
+    tribe.wood = 1000
+    tribe.stone = 1000
+
+    from backend import city_layout
+
+    ring_i, sec_i = city_layout.next_wall_work_section(tribe)
+    while tribe.wall_rings[ring_i]["sections"][sec_i]["progress"] < 100:
+        ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.wall_commitment_active is False
+    assert tribe.wall_lock_long_house_credits == 1
+
+
+def test_build_long_house_succeeds_early_by_spending_a_banked_credit():
+    """The other half of the same refinement: a banked credit lets exactly one
+    Long House through before ring 0 is actually finished."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    _unlock_all_ring0_sections(sim, tribe)
+    tribe.wall_lock_long_house_credits = 1
+    tribe.wood = 200
+    tribe.stone = 200
+
+    result = ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.long_houses_built == 1
+    assert tribe.wall_lock_long_house_credits == 0
+    assert "long house rises" in result
+
+    # The credit is spent -- a second Long House still needs ring 0 finished (or
+    # another banked credit).
+    result2 = ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
+    assert "wall ring must be finished" in result2
+    assert tribe.long_houses_built == 1
+
+
 def test_larger_population_builds_wall_progress_faster():
     """Reuses _labor_multiplier -- the same 'more hands get more done' concept
     _harvest already uses -- rather than a separate team-size notion."""

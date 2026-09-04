@@ -83,6 +83,17 @@ SURVIVAL_CRISIS_ACTIONS = {
     "GATHER_WATER", "SCOUT",
 }
 
+# Explicit request: "if they choose Wall, they have to complete it, no changing
+# orders other than to collect what is needed to complete it. gather, build,
+# gather, build, and so forth, until the Wall is 100%." Once tribe.
+# wall_commitment_active is set (actions.py._construct_wall, the moment
+# CONSTRUCT_WALL is chosen for a still-incomplete section), the menu narrows to
+# just the wall itself, its own two resources, and the same survival-crisis set
+# above -- a wall push still shouldn't be able to starve a tribe. BUILD_LONG_HOUSE
+# is added back in separately, only while a banked credit exists (see
+# wall_lock_long_house_credits).
+WALL_LOCK_ACTIONS = {"CONSTRUCT_WALL", "GATHER_WOOD", "GATHER_STONE"} | SURVIVAL_CRISIS_ACTIONS
+
 # See _prepare_turn's affordability filter. A live run showed a tribe stuck at
 # wood=1 for 150+ cycles, cycling BUILD_WAREHOUSE/BUILD_FISHERY/BREED without
 # ever choosing GATHER_WOOD -- BUILD_WAREHOUSE and BUILD_FISHERY both cost wood
@@ -144,10 +155,12 @@ def _can_place(tribe, world, building_type: str) -> bool:
 def _can_afford_build_long_house(tribe, world) -> bool:
     """Explicit request: "the option to build a long house should not even
     come up if they don't have a full Wall built" -- mirrors actions.
-    _build_long_house's own real prerequisite (ring_fully_built) and repeat
+    _build_long_house's own real prerequisite (ring_fully_built, or a banked
+    wall_lock_long_house_credits -- see that field's own comment) and repeat
     gate (real housing need, not a flat one-time flag) exactly, so a
     guaranteed no-op never dangles in the menu."""
-    if not tribe.wall_rings or not city_layout.ring_fully_built(tribe.wall_rings[0]):
+    ring0_done = bool(tribe.wall_rings) and city_layout.ring_fully_built(tribe.wall_rings[0])
+    if not ring0_done and tribe.wall_lock_long_house_credits <= 0:
         return False
     houses_needed = max(1, -(-tribe.population // config.HOUSING_POPULATION_PER_LONG_HOUSE))
     if tribe.long_houses_built >= houses_needed:
@@ -778,6 +791,18 @@ class Tribe:
         # One entry per concentric wall ring -- see backend/city_layout.py for the
         # shape of each ring/section dict.
         self.wall_rings: list[dict] = []
+        # Explicit request: "if they choose Wall, they have to complete it, no
+        # changing orders other than to collect what is needed to complete it."
+        # Set the moment CONSTRUCT_WALL is chosen for a section that's still
+        # incomplete afterward (actions.py._construct_wall), cleared the moment
+        # that section finishes -- see Simulation._prepare_turn for the actual
+        # available_actions narrowing this drives.
+        self.wall_commitment_active = False
+        # User's own refinement: locking out BUILD_LONG_HOUSE for an entire wall
+        # ring would stall housing for too long, so the tribe banks the right to
+        # build exactly one Long House per wall section completed, spendable any
+        # time while still locked.
+        self.wall_lock_long_house_credits = 0
         # One entry per placed structure (every Long House instance, Town Hall,
         # Sawmill, Quarry, Dock, Fishery, Kitchen, Tannery, Mine, Keep, Fortress,
         # Castle, each Farm plot, the Flock pen, Fire) -- positional metadata only,
@@ -880,6 +905,7 @@ class Tribe:
             "territory_center": self.territory_center,
             "territory_radius": self.territory_radius,
             "wall_rings": self.wall_rings,
+            "wall_commitment_active": self.wall_commitment_active,
             "buildings": self.buildings,
             "fishery_built": self.fishery_built,
             "survival_warning": survival_warning,
@@ -2048,6 +2074,20 @@ class Simulation:
         elif tribe.water > upkeep * config.THIRST_WARNING_CYCLES_LEFT:
             tribe.water_crisis_active = False
 
+        # See WALL_LOCK_ACTIONS's own comment. Applied before the survival-crisis
+        # cut below so a genuine food/water crisis can still narrow further on top
+        # of this -- a wall commitment never overrides real starvation.
+        if tribe.wall_commitment_active:
+            allowed = WALL_LOCK_ACTIONS | ({"BUILD_LONG_HOUSE"} if tribe.wall_lock_long_house_credits > 0 else set())
+            wall_locked_only = [a for a in available_actions if a in allowed]
+            if wall_locked_only:
+                available_actions = wall_locked_only
+            else:
+                # Fail-open guard, same shape as survival_crisis just below -- an
+                # unusual gating combination shouldn't be able to soft-lock a tribe
+                # with zero real choices.
+                tribe.wall_commitment_active = False
+
         survival_crisis = tribe.food_crisis_active or tribe.water_crisis_active
         if survival_crisis:
             # Fail-open guard: never cut the menu down to nothing (e.g. an
@@ -2060,6 +2100,15 @@ class Simulation:
                 survival_crisis = False
 
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
+        if tribe.wall_commitment_active:
+            credit_note = (
+                " A Long House can still be built early, spending a banked credit."
+                if tribe.wall_lock_long_house_credits > 0 else ""
+            )
+            visible_entities.append(
+                "The wall section already under construction has to be finished before anything else -- "
+                f"only gathering what it needs and continuing CONSTRUCT_WALL are being offered.{credit_note}"
+            )
         if survival_crisis:
             # Same "don't keep them in the dark" reasoning as the repetition
             # throttle's own fact just below -- instincts.py's survival_bias

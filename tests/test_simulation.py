@@ -1443,6 +1443,73 @@ def test_survival_crisis_fails_open_when_no_survival_action_survives_filtering()
     assert not set(ctx["available_actions"]) & SURVIVAL_CRISIS_ACTIONS
 
 
+def test_wall_commitment_narrows_the_menu_to_wall_and_survival_actions():
+    """Explicit request: "if they choose Wall, they have to complete it, no
+    changing orders other than to collect what is needed to complete it.\""""
+    from backend import config
+    from backend.simulation import WALL_LOCK_ACTIONS
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"  # unlocks every action, so the filter is doing the work
+    tribe.wall_commitment_active = True
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "CONSTRUCT_WALL" in ctx["available_actions"]
+    assert "GATHER_WOOD" in ctx["available_actions"]
+    assert "GATHER_STONE" in ctx["available_actions"]
+    assert "BUILD_LONG_HOUSE" not in ctx["available_actions"]
+    assert "EXPAND_TERRITORY" not in ctx["available_actions"]
+    assert set(ctx["available_actions"]) <= WALL_LOCK_ACTIONS
+    assert "has to be finished before anything else" in request["prompt"]
+
+
+def test_wall_commitment_adds_build_long_house_only_with_a_banked_credit():
+    """User's own refinement: locking out an entire ring's worth of housing
+    stalls too long, so a banked credit (one per section completed) lets
+    BUILD_LONG_HOUSE back into the menu even while still locked."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)  # BUILD_LONG_HOUSE's own affordability check needs real territory to place into
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"
+    tribe.wall_commitment_active = True
+
+    _, ctx_no_credit = sim._prepare_turn(tribe)
+    assert "BUILD_LONG_HOUSE" not in ctx_no_credit["available_actions"]
+
+    tribe.wall_lock_long_house_credits = 1
+    _, ctx_with_credit = sim._prepare_turn(tribe)
+    assert "BUILD_LONG_HOUSE" in ctx_with_credit["available_actions"]
+
+
+def test_wall_commitment_still_yields_to_a_real_survival_crisis():
+    """A wall push should never be able to override real starvation -- applied
+    before the survival-crisis cut, so a genuine crisis narrows further on top."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"
+    tribe.wall_commitment_active = True
+    tribe.population = 10
+    tribe.food = 1  # upkeep = max(1, 10//10) = 1; HUNGER_CRITICAL_CYCLES_LEFT = 1 -> critical
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert tribe.food_crisis_active is True
+    assert "CONSTRUCT_WALL" not in ctx["available_actions"]
+    assert "GATHER_FOOD" in ctx["available_actions"]
+
+
 def test_affordability_gate_reproduces_the_diagnosed_wood_neglect_scenario():
     """Live-run correction: a tribe sat at wood=1 for 150+ cycles, cycling
     BUILD_WAREHOUSE/BUILD_FISHERY/BREED -- the first two cost wood it never had,
