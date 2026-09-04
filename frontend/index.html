@@ -2652,6 +2652,22 @@ function fishSupplyPerCycle(t) {
 // its tier reaches this cap (backend/city_layout.py.ring_fully_reinforced).
 const WALL_MAX_LAYERS = 2;
 
+// Mirrors backend/eras.py's ERAS order exactly -- CONSTRUCT_WALL/EXPAND_TERRITORY
+// only unlock at "tribal_synapse", but tribe.wall_rings (Simulation._found_territory)
+// gets created the instant a tribe first settles, completely independent of era.
+// Live report: "it has the wrong description of the Wall" -- the Establishments
+// panel was showing real wall progress ("0/7 sections built") for a tribe still in
+// Cognitive Horizon, before it could even choose CONSTRUCT_WALL once -- a state the
+// tribe structurally can't act on yet, not a real "0 done so far."
+const ERA_ORDER = [
+  "primitive_dawn", "cognitive_horizon", "tribal_synapse",
+  "monolithic_era", "mechanization_era", "silicon_era", "cosmic_post_human",
+];
+function eraAtLeast(era, floor) {
+  const i = ERA_ORDER.indexOf(era), f = ERA_ORDER.indexOf(floor);
+  return i >= 0 && i >= f;
+}
+
 function farmingPanel(t) {
   const ring0 = (t.wall_rings || [])[0];
   const ring0Reinforced = !!ring0 && ring0.sections.every(s => s.natural_barrier || s.tier >= WALL_MAX_LAYERS);
@@ -2717,7 +2733,7 @@ function farmingPanel(t) {
     const count = (t.buildings || []).length;
     parts.push(`🏛️ Town Hall — ${name}, ${count} building${count === 1 ? "" : "s"} strong`);
   }
-  if (ring0) {
+  if (ring0 && eraAtLeast(t.era, "tribal_synapse")) {
     // Explicit correction: "we have to separate the natural barriers out so
     // they are not in the count and the build need is exact... makes it look
     // like they already built a section which they may be confusing with a
