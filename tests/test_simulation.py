@@ -3229,6 +3229,24 @@ def test_expedition_wears_a_trail_on_the_tile_it_moves_into():
     assert sim.world.trails.get(landed)["color"] == tribe.color
 
 
+def test_expedition_outbound_marks_the_tribe_map():
+    from backend.world import sector_of
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.expeditions = [{
+        "pos": [50, 50], "origin": [50, 50], "target": [80, 80],
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+
+    sim._advance_expeditions(tribe)
+
+    landed = tuple(tribe.expeditions[0]["pos"])
+    assert sector_of(*landed) in tribe.visited_sectors
+
+
 def test_expedition_travels_farther_along_an_already_worn_trail():
     """The point of trail wear applying to expeditions too: a route worn down by
     earlier trips lets a later expedition cover more ground per day, potentially

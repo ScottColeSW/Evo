@@ -601,7 +601,9 @@ WATER_SENSING_RADIUS = 6
 # map, not a claim that it's provably better in general -- 135 degrees
 # matches _compass_direction's own convention for southwest.
 SCOUT_ROTATION_START_ANGLE_DEGREES = 135
-SCOUT_ROTATION_STEP_DEGREES = 20
+# Explicit request: "after that is used, change the wall ghost line and
+# orthogonal angle by 12 degrees, for the next, and rotate it for the next."
+SCOUT_ROTATION_STEP_DEGREES = 12
 
 # Live report (2026-09-03): "the scouts went exact the same way" -- confirmed
 # against a fresh run's own snapshots (Forest Tribe's opening SCOUT and Mountain
@@ -718,6 +720,15 @@ MINOR_SETTLEMENT_TRADE_FRACTION = 0.1
 # clear when placing/relocating a minor settlement -- not just literally inside
 # the wall, but a real buffer past it too.
 MINOR_SETTLEMENT_TERRITORY_BUFFER = 8
+
+# Tribe Map: a coarse "ground we've actually walked" record, distinct from the
+# positive-find lists (lumber_sites etc., which only record a discovery, not
+# mere passage). Bucketed rather than per-tile so it stays small over a long
+# run and reads as "this general area," not a literal breadcrumb trail
+# (Landscape.trails already covers that at the per-tile level). Feeds the
+# survey-spam fix (see Simulation._advance_exploration_party_outbound) so a
+# tribe stops re-confirming ground it's already covered.
+TRIBE_MAP_SECTOR_SIZE = 10
 
 # DECLARE_ALLIANCE/DECLARE_WAR (backend/actions.py): a persistent, per-rival
 # geopolitical stance (Age 4's Declare_Geopolitical_Posture from the Agentic

@@ -1790,6 +1790,17 @@ def test_relocate_moves_the_tribe_toward_target():
     assert tribe.x > 50  # moved toward the target, not away or nowhere
 
 
+def test_relocate_marks_the_new_ground_on_the_tribe_map():
+    from backend.world import sector_of
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    ACTION_REGISTRY["RELOCATE"](sim, tribe, "plains", (80, 50))
+
+    assert sector_of(tribe.x, tribe.y) in tribe.visited_sectors
+
+
 def test_relocate_moves_five_times_as_fast_from_an_evolved_toll_road():
     """Explicit request: "travel speed is 5x on toll roads.\""""
     from backend import config
@@ -1902,6 +1913,51 @@ def test_scout_does_not_move_the_tribe_but_launches_an_expedition():
     assert tribe.expeditions[0]["day"] == 0
     assert tribe.expeditions[0]["phase"] == "outbound"
     assert "depart" in note
+
+
+def test_scout_launches_from_the_territory_edge_once_it_exists():
+    """Explicit request: "All Scouting, Hunting, Exploration, etc. should use
+    starting points off the edge of the Territory boundary, not the center.\""""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)  # gives it a real territory_center/territory_radius
+
+    ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (10, 10))
+
+    lx, ly = tribe.expeditions[0]["origin"]
+    assert [lx, ly] == tribe.expeditions[0]["pos"]
+    assert (lx, ly) != (tribe.x, tribe.y)  # not fanning out from the exact camp tile
+    cx, cy = tribe.territory_center
+    dist = ((lx - cx) ** 2 + (ly - cy) ** 2) ** 0.5
+    assert abs(dist - tribe.territory_radius) <= 1  # right at the wall's own edge (rounding)
+
+
+def test_scout_launches_from_current_position_before_any_territory_exists():
+    """Before a tribe has ever settled, there's no wall edge to start from --
+    falls back to wherever the tribe actually stands, same as before this
+    change."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (10, 10))
+
+    assert tribe.expeditions[0]["origin"] == [50, 50]
+
+
+def test_hunting_party_launches_from_the_territory_edge_toward_its_own_target():
+    """HUNTING_PARTY trusts the model's own target_vector rather than a compass
+    heading, so the launch-point heading has to be derived from tribe -> target
+    instead of reusing scout_rotation_index."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+
+    ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "plains", (99, 50))  # due east
+
+    lx, ly = tribe.expeditions[0]["origin"]
+    assert (lx, ly) != (tribe.x, tribe.y)
+    cx, cy = tribe.territory_center
+    assert lx > cx  # launched toward the east, same direction as the target
 
 
 def test_reflect_into_grid_leaves_in_bounds_values_alone():

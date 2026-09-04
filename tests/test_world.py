@@ -1,5 +1,25 @@
 from backend import config
-from backend.world import Landscape, biome_at, find_nearby_site, site_seed_points
+from backend.simulation import Tribe
+from backend.world import Landscape, biome_at, find_nearby_site, mark_visited_sector, sector_of, site_seed_points
+
+
+def test_sector_of_buckets_by_the_configured_size():
+    size = config.TRIBE_MAP_SECTOR_SIZE
+    assert sector_of(0, 0) == (0, 0)
+    assert sector_of(size - 1, size - 1) == (0, 0)
+    assert sector_of(size, size) == (1, 1)
+    assert sector_of(2 * size + 3, 5) == (2, 0)
+
+
+def test_mark_visited_sector_records_the_tiles_bucket():
+    """Explicit request (Tribe Map): a coarse "ground we've actually walked"
+    record, distinct from the positive-find lists (lumber_sites etc.)."""
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    assert tribe.visited_sectors == set()
+
+    mark_visited_sector(tribe, 55, 62)
+
+    assert sector_of(55, 62) in tribe.visited_sectors
 
 
 def test_site_seed_points_are_deterministic():

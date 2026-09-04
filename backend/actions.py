@@ -17,7 +17,7 @@ import math
 import random
 
 from . import architect, city_layout, config, physics
-from .world import BIOME_LABELS, biome_at
+from .world import BIOME_LABELS, biome_at, mark_visited_sector
 
 
 # Real biomes don't hand out every resource equally -- a mountain has essentially no
@@ -1045,6 +1045,22 @@ def _generate_scout(tribe, cycle: int, base_days: int = None) -> dict:
 _reflect_into_grid = physics.reflect_into_grid
 
 
+def _expedition_launch_point(tribe, angle_radians: float, grid_size: int) -> tuple[int, int]:
+    """Explicit request: "All Scouting, Hunting, Exploration, etc. should use
+    starting points off the edge of the Territory boundary, not the center."
+    Once territory exists, a party sets out already at the wall's own edge,
+    along the same heading it's actually traveling, instead of fanning out from
+    the exact town-hall tile every single dispatch. Falls back to the tribe's
+    own current position before territory exists (a nomadic band with no walls
+    yet has no "edge" to start from)."""
+    if tribe.territory_center is None:
+        return tribe.x, tribe.y
+    cx, cy = tribe.territory_center
+    lx = _reflect_into_grid(round(cx + math.cos(angle_radians) * tribe.territory_radius), grid_size)
+    ly = _reflect_into_grid(round(cy + math.sin(angle_radians) * tribe.territory_radius), grid_size)
+    return lx, ly
+
+
 def _scout(sim, tribe, biome, target):
     """Dispatches an expedition -- your most capable people, out searching, not an
     instant look. They travel and camp under their own supply (no drain on the
@@ -1101,11 +1117,12 @@ def _scout(sim, tribe, biome, target):
     # is deliberately about how far a trip is aimed, not how fast it's walked.
     tx = _reflect_into_grid(tribe.x + round(math.cos(angle_radians) * config.SCOUT_PATROL_DISTANCE), sim.world.grid_size)
     ty = _reflect_into_grid(tribe.y + round(math.sin(angle_radians) * config.SCOUT_PATROL_DISTANCE), sim.world.grid_size)
+    lx, ly = _expedition_launch_point(tribe, angle_radians, sim.world.grid_size)
     scout = _generate_scout(tribe, sim.cycle)
     tribe.expeditions.append({
         "kind": "scout",
-        "pos": [tribe.x, tribe.y],
-        "origin": [tribe.x, tribe.y],
+        "pos": [lx, ly],
+        "origin": [lx, ly],
         "target": [tx, ty],
         "day": 0,
         "phase": "outbound",
@@ -1121,7 +1138,7 @@ def _scout(sim, tribe, biome, target):
         # reused, so a single fresh journey barely shows anything even while it's
         # actively happening. This is just this one party's breadcrumb line, cleared
         # when they get home, not a permanent feature of the map.
-        "path": [[tribe.x, tribe.y]],
+        "path": [[lx, ly]],
     })
     tribe.expeditions_launched += 1
     return f"scouts led by {scout['name']} depart camp to explore toward ({tx},{ty})"
@@ -1153,11 +1170,12 @@ def _exploration_party(sim, tribe, biome, target):
     angle_radians = math.radians(angle_degrees)
     tx = _reflect_into_grid(tribe.x + round(math.cos(angle_radians) * config.SCOUT_PATROL_DISTANCE), sim.world.grid_size)
     ty = _reflect_into_grid(tribe.y + round(math.sin(angle_radians) * config.SCOUT_PATROL_DISTANCE), sim.world.grid_size)
+    lx, ly = _expedition_launch_point(tribe, angle_radians, sim.world.grid_size)
     scout = _generate_scout(tribe, sim.cycle, base_days=config.EXPLORATION_PARTY_MAX_DAYS)
     tribe.expeditions.append({
         "kind": "explore",
-        "pos": [tribe.x, tribe.y],
-        "origin": [tribe.x, tribe.y],
+        "pos": [lx, ly],
+        "origin": [lx, ly],
         "target": [tx, ty],
         "day": 0,
         "phase": "outbound",
@@ -1170,7 +1188,7 @@ def _exploration_party(sim, tribe, biome, target):
         "lead_scout": scout["name"],
         "determination": scout["determination"],
         "max_days": scout["max_days"],
-        "path": [[tribe.x, tribe.y]],
+        "path": [[lx, ly]],
     })
     tribe.expeditions_launched += 1
     return f"an exploration party led by {scout['name']} departs camp to chart new ground toward ({tx},{ty})"
@@ -1204,11 +1222,18 @@ def _hunting_party(sim, tribe, biome, target):
     # fix for SCOUT/EXPLORATION_PARTY's own targets.
     tx = _reflect_into_grid(tx, sim.world.grid_size)
     ty = _reflect_into_grid(ty, sim.world.grid_size)
+    # Explicit request: "All Scouting, Hunting, Exploration, etc. should use
+    # starting points off the edge of the Territory boundary, not the center."
+    # HUNTING_PARTY trusts the model's own target_vector rather than a computed
+    # compass heading (see this function's own docstring), so the heading used
+    # for the launch point is derived from tribe -> target instead.
+    angle_radians = math.atan2(ty - tribe.y, tx - tribe.x)
+    lx, ly = _expedition_launch_point(tribe, angle_radians, sim.world.grid_size)
     scout = _generate_scout(tribe, sim.cycle, base_days=config.HUNTING_PARTY_MAX_DAYS)
     tribe.expeditions.append({
         "kind": "hunt",
-        "pos": [tribe.x, tribe.y],
-        "origin": [tribe.x, tribe.y],
+        "pos": [lx, ly],
+        "origin": [lx, ly],
         "target": [tx, ty],
         "day": 0,
         "phase": "outbound",
@@ -1218,7 +1243,7 @@ def _hunting_party(sim, tribe, biome, target):
         "lead_scout": scout["name"],
         "determination": scout["determination"],
         "max_days": scout["max_days"],
-        "path": [[tribe.x, tribe.y]],
+        "path": [[lx, ly]],
     })
     tribe.expeditions_launched += 1
     return f"a hunting party led by {scout['name']} departs camp toward ({tx},{ty})"
@@ -1262,6 +1287,7 @@ def _relocate(sim, tribe, biome, target):
             nx = round(tcx + (nx - tcx) * scale)
             ny = round(tcy + (ny - tcy) * scale)
     sim.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
+    mark_visited_sector(tribe, nx, ny)
     tribe.x, tribe.y = nx, ny
     return None
 

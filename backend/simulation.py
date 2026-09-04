@@ -30,6 +30,7 @@ from .translation_matrix import TranslationConfidenceMatrix
 from .vram_guard import HardwareVRAMBoundaryGuard
 from .world import (
     BIOME_LABELS, UNIQUE_RESOURCE_BY_BIOME, WILDLIFE_SITE_TYPES, Landscape, biome_at, find_nearby_site,
+    mark_visited_sector,
 )
 
 # Historically one spawn per land biome (forest, mountains, plains, river), each chosen
@@ -562,6 +563,9 @@ class Tribe:
         # tribe can run more than one party at once (up to config.MAX_CONCURRENT_
         # EXPEDITIONS), any mix of scouting and hunting.
         self.expeditions: list[dict] = []
+        # Tribe Map: coarse "ground we've actually walked" record -- see
+        # config.TRIBE_MAP_SECTOR_SIZE/world.mark_visited_sector.
+        self.visited_sectors: set[tuple[int, int]] = set()
         # See actions.py._scout -- explicit request: "scout directions rotate
         # on a 20 degree angle starting with the South East." Advances by one
         # step (config.SCOUT_ROTATION_STEP_DEGREES) every real SCOUT dispatch,
@@ -880,6 +884,7 @@ class Tribe:
             "mine_built": self.mine_built,
             "mine_resource_name": self.mine_resource_name,
             "unique_resources": self.unique_resources,
+            "visited_sectors": list(self.visited_sectors),
             "scout_rotation_index": self.scout_rotation_index,
             "landmarks": self.landmarks,
             "kitchen_built": self.kitchen_built,
@@ -2946,6 +2951,7 @@ class Simulation:
             nx, ny = physics.terrain_aware_step(px, py, tx, ty, base_speed=base_speed, has_boat=tribe.boat_built)
             nx, ny = self._resolve_toll(tribe, px, py, nx, ny)
             self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
+            mark_visited_sector(tribe, nx, ny)
             self._check_road_evolution(nx, ny)
             exp["pos"] = [nx, ny]
             exp["path"].append([nx, ny])
@@ -3062,6 +3068,7 @@ class Simulation:
             nx, ny = physics.terrain_aware_step(px, py, ox, oy, base_speed=base_speed, has_boat=tribe.boat_built)
             nx, ny = self._resolve_toll(tribe, px, py, nx, ny)
             self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
+            mark_visited_sector(tribe, nx, ny)
             self._check_road_evolution(nx, ny)
             exp["pos"] = [nx, ny]
             exp["path"].append([nx, ny])
@@ -4045,6 +4052,7 @@ class Simulation:
                 continue
             for px, py in _interpolated_path(tribe.x, tribe.y, site[0], site[1]):
                 self.world.wear_trail(px, py, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
+                mark_visited_sector(tribe, px, py)
                 self._check_road_evolution(px, py)
 
     def _advance_farming(self, tribe: Tribe) -> None:

@@ -172,6 +172,21 @@ def biome_at(x: int, y: int) -> str:
     return "plains"
 
 
+def sector_of(x: int, y: int) -> tuple[int, int]:
+    """Buckets a tile into its Tribe Map sector -- see
+    config.TRIBE_MAP_SECTOR_SIZE's own comment."""
+    size = config.TRIBE_MAP_SECTOR_SIZE
+    return x // size, y // size
+
+
+def mark_visited_sector(tribe, x: int, y: int) -> None:
+    """Records that a tribe's own people have actually walked through this
+    ground. Called everywhere Landscape.wear_trail already is -- the same real
+    "someone was physically here" moments -- distinct from a positive-find list
+    (lumber_sites etc.), which only records a discovery, not mere passage."""
+    tribe.visited_sectors.add(sector_of(x, y))
+
+
 # 2026-09-02 rework: resource sites (lumber/wildlife/quarry/mine) used to be decided
 # fresh on every single scouting report, rolling an independent chance on whatever
 # exact tile the scout happened to land on. That has two real problems: the world has
