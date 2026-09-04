@@ -293,8 +293,14 @@ async function loadModelsAndInit() {
     startBtn.disabled = true;
     models = ["(no models found)"];
   }
-  addTribeRow("Forest Tribe", models);
-  addTribeRow("Mountain Tribe", models);
+  // Live request: "so the names are reversed... let's fix this the easy way.
+  // We default to Tribe 1 and Tribe 2." Biome-flavored default names (Forest/
+  // Mountain) implied a fixed terrain association that the actual spawn points
+  // (repositioned relative to the lake/river, not a specific biome) no longer
+  // match -- generic numbering carries no such assumption, and already matches
+  // the "+ Add Tribe" button's own default for a 3rd/4th tribe below.
+  addTribeRow("Tribe 1", models);
+  addTribeRow("Tribe 2", models);
 }
 
 document.getElementById("btn-add").addEventListener("click", async () => {
