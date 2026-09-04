@@ -7,7 +7,7 @@ MAX_TRIBES = 4
 
 # GATHER_WOOD/GATHER_STONE used to be available from the moment a tribe existed, before
 # it had even decided where to actually live -- a nomadic band stockpiling timber and
-# quarried stone before choosing a home. Simulation._is_settled gates both behind
+# quarried stone before choosing a home. Simulation._is_camped gates both behind
 # actually staying put somewhere farmable first: SETTLEMENT_STABILITY_CYCLES consecutive
 # cycles without choosing RELOCATE, standing on one of FARMABLE_BIOMES (open land with
 # real water access). A tribe's starting stockpile (Tribe.__init__) still covers early

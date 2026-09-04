@@ -216,7 +216,7 @@ def test_settling_near_water_succeeds_within_a_confirmed_sites_territory_radius(
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.confirmed_water_sites = [(5, 55)]  # exactly on the tribe's own tile
 
-    assert sim._is_settled(tribe) is True
+    assert sim._is_camped(tribe) is True
     assert sim._is_settled_near_water(tribe) is True
 
 
@@ -4917,7 +4917,7 @@ def test_night_inventory_reports_the_real_state_of_affairs():
     assert "Population: 5." in inventory
     assert "10 wood, 10 stone, 0 food, 200 water" in inventory
     assert "starving" in inventory.lower()
-    assert f"not settled anywhere farmable yet (0/{config.SETTLEMENT_STABILITY_CYCLES}" in inventory
+    assert f"not made camp anywhere farmable yet (0/{config.SETTLEMENT_STABILITY_CYCLES}" in inventory
 
 
 def test_night_inventory_reports_settlement_when_actually_settled():
@@ -4929,7 +4929,7 @@ def test_night_inventory_reports_settlement_when_actually_settled():
 
     inventory = sim._build_night_inventory(tribe)
 
-    assert "settled on farmable ground" in inventory
+    assert "camped on farmable ground" in inventory
 
 
 @run_async

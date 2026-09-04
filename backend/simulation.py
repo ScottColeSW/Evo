@@ -539,8 +539,8 @@ class Tribe:
         # not an arbitrary new threshold invented just for this.
         self.confirmed_water_sites: list[tuple[int, int]] = []
         # Counts consecutive cycles without choosing RELOCATE -- see
-        # Simulation._is_settled/config.SETTLEMENT_STABILITY_CYCLES. Reset to 0 the
-        # instant RELOCATE is chosen again, so "settled" means genuinely staying put,
+        # Simulation._is_camped/config.SETTLEMENT_STABILITY_CYCLES. Reset to 0 the
+        # instant RELOCATE is chosen again, so "camped" means genuinely staying put,
         # not just having once paused for ten cycles somewhere.
         self.cycles_since_relocate = 0
         # The chief's own reasoning from the most recent night cycle (see
@@ -1298,11 +1298,11 @@ class Simulation:
         )
         if survival_bias:
             lines.append(survival_bias)
-        if self._is_settled(tribe):
-            lines.append("The tribe is settled on farmable ground.")
+        if self._is_camped(tribe):
+            lines.append("The tribe is camped on farmable ground.")
         else:
             lines.append(
-                f"The tribe has not settled anywhere farmable yet "
+                f"The tribe has not made camp anywhere farmable yet "
                 f"({tribe.cycles_since_relocate}/{config.SETTLEMENT_STABILITY_CYCLES} cycles without relocating)."
             )
         nxt = next_era(tribe.era)
@@ -1843,7 +1843,7 @@ class Simulation:
         )
 
     def _settlement_ground_ok(self, tribe: Tribe, x: int | None = None, y: int | None = None) -> bool:
-        """The ground-qualification half of _is_settled (biome match or near confirmed
+        """The ground-qualification half of _is_camped (biome match or near confirmed
         water), without the stability-cycle clock. Factored out so _apply_turn's
         cycles_since_relocate reset (below) can tell a RELOCATE that hops between two
         tiles that both already qualify -- e.g. jittering among several confirmed water
@@ -1852,21 +1852,36 @@ class Simulation:
         px, py = (tribe.x, tribe.y) if x is None else (x, y)
         return self.world.biome(px, py) in config.FARMABLE_BIOMES or self._near_confirmed_water(tribe, px, py)
 
-    def _is_settled(self, tribe: Tribe) -> bool:
-        """Whether this tribe has actually put down roots -- see config.
+    def _is_camped(self, tribe: Tribe) -> bool:
+        """Whether this tribe has held still on decent (farmable or near-water)
+        ground long enough to work the land here -- see config.
         SETTLEMENT_STABILITY_CYCLES/FARMABLE_BIOMES. GATHER_WOOD/GATHER_STONE are
         gated on this: a nomadic band stockpiling timber and quarried stone before
-        it's even chosen a home never made sense, but it took no real fact to notice
-        that until now."""
+        it's even made camp never made sense, but it took no real fact to notice
+        that until now.
+
+        Renamed from _is_settled (explicit request, 2026-09-04): this only ever
+        tested camp viability, not the real, permanent-commitment meaning
+        "settled" now carries elsewhere (tribe.has_ever_settled/_found_territory,
+        gated on real arrival -- see _is_settled_near_water below, and
+        Simulation._prepare_turn's still_journeying check). A tribe can camp,
+        gather, and even farm at a good spot long before ever committing to
+        found its city there."""
         if tribe.cycles_since_relocate < config.SETTLEMENT_STABILITY_CYCLES:
             return False
         return self._settlement_ground_ok(tribe)
 
     def _is_settled_near_water(self, tribe: Tribe) -> bool:
-        """Stricter than _is_settled: PLANT_CROP/GATHER_EGGS need a tribe that actually
+        """Stricter than _is_camped: PLANT_CROP/GATHER_EGGS need a tribe that actually
         resettled somewhere with real, easily accessible water -- "plains" alone (which
-        counts for the general settlement/GATHER_WOOD gate) doesn't mean that, per the
-        original design spec for farming."""
+        counts for the general _is_camped/GATHER_WOOD gate) doesn't mean that, per the
+        original design spec for farming. Keeps the "settled" name -- unlike
+        _is_camped, this is the real "putting down roots near water" signal
+        (drives the "Settling" celebration/naming and the RELOCATE lockout).
+        Note has_ever_settled/_found_territory deliberately still key off the
+        looser _is_camped (plus not still_journeying, see _prepare_turn) rather
+        than this stricter check -- requiring real water there would permanently
+        strand a tribe that genuinely never finds any."""
         if tribe.cycles_since_relocate < config.SETTLEMENT_STABILITY_CYCLES:
             return False
         return (
@@ -1946,7 +1961,11 @@ class Simulation:
             wx, wy = tribe.confirmed_water_sites[-1]
             survival_bias += f" Settling at the confirmed water source ({wx},{wy}) would fix this for good, not just this cycle."
         memories = tribe.memory.recall(f"{biome} at {tribe.x},{tribe.y}")
-        settled = self._is_settled(tribe)
+        # Renamed from `settled` (explicit request, 2026-09-04): _is_camped only
+        # ever tested camp viability, not real settlement -- see _is_camped's own
+        # docstring. `camping_near_water` below keeps its old name/meaning; it's
+        # the real settlement signal.
+        camped = self._is_camped(tribe)
         settled_near_water = self._is_settled_near_water(tribe)
         # Explicit correction: has_ever_settled used to require settled_near_water
         # specifically -- a tribe that settled on plains away from water would stay
@@ -1966,12 +1985,12 @@ class Simulation:
         # settlement-qualifying ground (see its own field comment), not cycles
         # spent motionless -- a multi-turn march across farmable plains toward
         # a still-distant target accrues the same "stability" credit as
-        # actually staying put, so _is_settled could turn True mid-journey.
+        # actually staying put, so _is_camped could turn True mid-journey.
         # tribe.last_target != tribe.x/y (the same signal journey_note, below,
         # already uses) means a chosen destination hasn't been reached yet --
         # settling waits for that arrival instead of firing out from under it.
         still_journeying = tribe.last_target is not None and tribe.last_target != [tribe.x, tribe.y]
-        if settled and not still_journeying and not tribe.has_ever_settled:
+        if camped and not still_journeying and not tribe.has_ever_settled:
             tribe.has_ever_settled = True
             self._found_territory(tribe)
 
@@ -1989,7 +2008,7 @@ class Simulation:
                 available_actions = [a for a in available_actions if a != "RELOCATE"]
         else:
             available_actions = sorted(unlocked_actions_through(tribe.era))
-        if not settled:
+        if not camped:
             available_actions = [a for a in available_actions if a not in ("GATHER_WOOD", "GATHER_STONE")]
         # Regression: RELOCATE used to lock out on the same looser `settled` check
         # GATHER_WOOD uses (any farmable ground, long enough) -- but farming/eggs need
@@ -2024,7 +2043,7 @@ class Simulation:
         # stricter settled_near_water check (a real adjacent water tile) -- "the
         # requirement of 'real' water is bogus, this is a Settled gate," same general
         # settling condition as GATHER_WOOD/STONE, not a stricter one layered on top.
-        if not settled:
+        if not camped:
             available_actions = [
                 a for a in available_actions if a not in ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "BUILD_DOCK")
             ]
@@ -2224,7 +2243,7 @@ class Simulation:
                     "RELOCATE is not available yet -- no real water source has been confirmed to move "
                     "toward. Sending scouts out is how a real destination gets found."
                 )
-        if not settled:
+        if not camped:
             # Bug report: "look at the Mountain Tribe and tell me why they
             # aren't Settled." This used to always say "on farmable ground"
             # regardless of whether the tribe's current tile actually
@@ -2253,7 +2272,7 @@ class Simulation:
                 "The tribe has settled here, next to real water, and is no longer considering relocating. "
                 "Water now flows in on its own each cycle -- manually gathering more here is no longer necessary."
             )
-        elif settled:
+        elif camped:
             # A real, non-final state: good enough ground to gather wood/stone on, but
             # not good enough for farming/eggs -- RELOCATE stays on the table
             # specifically so the tribe can still choose to move on toward real water.
@@ -2507,7 +2526,7 @@ class Simulation:
 
         settlement_actions = ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH")
         if any(a in unlocked_actions_through(tribe.era) for a in settlement_actions):
-            if not settled:
+            if not camped:
                 visible_entities.append(
                     "Crops, eggs, and fishing all need the tribe to have settled here -- it hasn't put "
                     f"down roots yet ({tribe.cycles_since_relocate}/{config.SETTLEMENT_STABILITY_CYCLES} "
@@ -2807,7 +2826,7 @@ class Simulation:
         # tile or two apart (common once a scout has walked the shoreline) kept
         # jittering RELOCATE between them -- (19,62) -> (20,61) -> (20,62) -- each hop
         # a genuine position change, so the clock kept restarting to 0 forever even
-        # though every one of those tiles already satisfied _is_settled's ground
+        # though every one of those tiles already satisfied _is_camped's ground
         # check. A small model can't be talked out of this with a fact (see
         # evolution2civ-facts-vs-mechanics-pattern.md) -- the fix is mechanical: only
         # reset the clock when the move actually leaves settlement-qualifying ground,
@@ -4078,7 +4097,7 @@ class Simulation:
         the same general settled check CATCH_FISH's own availability used, not the
         stricter settled_near_water -- explicit correction that the extra
         water-adjacency distinction was bogus."""
-        if tribe.fishing_learned and self._is_settled(tribe):
+        if tribe.fishing_learned and self._is_camped(tribe):
             upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
             fishery_bonus = config.FISHERY_SUPPLY_BONUS_MULTIPLIER if tribe.fishery_built else 1.0
             dock_bonus = (1 + config.DOCK_FISH_CATCH_BONUS_FRACTION) if tribe.dock_built else 1.0
@@ -4095,7 +4114,7 @@ class Simulation:
         general settled check. Explicit correction: excavating the mine alone
         used to start this immediately -- "they do not harvest on a Discovery,
         so they have to fetch it once" first."""
-        if tribe.mine_built and tribe.ore_ever_gathered and tribe.mine_resource_name and self._is_settled(tribe):
+        if tribe.mine_built and tribe.ore_ever_gathered and tribe.mine_resource_name and self._is_camped(tribe):
             self._capped_unique_add(tribe, tribe.mine_resource_name, config.MINE_YIELD_PER_CYCLE)
 
     def _advance_in_territory_site_yields(self, tribe: Tribe) -> None:
@@ -4123,7 +4142,7 @@ class Simulation:
         """Once a tannery is built (actions.py._build_tannery), Fur flows in
         daily -- mirrors _advance_mine_yield exactly, into the same
         unique_resources dict."""
-        if tribe.tannery_built and self._is_settled(tribe):
+        if tribe.tannery_built and self._is_camped(tribe):
             self._capped_unique_add(tribe, "Fur", config.TANNERY_YIELD_PER_CYCLE)
 
     def _advance_resource_trails(self, tribe: Tribe) -> None:
