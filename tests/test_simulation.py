@@ -4993,6 +4993,67 @@ def test_snapshot_marks_an_evolved_road_and_its_owner():
     assert entry["owner"] == "tribe_0"
 
 
+def test_check_road_evolution_celebrates_for_the_owner_on_the_exact_crossing():
+    """Explicit request: "a road will be similar [to the wall] but a big episode
+    of major development" -- the exact crossing that tips a trail's lifetime
+    count past config.ROAD_EVOLVE_CROSSINGS fires the same real "celebrates"
+    treatment the wall's own completion gets, credited to whichever tribe
+    actually owns the tile."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.food = 100
+
+    for _ in range(config.ROAD_EVOLVE_CROSSINGS):
+        sim.world.wear_trail(12, 34, 0.01, tribe_id=tribe.id)
+        sim._check_road_evolution(12, 34)
+    assert not any("celebrates a real road" in e for e in tribe.history)
+
+    sim.world.wear_trail(12, 34, 0.01, tribe_id=tribe.id)
+    sim._check_road_evolution(12, 34)
+
+    assert any("celebrates a real road taking shape at (12,34)" in e for e in tribe.history)
+    assert tribe.food < 100
+    assert any(t["name"] == "Road Warden" for t in tribe.trophies)
+
+
+def test_check_road_evolution_only_fires_once_per_tile():
+    """Further crossings past the threshold keep incrementing the lifetime
+    counter (World.wear_trail never caps it) but shouldn't re-celebrate the
+    same tile over and over."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.food = 100
+    for _ in range(config.ROAD_EVOLVE_CROSSINGS + 1):
+        sim.world.wear_trail(12, 34, 0.01, tribe_id=tribe.id)
+        sim._check_road_evolution(12, 34)
+    food_after_first = tribe.food
+
+    sim.world.wear_trail(12, 34, 0.01, tribe_id=tribe.id)
+    sim._check_road_evolution(12, 34)
+
+    assert tribe.food == food_after_first  # no second celebration/spend
+
+
+def test_check_road_evolution_ignores_a_tribe_with_no_recorded_owner():
+    """Defensive: an unowned trail tile (owner=None, shouldn't really happen
+    once crossings clear the threshold, but wear_trail's owner param is
+    optional) must not raise trying to celebrate on behalf of no one."""
+    from backend import config
+
+    sim = _bare_simulation()
+    sim.tribes = {}
+    for _ in range(config.ROAD_EVOLVE_CROSSINGS + 1):
+        sim.world.wear_trail(12, 34, 0.01)  # no tribe_id passed
+
+    sim._check_road_evolution(12, 34)  # must not raise
+
+
 def test_population_grows_once_food_clears_the_threshold():
     from backend import config
 

@@ -2837,6 +2837,7 @@ class Simulation:
             nx, ny = physics.terrain_aware_step(px, py, tx, ty, base_speed=base_speed, has_boat=tribe.boat_built)
             nx, ny = self._resolve_toll(tribe, px, py, nx, ny)
             self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
+            self._check_road_evolution(nx, ny)
             exp["pos"] = [nx, ny]
             exp["path"].append([nx, ny])
             exp["food_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_FOOD
@@ -2952,6 +2953,7 @@ class Simulation:
             nx, ny = physics.terrain_aware_step(px, py, ox, oy, base_speed=base_speed, has_boat=tribe.boat_built)
             nx, ny = self._resolve_toll(tribe, px, py, nx, ny)
             self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
+            self._check_road_evolution(nx, ny)
             exp["pos"] = [nx, ny]
             exp["path"].append([nx, ny])
             exp["food_gathered"] += config.EXPEDITION_RETURN_DAILY_FOOD
@@ -3792,6 +3794,48 @@ class Simulation:
                 tribe.pending_birth = {"parent_a": parent_a, "parent_b": parent_b}
                 tribe.history.append(f"amid the celebration, {parent_a} and {parent_b} decide to start a family together")
 
+    def _check_road_evolution(self, x: int, y: int) -> None:
+        """Explicit request: "a road will be similar [to the wall] but a big
+        episode of major development making trade far more likely and travel
+        easier." A trail silently flips World.is_toll_road the instant its
+        lifetime crossings pass config.ROAD_EVOLVE_CROSSINGS -- this catches the
+        exact cycle that happens (crossings == threshold + 1, i.e. the crossing
+        that just tipped it over) and turns it into a real, one-time celebration
+        for whichever tribe actually owns this tile (World.road_owner -- the
+        first tribe to ever walk it, not necessarily whoever's walking it right
+        now that pushed it over). Called after every World.wear_trail site."""
+        entry = self.world.trails.get((x, y))
+        if entry is None or entry.get("crossings", 0) != config.ROAD_EVOLVE_CROSSINGS + 1:
+            return
+        owner_id = entry.get("owner")
+        owner = self.tribes.get(owner_id) if owner_id else None
+        if owner is None or owner.extinct:
+            return
+        self._celebrate_road_complete(owner, x, y)
+
+    def _celebrate_road_complete(self, tribe: Tribe, x: int, y: int) -> None:
+        """Same real "🎉 celebrates" treatment _celebrate_wall_complete gets --
+        a road tribes actually built through repeated use, not a stat flip
+        no one notices. The road's own real effects (World.trail_speed_bonus/
+        TOLL_ROAD_SPEED_MULTIPLIER for travel, toll fees in _resolve_toll for
+        trade) are unchanged; this is the moment they become real, not new
+        mechanics on top of them."""
+        tribe.last_celebration_cycle = self.cycle
+        spent = _celebration_cost(tribe)
+        tribe.food -= spent
+        self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.history.append(
+            f"\U0001f389 {tribe.name} celebrates a real road taking shape at ({x},{y}) -- trade and travel "
+            f"flow easier from here on, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
+        )
+        self._award_trophy(tribe, "Road Warden")
+        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+            pair = _eligible_breeding_pair(tribe)
+            if pair is not None:
+                parent_a, parent_b = pair
+                tribe.pending_birth = {"parent_a": parent_a, "parent_b": parent_b}
+                tribe.history.append(f"amid the celebration, {parent_a} and {parent_b} decide to start a family together")
+
     def _advance_water_supply(self, tribe: Tribe) -> None:
         """Explicit request: "like relocate, gather water becomes irrelevant once they
         have settled." A tribe genuinely settled next to real water shouldn't need to
@@ -3859,6 +3903,7 @@ class Simulation:
                 continue
             for px, py in _interpolated_path(tribe.x, tribe.y, site[0], site[1]):
                 self.world.wear_trail(px, py, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
+                self._check_road_evolution(px, py)
 
     def _advance_farming(self, tribe: Tribe) -> None:
         """A planted crop plot (actions.py._plant_crop) grows on its own every cycle,

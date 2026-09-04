@@ -1799,11 +1799,41 @@ function drawWallRingGlow(cx, cy, radius) {
   ctx.restore();
 }
 
+// A purely decorative archway on one fixed edge -- "a fake gate would be a nod
+// to the architect" (backend/architect.py, which actually decides where every
+// building and wall section lands). No real passable-opening mechanic behind
+// it, same spirit as the towers: a settlement's completed wall should look
+// like somewhere people actually live, not just a defense-fraction number.
+const GATE_SECTION_INDEX = 4; // "S" -- a fixed, recognizable front door
+
+function drawWallGate(x1, y1, x2, y2, tier) {
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const width = Math.max(3, TILE * (0.3 + WALL_TIER_WIDTH_STEP * tier));
+  const gateW = Math.min(TILE * 0.9, Math.hypot(x2 - x1, y2 - y1) * 0.3);
+  ctx.save();
+  ctx.translate(mx, my);
+  ctx.rotate(angle);
+  ctx.fillStyle = "#3f2d1c";
+  ctx.beginPath();
+  ctx.moveTo(-gateW / 2, width / 2);
+  ctx.lineTo(-gateW / 2, -width / 2 + gateW / 2);
+  ctx.arc(0, -width / 2 + gateW / 2, gateW / 2, Math.PI, 0);
+  ctx.lineTo(gateW / 2, width / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#c2703d";
+  ctx.lineWidth = Math.max(1, TILE * 0.05);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawCompleteRingBling(cx, cy, radius, ringTier, fireKnown) {
   for (let i = 0; i < 8; i++) {
     const [x1, y1] = wallVertex(cx, cy, radius, i);
     const [x2, y2] = wallVertex(cx, cy, radius, i + 1);
     drawBattlementEdge(x1, y1, x2, y2, ringTier);
+    if (i === GATE_SECTION_INDEX) drawWallGate(x1, y1, x2, y2, ringTier);
   }
   if (fireKnown) drawWallRingGlow(cx, cy, radius);
   const towerR = TILE * 0.32;
