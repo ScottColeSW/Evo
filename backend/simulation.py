@@ -477,6 +477,11 @@ class Tribe:
         # Credited to whichever chief is in power the moment each is first earned --
         # see Simulation._check_chief_trophies. [{"name", "chief", "cycle"}, ...]
         self.trophies: list[dict] = []
+        # Fame: a new well-being measurement, distinct from esteem (trophy count)
+        # -- prestige from real events (celebrations, Landmarks), not achievement
+        # milestones. See config.FAME_PER_CELEBRATION/_PER_LANDMARK and
+        # wellbeing.compute_wellbeing's own 6th tier.
+        self.fame: float = 0.0
         # Set by actions.py._breed, resolved (an async LLM call -- see backend/
         # breeding.py) in the same Simulation.step() that set it, same pattern as
         # pending_chief_context/_install_chief. {"parent_a", "parent_b"} or None.
@@ -920,6 +925,7 @@ class Tribe:
             "chief_decree": self.chief_decree,
             "chief_victory": self.chief_victory,
             "trophies": self.trophies,
+            "fame": self.fame,
             "lineage": self.lineage,
             "custom_awards": self.custom_awards,
             "confirmed_water_sites": self.confirmed_water_sites,
@@ -3447,6 +3453,10 @@ class Simulation:
             tribe.landmarks.append({"x": px, "y": py, "resource": name})
             self._capped_unique_add(tribe, resource, reward)
             self.trauma.radiate_event_wave(px, py, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+            # Explicit request: "Finding and marking Landmarks increases Fame...
+            # A Landmark in your Territory gives you even more Fame."
+            in_territory = self._site_in_own_territory(tribe, px, py)
+            tribe.fame += config.FAME_PER_LANDMARK_IN_TERRITORY if in_territory else config.FAME_PER_LANDMARK
             tribe.history.append(
                 f"{scout}'s exploration party discovers {name} at ({px},{py}) -- {reward} {resource} claimed"
             )
@@ -3911,6 +3921,7 @@ class Simulation:
         spent = _celebration_cost(tribe)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.fame += config.FAME_PER_CELEBRATION
         tribe.history.append(
             f"\U0001f389 {tribe.name} celebrates the wall's completion, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )
@@ -3952,6 +3963,7 @@ class Simulation:
         spent = _celebration_cost(tribe)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.fame += config.FAME_PER_CELEBRATION
         tribe.history.append(
             f"\U0001f389 {tribe.name} celebrates a real road taking shape at ({x},{y}) -- trade and travel "
             f"flow easier from here on, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
@@ -4257,6 +4269,7 @@ class Simulation:
         spent = _celebration_cost(tribe)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.fame += config.FAME_PER_CELEBRATION
         tribe.history.append(
             f"\U0001f389 {tribe.name} celebrates the discovery of water at ({fx},{fy}), spending {spent} "
             f"food on a {_feast_word(tribe)} -- the tribe will move to settle there soon{_celebration_shout(tribe)}"
@@ -4278,6 +4291,7 @@ class Simulation:
         spent = _celebration_cost(tribe)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.fame += config.FAME_PER_CELEBRATION
         tribe.history.append(
             f"\U0001f389 {tribe.name} celebrates the discovery of a game-rich site at ({tx},{ty}), "
             f"spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
@@ -4337,6 +4351,7 @@ class Simulation:
         spent = _celebration_cost(tribe)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.fame += config.FAME_PER_CELEBRATION
         reason = f"a fresh discovery: {discovery_entries[-1]['text']}" if discovery_entries else "a season of plenty"
         if not discovery_entries:
             tribe.surplus_celebrations += 1
@@ -4367,6 +4382,7 @@ class Simulation:
         spent = _celebration_cost(tribe)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.fame += config.FAME_PER_CELEBRATION
         tribe.history.append(
             f"\U0001f389 {tribe.name} celebrates settling here for good, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )
@@ -4388,6 +4404,7 @@ class Simulation:
         spent = _celebration_cost(tribe)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.fame += config.FAME_PER_CELEBRATION
         tribe.history.append(
             f"\U0001f389 {tribe.name} holds a harvest festival, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )
@@ -4406,6 +4423,7 @@ class Simulation:
         spent = _celebration_cost(tribe)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.fame += config.FAME_PER_CELEBRATION
         tribe.history.append(
             f"\U0001f389 {tribe.name} celebrates learning to fish, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )

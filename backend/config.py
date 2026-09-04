@@ -480,6 +480,21 @@ CELEBRATION_RESOURCE_COST_FRACTION = 0.3
 CELEBRATION_MAX_COST = 60
 CELEBRATION_PRIDE_MAGNITUDE = 0.5
 CELEBRATION_PRIDE_RADIUS = 6
+
+# Fame: a new well-being measurement (wellbeing.py's 6th, non-Maslow tier).
+# Explicit request: "Finding and marking Landmarks increases Fame... We can tie
+# this to big events too like Roads and Walls, etc." Every real celebration
+# (every _celebrate_* hook plus the generic _check_for_celebration) awards a
+# flat amount; a Landmark discovery awards its own, larger amount when it falls
+# inside the tribe's own territory.
+FAME_PER_CELEBRATION = 2
+FAME_PER_LANDMARK = 3
+FAME_PER_LANDMARK_IN_TERRITORY = 6
+# Normalizes tribe.fame into the same 0..1 scale every other wellbeing tier
+# uses -- reaching "satisfied" (wellbeing.TIER_SATISFIED_THRESHOLD) takes
+# roughly 6 celebrations' worth, deliberately slower than esteem's own trophy
+# count since fame is meant to accumulate over a whole run, not an early spike.
+FAME_SCORE_REFERENCE = 12
 CELEBRATION_COOLDOWN_CYCLES = 20
 # _check_for_celebration's surplus-only branch (no real discovery, just "food is
 # comfortably above FOOD_TROPHY_THRESHOLD") can otherwise fire every single cooldown

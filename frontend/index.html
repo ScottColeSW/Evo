@@ -2842,9 +2842,13 @@ function farmingPanel(t) {
 // number. The focus tier (the lowest tier not yet satisfied, real bottom-up Maslow
 // logic, not just whichever score is smallest) is highlighted so it reads at a
 // glance which need is actually the pressing one right now.
-const WELLBEING_TIER_ORDER = ["physiological", "safety", "belonging", "esteem", "self_actualization"];
-const WELLBEING_TIER_ICONS = { physiological: "🍖", safety: "🛡️", belonging: "🤝", esteem: "🏆", self_actualization: "🏛️" };
-const WELLBEING_TIER_LABELS = { physiological: "Physiological", safety: "Safety", belonging: "Belonging", esteem: "Esteem", self_actualization: "Self-Actual." };
+// Explicit request: "Finding and marking Landmarks increases Fame, a new
+// Well-Being measurement." Fame rides in the same panel/tiers dict as the 5
+// real Maslow needs (backend/wellbeing.py) but is never wb.focus -- it's a
+// prestige score, not a survival need, so it can never preempt a real one.
+const WELLBEING_TIER_ORDER = ["physiological", "safety", "belonging", "esteem", "self_actualization", "fame"];
+const WELLBEING_TIER_ICONS = { physiological: "🍖", safety: "🛡️", belonging: "🤝", esteem: "🏆", self_actualization: "🏛️", fame: "🌟" };
+const WELLBEING_TIER_LABELS = { physiological: "Physiological", safety: "Safety", belonging: "Belonging", esteem: "Esteem", self_actualization: "Self-Actual.", fame: "Fame" };
 
 function wellbeingPanel(t) {
   const wb = t.wellbeing;

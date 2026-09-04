@@ -1265,6 +1265,8 @@ def test_advance_wall_security_also_celebrates_the_wall_completion():
     fell together" -- finishing the first ring used to only get the plain
     raiders-driven-out history line above, never the real "celebrates" banner
     every other named milestone (settling, a harvest, learning to fish) gets."""
+    from backend import config
+
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
     tribe = sim.tribes["tribe_0"]
     sim._found_territory(tribe)
@@ -1280,6 +1282,60 @@ def test_advance_wall_security_also_celebrates_the_wall_completion():
     assert any(t["name"] == "Wall Warden" for t in tribe.trophies)
     assert tribe.last_celebration_cycle == sim.cycle
     assert "PRIDE" in sim.trauma.bias_string(tribe.x, tribe.y)
+    assert tribe.fame == config.FAME_PER_CELEBRATION  # explicit request: ties Fame to big events like Walls
+
+
+def test_every_celebration_awards_fame():
+    """Explicit request: "We can tie this to big events too like Roads and
+    Walls, etc." -- every real celebration (a named _celebrate_* hook or the
+    generic _check_for_celebration) awards the same flat Fame amount."""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.food = 1000
+
+    sim._celebrate_settling(tribe)
+    assert tribe.fame == config.FAME_PER_CELEBRATION
+
+    sim._celebrate_harvest(tribe)
+    assert tribe.fame == 2 * config.FAME_PER_CELEBRATION
+
+    sim._celebrate_fishing_learned(tribe)
+    assert tribe.fame == 3 * config.FAME_PER_CELEBRATION
+
+
+def test_landmark_discovery_awards_more_fame_inside_own_territory():
+    """Explicit request: "A Landmark in your Territory gives you even more
+    Fame.\""""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    sim._found_territory(tribe)
+    exp = {"pos": [tribe.x, tribe.y], "wood_gathered": 0, "stone_gathered": 0, "food_gathered": 0, "water_gathered": 0,
+           "day": 0, "max_days": 6}
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_exploration_party_outbound(tribe, exp, "plains", "Test Scout")
+
+    assert tribe.fame == config.FAME_PER_LANDMARK_IN_TERRITORY  # landed right on the town center -- inside territory
+
+
+def test_landmark_discovery_outside_territory_awards_the_smaller_amount():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    sim._found_territory(tribe)
+    far_x, far_y = tribe.territory_center[0] + tribe.territory_radius + 20, tribe.territory_center[1]
+    exp = {"pos": [far_x, far_y], "wood_gathered": 0, "stone_gathered": 0, "food_gathered": 0, "water_gathered": 0,
+           "day": 0, "max_days": 6}
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_exploration_party_outbound(tribe, exp, "plains", "Test Scout")
+
+    assert tribe.fame == config.FAME_PER_LANDMARK
 
 
 def test_check_raider_attack_never_triggers_once_repelled_by_wall():

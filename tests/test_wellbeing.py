@@ -150,6 +150,30 @@ def test_focus_is_self_actualization_once_every_lower_tier_is_satisfied():
     assert result["focus"] == "self_actualization"
 
 
+def test_fame_scores_from_zero_to_satisfied_as_it_accrues():
+    """Explicit request: "Finding and marking Landmarks increases Fame, a new
+    Well-Being measurement.\""""
+    from backend import config
+
+    fresh = compute_wellbeing(_tribe(fame=0), wall_fraction=0.0)
+    assert fresh["tiers"]["fame"] == 0.0
+
+    accrued = compute_wellbeing(_tribe(fame=config.FAME_SCORE_REFERENCE), wall_fraction=0.0)
+    assert accrued["tiers"]["fame"] == 1.0
+
+
+def test_fame_never_becomes_focus_even_when_starved():
+    """Fame is a prestige score, not a survival need -- it must never preempt a
+    real unmet Maslow tier like "your people are starving" as focus, no matter
+    how low it scores."""
+    tribe = _tribe(food=1, water=1, fame=0)  # physiological unmet, fame also 0
+
+    result = compute_wellbeing(tribe, wall_fraction=0.0)
+
+    assert result["focus"] == "physiological"
+    assert result["focus"] != "fame"
+
+
 def test_summary_names_the_focus_tier_and_states_the_underlying_facts_not_a_directive():
     tribe = _tribe(has_ever_settled=True, raids_defended=0, trophies=[])
 

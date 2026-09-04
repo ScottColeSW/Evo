@@ -26,6 +26,14 @@ TIER_LABELS = {
     "self_actualization": "Self-Actualization",
 }
 
+# Explicit request: "Finding and marking Landmarks increases Fame, a new
+# Well-Being measurement." Fame lives alongside the 5 real Maslow needs above
+# (same tiers dict, same panel) but is deliberately NOT in TIER_LABELS -- it's a
+# prestige/achievement score, not a survival need, so it must never preempt
+# "your people are starving" as focus. See config.FAME_PER_CELEBRATION/
+# _PER_LANDMARK for how tribe.fame accrues.
+FAME_LABEL = "Fame"
+
 
 def compute_wellbeing(tribe, wall_fraction: float) -> dict:
     """Returns {"tiers": {name: score 0..1}, "focus": tier_name, "summary": fact text}.
@@ -84,6 +92,10 @@ def compute_wellbeing(tribe, wall_fraction: float) -> dict:
         (name for name in TIER_LABELS if tiers[name] < TIER_SATISFIED_THRESHOLD),
         "self_actualization",
     )
+
+    # Fame is added after focus is chosen -- see FAME_LABEL's own comment on why
+    # it's excluded from that bottom-up Maslow selection.
+    tiers["fame"] = round(min(1.0, tribe.fame / config.FAME_SCORE_REFERENCE), 2)
     summary = _summary_text(tribe, tiers, focus, buffer_cycles, wall_fraction)
     return {"tiers": tiers, "focus": focus, "summary": summary}
 
@@ -106,6 +118,7 @@ def _summary_text(tribe, tiers: dict, focus: str, buffer_cycles: float, wall_fra
         f"Self-Actualization: {era_label}"
         + (f", {len(tribe.buildings)} building(s) raised" if tribe.founded_city else ", no city founded yet")
         + ".",
+        f"Fame: {round(tribe.fame)} earned from landmarks and celebrated milestones.",
     ]
     return (
         f"[COMMUNITY WELL-BEING]: Most pressing unmet need right now: {TIER_LABELS[focus]}. "
