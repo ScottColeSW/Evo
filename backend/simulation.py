@@ -1486,6 +1486,7 @@ class Simulation:
             self._advance_water_supply(tribe)
             self._advance_fish_supply(tribe)
             self._advance_mine_yield(tribe)
+            self._advance_in_territory_site_yields(tribe)
             self._advance_tannery_yield(tribe)
             self._advance_resource_trails(tribe)
             self._advance_farming(tribe)
@@ -1643,11 +1644,21 @@ class Simulation:
         # these lists only grow as large as genuinely distinct real finds --
         # not the unbounded, ever-repeating kind of list slicing exists to cap.
         visible_entities += [f"confirmed water source at ({x},{y})" for x, y in tribe.confirmed_water_sites]
-        visible_entities += [f"confirmed lumber-rich area at ({x},{y})" for x, y in tribe.lumber_sites]
+        # Explicit request: an in-territory site already producing its passive
+        # freebie (_advance_in_territory_site_yields) shouldn't still be named as
+        # somewhere worth traveling to gather -- it's already covered.
+        visible_entities += [
+            f"confirmed lumber-rich area at ({x},{y})" for x, y in tribe.lumber_sites
+            if not self._site_in_own_territory(tribe, x, y)
+        ]
         visible_entities += [
             f"a {site['type']} was found at ({site['x']},{site['y']})" for site in tribe.wildlife_sites
+            if not self._site_in_own_territory(tribe, site["x"], site["y"])
         ]
-        visible_entities += [f"confirmed stone-rich area at ({x},{y})" for x, y in tribe.quarry_sites]
+        visible_entities += [
+            f"confirmed stone-rich area at ({x},{y})" for x, y in tribe.quarry_sites
+            if not self._site_in_own_territory(tribe, x, y)
+        ]
         visible_entities += [
             f"a vein of {site['resource']} was found at ({site['x']},{site['y']})" for site in tribe.mine_sites
         ]
@@ -1835,6 +1846,16 @@ class Simulation:
             self.world.biome(tribe.x, tribe.y) in config.FARMING_REQUIRES_ADJACENT_WATER
             or self._near_confirmed_water(tribe)
         )
+
+    def _site_in_own_territory(self, tribe: Tribe, x: int, y: int) -> bool:
+        """True if (x, y) falls inside this tribe's own territory_radius -- used by
+        _advance_in_territory_site_yields to know which discovered sites qualify
+        for the passive freebie, and to stop naming an already-passive site as
+        somewhere still worth traveling to gather."""
+        if tribe.territory_center is None:
+            return False
+        cx, cy = tribe.territory_center
+        return ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5 <= tribe.territory_radius
 
     def _resolve_toll(self, tribe: Tribe, cx: int, cy: int, nx: int, ny: int) -> tuple[int, int]:
         """Explicit request: "trails that have been traversed more than 5 times
@@ -2837,6 +2858,21 @@ class Simulation:
                 "depleted_at_cycle": None, **self._biggest_tribe_snapshot(),
             })
 
+    def _inside_any_territory(self, x: int, y: int) -> bool:
+        """True if (x, y) falls within any settled tribe's own territory_radius
+        (a real circle around territory_center -- same Euclidean measure
+        Simulation._resolve_raider_attack/actions._relocate already use for
+        territory, not the Chebyshev spacing check below) plus
+        config.MINOR_SETTLEMENT_TERRITORY_BUFFER of margin past it."""
+        for t in self.tribes.values():
+            if t.territory_center is None:
+                continue
+            tcx, tcy = t.territory_center
+            buffer = t.territory_radius + config.MINOR_SETTLEMENT_TERRITORY_BUFFER
+            if ((x - tcx) ** 2 + (y - tcy) ** 2) ** 0.5 <= buffer:
+                return True
+        return False
+
     def _find_minor_settlement_site(self, occupied: list[tuple[int, int]]) -> tuple[int, int]:
         min_spacing = config.GRID_SIZE // (config.MINOR_SETTLEMENT_COUNT + len(self.tribes) + 1)
         for _ in range(200):
@@ -2844,18 +2880,28 @@ class Simulation:
             y = random.randint(0, self.world.grid_size - 1)
             if biome_at(x, y) in config.UNBUILDABLE_BIOMES:
                 continue
+            if self._inside_any_territory(x, y):
+                continue
             if all(max(abs(x - ox), abs(y - oy)) >= min_spacing for ox, oy in occupied):
                 return x, y
         return x, y  # rare fallback on a very crowded/small map -- accept the last try
 
     def _advance_minor_settlements(self) -> None:
         """Respawns any settlement that's sat depleted (raided out 3 times) for
-        MINOR_SETTLEMENT_RESPAWN_CYCLES -- in place, fresh stock re-snapshotted from
-        whichever tribe is currently biggest, raid count reset."""
+        MINOR_SETTLEMENT_RESPAWN_CYCLES -- fresh stock re-snapshotted from whichever
+        tribe is currently biggest, raid count reset. Explicit request: "Defeated
+        Raider bubbles should... leave to a new location if they win after the
+        Raid" -- respawns at a freshly picked site (the same territory-aware
+        _find_minor_settlement_site placement uses) instead of sitting at the
+        exact same coordinate it was raided out at."""
         for ms in self.minor_settlements:
             if ms["depleted_at_cycle"] is None:
                 continue
             if self.cycle - ms["depleted_at_cycle"] >= config.MINOR_SETTLEMENT_RESPAWN_CYCLES:
+                occupied = [(t.x, t.y) for t in self.tribes.values()] + [
+                    (other["x"], other["y"]) for other in self.minor_settlements if other is not ms
+                ]
+                ms["x"], ms["y"] = self._find_minor_settlement_site(occupied)
                 ms.update(self._biggest_tribe_snapshot())
                 ms["raids_remaining"] = config.MINOR_SETTLEMENT_MAX_RAIDS
                 ms["depleted_at_cycle"] = None
@@ -3954,6 +4000,27 @@ class Simulation:
         if tribe.mine_built and tribe.ore_ever_gathered and tribe.mine_resource_name and self._is_settled(tribe):
             self._capped_unique_add(tribe, tribe.mine_resource_name, config.MINE_YIELD_PER_CYCLE)
 
+    def _advance_in_territory_site_yields(self, tribe: Tribe) -> None:
+        """Explicit request: "if they are lucky enough to have a resource or
+        anything in the territory they settle in, it's a daily allotted freebie
+        they never have to gather from." Once a discovered lumber/wildlife/quarry
+        site falls inside the tribe's own territory_radius, it starts
+        contributing a small passive daily trickle -- same "action unlocks a
+        passive system" shape _advance_water_supply/_advance_fish_supply/
+        _advance_mine_yield already use for water/fish/ore. mine_sites isn't
+        repeated here -- a tribe's own excavated Mine (_advance_mine_yield, just
+        above) already covers that resource once built and fetched."""
+        if tribe.territory_center is None:
+            return
+        upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+        amount = max(1, round(upkeep * config.IN_TERRITORY_SITE_YIELD_MULTIPLIER))
+        if any(self._site_in_own_territory(tribe, x, y) for x, y in tribe.lumber_sites):
+            self._capped_add(tribe, "wood", amount)
+        if any(self._site_in_own_territory(tribe, s["x"], s["y"]) for s in tribe.wildlife_sites):
+            self._capped_add(tribe, "food", amount)
+        if any(self._site_in_own_territory(tribe, x, y) for x, y in tribe.quarry_sites):
+            self._capped_add(tribe, "stone", amount)
+
     def _advance_tannery_yield(self, tribe: Tribe) -> None:
         """Once a tannery is built (actions.py._build_tannery), Fur flows in
         daily -- mirrors _advance_mine_yield exactly, into the same
@@ -4117,6 +4184,19 @@ class Simulation:
         tribe.wall_rings = [city_layout.build_ring(self.world, tribe, ring_index=0)]
         w, h = config.BUILDING_FOOTPRINTS["town_hall"]
         architect.record_building(tribe, "town_hall", tribe.x - w // 2, tribe.y - h // 2, w, h, self.cycle)
+
+        # Explicit request: "when they start to build a Wall we need to force
+        # existing Raider sites out of the Territory and for some distance away
+        # from the Territory boundary." Anything now caught inside this fresh
+        # territory (+ buffer) gets relocated to a freshly picked, territory-aware
+        # site -- checked against every tribe's territory, not just this one, so
+        # this also cleans up anything a rival's own territory already covers.
+        occupied = [(t.x, t.y) for t in self.tribes.values()] + [(ms["x"], ms["y"]) for ms in self.minor_settlements]
+        for ms in self.minor_settlements:
+            if self._inside_any_territory(ms["x"], ms["y"]):
+                occupied.remove((ms["x"], ms["y"]))
+                ms["x"], ms["y"] = self._find_minor_settlement_site(occupied)
+                occupied.append((ms["x"], ms["y"]))
 
     def _award_trophy(self, tribe: Tribe, name: str, individual: str | None = None) -> None:
         """`individual`, when given, credits a specific named person (e.g. the scout or

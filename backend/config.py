@@ -201,6 +201,14 @@ WATER_YIELD_OFF_RIVER = 3
 # "easy factor variable" to turn up if tribes are still running dry.
 SETTLED_WATER_SUPPLY_MULTIPLIER = 1.5
 
+# Explicit request: "if they are lucky enough to have a resource... in the
+# territory they settle in, it's a daily allotted freebie they never have to
+# gather from." Same per-capita-upkeep scaling as SETTLED_WATER_SUPPLY_MULTIPLIER/
+# FISHING_SUPPLY_MULTIPLIER above/below, but deliberately smaller -- a lucky
+# in-territory site is a bonus on top of real gathering/infrastructure, not a
+# replacement for it.
+IN_TERRITORY_SITE_YIELD_MULTIPLIER = 0.5
+
 # Reaching a new era (backend/eras.py) radiates a pride event at the tribe's location,
 # same mechanism as BUILD_FIRE -- advancement is a genuine "the ground remembers this"
 # moment, not just a silent counter change.
@@ -704,6 +712,12 @@ MINOR_SETTLEMENT_RESPAWN_CYCLES = 7
 # RAID/TRADE's own existing proximity radii, not a separate search distance.
 MINOR_SETTLEMENT_RAID_STEAL_FRACTION = 0.4
 MINOR_SETTLEMENT_TRADE_FRACTION = 0.1
+# Explicit request: "when they start to build a Wall we need to force existing
+# Raider sites out of the Territory and for some distance away from the
+# Territory boundary." Extra margin beyond a tribe's own territory_radius kept
+# clear when placing/relocating a minor settlement -- not just literally inside
+# the wall, but a real buffer past it too.
+MINOR_SETTLEMENT_TERRITORY_BUFFER = 8
 
 # DECLARE_ALLIANCE/DECLARE_WAR (backend/actions.py): a persistent, per-rival
 # geopolitical stance (Age 4's Declare_Geopolitical_Posture from the Agentic

@@ -16,6 +16,10 @@ def _bare_simulation():
     sim.immortality_cycles = 0
     sim.recent_encounters = []
     sim.minor_settlements = []
+    # _found_territory (via _settle, below) now also clears any minor settlement
+    # caught inside the fresh territory, which needs to check every OTHER tribe's
+    # own territory too -- see Simulation._inside_any_territory.
+    sim.tribes = {}
     return sim
 
 
@@ -24,6 +28,7 @@ def _settle(sim, tribe):
     Simulation._found_territory does when a tribe first settles -- most build
     actions now place a real footprint via backend/architect.py, which needs a
     territory_center to place anything into."""
+    sim.tribes[tribe.id] = tribe
     sim._found_territory(tribe)
 
 

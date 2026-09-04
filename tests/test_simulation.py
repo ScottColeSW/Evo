@@ -19,6 +19,12 @@ def _bare_simulation():
     sim.lightning_strike = None
     sim.recent_encounters = []
     sim.minor_settlements = []
+    # _found_territory now also clears any minor settlement caught inside the
+    # fresh territory, which checks every OTHER tribe's own territory too (see
+    # Simulation._inside_any_territory) -- tests that care about multiple tribes
+    # already set sim.tribes explicitly afterward; this default just keeps a
+    # single-tribe _found_territory call from crashing on a missing attribute.
+    sim.tribes = {}
     return sim
 
 
@@ -3421,6 +3427,26 @@ def test_all_confirmed_sites_are_remembered_not_just_the_most_recent_three():
     assert "confirmed stone-rich area at (8,8)" in entities
 
 
+def test_visible_entities_omits_a_site_already_producing_its_in_territory_freebie():
+    """Explicit request: an in-territory site "should not even be considered as
+    All Scouting, Hunting, Exploration" once it's already producing its passive
+    freebie (_advance_in_territory_site_yields) -- no longer worth naming as
+    somewhere still worth traveling to gather."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.territory_center = (50, 50)
+    tribe.territory_radius = 20
+    tribe.lumber_sites = [(55, 55), (90, 90)]  # first inside territory, second far outside
+    tribe.quarry_sites = [(51, 51)]  # inside territory
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert "confirmed lumber-rich area at (55,55)" not in entities
+    assert "confirmed lumber-rich area at (90,90)" in entities
+    assert "confirmed stone-rich area at (51,51)" not in entities
+
+
 def test_no_discoveries_at_all_is_named_as_a_real_fact():
     """Bug report: "one is not exploring and one only explores in one
     direction.\""""
@@ -3665,6 +3691,67 @@ def test_spawn_minor_settlements_creates_the_configured_count_snapshotting_the_b
         # Snapshot of the biggest (highest-population) tribe, not an invented number.
         assert (ms["wood"], ms["stone"], ms["food"], ms["water"]) == (200, 150, 90, 300)
         assert 0 <= ms["x"] < config.GRID_SIZE and 0 <= ms["y"] < config.GRID_SIZE
+
+
+def test_find_minor_settlement_site_avoids_every_tribes_territory():
+    """Explicit request: "when they start to build a Wall we need to force
+    existing Raider sites out of the Territory and for some distance away from
+    the Territory boundary.\""""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.territory_radius = 20
+    sim.tribes = {"tribe_0": tribe}
+
+    for _ in range(30):
+        x, y = sim._find_minor_settlement_site(occupied=[])
+        dist = ((x - 50) ** 2 + (y - 50) ** 2) ** 0.5
+        assert dist > 20 + config.MINOR_SETTLEMENT_TERRITORY_BUFFER
+
+
+def test_found_territory_relocates_minor_settlements_caught_inside():
+    """Same request as above, applied at the moment territory is actually
+    founded -- anything already sitting inside the fresh territory (or its
+    buffer) gets moved out, not left to sit there forever."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    caught = {"x": 55, "y": 55, "wood": 0, "stone": 0, "food": 0, "water": 0,
+              "raids_remaining": 3, "depleted_at_cycle": None}
+    far_away = {"x": 5, "y": 5, "wood": 0, "stone": 0, "food": 0, "water": 0,
+                "raids_remaining": 3, "depleted_at_cycle": None}
+    sim.minor_settlements = [caught, far_away]
+
+    sim._found_territory(tribe)
+
+    assert not sim._inside_any_territory(caught["x"], caught["y"])
+    assert (far_away["x"], far_away["y"]) == (5, 5)  # untouched -- already clear
+
+
+def test_advance_minor_settlements_relocates_to_a_new_site_on_respawn():
+    """Explicit request: "Defeated Raider bubbles should... leave to a new
+    location if they win after the Raid" -- respawn no longer reuses the exact
+    coordinate it was raided out at."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (5, 5)
+    tribe.territory_radius = 3
+    sim.tribes = {"tribe_0": tribe}
+    sim.cycle = 100
+    depleted = {
+        "x": 5, "y": 5, "wood": 0, "stone": 0, "food": 0, "water": 0,
+        "raids_remaining": 0, "depleted_at_cycle": 100 - config.MINOR_SETTLEMENT_RESPAWN_CYCLES,
+    }
+    sim.minor_settlements = [depleted]
+
+    sim._advance_minor_settlements()
+
+    assert (depleted["x"], depleted["y"]) != (5, 5)
+    assert not sim._inside_any_territory(depleted["x"], depleted["y"])
 
 
 def test_advance_minor_settlements_respawns_once_the_cycle_count_elapses():
@@ -5584,6 +5671,48 @@ def test_advance_mine_yield_is_capped_by_storage():
     sim._advance_mine_yield(tribe)
 
     assert tribe.unique_resources["Orosite Ore"] == config.STORAGE_CAP_BASE
+
+
+def test_advance_in_territory_site_yields_flows_in_for_an_in_territory_site():
+    """Explicit request: "if they are lucky enough to have a resource or
+    anything in the territory they settle in, it's a daily allotted freebie
+    they never have to gather from.\""""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.territory_radius = 20
+    tribe.population = 10
+    tribe.lumber_sites = [(55, 55)]  # inside the 20-radius territory
+    tribe.wood = 0
+
+    sim._advance_in_territory_site_yields(tribe)
+
+    assert tribe.wood > 0
+
+
+def test_advance_in_territory_site_yields_ignores_a_site_outside_territory():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.territory_radius = 5
+    tribe.population = 10
+    tribe.lumber_sites = [(90, 90)]  # far outside the 5-radius territory
+    tribe.wood = 0
+
+    sim._advance_in_territory_site_yields(tribe)
+
+    assert tribe.wood == 0
+
+
+def test_advance_in_territory_site_yields_does_nothing_before_territory_exists():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.lumber_sites = [(50, 50)]
+    tribe.wood = 0
+
+    sim._advance_in_territory_site_yields(tribe)  # territory_center is None -- must not raise
+
+    assert tribe.wood == 0
 
 
 def test_advance_tannery_yield_flows_in_once_built_and_settled():
