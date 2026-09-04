@@ -1187,6 +1187,16 @@ function claimBubbleSlot(bx, by, bw, bh) {
   return by;
 }
 
+// Live report: "a screenshot with objects on the edge of the map" -- a minor
+// settlement/landmark tag centered on its own icon (cx - tagWidth/2) was never
+// clamped to the canvas itself, so an entity seeded near the map's own edge got
+// a tag rectangle extending past the canvas boundary and clipped clean off,
+// unreadable. Keeps the tag's left edge within [0, canvas.width - tagWidth]
+// regardless of how close to the edge the icon itself sits.
+function clampTagX(cx, tagWidth) {
+  return Math.max(0, Math.min(canvas.width - tagWidth, cx - tagWidth / 2));
+}
+
 function drawThoughtBubble(t, centerX, bubbleBottomY) {
   // Regression: this used to hard-wrap at 150px and cap at 4 lines, which sliced off
   // the actual point of a chief's reflection (usually 200-300+ chars) right around
@@ -1624,11 +1634,17 @@ function drawExpedition(t, tribeId, exp, expIndex) {
   const line2 = `🍖${exp.food_gathered} 💧${exp.water_gathered}`;
   ctx.font = "9px monospace";
   const w = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width);
+  // Live report: "a screenshot with objects on the edge of the map" -- an
+  // expedition roaming near the map's own edge got this label box clipped
+  // clean off the canvas, same class of bug as the minor-settlement/landmark
+  // tags (see clampTagX's own comment). boxLeft replaces the unclamped
+  // `fx - w/2 - 2` this box and its two text lines were all built from.
+  const boxLeft = clampTagX(fx, w + 4);
   ctx.fillStyle = "rgba(15,15,21,0.85)";
-  ctx.fillRect(fx - w / 2 - 2, fy + r + 2, w + 4, 23);
+  ctx.fillRect(boxLeft, fy + r + 2, w + 4, 23);
   ctx.fillStyle = expColor;
-  ctx.fillText(line1, fx - w / 2, fy + r + 11);
-  ctx.fillText(line2, fx - w / 2, fy + r + 22);
+  ctx.fillText(line1, boxLeft + 2, fy + r + 11);
+  ctx.fillText(line2, boxLeft + 2, fy + r + 22);
 }
 
 // Worn trails (backend/world.py's Landscape.trails) -- the inverse of depletion, so a
@@ -1754,15 +1770,16 @@ function drawMinorSettlements() {
     const label = `${ms.raids_remaining} raid(s) left`;
     const tagWidth = ctx.measureText(label).width + 6;
     const tagHeight = Math.max(11, TILE * 0.6);
+    const tagX = clampTagX(cx, tagWidth);
     // Explicit request: "we have overlapping object/resources/etc. bubbles, they
     // should be spread out" -- same claimBubbleSlot collision-avoidance the
     // thought/speech bubbles and landmark tags already use.
-    const tagY = claimBubbleSlot(cx - tagWidth / 2, cy + r + 2, tagWidth, tagHeight);
+    const tagY = claimBubbleSlot(tagX, cy + r + 2, tagWidth, tagHeight);
     ctx.fillStyle = "rgba(10,14,26,0.85)";
-    ctx.fillRect(cx - tagWidth / 2, tagY, tagWidth, tagHeight);
+    ctx.fillRect(tagX, tagY, tagWidth, tagHeight);
     ctx.fillStyle = "#e2e8f0";
     ctx.textBaseline = "top";
-    ctx.fillText(label, cx, tagY + 1);
+    ctx.fillText(label, tagX + tagWidth / 2, tagY + 1);
     ctx.restore();
   });
 }
@@ -1808,12 +1825,13 @@ function drawLandmarks() {
         // Explicit request: "we have overlapping object/resources/etc. bubbles,
         // they should be spread out" -- claimBubbleSlot already exists for this
         // (thought/speech bubbles), just wasn't wired into landmark tags yet.
-        const tagY = claimBubbleSlot(cx - tagWidth / 2, cy + r + 2, tagWidth, tagHeight);
+        const tagX = clampTagX(cx, tagWidth);
+        const tagY = claimBubbleSlot(tagX, cy + r + 2, tagWidth, tagHeight);
         ctx.fillStyle = "rgba(10,14,26,0.85)";
-        ctx.fillRect(cx - tagWidth / 2, tagY, tagWidth, tagHeight);
+        ctx.fillRect(tagX, tagY, tagWidth, tagHeight);
         ctx.fillStyle = "#e2e8f0";
         ctx.textBaseline = "top";
-        ctx.fillText(entryLabel, cx, tagY + 1);
+        ctx.fillText(entryLabel, tagX + tagWidth / 2, tagY + 1);
       });
     });
   });
