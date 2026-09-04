@@ -2337,9 +2337,13 @@ def test_relocate_leaves_a_genuine_self_target_alone_once_already_at_the_site():
     assert tribe.last_target == [83, 58]
 
 
-def test_relocate_leaves_a_real_different_target_alone():
-    """A model that successfully produces a real, different target shouldn't be
-    second-guessed -- the correction only fires for the specific degenerate case."""
+def test_relocate_overrides_even_a_real_different_target_before_settling():
+    """Explicit design (2026-09-04): "Closest one wins, keep it simple for now,
+    plus, unless they have other reports and data informing them, they won't
+    have any judgment otherwise." Before a tribe has ever settled, RELOCATE's
+    target_vector is ignored entirely, the same way SCOUT's already is -- even
+    a real, different, plausible-looking target gets overridden toward the
+    nearest confirmed water site instead."""
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 80, "y": 38}])
     tribe = sim.tribes["tribe_0"]
     tribe.confirmed_water_sites = [(83, 58)]
@@ -2349,7 +2353,43 @@ def test_relocate_leaves_a_real_different_target_alone():
 
     sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [90, 90]}, 10.0, ctx)
 
-    assert tribe.last_target == [90, 90]
+    assert tribe.last_target != [90, 90]
+    assert (tribe.x, tribe.y) != (80, 38)  # moved toward the real site, not the model's own target
+
+
+def test_relocate_targets_the_closest_of_several_confirmed_water_sites():
+    """The actual "closest one wins" rule: several scouts can each confirm a
+    different water site -- RELOCATE mechanically picks whichever is nearest to
+    where the tribe stands right now, not the most recently discovered one."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
+    tribe = sim.tribes["tribe_0"]
+    # (55, 50) is closer (distance 5) than (50, 90) (distance 40) or (10, 50)
+    # (distance 40) -- deliberately not list-order-first or list-order-last.
+    tribe.confirmed_water_sites = [(50, 90), (55, 50), (10, 50)]
+    tribe.food = 100
+    tribe.water = 100
+    ctx = {"biome": "forest", "available_actions": ["RELOCATE"]}
+
+    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [10, 50]}, 10.0, ctx)
+
+    assert tribe.last_target == [55, 50]
+
+
+def test_relocate_no_longer_overrides_target_once_a_tribe_has_ever_settled():
+    """Post-settlement RELOCATE serves a different purpose entirely (local
+    movement within an already-owned, clamped territory -- see
+    actions._relocate) -- the closest-water override is pre-settlement only."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 80, "y": 38}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.confirmed_water_sites = [(83, 58)]
+    tribe.food = 100
+    tribe.water = 100
+    ctx = {"biome": "forest", "available_actions": ["RELOCATE"]}
+
+    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [82, 39]}, 10.0, ctx)
+
+    assert tribe.last_target == [82, 39]
 
 
 def test_settlement_ground_ok_true_on_farmable_biome_or_near_confirmed_water():
@@ -2371,6 +2411,11 @@ def test_apply_turn_does_not_reset_relocate_clock_when_still_within_qualifying_t
     standing on qualifying ground the whole time."""
     sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 19, "y": 62}])
     tribe = sim.tribes["tribe_0"]
+    # Settled already -- isolates this test's real concern (the clock) from the
+    # separate pre-settlement "closest confirmed water site wins" RELOCATE
+    # override, which would otherwise force every target back onto (19,62)
+    # itself here (the tribe's only confirmed site) and mask a real move.
+    tribe.has_ever_settled = True
     tribe.confirmed_water_sites = [(19, 62)]
     tribe.cycles_since_relocate = 5
     tribe.food = 100
@@ -2392,6 +2437,10 @@ def test_apply_turn_still_resets_relocate_clock_when_leaving_qualifying_territor
     _settlement_ground_ok here."""
     sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 5, "y": 55}])
     tribe = sim.tribes["tribe_0"]
+    # Settled already -- see the matching comment on the test just above; the
+    # pre-settlement closest-water-site RELOCATE override would otherwise pull
+    # every target back toward (5,53) and prevent the away-from-it move below.
+    tribe.has_ever_settled = True
     tribe.confirmed_water_sites = [(5, 53)]  # distance 2 from tribe -- within radius 4
     tribe.cycles_since_relocate = 5
     tribe.food = 100

@@ -1957,7 +1957,21 @@ class Simulation:
         # branch still checked the stricter condition. FARMING_REQUIRES_ADJACENT_WATER
         # is a strict subset of FARMABLE_BIOMES, so this is a pure expansion -- never
         # fires later than before, only possibly sooner.
-        if settled and not tribe.has_ever_settled:
+        # Explicit bug report, confirmed live: both tribes in a real run showed
+        # has_ever_settled=True (territory founded, walls/Town Hall placed)
+        # while their own most recent history line was still "RELOCATE: Moving
+        # towards confirmed water access" -- they founded the whole city on a
+        # stopover, then kept walking toward the water they were actually
+        # heading for. Root cause: cycles_since_relocate counts cycles spent on
+        # settlement-qualifying ground (see its own field comment), not cycles
+        # spent motionless -- a multi-turn march across farmable plains toward
+        # a still-distant target accrues the same "stability" credit as
+        # actually staying put, so _is_settled could turn True mid-journey.
+        # tribe.last_target != tribe.x/y (the same signal journey_note, below,
+        # already uses) means a chosen destination hasn't been reached yet --
+        # settling waits for that arrival instead of firing out from under it.
+        still_journeying = tribe.last_target is not None and tribe.last_target != [tribe.x, tribe.y]
+        if settled and not still_journeying and not tribe.has_ever_settled:
             tribe.has_ever_settled = True
             self._found_territory(tribe)
 
@@ -2759,14 +2773,22 @@ class Simulation:
             # Same category of failure as SCOUT's unreliable target_vector (see
             # evolution2civ-facts-vs-mechanics-pattern.md) -- the fix there was to stop
             # trusting the model's coordinate and compute the real one mechanically.
-            # Here the correction is narrower: only the specific degenerate case (target
-            # equals current position while the tribe genuinely hasn't reached any
-            # confirmed water site yet) gets substituted with the real site, since a
-            # tribe that has actually arrived legitimately submits its own position too
-            # (see the cycles_since_relocate handling below), and a model that does
-            # produce a real, different target is left alone.
-            if target == (tribe.x, tribe.y) and tribe.confirmed_water_sites and not self._near_confirmed_water(tribe):
-                target = tuple(tribe.confirmed_water_sites[-1])
+            #
+            # Explicit design (2026-09-04): "Closest one wins, keep it simple for
+            # now, plus, unless they have other reports and data informing them,
+            # they won't have any judgment otherwise." Before a tribe has ever
+            # settled, RELOCATE's target_vector is now ignored entirely, the same
+            # way SCOUT's already is -- mechanically picks whichever confirmed
+            # water site is nearest to where the tribe stands right now, rather
+            # than trusting the model to reason about which of several reported
+            # sites is actually closer. A tribe already standing at the nearest
+            # site computes that same site again (distance 0), so this is a
+            # harmless no-op once arrived, same as the narrower check it replaces.
+            if not tribe.has_ever_settled and tribe.confirmed_water_sites:
+                target = min(
+                    (tuple(site) for site in tribe.confirmed_water_sites),
+                    key=lambda site: (site[0] - tribe.x) ** 2 + (site[1] - tribe.y) ** 2,
+                )
             tribe.last_target = [target[0], target[1]]
         pos_before = (tribe.x, tribe.y)
 
