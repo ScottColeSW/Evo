@@ -1722,6 +1722,98 @@ function wallVertex(cx, cy, radius, index) {
   return [cx + radius * Math.cos(angle), cy + radius * Math.sin(angle)];
 }
 
+// Live request: "a layer 1 complete Wall gets a visual refinement that elevates
+// the game... a blend of your answers" -- battlements (a real notched parapet,
+// birds-eye, not just a colored line) + a round corner tower at every vertex +
+// torches lining it once fire is known (tribe.fire_ever_built already narrates
+// "Torches -- lining the wall, a free defense bonus" in the Establishments panel
+// today, with nothing on the map to show it) + one soft ambient glow tying the
+// whole ring together. Confirmed against a reference photo of a toy castle:
+// notched walls, twin round corner towers.
+function drawBattlementEdge(x1, y1, x2, y2, tier) {
+  const segLen = Math.hypot(x2 - x1, y2 - y1);
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const width = Math.max(3, TILE * (0.3 + WALL_TIER_WIDTH_STEP * tier));
+  ctx.save();
+  ctx.translate(x1, y1);
+  ctx.rotate(angle);
+  ctx.fillStyle = WALL_TIER_COLORS[Math.min(tier, WALL_TIER_COLORS.length - 1)];
+  ctx.globalAlpha = 0.95;
+  if (tier > 0) {
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = TILE * 0.35 * tier;
+  }
+  // Solid inner walkway, the ring-facing half.
+  ctx.fillRect(0, 0, segLen, width / 2);
+  // Crenellated outer parapet -- alternating merlon blocks with real gaps (the
+  // terrain already painted underneath shows through, no color to approximate).
+  const merlon = Math.max(3, TILE * 0.4);
+  const gap = merlon * 0.75;
+  const period = merlon + gap;
+  const count = Math.max(1, Math.floor((segLen + gap) / period));
+  for (let k = 0; k < count; k++) {
+    const gx = k * period;
+    const mw = Math.min(merlon, segLen - gx);
+    if (mw <= 0) break;
+    ctx.fillRect(gx, -width / 2, mw, width / 2);
+  }
+  ctx.restore();
+}
+
+function drawWallTower(x, y, tier, r) {
+  ctx.save();
+  const grad = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.15, x, y, r);
+  grad.addColorStop(0, "#f4f4f5");
+  grad.addColorStop(1, WALL_TIER_COLORS[Math.min(tier, WALL_TIER_COLORS.length - 1)]);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(30, 27, 20, 0.35)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawWallTorch(x, y, flicker) {
+  ctx.save();
+  ctx.font = `${11 + flicker}px serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.shadowColor = "#fb923c";
+  ctx.shadowBlur = 8 + flicker * 2;
+  ctx.fillText("\u{1F525}", x, y);
+  ctx.restore();
+}
+
+function drawWallRingGlow(cx, cy, radius) {
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const grad = ctx.createRadialGradient(cx, cy, radius * 0.7, cx, cy, radius * 1.35);
+  grad.addColorStop(0, "rgba(251, 191, 36, 0.2)");
+  grad.addColorStop(1, "rgba(251, 191, 36, 0)");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * 1.35, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawCompleteRingBling(cx, cy, radius, ringTier, fireKnown) {
+  for (let i = 0; i < 8; i++) {
+    const [x1, y1] = wallVertex(cx, cy, radius, i);
+    const [x2, y2] = wallVertex(cx, cy, radius, i + 1);
+    drawBattlementEdge(x1, y1, x2, y2, ringTier);
+  }
+  if (fireKnown) drawWallRingGlow(cx, cy, radius);
+  const towerR = TILE * 0.32;
+  for (let i = 0; i < 8; i++) {
+    const [x, y] = wallVertex(cx, cy, radius, i);
+    drawWallTower(x, y, ringTier, towerR);
+    if (fireKnown) drawWallTorch(x, y - towerR - 3, (i % 2) * 2);
+  }
+}
+
 function drawSettlementWall(t) {
   if (!t.territory_center) return;
   const [ccx, ccy] = t.territory_center;
@@ -1738,6 +1830,12 @@ function drawSettlementWall(t) {
     // left in this ring, so it keeps meaning "here's what's missing" during
     // construction instead of forever.
     const ringComplete = ring.sections.every(s => s.natural_barrier || s.progress >= 100);
+    if (ringComplete) {
+      const realTiers = ring.sections.filter(s => !s.natural_barrier).map(s => s.tier || 0);
+      const ringTier = realTiers.length ? Math.min(...realTiers) : 0;
+      drawCompleteRingBling(cx, cy, radius, ringTier, t.fire_ever_built);
+      return;
+    }
     ring.sections.forEach(sec => {
       const [x1, y1] = wallVertex(cx, cy, radius, sec.index);
       const [x2, y2] = wallVertex(cx, cy, radius, sec.index + 1);
@@ -1921,41 +2019,27 @@ function drawBoat(tribeId, t) {
 // Live request: a toll road should look "better," not just a gold outline over the
 // same worn-dirt tint every ordinary trail gets -- a real paved color/texture, since
 // its wear value freezes the moment it evolves (World.decay_trails exempts it from
-// further fading) and no longer means anything to render against.
+// further fading) and no longer means anything to render against. Confirmed design
+// (swatch review, "roads looks perfect"): drawn as one continuous cobbled swath laid
+// along the actual walked route, not independent per-tile squares -- squares along a
+// diagonal always read as stair-stepped ("I don't like the jagged look").
 const TOLL_ROAD_BASE = [150, 143, 130]; // cobblestone gray-tan, distinct from dirt-brown TRAIL_COLOR_LOW
-const TOLL_ROAD_JOINT = [104, 98, 88]; // darker mortar-line tone for the block pattern below
+const TOLL_ROAD_JOINT = [104, 98, 88]; // darker mortar-line/edge tone
 
 function drawTrails() {
   // Regression fix: each trail tile used to draw at 1.6x the actual tile size with a
   // heavy dark border -- neighboring trail tiles (very common; that's what a worn
   // route looks like) overlapped and bled into each other into a smudgy blob instead
   // of reading as a path. Sized to fit its own tile now, no border.
+  const tollTiles = [];
   (latestState.trails || []).forEach(tr => {
+    if (tr.is_toll_road) {
+      tollTiles.push(tr);
+      return;
+    }
     const cx = tr.x * TILE + TILE / 2;
     const cy = tr.y * TILE + TILE / 2;
     const size = TILE * 0.85;
-    if (tr.is_toll_road) {
-      const [br, bg, bb] = TOLL_ROAD_BASE;
-      ctx.fillStyle = `rgb(${br}, ${bg}, ${bb})`;
-      ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
-      // A cheap 2x2 cobblestone-block suggestion -- mortar lines through the middle,
-      // no per-tile geometry beyond what's already being drawn.
-      const [jr, jg, jb] = TOLL_ROAD_JOINT;
-      ctx.strokeStyle = `rgba(${jr}, ${jg}, ${jb}, 0.6)`;
-      ctx.lineWidth = Math.max(0.5, TILE * 0.04);
-      ctx.beginPath();
-      ctx.moveTo(cx - size / 2, cy);
-      ctx.lineTo(cx + size / 2, cy);
-      ctx.moveTo(cx, cy - size / 2);
-      ctx.lineTo(cx, cy + size / 2);
-      ctx.stroke();
-      // The owner's own color still marks whose toll road this is -- kept as the
-      // outline rather than the fill now that the fill is a real paved color.
-      ctx.strokeStyle = "#fbbf24";
-      ctx.lineWidth = Math.max(1, TILE * 0.08);
-      ctx.strokeRect(cx - size / 2, cy - size / 2, size, size);
-      return;
-    }
     const w = Math.max(0, Math.min(1, tr.wear));
     const high = tr.color ? hexToRgb(tr.color) : TRAIL_COLOR_FALLBACK_HIGH;
     const r = Math.round(TRAIL_COLOR_LOW[0] + (high[0] - TRAIL_COLOR_LOW[0]) * w);
@@ -1968,6 +2052,129 @@ function drawTrails() {
     ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${Math.min(0.8, 0.45 + w * 0.35)})`;
     ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
   });
+  drawTollRoadSwaths(tollTiles);
+}
+
+// Groups toll-road tiles into connected walked routes (8-way adjacency, split by
+// owner so two tribes' roads never fuse into one path just for touching) and draws
+// each as a single stroked swath instead of independent squares.
+function drawTollRoadSwaths(tollTiles) {
+  if (tollTiles.length === 0) return;
+  const byOwner = new Map();
+  tollTiles.forEach(t => {
+    const key = t.owner || "_unowned";
+    if (!byOwner.has(key)) byOwner.set(key, []);
+    byOwner.get(key).push(t);
+  });
+  byOwner.forEach(tiles => {
+    const byCoord = new Map(tiles.map(t => [`${t.x},${t.y}`, t]));
+    const visited = new Set();
+    tiles.forEach(start => {
+      const startKey = `${start.x},${start.y}`;
+      if (visited.has(startKey)) return;
+      const component = [];
+      const queue = [start];
+      visited.add(startKey);
+      while (queue.length) {
+        const cur = queue.shift();
+        component.push(cur);
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            if (dx === 0 && dy === 0) continue;
+            const nk = `${cur.x + dx},${cur.y + dy}`;
+            const neighbor = byCoord.get(nk);
+            if (neighbor && !visited.has(nk)) {
+              visited.add(nk);
+              queue.push(neighbor);
+            }
+          }
+        }
+      }
+      drawPavedSwath(orderRoutePoints(component));
+    });
+  });
+}
+
+// Greedy nearest-neighbor walk through one connected clump of toll tiles, starting
+// from an endpoint (a tile with only one in-clump neighbor) when one exists -- the
+// common case for a single walked route, which is just a chain. Good enough for a
+// branching clump (several routes crossing) too: not a perfect single stroke, but
+// never worse than the squares it replaces.
+function orderRoutePoints(component) {
+  if (component.length <= 1) return component;
+  const set = new Set(component.map(t => `${t.x},${t.y}`));
+  const neighborCount = t => {
+    let n = 0;
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      if (dx === 0 && dy === 0) continue;
+      if (set.has(`${t.x + dx},${t.y + dy}`)) n++;
+    }
+    return n;
+  };
+  const start = component.find(t => neighborCount(t) === 1) || component[0];
+  const remaining = new Set(component);
+  remaining.delete(start);
+  const ordered = [start];
+  let current = start;
+  while (remaining.size > 0) {
+    let best = null, bestDist = Infinity;
+    remaining.forEach(t => {
+      const d = (t.x - current.x) ** 2 + (t.y - current.y) ** 2;
+      if (d < bestDist) { bestDist = d; best = t; }
+    });
+    ordered.push(best);
+    remaining.delete(best);
+    current = best;
+  }
+  return ordered;
+}
+
+function drawPavedSwath(points) {
+  if (points.length === 0) return;
+  const px = points.map(p => [p.x * TILE + TILE / 2, p.y * TILE + TILE / 2]);
+  const roadWidth = TILE * 0.85;
+  const tracePx = () => {
+    ctx.beginPath();
+    if (px.length === 1) {
+      ctx.moveTo(px[0][0] - 0.01, px[0][1]);
+      ctx.lineTo(px[0][0] + 0.01, px[0][1]);
+    } else {
+      ctx.moveTo(px[0][0], px[0][1]);
+      for (let i = 1; i < px.length; i++) ctx.lineTo(px[i][0], px[i][1]);
+    }
+  };
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  // Darker edge first (wider), then the paved fill on top (narrower) -- same
+  // "border, then fill" trick the wall's own stroke uses to read as a defined
+  // object rather than dissolving into the terrain.
+  const [er, eg, eb] = TOLL_ROAD_JOINT;
+  tracePx();
+  ctx.strokeStyle = `rgb(${er}, ${eg}, ${eb})`;
+  ctx.lineWidth = roadWidth + Math.max(1, TILE * 0.15);
+  ctx.stroke();
+  const [br, bg, bb] = TOLL_ROAD_BASE;
+  tracePx();
+  ctx.strokeStyle = `rgb(${br}, ${bg}, ${bb})`;
+  ctx.lineWidth = roadWidth;
+  ctx.stroke();
+  // Confirmed design (swatch review): "I prefer the center-line road" -- a dashed
+  // lighter centerline down the middle of the paved swath, not cobblestone ticks.
+  tracePx();
+  ctx.setLineDash([TILE * 0.3, TILE * 0.35]);
+  ctx.strokeStyle = "rgba(230, 222, 200, 0.85)";
+  ctx.lineWidth = Math.max(1, TILE * 0.08);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // The owner's own toll marker -- same gold outline as before, now along the
+  // whole swath instead of per tile.
+  tracePx();
+  ctx.strokeStyle = "#fbbf24";
+  ctx.globalAlpha = 0.85;
+  ctx.lineWidth = Math.max(1, TILE * 0.08);
+  ctx.stroke();
+  ctx.restore();
 }
 
 // A light source that arcs across the sky and back as simulation cycles pass -- tied to
