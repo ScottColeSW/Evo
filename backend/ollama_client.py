@@ -1,6 +1,17 @@
+import asyncio
 import json
 
 import httpx
+
+# Live-confirmed (explicit report: "the quit isn't cleaning up after itself and
+# making sure the system stops"): Ollama's /api/generate keep_alive=0 responds
+# done:true immediately, well before the model actually leaves VRAM -- observed
+# ~8s of real lag evicting two ~2-3GB models via direct API probing after a
+# QUIT left the backend process already exited. unload_model polls for real
+# eviction instead of trusting that response; bounded so a genuinely stuck
+# Ollama can't hang shutdown forever.
+UNLOAD_POLL_INTERVAL_SECONDS = 0.5
+UNLOAD_POLL_MAX_ATTEMPTS = 20
 
 
 class OllamaClient:
@@ -94,7 +105,18 @@ class OllamaClient:
         this via asyncio.gather) -- Ollama appears to serialize the actual VRAM
         eviction, so the second request can genuinely take longer than 5s to get a
         response even though nothing is actually wrong. Matches the main client's own
-        120s default rather than a separate, tighter number."""
+        120s default rather than a separate, tighter number.
+
+        Explicit report: "the quit isn't cleaning up after itself and making
+        sure the system stops." Confirmed live: the /api/generate response
+        above comes back done:true well before the model actually leaves VRAM
+        (~8s of real lag observed evicting two ~2-3GB models via direct API
+        probing, after the backend process had already exited) -- trusting
+        that response as "unloaded" let shutdown() return, and the process
+        exit right after it, with nothing left running to ever confirm or
+        retry. Now polls list_loaded_models() until this model actually
+        disappears, bounded by UNLOAD_POLL_MAX_ATTEMPTS so a genuinely stuck
+        Ollama can't hang shutdown forever."""
         payload = {"model": model, "keep_alive": 0}
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -107,3 +129,9 @@ class OllamaClient:
             # log line. repr(), not str(): some exceptions (seen on Windows --
             # ConnectError wrapping an OSError) stringify to an empty message.
             print(f"[ollama_client] unload_model({model!r}) failed: {exc!r}")
+            return
+        for _ in range(UNLOAD_POLL_MAX_ATTEMPTS):
+            if model not in await self.list_loaded_models():
+                return
+            await asyncio.sleep(UNLOAD_POLL_INTERVAL_SECONDS)
+        print(f"[ollama_client] unload_model({model!r}) still resident after waiting -- giving up, best-effort")
