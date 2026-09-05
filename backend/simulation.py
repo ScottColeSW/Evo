@@ -1551,6 +1551,18 @@ class Simulation:
             self._advance_automatic_fire(tribe)
             self._advance_automatic_boat(tribe)
             self._advance_wall_security(tribe)
+            # Live bug ("water is a problem and it should never be after they
+            # settle"): these three post a cycle's passive food/water income --
+            # _apply_upkeep used to run first and could drain a thin carried-over
+            # buffer negative before this same cycle's own settled-water/fishing/
+            # farming income had landed, triggering a real thirst/hunger death the
+            # end-of-turn display never showed (it looked stable because the income
+            # arrived a moment later, same cycle, refilling it back up). Posting
+            # income before the drain lets a cycle's own income actually cover that
+            # same cycle's own upkeep instead of only the next one's.
+            self._advance_water_supply(tribe)
+            self._advance_fish_supply(tribe)
+            self._advance_farming(tribe)
             self._apply_upkeep(tribe)
             self._check_raider_attack(tribe)
             self._advance_raider_approach(tribe)
@@ -1558,13 +1570,10 @@ class Simulation:
             self._advance_era_if_ready(tribe)
             if not tribe.settlement_name and not tribe.pending_settlement_naming and self._is_settled_near_water(tribe):
                 self._celebrate_settling(tribe)
-            self._advance_water_supply(tribe)
-            self._advance_fish_supply(tribe)
             self._advance_mine_yield(tribe)
             self._advance_in_territory_site_yields(tribe)
             self._advance_tannery_yield(tribe)
             self._advance_resource_trails(tribe)
-            self._advance_farming(tribe)
             self._advance_flock(tribe)
             self._advance_flock_eggs(tribe)
             self._advance_livestock_feast(tribe)
@@ -4216,11 +4225,29 @@ class Simulation:
         have settled." A tribe genuinely settled next to real water shouldn't need to
         keep manually choosing GATHER_WATER every cycle just to stand still -- the
         same "passive consequence, not a discrete action" category as crop growth.
-        GATHER_WATER still works and still adds more on top of this."""
+        GATHER_WATER still works and still adds more on top of this.
+
+        Live bug ("water is a problem and it should never be after they settle"):
+        a settled tribe with one active farm plot showed 32 straight "thirst
+        claimed lives" events while its own displayed water sat at a flat, stable-
+        looking 2 the whole time. Two compounding causes -- this formula only ever
+        margined against upkeep, blind to _advance_farming's own real water draw
+        (config.CROP_WATER_PER_PLOT_PER_CYCLE per plot), so a farmed settlement's
+        true total draw quietly exceeded the "safe" 1.5x supply once a plot was
+        planted; and _apply_upkeep ran before this in Simulation.step, draining a
+        thin carried-over buffer negative before this cycle's own income had even
+        landed, triggering a real population-loss event the same cycle's end-of-
+        turn number never showed. Folding the farm draw into the margin here fixes
+        the sustained deficit; Simulation.step now runs this (and fish supply and
+        farming) before upkeep so a cycle's own income can actually cover that same
+        cycle's own drain instead of only the next one's."""
         if self._is_settled_near_water(tribe):
             upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+            farm_draw = config.CROP_WATER_PER_PLOT_PER_CYCLE * tribe.farm_plots
             well_bonus = config.WELL_SUPPLY_BONUS_MULTIPLIER if tribe.well_built else 1.0
-            self._capped_add(tribe, "water", round(upkeep * config.SETTLED_WATER_SUPPLY_MULTIPLIER * well_bonus))
+            self._capped_add(
+                tribe, "water", round((upkeep + farm_draw) * config.SETTLED_WATER_SUPPLY_MULTIPLIER * well_bonus)
+            )
 
     def _advance_fish_supply(self, tribe: Tribe) -> None:
         """Once fishing is learned (the first successful CATCH_FISH), food flows in

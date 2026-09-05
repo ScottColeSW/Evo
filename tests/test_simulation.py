@@ -4925,6 +4925,36 @@ async def test_step_does_not_hold_the_tribal_gathering_off_its_interval():
 
 
 @run_async
+async def test_settled_tribe_with_a_farm_plot_does_not_dehydrate_over_many_cycles():
+    """Live bug: 'water is a problem and it should never be after they settle.'
+    A real run showed a settled tribe with one farm plot lose people to thirst
+    for 32 straight cycles while its own displayed water sat at a flat, stable-
+    looking 2 -- _apply_upkeep ran before the settled-water/farming income each
+    cycle, draining a thin buffer negative before that same cycle's own income
+    had landed. Reproduces the exact population/farm_plots/water combination
+    from that run and confirms no hidden thirst deaths across many cycles."""
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.population = 37
+    tribe.farm_plots = 1
+    tribe.water = 2  # the exact flat value the live run got stuck at
+    tribe.food = 200  # food isn't what's under test here
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch("backend.simulation.reflect_on_history", mock.AsyncMock(
+             return_value={"revised_philosophy": "x", "changed": False, "reasoning": ""}
+         )):
+        for _ in range(40):
+            await sim.step()
+
+    assert not any("thirst claimed lives" in entry for entry in tribe.history)
+
+
+@run_async
 async def test_step_does_not_advance_a_settled_tribes_expeditions_off_the_dawn_boundary():
     """Live report: "Exploration time is like 6 now, but this is being counted
     as 6 cycles, not full days. It should be 6 days." _advance_expeditions used
@@ -5977,6 +6007,31 @@ def test_advance_water_supply_does_nothing_before_settling():
     sim._advance_water_supply(tribe)
 
     assert tribe.water == 10
+
+
+def test_advance_water_supply_margins_against_a_farm_plots_own_water_draw():
+    """Live bug: 'water is a problem and it should never be after they settle.'
+    A settled tribe running one farm plot showed 32 straight thirst deaths while
+    its displayed water sat flat at 2 -- this formula only ever margined against
+    upkeep, blind to _advance_farming's own competing water draw, so a farmed
+    settlement's true total draw quietly exceeded the "safe" 1.5x supply the
+    moment a plot was planted."""
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.population = 37  # upkeep = 3, matching the live run that surfaced this
+    tribe.farm_plots = 2
+    tribe.water = 0
+
+    sim._advance_water_supply(tribe)
+
+    upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+    farm_draw = config.CROP_WATER_PER_PLOT_PER_CYCLE * tribe.farm_plots
+    assert tribe.water == round((upkeep + farm_draw) * config.SETTLED_WATER_SUPPLY_MULTIPLIER)
+    # a real surplus over BOTH known draws combined, not just upkeep alone
+    assert tribe.water > upkeep + farm_draw
 
 
 def test_advance_fish_supply_flows_in_once_fishing_is_learned_and_settled():
