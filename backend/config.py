@@ -90,14 +90,16 @@ MOVEMENT_SPEED = 4
 
 # Explicit request ("everyone that is moving on the board moves at the pace of
 # 1 sky tick"): once a tribe has settled, RELOCATE (and, via
-# SETTLED_EXPEDITION_SPEED below, every expedition) advances at this one
-# uniform per-cycle pace instead of MOVEMENT_SPEED/EXPEDITION_SPEED's larger,
-# once-a-day-feeling jumps -- movement should read as continuous and
+# SETTLED_EXPEDITION_SPEED below, a hunting or exploration party) advances at
+# this one uniform per-cycle pace instead of MOVEMENT_SPEED/EXPEDITION_SPEED's
+# larger, once-a-day-feeling jumps -- movement should read as continuous and
 # consistent, not different speeds for different standing orders. Deliberately
 # NOT applied before a tribe has ever settled: the confirmed-water march that
 # ends a pre-founding tribe's search is life-or-death (see the founding-death
 # regression MOVEMENT_SPEED/EXPEDITION_SPEED's own pre-settlement speed
-# already exists to prevent), so that march keeps the faster pace.
+# already exists to prevent), so that march keeps the faster pace. A plain
+# SCOUT is also exempt regardless of settlement -- see EXPEDITION_SPEED's own
+# comment below.
 SETTLED_MOVEMENT_SPEED = 1
 
 # Marching costs stamina -- without this, RELOCATE was a free action while every gathering
@@ -1324,6 +1326,16 @@ TERRAIN_MOVEMENT_MULTIPLIER = {
 BOAT_WATER_BIOMES = {"river", "lake"}
 BOAT_WATER_MOVEMENT_MULTIPLIER = 1.2
 
+# Explicit request ("Scouts in particular should get their speed bonus back,
+# stealthing past observations, and moving quick to report findings and
+# foragings"): a plain SCOUT (Simulation._advance_one_expedition's
+# is_scout check) always moves at this fast, once-a-day-batch pace, regardless
+# of settlement status -- speed IS the scout's whole role, and a single fast
+# jump through danger is inherently lower-exposure than a hunting/exploration
+# party's slower, smoother SETTLED_EXPEDITION_SPEED pace. This is also the
+# actual fix for a live tribe wipe: a settled scout moving the slow uniform
+# pace lingered near the volcano for many consecutive cycles, each one
+# independently rolling a hazard chance tuned for one roll per real day.
 EXPEDITION_SPEED = 10
 # See SETTLED_MOVEMENT_SPEED's own comment -- same uniform "1 sky tick" pace,
 # applied to expedition movement once a tribe has settled. EXPEDITION_SPEED

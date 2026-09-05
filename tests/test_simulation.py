@@ -3289,6 +3289,8 @@ def test_outbound_expedition_flees_home_immediately_when_ambushed():
     outbound trip immediately, just via the defended outcome under these
     particular mocked values."""
     sim = _bare_simulation()
+    from backend import config
+    sim.cycle = config.DAY_LENGTH_CYCLES  # a settled tribe's hazard rolls only fire on the day boundary
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.has_ever_settled = True
     tribe.expeditions = [{
@@ -5027,6 +5029,73 @@ async def test_step_advances_a_settled_tribes_expedition_position_but_not_its_da
     assert tribe.expeditions[0]["day"] == 0  # untouched -- not a dawn cycle
     assert tribe.expeditions[0]["pos"] == [50 + config.SETTLED_EXPEDITION_SPEED, 50]  # still moved, smoothly
     assert tribe.expeditions[0]["food_gathered"] == 0  # "daily" gain stays gated to the dawn boundary too
+
+
+@run_async
+async def test_a_settled_tribes_scout_reverts_to_the_once_a_day_fast_batch_move():
+    """Explicit follow-up request: "Scouts in particular should get their speed
+    bonus back, stealthing past observations, and moving quick to report
+    findings and foragings." Unlike hunting/exploration parties (which keep the
+    new smooth per-cycle pace), a settled tribe's plain SCOUT (kind == "scout")
+    fully reverts to the original once-a-day batch advance at full
+    EXPEDITION_SPEED -- speed IS the scout's role, and this also directly
+    addresses the live bug where a slow-moving scout lingered near the volcano
+    for many cycles and died (see test_settled_scouts_hazard_rolls_are_gated_
+    to_the_dawn_boundary for that side covered directly)."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.expeditions = [{
+        "kind": "scout", "pos": [50, 50], "origin": [50, 50], "target": [70, 50],
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+    sim.cycle = config.DAY_LENGTH_CYCLES - 2  # off the dawn boundary
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
+        await sim.step()
+
+    assert tribe.expeditions[0]["day"] == 0  # untouched -- not a dawn cycle
+    assert tribe.expeditions[0]["pos"] == [50, 50]  # doesn't move at all off the boundary, unlike hunt/explore
+
+    sim.cycle = config.DAY_LENGTH_CYCLES - 1  # step() increments before checking -- lands ON the boundary
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
+        await sim.step()
+
+    assert tribe.expeditions[0]["day"] == 1
+    assert tribe.expeditions[0]["pos"] == [50 + config.EXPEDITION_SPEED, 50]  # full fast speed, in one jump
+
+
+@run_async
+async def test_settled_scouts_hazard_rolls_are_gated_to_the_dawn_boundary():
+    """Live bug: "Tribe 1's Scouts all went to the Volcano and died, then the
+    whole Tribe died." A settled tribe's scout only actually runs (moves,
+    rolls hazards) on the dawn boundary now (see the test above) -- confirms a
+    volcano-tile landing only ever costs population once, on that boundary
+    cycle, not once per cycle spent sitting there."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 10, "y": 13}])  # adjacent to the real volcano
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.population = 20
+    tribe.expeditions = [{
+        "kind": "scout", "pos": [13, 13], "origin": [10, 13], "target": [13, 13],  # sitting on the volcano
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+    sim.cycle = config.DAY_LENGTH_CYCLES // 2  # comfortably off the boundary for several cycles running
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):  # guarantees the hazard hits when rolled
+        with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
+            for _ in range(5):  # five straight cycles sitting on the volcano -- would be 5 rolls under the old code
+                await sim.step()
+
+    assert not any("volcano" in entry for entry in tribe.history)  # never rolled -- none of these hit the boundary
 
 
 @run_async

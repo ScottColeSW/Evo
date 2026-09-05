@@ -3105,14 +3105,30 @@ class Simulation:
         infrastructure, not a scripted distance override."""
         if exp["phase"] == "outbound":
             # Explicit request ("everyone moving on the board moves at the pace of
-            # 1 sky tick"): movement itself now happens every cycle regardless of
-            # settlement -- is_new_day gates only the once-a-day bookkeeping (the
-            # day count, "daily" resource gains, and hunting/exploration rolls
-            # below), matching each kind's own tuned per-day odds/totals exactly
-            # as before. Position-dependent checks (hazards, water-sensing,
-            # arrival) still run every single cycle, same as always, since those
-            # must never risk skipping a tile a party actually crosses.
+            # 1 sky tick"): movement itself happens every cycle for a hunting or
+            # exploration party regardless of settlement -- is_new_day gates only
+            # the once-a-day bookkeeping (the day count, "daily" resource gains,
+            # and hazard/hunting/exploration rolls below), matching each kind's
+            # own tuned per-day odds/totals exactly as before. Position-dependent
+            # checks that aren't a repeated hazard roll (water-sensing, arrival)
+            # still run every single cycle, since those must never risk skipping
+            # a tile a party actually crosses.
+            #
+            # Explicit follow-up ("Scouts in particular should get their speed
+            # bonus back, stealthing past observations, and moving quick to
+            # report findings"): speed IS a plain SCOUT's whole role -- a single
+            # fast jump through danger is inherently lower-exposure than
+            # dawdling through it slowly, so a settled tribe's scout reverts
+            # fully to the original once-a-day batch advance (full EXPEDITION_
+            # SPEED, only actually running this whole function on is_new_day)
+            # instead of the smoother-but-slower per-cycle pace hunting/
+            # exploration parties now use. A still-searching tribe's scout was
+            # already exempt from this and keeps advancing (and moving fast)
+            # every cycle regardless.
             is_new_day = not tribe.has_ever_settled or self.cycle % config.DAY_LENGTH_CYCLES == 0
+            is_scout = exp.get("kind") == "scout"
+            if tribe.has_ever_settled and is_scout and not is_new_day:
+                return False
             if is_new_day:
                 exp["day"] += 1
             px, py = exp["pos"]
@@ -3122,8 +3138,11 @@ class Simulation:
             # trail bonus above, since a deliberately-built road doesn't need to
             # wear in from repeated travel the way a trail does. See config.
             # SETTLED_EXPEDITION_SPEED's own comment for why settlement status
-            # picks the per-cycle distance here.
-            speed_base = config.EXPEDITION_SPEED if not tribe.has_ever_settled else config.SETTLED_EXPEDITION_SPEED
+            # (and kind, for scouts) picks the per-cycle distance here.
+            if is_scout or not tribe.has_ever_settled:
+                speed_base = config.EXPEDITION_SPEED
+            else:
+                speed_base = config.SETTLED_EXPEDITION_SPEED
             base_speed = speed_base + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
             # Explicit request: "travel speed is 5x on toll roads."
             if self.world.is_toll_road(px, py):
@@ -3138,11 +3157,24 @@ class Simulation:
             # Explicit correction: "the volcano is a Hazard they will die if they
             # go there." Unlike the river's drowning risk (only ever checked on
             # the outbound leg inside the water-sensing branch below, since a
-            # volcano tile can never register as "sensed water"), this needs an
-            # unconditional check here so an outbound leg crossing volcano ground
-            # carries the same real risk the returning leg already does (below).
-            self._volcano_hazard(tribe, nx, ny)
+            # volcano tile can never register as "sensed water"), this needs a
+            # check here so an outbound leg crossing volcano ground carries the
+            # same real risk the returning leg already does (below).
+            #
+            # Live bug ("Tribe 1's Scouts all went to the Volcano and died, then
+            # the whole Tribe died"): gated to is_new_day, same as the hazard
+            # rolls below. Before this, a settled tribe's party moving the new
+            # slow SETTLED_EXPEDITION_SPEED (1/cycle) could spend many consecutive
+            # cycles lingering on or near the volcano tile, rolling this same
+            # per-day-tuned chance independently every single cycle instead of
+            # once per real day -- a fast pre-fix party would have crossed the
+            # danger zone in 1-2 cycles total, so cumulative risk barely mattered;
+            # a slow one spending 10+ cycles there faced 10+ independent rolls.
+            # This restores the original once-per-day exposure the chance
+            # constant was actually tuned against; only the raw position update
+            # above still happens every cycle.
             if is_new_day:
+                self._volcano_hazard(tribe, nx, ny)
                 exp["food_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_FOOD
                 # Explicit correction: "foragers do not need to bring water back
                 # once they are settled, they should start bringing back
@@ -3154,7 +3186,11 @@ class Simulation:
             reached_biome = biome_at(nx, ny)
             scout = exp["lead_scout"]
 
-            if self._expedition_raider_ambush(tribe, exp, nx, ny):
+            # Same is_new_day gating as the volcano check above -- an ambush
+            # chance rolled every cycle instead of once a day would make a slow-
+            # moving settled tribe's party far more likely to be ambushed than
+            # one that used to cross the same ground in a single fast jump.
+            if is_new_day and self._expedition_raider_ambush(tribe, exp, nx, ny):
                 exp["phase"] = "returning"
                 return False
 
@@ -3252,13 +3288,19 @@ class Simulation:
                 tribe.history.append(f"{scout}'s party surveys ({nx},{ny}), {label}, after {exp['day']} days and heads home to report")
             return False
         else:  # returning
-            # See the matching outbound-leg comment above -- same is_new_day split,
-            # every-cycle movement/hazard checks vs. once-a-day resource gain.
+            # See the matching outbound-leg comment above -- same is_new_day/
+            # scout-speed split.
             is_new_day = not tribe.has_ever_settled or self.cycle % config.DAY_LENGTH_CYCLES == 0
+            is_scout = exp.get("kind") == "scout"
+            if tribe.has_ever_settled and is_scout and not is_new_day:
+                return False
             px, py = exp["pos"]
             ox, oy = exp["origin"]
             bonus = self.world.trail_speed_bonus(px, py, config.MAX_TRAIL_BONUS_SPEED)
-            speed_base = config.EXPEDITION_SPEED if not tribe.has_ever_settled else config.SETTLED_EXPEDITION_SPEED
+            if is_scout or not tribe.has_ever_settled:
+                speed_base = config.EXPEDITION_SPEED
+            else:
+                speed_base = config.SETTLED_EXPEDITION_SPEED
             base_speed = speed_base + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
             # Explicit request: "travel speed is 5x on toll roads."
             if self.world.is_toll_road(px, py):
@@ -3274,9 +3316,15 @@ class Simulation:
                 exp["food_gathered"] += config.EXPEDITION_RETURN_DAILY_FOOD
                 if not self._is_settled_near_water(tribe):  # see the matching outbound-leg comment above
                     exp["water_gathered"] += config.EXPEDITION_RETURN_DAILY_WATER
-            self._expedition_river_hazard(tribe, nx, ny)
-            self._volcano_hazard(tribe, nx, ny)
-            self._expedition_raider_ambush(tribe, exp, nx, ny)
+                # Live bug ("Tribe 1's Scouts all went to the Volcano and died,
+                # then the whole Tribe died") -- see the matching outbound-leg
+                # comment above. These three used to roll every single cycle; a
+                # slow-moving settled tribe's party lingering near danger for
+                # many cycles faced that many independent rolls instead of the
+                # one per real day these chances were actually tuned against.
+                self._expedition_river_hazard(tribe, nx, ny)
+                self._volcano_hazard(tribe, nx, ny)
+                self._expedition_raider_ambush(tribe, exp, nx, ny)
             if [nx, ny] == [ox, oy]:
                 # Whatever was foraged along the way comes home regardless of whether the
                 # expedition succeeded -- the trip cost real time either way, so it isn't
