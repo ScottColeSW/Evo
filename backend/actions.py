@@ -1147,10 +1147,19 @@ def _scout(sim, tribe, biome, target):
     # Explicit request: "I want to prevent this incessant 'survey's an area'
     # nonsense" -- pushes past the Tribe Map's already-visited ground along this
     # same heading instead of landing on a sector already confirmed.
-    tx, ty = _push_past_visited_ground(
-        tribe, tribe.x, tribe.y, angle_radians, config.SCOUT_PATROL_DISTANCE, sim.world.grid_size
-    )
+    #
+    # Live correction: "the Scout take off point is right, but should be at a
+    # 90 degree angle away from the boundary, not parallel to it." Computing
+    # the target from tribe.x/y (its own live position, which drifts up to
+    # territory_radius away from territory_center after settling) while the
+    # launch point is placed from territory_center meant the two weren't
+    # necessarily on the same ray -- the walk from launch point to target could
+    # angle off to one side instead of continuing straight outward. Launching
+    # from the same point the party actually starts at keeps that walk exactly
+    # radial (perpendicular to the boundary), matching the launch point's own
+    # placement.
     lx, ly = _expedition_launch_point(tribe, angle_radians, sim.world.grid_size)
+    tx, ty = _push_past_visited_ground(tribe, lx, ly, angle_radians, config.SCOUT_PATROL_DISTANCE, sim.world.grid_size)
     scout = _generate_scout(tribe, sim.cycle)
     tribe.expeditions.append({
         "kind": "scout",
@@ -1206,10 +1215,15 @@ def _exploration_party(sim, tribe, biome, target):
     # DISTANCE meant it never actually went any farther than a plain SCOUT.
     # EXPLORATION_PARTY_PATROL_DISTANCE gives it a real, longer reach of its
     # own, and the same Tribe Map push-past used for SCOUT.
-    tx, ty = _push_past_visited_ground(
-        tribe, tribe.x, tribe.y, angle_radians, config.EXPLORATION_PARTY_PATROL_DISTANCE, sim.world.grid_size
-    )
+    #
+    # Same launch-point-as-origin correction as _scout's own comment -- keeps
+    # the walk from launch point to target strictly radial (perpendicular to
+    # the territory boundary), not skewed off to one side by tribe.x/y's own
+    # drift away from territory_center.
     lx, ly = _expedition_launch_point(tribe, angle_radians, sim.world.grid_size)
+    tx, ty = _push_past_visited_ground(
+        tribe, lx, ly, angle_radians, config.EXPLORATION_PARTY_PATROL_DISTANCE, sim.world.grid_size
+    )
     scout = _generate_scout(tribe, sim.cycle, base_days=config.EXPLORATION_PARTY_MAX_DAYS)
     tribe.expeditions.append({
         "kind": "explore",

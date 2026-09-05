@@ -2790,12 +2790,19 @@ function drawFrame() {
     // Drawn after trails instead, same "stay on top of the ground path" treatment
     // individuals just got above.
     Object.entries(latestState.tribes || {}).forEach(([id, t]) => {
-      drawSettlementMarker(t);
       drawSettlementWall(t);
       drawBuildings(t);
       drawFarmPlot(t);
       drawBoat(id, t);
     });
+    // Live report: "the hut/city/townhall icon needs to always be on top" --
+    // it used to draw *before* drawBuildings in the same per-tribe pass above,
+    // so once a tribe founds its city the Town Hall building's own rect (drawn
+    // right after, at that same territory_center spot) painted over it. Its
+    // own separate pass, after every tribe's buildings/walls/farm plots are
+    // already down, guarantees the marker always wins regardless of what else
+    // is placed there.
+    Object.values(latestState.tribes || {}).forEach(t => drawSettlementMarker(t));
     // Explicit request: "the new Toll Road is visually overlapping with the start
     // and end object bubble, so I can't read it." Landmarks/minor-settlement tags
     // used to draw before trails, so a toll road painted right over them. Drawn
@@ -2892,9 +2899,40 @@ function settlementLine(t) {
   // Hut vs. Town Hall distinction) -- this label said "settled" when it only
   // ever meant "camped," which is exactly the confusion the backend rename
   // already fixed on that side.
+  //
+  // Follow-up live report: "they are still 'camped' according to the sidebar,
+  // but they have Water and a Hut" -- this never actually checked
+  // has_ever_settled/founded_city at all, so a tribe that had long since
+  // founded a real territory (has_ever_settled) or even a full city
+  // (founded_city) still permanently read as merely "camped." Once real
+  // settlement exists, say so instead -- same 🛖/🏛️ icon choice as
+  // drawSettlementMarker's own Hut-vs-Town-Hall distinction, so the sidebar
+  // and the map marker always agree.
   const n = t.cycles_since_relocate || 0;
   if (n < SETTLEMENT_STABILITY_CYCLES) return `🚶 nomadic (${n}/${SETTLEMENT_STABILITY_CYCLES})`;
+  if (t.has_ever_settled) return t.founded_city ? "🏛️ settled" : "🛖 settled";
   return isCamped(t) ? "🏕️ camped" : "🚶 nomadic (unfarmable ground)";
+}
+
+// Live report: example lines like "🍖25 💧0 foraged" always showed food/water
+// even at zero, and never showed wood/stone an EXPLORATION_PARTY actually
+// carried home (Simulation._advance_exploration_party_outbound) -- "bring
+// back anything and everything the Tribe has discovered." Zero counts are
+// dropped entirely rather than shown as a bare 0, and every resource type an
+// expedition can actually carry is included, not just the original two.
+// food_caught (a HUNTING_PARTY's real catch) is kept separate from
+// food_gathered (incidental foraging any expedition can pick up along the
+// way) since a hunt can carry both at once.
+function expeditionResourceLine(exp) {
+  const foraged = [
+    [RESOURCE_ICON.food, exp.food_gathered],
+    [RESOURCE_ICON.water, exp.water_gathered],
+    [RESOURCE_ICON.wood, exp.wood_gathered],
+    [RESOURCE_ICON.stone, exp.stone_gathered],
+  ].filter(([, n]) => n).map(([icon, n]) => `${icon}${n}`).join(" ");
+  const bits = [foraged && `${foraged} foraged`, exp.food_caught && `${RESOURCE_ICON.food}${exp.food_caught} caught`]
+    .filter(Boolean).join(" · ");
+  return bits ? ` · ${bits}` : "";
 }
 
 function landmarkCounts(t) {
@@ -3261,7 +3299,7 @@ function updateSidebar(state) {
             ${t.chief_victory ? `<br><span class="chief-line">⚔️ ${t.chief_victory}</span>` : ""}
             ${t.chief_decree ? `<br><span class="chief-line">📜 decreed: ${t.chief_decree}</span>` : ""}
             ${(t.lineage && t.lineage.length) ? `<br><span class="chief-line">\u{1F476} ${t.lineage[t.lineage.length - 1].child_name}, child of ${t.lineage[t.lineage.length - 1].parents.join(" and ")}</span>` : ""}
-            ${(t.expeditions || []).map(exp => `<br><span class="chief-line">${exp.kind === "hunt" ? "🏹" : "🧭"} ${exp.lead_scout}'s ${exp.kind === "hunt" ? "hunting party" : "party"} ${exp.phase}, day ${exp.day} at (${exp.pos[0]},${exp.pos[1]}) · 🍖${exp.food_gathered} 💧${exp.water_gathered} foraged</span>`).join("")}
+            ${(t.expeditions || []).map(exp => `<br><span class="chief-line">${exp.kind === "hunt" ? "🏹" : "🧭"} ${exp.lead_scout}'s ${exp.kind === "hunt" ? "hunting party" : "party"} ${exp.phase}, day ${exp.day} at (${exp.pos[0]},${exp.pos[1]})${expeditionResourceLine(exp)}</span>`).join("")}
             ${(t.trophies && t.trophies.length) ? `<br><span class="chief-line">🏆 ${t.trophies.map(tr => tr.name).join(", ")}</span>` : ""}
             <br><span class="intel-line">${settlementLine(t)}${landmarkCounts(t)}</span>
             ${t.history && t.history.length ? `<br><span class="intel-line">🧠 ${formatChiefDecision(t.history[t.history.length - 1])}</span>` : ""}
