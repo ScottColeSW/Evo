@@ -2916,6 +2916,19 @@ class Simulation:
                     key=lambda site: (site[0] - tribe.x) ** 2 + (site[1] - tribe.y) ** 2,
                 )
             tribe.last_target = [target[0], target[1]]
+        else:
+            # Live bug report: a tribe camped for 229 cycles on good ground,
+            # confirmed water in hand, never settled -- has_ever_settled's own
+            # still_journeying check (below) stayed permanently True because
+            # tribe.last_target was left over from a RELOCATE chosen many
+            # cycles ago and never cleared once the model moved on to
+            # GATHER_FOOD/other actions instead of continuing that march. A
+            # journey that isn't being actively continued isn't "still"
+            # anything -- clearing it here means only an actual, ongoing
+            # RELOCATE (chosen last cycle, not just at some point in history)
+            # can ever hold settlement back. Also keeps journey_note (see
+            # _prepare_turn) from citing a target the tribe already abandoned.
+            tribe.last_target = None
         pos_before = (tribe.x, tribe.y)
 
         hazard_note = self._apply_action(tribe, action, ctx["biome"], target)

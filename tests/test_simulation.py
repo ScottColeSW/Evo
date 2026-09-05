@@ -2057,6 +2057,33 @@ def test_settling_near_water_permanently_unlocks_the_full_action_set():
     assert "BREED" in ctx["available_actions"]
 
 
+def test_stale_last_target_no_longer_permanently_blocks_settling():
+    """Live bug report: a tribe camped 229 cycles on good, water-confirmed
+    ground never settled. Root cause: tribe.last_target was left over from a
+    RELOCATE chosen long ago and never reached exactly -- the model moved on
+    to GATHER_FOOD/other actions instead of continuing that march, but nothing
+    ever cleared last_target, so still_journeying (see _prepare_turn) stayed
+    permanently True and blocked has_ever_settled forever, no matter how long
+    the tribe had actually been standing still. Clearing last_target the
+    moment a non-RELOCATE action is chosen (_apply_turn) fixes this."""
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.last_target = [tribe.x - 10, tribe.y]  # a stale, never-reached RELOCATE target
+
+    _request, ctx = sim._prepare_turn(tribe)
+    assert tribe.has_ever_settled is False  # still blocked -- looks like an active journey
+
+    ctx["available_actions"] = ["GATHER_FOOD"]
+    sim._apply_turn(tribe, {"visual_action": "GATHER_FOOD", "target_vector": [tribe.x, tribe.y]}, 10.0, ctx)
+    assert tribe.last_target is None  # the abandoned journey is cleared
+
+    _request, ctx = sim._prepare_turn(tribe)
+    assert tribe.has_ever_settled is True  # no longer held back by a stale target
+
+
 def test_has_ever_settled_does_not_relock_after_relocating_away_again():
     """A one-way unlock -- proving the tribe CAN settle properly shouldn't be undone
     by later choosing to move on again."""
