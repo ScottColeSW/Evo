@@ -1369,6 +1369,15 @@ MAX_CONCURRENT_EXPEDITIONS = 2
 # the scouting/hunting side no matter how large it got.
 EXPEDITION_SLOT_POPULATION_DIVISOR = 5
 
+# Live bug report: "we need to limit the number of scouts and gatherers at a
+# time... my system was throttled." A real run reached population 352, which
+# uncapped would allow 70 simultaneous expeditions for one tribe alone -- the
+# map visibly buried in scout icons alongside real, confirmed system load.
+# This was a deliberate "no hard ceiling" design once (see EXPEDITION_SLOT_
+# POPULATION_DIVISOR's own comment), but real scale exposed that as wrong -- a
+# genuine ceiling now caps expedition_capacity()'s per-capita growth.
+MAX_CONCURRENT_EXPEDITIONS_CEILING = 8
+
 # actions._labor_multiplier() lets a larger tribe gather/hunt/forage more per action --
 # upkeep (_apply_upkeep) already scales with population, but yield from GATHER_WOOD/
 # STONE/WATER/FOOD and HUNT_DEER never did, so a bigger tribe was strictly worse off

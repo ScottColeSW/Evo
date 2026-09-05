@@ -1828,6 +1828,22 @@ def test_expedition_capacity_grows_with_population():
     assert expedition_capacity(tribe) == 5  # 25 // EXPEDITION_SLOT_POPULATION_DIVISOR (5)
 
 
+def test_expedition_capacity_is_capped_at_high_population():
+    """Live bug report: "we need to limit the number of scouts and gatherers at
+    a time... my system was throttled." A real run reached population 352,
+    which uncapped this formula would allow to scale to 70 concurrent
+    expeditions for one tribe alone -- confirmed real system load and a map
+    visibly buried in scout icons."""
+    from backend.actions import expedition_capacity
+    from backend import config
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 352
+
+    assert expedition_capacity(tribe) == config.MAX_CONCURRENT_EXPEDITIONS_CEILING
+    assert expedition_capacity(tribe) < 352 // config.EXPEDITION_SLOT_POPULATION_DIVISOR  # genuinely capped, not coincidental
+
+
 def test_a_third_scout_succeeds_once_population_growth_raises_capacity():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")

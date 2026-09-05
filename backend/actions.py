@@ -125,11 +125,17 @@ def _harvest(sim, tribe, resource_key, base_yield, biome):
 
 def expedition_capacity(tribe) -> int:
     """How many expedition parties (scouting or hunting, any mix) this tribe can have
-    out at once. config.MAX_CONCURRENT_EXPEDITIONS is only ever the floor now, not a
-    hard ceiling -- a tribe of 8 (starting population) still gets exactly that many, but
-    a larger tribe can spare more search bandwidth, the same way its upkeep cost already
-    scales with population (see Simulation._apply_upkeep)."""
-    return max(config.MAX_CONCURRENT_EXPEDITIONS, tribe.population // config.EXPEDITION_SLOT_POPULATION_DIVISOR)
+    out at once. config.MAX_CONCURRENT_EXPEDITIONS is the floor -- a tribe of 8
+    (starting population) still gets exactly that many, and a larger tribe can spare
+    more search bandwidth, the same way its upkeep cost already scales with population
+    (see Simulation._apply_upkeep). Live bug report: "we need to limit the number of
+    scouts and gatherers at a time... my system was throttled" -- a real run reached
+    population 352, which uncapped this to 70 concurrent expeditions for one tribe
+    alone. config.MAX_CONCURRENT_EXPEDITIONS_CEILING caps the per-capita growth for
+    real, so a tribe's search capacity keeps scaling with population without ever
+    flooding the board."""
+    uncapped = max(config.MAX_CONCURRENT_EXPEDITIONS, tribe.population // config.EXPEDITION_SLOT_POPULATION_DIVISOR)
+    return min(uncapped, config.MAX_CONCURRENT_EXPEDITIONS_CEILING)
 
 
 def _storage_cap(tribe) -> int:
