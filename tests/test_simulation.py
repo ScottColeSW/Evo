@@ -2809,21 +2809,22 @@ def test_expedition_gives_up_when_physically_boxed_in_by_ocean():
     assert any("can go no further" in entry for entry in tribe.history)
 
 
-def test_expedition_gives_up_upon_reaching_the_edge_of_the_world():
+def test_expedition_gives_up_when_its_target_is_the_literal_grid_edge():
+    """Map dream, phase 2 changed what this scenario actually means: turning the
+    map into a real island guarantees ocean at every point on the literal grid
+    boundary (x/y 0 or 99, confirmed by sampling all four edges directly) --
+    there is no longer any real land left for a push-onward target
+    (physics.extend_ray_to_grid_edge, which does still hand out exactly such
+    coordinates) to "arrive" at. So reaching the grid's edge can no longer end
+    in "arrived, reported terrain" (the ordinary case, covered by
+    test_expedition_reaching_its_target_without_water_turns_back_and_reports_
+    terrain) -- it now always ends in the same "physically can't get there"
+    give-up as test_expedition_gives_up_when_physically_boxed_in_by_ocean,
+    which this regression-tests specifically for a target that's the grid edge
+    itself rather than an ordinary coastal tile."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.expeditions = [{
-        # One day's step from here lands exactly on the target, which happens to
-        # be the grid's literal edge -- same unified "reached the assigned
-        # point, turn back" handling as reaching an ordinary (non-edge) patrol
-        # target. Map dream phase 2 turned the whole map into an island, so
-        # almost the entire y=99 row is now ocean -- (91, 99) is one of the very
-        # few remaining slivers of real land right on that edge (a headland where
-        # the wavy south/east coastlines happen to leave a strip of cliffs/shoals
-        # reaching the literal boundary), found by sampling biome_at across the
-        # whole edge row directly. Distance is the full EXPEDITION_SPEED (10):
-        # cliffs/shoals aren't in TERRAIN_MOVEMENT_MULTIPLIER, so they fall back
-        # to its 1.0 default, same as plains.
         "pos": [91, 89], "origin": [50, 50], "target": [91, 99],
         "day": 4, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
@@ -2834,8 +2835,8 @@ def test_expedition_gives_up_upon_reaching_the_edge_of_the_world():
 
     assert tribe.expeditions[0]["phase"] == "returning"
     assert tribe.expeditions[0]["found"] is None
-    assert tribe.expeditions[0]["terrain_report"] is not None
-    assert any("surveys" in entry and "heads home to report" in entry for entry in tribe.history)
+    assert tribe.expeditions[0]["terrain_report"] is None  # never arrived -- ocean blocked the last step
+    assert any("can go no further" in entry for entry in tribe.history)
 
 
 def test_expedition_arrival_home_delivers_water_finding_to_memory_and_clears_state():

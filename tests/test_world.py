@@ -431,9 +431,10 @@ def test_west_north_south_coast_bands_are_cliffs_or_shoals():
     )
 
     # Sampled from the interior (30-70), away from the map's four corners --
-    # near a corner, two coastlines' insets overlap and biome_at's chain order
-    # lets whichever is checked first (west, then north, then south) claim the
-    # tile outright, which isn't the headland/bay texture this test is after.
+    # near a corner, two coastlines' insets genuinely overlap, so a tile can be
+    # legitimately claimed as open ocean by a different edge entirely (see
+    # test_no_coast_band_tile_is_secretly_inside_another_edges_ocean below),
+    # which isn't the headland/bay texture this test is after.
     for boundary_fn, sample_range, ocean_on_increasing_side, land_of in (
         (_west_coast_boundary, range(30, 70), False, lambda c, b: (round(b) + 1, c)),
         (_north_coast_boundary, range(30, 70), False, lambda c, b: (c, round(b) + 1)),
@@ -445,6 +446,32 @@ def test_west_north_south_coast_bands_are_cliffs_or_shoals():
         bx, by = land_of(bay_c, boundary_fn(bay_c))
         assert biome_at(hx, hy) == "cliffs"
         assert biome_at(bx, by) == "shoals"
+
+
+def test_no_coast_band_tile_is_secretly_inside_another_edges_ocean():
+    """Regression test: "we shouldn't have any legs on the island." biome_at
+    used to check one edge fully (its own ocean, then its own coast band)
+    before ever moving on to the next -- right next to a corner, that let an
+    edge's coast-band check ("within COAST_BAND_WIDTH of MY boundary") commit
+    to "cliffs"/"shoals" on ground a DIFFERENT edge's ocean check would have
+    correctly claimed first, had it ever gotten the chance. That produced a
+    visible strip of coastal texture jutting out past the real coastline at
+    every corner -- a live screenshot showed it plainly at all four. Every
+    tile biome_at calls cliffs or shoals must fail every one of the four
+    edges' own plain ocean tests, not just the one edge whose band it's in."""
+    from backend.world import _coast_boundary_x, _north_coast_boundary, _south_coast_boundary, _west_coast_boundary
+
+    checked_any = False
+    for x in range(0, 100):
+        for y in range(0, 100):
+            if biome_at(x, y) not in ("cliffs", "shoals"):
+                continue
+            checked_any = True
+            assert x < _coast_boundary_x(y)
+            assert x > _west_coast_boundary(y)
+            assert y > _north_coast_boundary(x)
+            assert y < _south_coast_boundary(x)
+    assert checked_any  # confirms this test actually exercised real coast-band tiles
 
 
 def test_volcano_clears_every_coastline_with_real_margin():

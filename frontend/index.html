@@ -1041,18 +1041,22 @@ function forestEastBoundary(y) {
 // terrain color and which biome-relevant flora/fauna decoration a tile can show.
 function biomeNameAt(x, y) {
   if (isRiver(x, y)) return "river";
-  const boundary = coastBoundaryX(y);
-  if (x >= boundary) return "ocean";
-  if (boundary - x <= COAST_BAND_WIDTH) return coastIsHeadland(y) ? "cliffs" : "shoals";
-  // Map dream, phase 2 -- the other three sides of the island.
+  // Map dream, phase 2 correction: "we shouldn't have any legs on the
+  // island." Every edge's plain ocean condition is checked before any edge's
+  // coast-band (cliffs/shoals) condition gets a chance to commit -- otherwise,
+  // right next to a corner, one edge's band check could claim a tile a
+  // different edge's ocean check would have correctly claimed first, had it
+  // ever gotten the chance. That produced a visible strip of coastal texture
+  // jutting out past the real coastline at every corner. Mirrors
+  // backend/world.py's biome_at exactly.
+  const eastBoundary = coastBoundaryX(y);
   const westBoundary = westCoastBoundary(y);
-  if (x <= westBoundary) return "ocean";
-  if (x - westBoundary <= COAST_BAND_WIDTH) return isHeadlandLike(westCoastBoundary, y, false) ? "cliffs" : "shoals";
   const northBoundary = northCoastBoundary(x);
-  if (y <= northBoundary) return "ocean";
-  if (y - northBoundary <= COAST_BAND_WIDTH) return isHeadlandLike(northCoastBoundary, x, false) ? "cliffs" : "shoals";
   const southBoundary = southCoastBoundary(x);
-  if (y >= southBoundary) return "ocean";
+  if (x >= eastBoundary || x <= westBoundary || y <= northBoundary || y >= southBoundary) return "ocean";
+  if (eastBoundary - x <= COAST_BAND_WIDTH) return coastIsHeadland(y) ? "cliffs" : "shoals";
+  if (x - westBoundary <= COAST_BAND_WIDTH) return isHeadlandLike(westCoastBoundary, y, false) ? "cliffs" : "shoals";
+  if (y - northBoundary <= COAST_BAND_WIDTH) return isHeadlandLike(northCoastBoundary, x, false) ? "cliffs" : "shoals";
   if (southBoundary - y <= COAST_BAND_WIDTH) return isHeadlandLike(southCoastBoundary, x, true) ? "cliffs" : "shoals";
   if (isLake(x, y)) return "lake";
   if (isVolcano(x, y)) return "volcano";

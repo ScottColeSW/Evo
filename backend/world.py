@@ -242,26 +242,32 @@ def biome_at(x: int, y: int) -> str:
     # the coastline's waviness below.
     if _is_river(x, y):
         return "river"
-    boundary = _coast_boundary_x(y)
-    if x >= boundary:
-        return "ocean"
-    if boundary - x <= COAST_BAND_WIDTH:
-        return "cliffs" if _coast_is_headland(y) else "shoals"
-    # Map dream, phase 2: the other three sides of the island, same "ocean then a
-    # cliff/shoal texture band just inland of it" shape as the east coast above.
+    # Map dream, phase 2 correction: "we shouldn't have any legs on the
+    # island." Each of the four edges used to be checked ocean-then-band in one
+    # pass before moving to the next edge -- right next to a corner, an edge's
+    # own coast-band check ("within COAST_BAND_WIDTH of MY boundary") has no
+    # way to know a DIFFERENT edge's ocean already claims that same tile, so it
+    # would commit to "cliffs/shoals" (a strip of land-adjacent texture) on
+    # ground that a different edge's check -- never reached, since the first
+    # edge already returned -- would have correctly called open ocean. That
+    # produced a visible tendril of coastal texture jutting out past the real
+    # coastline at every corner (the "sandbars" spotted in a live screenshot).
+    # Checking EVERY edge's plain ocean condition first, before any edge's
+    # texture band gets a chance to commit, closes that gap: a tile within
+    # reach of two coastlines' bands only ever gets a texture verdict once
+    # every one of the four has agreed it isn't just open ocean.
+    east_boundary = _coast_boundary_x(y)
     west_boundary = _west_coast_boundary(y)
-    if x <= west_boundary:
+    north_boundary = _north_coast_boundary(x)
+    south_boundary = _south_coast_boundary(x)
+    if x >= east_boundary or x <= west_boundary or y <= north_boundary or y >= south_boundary:
         return "ocean"
+    if east_boundary - x <= COAST_BAND_WIDTH:
+        return "cliffs" if _coast_is_headland(y) else "shoals"
     if x - west_boundary <= COAST_BAND_WIDTH:
         return "cliffs" if _is_headland_like(_west_coast_boundary, y, ocean_on_increasing_side=False) else "shoals"
-    north_boundary = _north_coast_boundary(x)
-    if y <= north_boundary:
-        return "ocean"
     if y - north_boundary <= COAST_BAND_WIDTH:
         return "cliffs" if _is_headland_like(_north_coast_boundary, x, ocean_on_increasing_side=False) else "shoals"
-    south_boundary = _south_coast_boundary(x)
-    if y >= south_boundary:
-        return "ocean"
     if south_boundary - y <= COAST_BAND_WIDTH:
         return "cliffs" if _is_headland_like(_south_coast_boundary, x, ocean_on_increasing_side=True) else "shoals"
     if _is_lake(x, y):
