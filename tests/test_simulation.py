@@ -4001,6 +4001,26 @@ def test_found_territory_backs_the_center_away_from_a_river_crossing_it_twice():
     assert (town_hall["x"], town_hall["y"]) == (cx - w // 2, cy - h // 2)  # follows the chosen center, not tribe.x/y
 
 
+def test_found_territory_narrates_backing_the_center_away():
+    """Live bug report: "built a Hut then mysteriously transferred the Territory
+    and Hut to the 2nd found Water site." The tribe never actually moved --
+    _choose_territory_center backed the center away from the settling tile (real
+    river geometry there needs it), and the resulting distance read as an
+    unexplained teleport with nothing in the chronicle saying why. This is the
+    real bug: a silent placement, not the distance itself."""
+    from backend import world
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 50, "y": 39}])
+    tribe = sim.tribes["tribe_0"]
+    assert world.biome_at(50, 39) == "river"  # same real bug case as the test above
+
+    sim._found_territory(tribe)
+
+    assert tribe.territory_center != (50, 39)
+    cx, cy = tribe.territory_center
+    assert any(f"({cx},{cy})" in entry and "backed off" in entry for entry in tribe.history)
+
+
 def test_found_territory_leaves_a_dry_settling_spot_untouched():
     """The common case -- settling well away from any water shouldn't move the
     center at all; _choose_territory_center should return the settling tile
@@ -4015,6 +4035,7 @@ def test_found_territory_leaves_a_dry_settling_spot_untouched():
     sim._found_territory(tribe)
 
     assert tribe.territory_center == (55, 65)
+    assert not any("backed off" in entry for entry in tribe.history)  # nothing to explain -- it never moved
 
 
 def test_found_territory_relocates_minor_settlements_caught_inside():

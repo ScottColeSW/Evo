@@ -4510,10 +4510,25 @@ class Simulation:
         already earned at the tribe's actual position; this only decides where
         the walls and the building sit. Falls back to whichever candidate found
         the fewest natural barriers if none hits the target within the search
-        radius, and never proposes a center sitting on unbuildable ground."""
+        radius, and never proposes a center sitting on unbuildable ground.
+
+        Live bug report: "Tribe 1 found a perfect spot, built a Hut then
+        mysteriously transferred the Territory and Hut to the 2nd found Water
+        site." The tribe never actually moved (confirmed via board_history --
+        tribe.x/y stayed put the whole run) -- this search used to range out to
+        4*WALL_RING_RADIUS_STEP (48 tiles) and landed on a "technically 1 fewer
+        natural barrier" candidate 12 tiles from the settling tile, which is
+        exactly far enough to read as "the city teleported" and to leave the
+        actual population outside their own wall ring's real coverage (the ring
+        itself only reaches WALL_RING_RADIUS_STEP out from its center). Capped
+        to a much tighter search so the settling tile is always guaranteed to
+        stay well inside the eventual ring, even in the worst case -- a modest
+        extra natural-barrier freebie is a far smaller problem than a Hut
+        nobody is standing anywhere near."""
         origin = (tribe.x, tribe.y)
         best_center, best_count = origin, None
-        for radius in range(0, 4 * config.WALL_RING_RADIUS_STEP + 1, 3):
+        max_search_radius = 2 * config.WALL_RING_RADIUS_STEP
+        for radius in range(0, max_search_radius + 1, 3):
             angles = [0.0] if radius == 0 else [i * math.pi / 8 for i in range(16)]
             for angle in angles:
                 cx = tribe.x + round(radius * math.cos(angle))
@@ -4543,6 +4558,22 @@ class Simulation:
         w, h = config.BUILDING_FOOTPRINTS["town_hall"]
         cx, cy = tribe.territory_center
         architect.record_building(tribe, "town_hall", cx - w // 2, cy - h // 2, w, h, self.cycle)
+
+        # Live bug report: "built a Hut then mysteriously transferred the
+        # Territory and Hut to the 2nd found Water site." The tribe never
+        # actually moved -- _choose_territory_center backed the center away
+        # from the settling tile (see its own docstring) and the resulting
+        # distance happened to read as a teleport with nothing explaining it.
+        # A silent, un-narrated placement is the real bug here, not the
+        # distance itself -- this states plainly, at the moment it happens,
+        # why the buildings aren't sitting exactly where the tribe stands.
+        if (cx, cy) != (tribe.x, tribe.y):
+            dist = round(((cx - tribe.x) ** 2 + (cy - tribe.y) ** 2) ** 0.5)
+            tribe.history.append(
+                f"the Hut and Town Hall are raised {dist} tiles from where the tribe actually stands, at "
+                f"({cx},{cy}) -- building a wall right on the settling spot would have left too much of it "
+                "as open water, so the builders backed off to solid, defensible ground instead"
+            )
 
         # Explicit request: "when they start to build a Wall we need to force
         # existing Raider sites out of the Territory and for some distance away
