@@ -3057,21 +3057,56 @@ def test_expedition_raider_ambush_ends_the_trip_and_costs_population():
     """Explicit request: "It would be interesting to see a Scout encounter a RAIDER
     group" -- a real, in-the-field ambush distinct from the settlement-level attack
     and the report-based sighting roll."""
+    from backend import config
+
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.has_ever_settled = True
     tribe.population = 10
     exp = {"lead_scout": "Test Scout"}
 
-    with mock.patch("backend.simulation.random.random", return_value=0.0):
+    # First roll triggers the ambush (< EXPEDITION_RAIDER_AMBUSH_CHANCE); second is
+    # the new defend-chance roll -- 0.99 guarantees it fails, landing on the
+    # original guaranteed-loss outcome this test covers.
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, 0.99]):
         ambushed = sim._expedition_raider_ambush(tribe, exp, 60, 60)
 
     assert ambushed is True
     assert tribe.population == 9
-    assert tribe.raider_sightings == [(60, 60)]
+    # Explicit request: "after an ambush the Raiders move from that location" --
+    # the sighting lands near the ambush tile, not necessarily exactly on it.
+    assert len(tribe.raider_sightings) == 1
+    sx, sy = tribe.raider_sightings[0]
+    assert abs(sx - 60) <= config.RAIDER_SIGHTING_OFFSET and abs(sy - 60) <= config.RAIDER_SIGHTING_OFFSET
     assert any("ambushed by raiders" in entry for entry in tribe.history)
     assert "DREAD" in sim.trauma.bias_string(60, 60)
     assert sim.recent_encounters and sim.recent_encounters[0]["label"] == "Scouts ambushed"
+
+
+def test_expedition_raider_ambush_can_be_defended_for_loot():
+    """Explicit finding: "how many times did they defend and get loot? in an
+    ambush scenario" -- turned out to be zero, a structural guarantee (no
+    defend branch existed off a boat). This confirms the new one actually
+    fires and behaves like the home-defense/boat-win branches: no population
+    loss, loot gained, trip ends heading home."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.population = 10
+    tribe.wood = tribe.stone = tribe.food = 100
+    exp = {"lead_scout": "Test Scout", "phase": "outbound"}
+
+    # First roll triggers the ambush; second is the defend-chance roll -- 0.0
+    # guarantees it succeeds.
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, 0.0]):
+        defended = sim._expedition_raider_ambush(tribe, exp, 60, 60)
+
+    assert defended is True
+    assert tribe.population == 10  # no population loss -- successfully defended
+    assert exp["phase"] == "returning"
+    assert tribe.wood > 100 and tribe.stone > 100 and tribe.food > 100
+    assert any("fought off an ambush" in entry for entry in tribe.history)
+    assert sim.recent_encounters and sim.recent_encounters[0]["label"] == "Ambush repelled"
 
 
 def test_expedition_raider_ambush_is_an_automatic_boat_win_on_the_water():
@@ -3104,12 +3139,14 @@ def test_expedition_raider_ambush_is_a_normal_loss_without_a_boat_even_on_water(
     tribe.population = 10
     tribe.boat_built = False
 
-    with mock.patch("backend.simulation.random.random", return_value=0.0), \
+    # First roll triggers the ambush; second is the defend-chance roll -- 0.99
+    # guarantees it fails, isolating the no-boat/no-defense loss this test covers.
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, 0.99]), \
          mock.patch("backend.simulation.biome_at", return_value="river"):
         ambushed = sim._expedition_raider_ambush(tribe, {"lead_scout": "Test Scout"}, 60, 60)
 
     assert ambushed is True
-    assert tribe.population == 9  # the normal loss -- no boat, no automatic win
+    assert tribe.population == 9  # the normal loss -- no boat, no automatic win, defense failed
 
 
 def test_expedition_raider_ambush_never_fires_before_has_ever_settled():
@@ -3155,7 +3192,34 @@ def test_record_raider_sighting_does_not_duplicate_or_evict_for_a_repeat_tile():
     assert tribe.raider_sightings == [(5, 5), (6, 6)]
 
 
+def test_relocate_raider_sighting_after_ambush_clears_the_old_exact_spot():
+    """Explicit request: "after an ambush the Raiders move from that
+    location" -- an existing sighting exactly at the ambush tile must not
+    survive; the new one lands nearby instead (within RAIDER_SIGHTING_OFFSET),
+    never at the literal ambush coordinate itself."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.raider_sightings = [(60, 60)]
+
+    with mock.patch("backend.simulation.random.randint", return_value=3):
+        sim._relocate_raider_sighting_after_ambush(tribe, 60, 60)
+
+    assert (60, 60) not in tribe.raider_sightings
+    assert len(tribe.raider_sightings) == 1
+    sx, sy = tribe.raider_sightings[0]
+    assert (sx, sy) != (60, 60)
+    assert abs(sx - 60) <= config.RAIDER_SIGHTING_OFFSET and abs(sy - 60) <= config.RAIDER_SIGHTING_OFFSET
+
+
 def test_outbound_expedition_flees_home_immediately_when_ambushed():
+    """A uniform 0.0 for every random.random() call in the pipeline now also
+    guarantees the new ambush defend-chance roll succeeds (see
+    test_expedition_raider_ambush_can_be_defended_for_loot for that branch
+    covered in isolation) -- this still confirms an ambush interrupts an
+    outbound trip immediately, just via the defended outcome under these
+    particular mocked values."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.has_ever_settled = True
@@ -3170,7 +3234,7 @@ def test_outbound_expedition_flees_home_immediately_when_ambushed():
         sim._advance_expeditions(tribe)
 
     assert tribe.expeditions[0]["phase"] == "returning"
-    assert any("ambushed by raiders" in entry for entry in tribe.history)
+    assert any("fought off an ambush" in entry for entry in tribe.history)
 
 
 def test_hunting_party_drowns_if_its_daily_step_lands_on_a_river_tile():

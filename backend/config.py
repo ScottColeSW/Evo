@@ -932,6 +932,18 @@ RAIDER_APPROACH_START_DISTANCE = 8
 EXPEDITION_RAIDER_AMBUSH_CHANCE = 0.04
 EXPEDITION_RAIDER_AMBUSH_POPULATION_LOSS = 1
 
+# Explicit finding, after a live 986-cycle run: "how many times did they
+# defend and get loot? in an ambush scenario" -- turned out to be zero, a
+# structural guarantee, not just bad luck: an on-foot party ambushed in the
+# field had no defend/win branch at all (only an automatic win if already on
+# a boat over water). Real chance added, in the spirit of _resolve_raider_
+# attack's own population-scaled defense, but deliberately lower/capped --
+# a traveling party carries no wall, keep, moat, or torches with it, just its
+# own numbers.
+EXPEDITION_AMBUSH_DEFENSE_BASE_CHANCE = 0.2
+EXPEDITION_AMBUSH_DEFENSE_POPULATION_BONUS_PER_10 = 0.03
+EXPEDITION_AMBUSH_DEFENSE_MAX_CHANCE = 0.5
+
 # Staged wall construction (backend/actions.py._construct_wall): reuses
 # _labor_multiplier(population) -- the same "more hands get more done per action"
 # concept _harvest already uses -- rather than inventing a separate team-size notion.

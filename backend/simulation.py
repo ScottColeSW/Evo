@@ -3422,6 +3422,21 @@ class Simulation:
         if overflow > 0:
             del tribe.raider_sightings[:overflow]
 
+    def _relocate_raider_sighting_after_ambush(self, tribe: Tribe, x: int, y: int) -> None:
+        """Explicit request: "after an ambush the Raiders move from that
+        location." Clears any existing sighting record for this exact spot and
+        records a new one nearby instead (the same RAIDER_SIGHTING_OFFSET nudge
+        a scout's own raider-sighting report already uses) -- so the same
+        location doesn't keep generating identical repeat encounters once its
+        raiders have actually been engaged, win or lose."""
+        if (x, y) in tribe.raider_sightings:
+            tribe.raider_sightings.remove((x, y))
+        off = config.RAIDER_SIGHTING_OFFSET
+        rx = max(0, min(self.world.grid_size - 1, x + random.randint(-off, off)))
+        ry = max(0, min(self.world.grid_size - 1, y + random.randint(-off, off)))
+        if biome_at(rx, ry) not in config.UNBUILDABLE_BIOMES:
+            self._record_raider_sighting(tribe, rx, ry)
+
     def _expedition_raider_ambush(self, tribe: Tribe, exp: dict, x: int, y: int) -> bool:
         """Explicit request: "It would be interesting to see a Scout encounter a
         RAIDER group" -- a real, in-the-field ambush during travel, distinct from the
@@ -3455,11 +3470,43 @@ class Simulation:
             self.recent_encounters.append({
                 "x": x, "y": y, "kind": "raider_attack", "label": "Raiders routed by boat", "outcome": "repelled",
             })
+            self._relocate_raider_sighting_after_ambush(tribe, x, y)
             exp["phase"] = "returning"
             return True
+
+        # Explicit finding: "how many times did they defend and get loot? in an
+        # ambush scenario" -- turned out to be zero, a structural guarantee (no
+        # defend branch existed at all off a boat). Real chance added, in the
+        # spirit of _resolve_raider_attack's own population-scaled defense, but
+        # deliberately lower/capped -- a traveling party carries no wall, keep,
+        # moat, or torches with it, just its own numbers.
+        defense_chance = min(
+            config.EXPEDITION_AMBUSH_DEFENSE_MAX_CHANCE,
+            config.EXPEDITION_AMBUSH_DEFENSE_BASE_CHANCE
+            + (tribe.population // 10) * config.EXPEDITION_AMBUSH_DEFENSE_POPULATION_BONUS_PER_10,
+        )
+        if random.random() < defense_chance:
+            looted = {
+                resource: round(getattr(tribe, resource) * config.RAIDER_DEFEAT_LOOT_FRACTION)
+                for resource in ("wood", "stone", "food")
+            }
+            for resource, amount in looted.items():
+                setattr(tribe, resource, getattr(tribe, resource) + amount)
+            self.trauma.radiate_event_wave(x, y, config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
+            tribe.history.append(
+                f"{exp['lead_scout']}'s party fought off an ambush near ({x},{y}) and heads home with the "
+                f"counter-raid loot -- {looted['food']} food, {looted['wood']} wood, and {looted['stone']} stone recovered"
+            )
+            self.recent_encounters.append({
+                "x": x, "y": y, "kind": "raider_attack", "label": "Ambush repelled", "outcome": "repelled",
+            })
+            self._relocate_raider_sighting_after_ambush(tribe, x, y)
+            exp["phase"] = "returning"
+            return True
+
         self.trauma.radiate_event_wave(x, y, config.RAIDER_SIGHTING_TRAUMA_MAGNITUDE, config.RAIDER_SIGHTING_TRAUMA_RADIUS)
         self._lose_population(tribe, config.EXPEDITION_RAIDER_AMBUSH_POPULATION_LOSS, cause="raider_ambush")
-        self._record_raider_sighting(tribe, x, y)
+        self._relocate_raider_sighting_after_ambush(tribe, x, y)
         tribe.history.append(f"{exp['lead_scout']}'s party was ambushed by raiders near ({x},{y}) and flees for home")
         tribe.memory.remember(
             f"Raiders ambushed our party near ({x},{y}) -- real danger there.", self.cycle, weight=0.85,
