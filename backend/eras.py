@@ -65,6 +65,21 @@ ERAS: tuple[Era, ...] = (
             # those are only reachable post-settling anyway (see config.
             # PRE_SETTLEMENT_ACTIONS), so this can't fire before a tribe has a camp.
             "COOK_FOOD",
+            # Same move, same reasoning (explicit request, 2026-09-05): PLANT_CROP/
+            # GATHER_EGGS/CATCH_FISH used to wait for Tribal Synapse, which itself
+            # requires banking 20 food (cognitive_horizon, below) -- but a tribe
+            # stuck foraging the same settled tile can rarely bank that much food in
+            # the first place (see _harvest's scarcity/depletion mechanic). That's a
+            # real chicken-and-egg: farming/fishing/eggs are supposed to be the way
+            # OUT of a food-scarcity trap, not something locked behind first
+            # escaping it. Confirmed live: two tribes sat in Primitive Dawn for a
+            # full 128-cycle run, food oscillating 0-16 the whole time, wood/stone/
+            # water all comfortably past the threshold -- food alone blocked every
+            # era advance. Simulation._prepare_turn's own "Settled gate, not a real-
+            # water one" filter already gates these three on has_ever_settled
+            # regardless of era, so moving them here is the same real-prerequisite
+            # swap COOK_FOOD already got, not a loosening of any actual constraint.
+            "PLANT_CROP", "GATHER_EGGS", "CATCH_FISH",
         ),
         announcement="{tribe} has awakened at the dawn of the Primitive Age.",
     ),
@@ -105,7 +120,7 @@ ERAS: tuple[Era, ...] = (
         requires_resources={"water": 40, "stone": 40, "wood": 40, "food": 40},
         advancement_cost={"wood": 30, "stone": 30, "water": 20, "food": 20},
         unlocks_actions=(
-            "CONSTRUCT_WALL", "EXPAND_TERRITORY", "PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "STRIKE_RAIDER_CAMP",
+            "CONSTRUCT_WALL", "EXPAND_TERRITORY", "STRIKE_RAIDER_CAMP",
             "BUILD_LONG_HOUSE", "DECLARE_ALLIANCE", "DECLARE_WAR", "BUILD_DOCK", "BUILD_FISHERY",
             "BUILD_SAWMILL", "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_MOAT", "BUILD_KEEP", "BUILD_TANNERY",
             "BUILD_WAREHOUSE", "BUILD_HATCHERY", "BUILD_BATH_HOUSE",
