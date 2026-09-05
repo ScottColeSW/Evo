@@ -198,6 +198,14 @@ def _gather_water(sim, tribe, biome, target):
             tribe.x, tribe.y, config.DROWNING_TRAUMA_MAGNITUDE, config.DROWNING_TRAUMA_RADIUS
         )
         sim._lose_population(tribe, config.DROWNING_HAZARD_POPULATION_LOSS, cause="drowning")
+        # Live report: "it sounds like the Hazard didn't get reported back to
+        # the Tribe properly... there should be a skull-n-crossbones marker."
+        # Same missing-marker gap as Simulation._expedition_river_hazard/
+        # _volcano_hazard's matching fix -- a hazard death needs to show on
+        # the map the same way a raider ambush/wolf attack already does.
+        sim.recent_encounters.append({
+            "x": tribe.x, "y": tribe.y, "kind": "hazard_death", "label": "Lost to the river", "outcome": "struck",
+        })
         return "the river's current pulled someone under"
     base = config.WATER_YIELD_RIVER if biome in ("river", "lake") else config.WATER_YIELD_OFF_RIVER
     return _add_capped(sim, tribe, "water", _harvest(sim, tribe, "water", base, biome), "water")

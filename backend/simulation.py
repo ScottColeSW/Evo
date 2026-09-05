@@ -3372,6 +3372,15 @@ class Simulation:
             f"A river crossing near ({x},{y}) drowned one of our own -- the current there is a real danger.",
             self.cycle, weight=0.85,
         )
+        # Live report: "it sounds like the Hazard didn't get reported back to the
+        # Tribe properly... if a party member dies and they have to run away to
+        # tell the Tribe, there should be a skull-n-crossbones marker." The
+        # chronicle line and memory above always fired, but unlike a raider
+        # ambush/wolf attack, no environmental hazard death ever appended to
+        # recent_encounters -- so nothing ever showed on the map itself.
+        self.recent_encounters.append({
+            "x": x, "y": y, "kind": "hazard_death", "label": "Lost to the river", "outcome": "struck",
+        })
         return True
 
     def _volcano_hazard(self, tribe: Tribe, x: int, y: int) -> bool:
@@ -3394,6 +3403,11 @@ class Simulation:
             f"The volcano near ({x},{y}) is deadly -- real danger there, stay away.",
             self.cycle, weight=0.9,
         )
+        # See _expedition_river_hazard's matching comment -- same live report,
+        # same missing marker.
+        self.recent_encounters.append({
+            "x": x, "y": y, "kind": "hazard_death", "label": "Lost to the volcano", "outcome": "struck",
+        })
         return True
 
     def _record_raider_sighting(self, tribe: Tribe, x: int, y: int) -> None:

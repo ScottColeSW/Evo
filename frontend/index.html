@@ -2764,7 +2764,14 @@ function drawFrame() {
       ctx.textAlign = "center";
       // The emoji shakes with the scuffle; the label stays put underneath so it's
       // still readable while the dust is flying.
-      const encounterIcon = e.kind === "raider_attack" ? "⚔️" : e.kind === "wolf_attack" ? "🐺" : "\u{1F3F4}";
+      // Live report: "if a party member dies and they have to run away to tell
+      // the Tribe, there should be a skull-n-crossbones marker" -- backend/
+      // simulation.py's volcano/river hazard deaths now report a "hazard_death"
+      // kind encounter to match.
+      const encounterIcon = e.kind === "raider_attack" ? "⚔️"
+        : e.kind === "wolf_attack" ? "🐺"
+        : e.kind === "hazard_death" ? "☠️"
+        : "\u{1F3F4}";
       ctx.fillText(encounterIcon, cx + shakeX, cy + shakeY);
       ctx.font = `bold ${Math.max(8, TILE * 0.35)}px sans-serif`;
       ctx.fillStyle = "#fecaca";

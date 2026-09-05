@@ -6964,6 +6964,9 @@ def test_drowning_hazard_on_river_tile():
     assert tribe.population == 9
     assert tribe.water == 30  # no gain on a drowning turn
     assert "DREAD" in sim.trauma.bias_string(50, 50)
+    # Live report: "there should be a skull-n-crossbones marker" -- see
+    # Simulation._volcano_hazard's matching test for the fuller comment.
+    assert any(e["kind"] == "hazard_death" for e in sim.recent_encounters)
 
 
 def test_drowning_hazard_never_fires_off_river():
@@ -6997,6 +7000,11 @@ def test_volcano_hazard_fires_on_volcano_ground():
     assert tribe.population == 10 - config.VOLCANO_HAZARD_POPULATION_LOSS
     assert any("volcano" in entry for entry in tribe.history)
     assert "DREAD" in sim.trauma.bias_string(vx, vy)
+    # Live report: "it sounds like the Hazard didn't get reported back to the
+    # Tribe properly... there should be a skull-n-crossbones marker" -- a
+    # hazard death must show up in recent_encounters the same way a raider
+    # ambush/wolf attack already does, or nothing ever appears on the map.
+    assert any(e["kind"] == "hazard_death" and (e["x"], e["y"]) == (vx, vy) for e in sim.recent_encounters)
 
 
 def test_volcano_hazard_never_fires_off_volcano_ground():
