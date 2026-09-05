@@ -997,7 +997,7 @@ def _plant_crop(sim, tribe, biome, target):
     w, h = config.BUILDING_FOOTPRINTS["farm_plot"]
     architect.record_building(tribe, "farm_plot", slot[0], slot[1], w, h, sim.cycle)
     tribe.farm_plots += 1
-    return f"a new plot is planted -- {tribe.farm_plots} now growing"
+    return f"a new plot is fenced and planted, scarecrow set to keep it clear -- {tribe.farm_plots} now growing"
 
 
 def _gather_eggs(sim, tribe, biome, target):
@@ -1957,7 +1957,7 @@ ACTION_DESCRIPTIONS = {
     "BUILD_MOAT": "Dig a moat using stored wood and stone -- only possible once the wall has been reinforced with a second layer. A one-time, permanent structure, cheaper than another wall layer: a further defense bonus.",
     "BUILD_KEEP": "Build a keep using stored wood and stone -- only possible once enough long houses stand. A one-time, permanent structure: a further defense bonus for the settlement.",
     "BUILD_FORTRESS": "Build a fortress using stored wood and stone -- only possible once a keep stands and enough long houses have been built. A one-time, permanent structure: a further defense bonus for the settlement.",
-    "PLANT_CROP": "Plant a farm plot at your current tile using stored wood -- only possible once the tribe has settled here. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
+    "PLANT_CROP": "Plant a farm plot at your current tile, fenced and set with a scarecrow using stored wood -- only possible once the tribe has settled here. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
     "GATHER_EGGS": "Search for wild fowl nests near your current tile -- only possible once the tribe has settled here. A found egg is set aside and hatches on its own, growing the tribe's flock by one.",
     "CATCH_FISH": "Attempt to harvest food by fishing at your current tile -- only possible once the tribe has settled here. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",
     "SCOUT": "Dispatch an expedition to explore -- the direction is chosen automatically to spread coverage out over time, not from target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home. Your tribe can have a couple of parties out at once (scouting or hunting, any mix) -- choosing SCOUT again sends another one if there's room, or just reports on whoever's already out once you're at capacity.",

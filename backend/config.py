@@ -265,7 +265,10 @@ POPULATION_GROWTH_CAP = float("inf")
 # Simulation._is_settled_near_water. "Plains" alone doesn't mean a tribe resettled
 # somewhere with easy water, per the original design spec for this feature.
 FARMING_REQUIRES_ADJACENT_WATER = ("river", "lake")
-PLANT_CROP_WOOD_COST = 10
+# Explicit request (2026-09-05): "make it cost 25 wood for a simple fence and
+# scarecrow, it's common sense" -- a real plot needs more than seed money to
+# keep wildlife off it while it grows.
+PLANT_CROP_WOOD_COST = 25
 MAX_FARM_PLOTS = 4
 CROP_GROWTH_PER_CYCLE = 10  # a plot matures in ~10 cycles once planted
 CROP_HARVEST_YIELD = 15  # food per plot, per harvest

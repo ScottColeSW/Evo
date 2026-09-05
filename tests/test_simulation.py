@@ -1541,6 +1541,73 @@ def test_survival_crisis_fails_open_when_no_survival_action_survives_filtering()
     assert not set(ctx["available_actions"]) & SURVIVAL_CRISIS_ACTIONS
 
 
+def test_survival_crisis_menu_keeps_plant_crop_reachable():
+    """Live bug: a tribe with cooking learned still starved two members. Root cause
+    traced to GATHER_FOOD's yield running through _harvest's scarcity mechanic --
+    repeatedly foraging the same settled tile crushes that tile's own yield even
+    with cooking's multiplier applied on top. PLANT_CROP bypasses scarcity entirely
+    and is the real fix, so it must survive the crisis-menu cut, not be filtered out
+    at the exact moment a starving tribe would most need it."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)  # real game always pairs these -- PLANT_CROP's own placement check needs it
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"
+    tribe.population = 10
+    tribe.food = 1  # critical
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert tribe.food_crisis_active is True
+    assert "PLANT_CROP" in ctx["available_actions"]
+
+
+def test_farming_nudge_names_plant_crop_under_real_food_pressure():
+    """The crisis-menu fix alone isn't enough if the tribe never reaches for
+    PLANT_CROP in the first place -- confirmed live, one tribe never chose it once
+    in 94 cycles despite being settled near water since cycle 10. Names it directly
+    once food pressure is real and no plot has ever been planted."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)  # real game always pairs these -- PLANT_CROP's own placement check needs it
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "tribal_synapse"  # PLANT_CROP isn't unlocked until this era
+    tribe.population = 10  # upkeep = 1
+    tribe.food = config.HUNGER_WARNING_CYCLES_LEFT  # warning-level pressure, not yet critical
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert tribe.food_crisis_active is False  # confirms this isn't just riding the crisis cut
+    assert "PLANT_CROP" in request["prompt"]
+    assert "wear-down" in request["prompt"]
+
+
+def test_farming_nudge_stays_quiet_once_a_plot_exists_or_food_is_comfortable():
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.population = 10  # upkeep = 1
+
+    tribe.food = 1  # real pressure, but a plot already exists
+    tribe.farm_plots = 1
+    request, _ = sim._prepare_turn(tribe)
+    assert "wear-down" not in request["prompt"]
+
+    tribe.farm_plots = 0
+    tribe.food = 200  # comfortable stockpile, nothing to nudge about
+    request, _ = sim._prepare_turn(tribe)
+    assert "wear-down" not in request["prompt"]
+
+
 def test_wall_commitment_narrows_the_menu_to_wall_and_survival_actions():
     """Explicit request: "if they choose Wall, they have to complete it, no
     changing orders other than to collect what is needed to complete it.\""""

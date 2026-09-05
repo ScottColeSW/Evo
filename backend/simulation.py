@@ -98,9 +98,22 @@ ONE_TIME_BUILD_FLAGS = {
 # here even though it's exempt from the repetition throttle: it carries a real
 # food/water cost of its own (see its ACTION_DESCRIPTIONS entry), which could
 # make an active crisis worse rather than better.
+#
+# PLANT_CROP included (2026-09-05, live bug report: a tribe with cooking learned
+# still starved two members to death). Root cause: GATHER_FOOD's own yield runs
+# through _harvest's scarcity/depletion mechanic, which a tribe repeatedly
+# foraging the same settled tile drives toward MAX_SCARCITY -- at that point even
+# cooking's multiplier is stretching an already-tiny raw harvest. _advance_farming
+# bypasses scarcity entirely (a flat per-plot yield, see config.CROP_HARVEST_YIELD),
+# making it the real fix for ground foraged into the ground, not just another food
+# action -- but the observed tribe never once chose it in 94 cycles. Without this,
+# a survival crisis cuts PLANT_CROP from the menu at the exact moment the visible_
+# entities nudge below (in _prepare_turn) is trying to point the tribe at it --
+# the same "never dangle an action that isn't actually offered" reasoning
+# AFFORDABILITY_CHECKS already follows.
 SURVIVAL_CRISIS_ACTIONS = {
     "GATHER_FOOD", "HUNT_DEER", "CATCH_FISH", "HUNTING_PARTY", "GATHER_EGGS", "COOK_FOOD",
-    "GATHER_WATER", "SCOUT",
+    "GATHER_WATER", "SCOUT", "PLANT_CROP",
 }
 
 # Explicit request: "if they choose Wall, they have to complete it, no changing
@@ -2338,6 +2351,27 @@ class Simulation:
             visible_entities.append(
                 "This ground supports gathering wood and stone, but has no real water access for "
                 "farming or a flock -- relocating toward confirmed water is still an option."
+            )
+
+        # NUDGE (2026-09-05, live bug: a tribe with cooking learned still starved two
+        # members). Foraging the same settled tile over and over wears that ground
+        # down (see _harvest's scarcity/depletion), so a tribe leaning on GATHER_FOOD
+        # cycle after cycle sees its own yield keep shrinking even with cooking's
+        # multiplier applied on top. PLANT_CROP's yield never touches that scarcity
+        # mechanic at all -- named directly, not left implicit, since a bare "you
+        # could farm" fact already proved too easy to never act on (94 cycles,
+        # zero attempts, in the run that surfaced this). Gated on real food pressure
+        # (so a comfortably-fed tribe with zero plots isn't nagged for no reason) and
+        # on PLANT_CROP actually being in available_actions right now -- same "never
+        # dangle" reasoning as AFFORDABILITY_CHECKS: no point naming a fix the tribe
+        # can't actually reach this cycle (no wood, no free plot, no territory yet).
+        food_pressure = tribe.food_crisis_active or tribe.food <= upkeep * config.HUNGER_WARNING_CYCLES_LEFT
+        if "PLANT_CROP" in available_actions and tribe.farm_plots == 0 and food_pressure:
+            visible_entities.append(
+                "Food gathered from this same ground keeps yielding less the more it's foraged -- "
+                "planting a farm plot (PLANT_CROP) grows food here without that same wear-down, and "
+                "pays out automatically, again and again, once it matures. Up to a few plots can be "
+                "tended at once."
             )
 
         if not settled_near_water and tribe.confirmed_water_sites:
