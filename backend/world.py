@@ -98,18 +98,26 @@ def _coast_is_headland(y: float) -> bool:
 # look identical. West/north measure inward from x=0/y=0; south measures
 # inward from GRID_SIZE-1, mirroring how the east coast measures inward from
 # OCEAN_X_START.
+#
+# Explicit correction: "the Ocean was only supposed to be a 'frame'" -- the
+# first attempt reused the east coast's own +-7 wave amplitude on top of a
+# much deeper base (18), which ate into the mountains and produced sandbar-
+# like spits near the corners. This wave is deliberately small (+-2, not the
+# east coast's +-7) so paired with WEST/NORTH/SOUTH_COAST_INSET_BASE=6, the
+# frame's real depth stays within the requested 4-8 tiles everywhere, not
+# just at its calmest point.
 def _west_coast_boundary(y: float) -> float:
-    return config.WEST_COAST_INSET_BASE + 5 * math.sin(y * 0.09 + 0.4) + 2 * math.sin(y * 0.24 + 2.1)
+    return config.WEST_COAST_INSET_BASE + 1.5 * math.sin(y * 0.09 + 0.4) + 0.5 * math.sin(y * 0.24 + 2.1)
 
 
 def _north_coast_boundary(x: float) -> float:
-    return config.NORTH_COAST_INSET_BASE + 5 * math.sin(x * 0.07 + 1.1) + 2 * math.sin(x * 0.19 + 0.3)
+    return config.NORTH_COAST_INSET_BASE + 1.5 * math.sin(x * 0.07 + 1.1) + 0.5 * math.sin(x * 0.19 + 0.3)
 
 
 def _south_coast_boundary(x: float) -> float:
     return (
         (config.GRID_SIZE - 1) - config.SOUTH_COAST_INSET_BASE
-        - 5 * math.sin(x * 0.08 + 2.5) - 2 * math.sin(x * 0.21 + 0.9)
+        - 1.5 * math.sin(x * 0.08 + 2.5) - 0.5 * math.sin(x * 0.21 + 0.9)
     )
 
 
@@ -141,14 +149,14 @@ LAKE_TRIBUTARY_HALF_WIDTH = 2
 # deliberately simpler than the sine-wave boundaries -- a one-off feature reads
 # better as a clean circle than an "organic" wobbly one.
 #
-# Map dream, phase 2: relocated from the original (10, 12) -- that point is now
-# deep inside the new west+north ocean bands (west/north coast insets reach as
-# far as ~25 tiles in). (32, 30) was picked by actually sampling
-# _west_coast_boundary/_north_coast_boundary across the grid: it clears the
-# worst-case west coast by ~9 tiles and the worst-case north coast by ~9 tiles
-# (VOLCANO_RADIUS=4 plus real margin either way), while staying just east of the
-# mountain range's own boundary so it still reads as "near the mountains."
-VOLCANO_CENTER = (32, 30)
+# Map dream, phase 2: relocated from the original (10, 12), which the first
+# (too-deep, since-corrected) west/north inset attempt swallowed. Once that
+# inset was corrected down to a real 4-8 tile frame (see WEST/NORTH_COAST_
+# INSET_BASE), (13, 13) -- found by sampling _west_coast_boundary/
+# _north_coast_boundary directly, not estimated -- clears both by ~5.5-6 tiles
+# (VOLCANO_RADIUS=4 plus real margin), just barely off the original spot and
+# still squarely inside the mountain range.
+VOLCANO_CENTER = (13, 13)
 VOLCANO_RADIUS = 4
 
 

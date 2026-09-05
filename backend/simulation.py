@@ -41,16 +41,19 @@ from .world import (
 # follow the first one").
 #
 # Map dream, phase 2: turning the map into a real island (ocean insets on all four
-# sides, not just the east) shrank the land that clears every coastline by
-# SCOUT_PATROL_DISTANCE=25 down to a single interior band roughly x in [38,63],
-# y in [37,58] -- found by directly sampling world._west/_north/_south/_coast_
-# boundary_x across the whole grid, not estimated. All four spawns below sit
-# inside that band (25.0-25.8 tiles of real clearance from every coast, verified
-# the same way) and were picked by a max-min search over that band's plains
-# tiles for the best pairwise spread achievable there: 15.8-26.4 tiles apart,
-# tighter than the old 18-55 spread since the whole safe interior is now much
-# smaller, but still four distinct, non-clustered starting points.
-SPAWN_POINTS = [(38, 42), (56, 37), (55, 53), (40, 58)]
+# sides, not just the east) originally forced all four spawns into a tiny interior
+# band -- corrected down to a real 4-8 tile ocean frame (see world.config's
+# WEST/NORTH/SOUTH_COAST_INSET_BASE) after "the Ocean was only supposed to be a
+# 'frame'." With that shallower frame, the original two landmark-relative slots
+# only needed a small nudge to still clear SCOUT_PATROL_DISTANCE=25 from every
+# coast: slot 0 moved from (37, 75) to (37, 68) (south clearance was 18.8, short
+# of 25), slot 1 from (50, 22) to (50, 31) (north clearance was 17.7) -- both
+# confirmed by directly sampling the real boundary functions, not estimated.
+# Slots 2/3 needed no change at all. Spacing is a little tighter between slots 1
+# and 3 (11.7 tiles, down from the original 18.0) as a direct result of pulling
+# slot 1 south to clear the coast, but all four remain distinct, non-clustered
+# starting points.
+SPAWN_POINTS = [(37, 68), (50, 31), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 
 # See _prepare_turn's own use of this -- every one-time structure with a single

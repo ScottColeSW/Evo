@@ -8,12 +8,20 @@ MAX_TRIBES = 4
 # Map dream, phase 2: "another attempt at increasing the Ocean/unplayable
 # area" -- a real island, ocean wrapping the north/south/west edges too, not
 # just the existing east coast (world._coast_boundary_x). Same "fixed inset +
-# two sine waves" shape as every other wavy boundary in world.py; the sine
-# waves themselves add up to ~7 more at a crest, so the real reach of each
-# inset is base+~7, not just the base number.
-WEST_COAST_INSET_BASE = 18
-NORTH_COAST_INSET_BASE = 18
-SOUTH_COAST_INSET_BASE = 18
+# two sine waves" shape as every other wavy boundary in world.py.
+#
+# First attempt at this used base=18 with the same +-7 wave amplitude every
+# other boundary in this file uses -- explicit correction: "the Ocean was only
+# supposed to be a 'frame'." That depth ate into the mountains, forced the
+# volcano and every spawn point to relocate, and produced narrow sandbar-like
+# spits of land near the corners where two deep insets overlapped. This base
+# (6) is paired with a much smaller wave amplitude in world.py's own
+# _west/_north/_south_coast_boundary (+-2, not +-7) so the real reach of the
+# frame stays within the requested 4-8 tiles everywhere, not just at its
+# calmest point.
+WEST_COAST_INSET_BASE = 6
+NORTH_COAST_INSET_BASE = 6
+SOUTH_COAST_INSET_BASE = 6
 
 # GATHER_WOOD/GATHER_STONE used to be available from the moment a tribe existed, before
 # it had even decided where to actually live -- a nomadic band stockpiling timber and
