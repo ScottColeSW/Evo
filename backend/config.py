@@ -271,6 +271,23 @@ CROP_GROWTH_PER_CYCLE = 10  # a plot matures in ~10 cycles once planted
 CROP_HARVEST_YIELD = 15  # food per plot, per harvest
 CROP_WATER_PER_PLOT_PER_CYCLE = 2  # a plot that goes unwatered withers outright
 
+# Explicit correction, after a live 986-cycle run: "we have scaled the Farm a
+# bit hard. We can back it down and let them react." A harvest applies
+# actions._labor_multiplier (population / POPULATION_YIELD_BASELINE=8)
+# uncapped, same as every gather action -- but a gather action is throttled by
+# the model actually choosing to do it repeatedly, while a harvest fires
+# automatically the moment crop_growth hits 100, no choice involved. At the
+# run's real peak populations (530 and 887), that multiplier reached 66x-111x,
+# so CROP_HARVEST_YIELD(15) * up to MAX_FARM_PLOTS(4) plots produced single
+# harvests of several thousand food against a few-hundred-food storage cap --
+# almost all of it wasted every single time, confirmed live (267 "stores
+# nearly full" harvest-waste events in that one run). Capped well below
+# gather actions' own effectively-unbounded scaling so growth still helps
+# (up to a real 5x boost) without guaranteeing overflow -- a tribe now has to
+# actually build Warehouses/manage storage to capture a big harvest, not
+# just always lose most of it.
+FARM_LABOR_MULTIPLIER_CAP = 5.0
+
 UNBUILDABLE_BIOMES = ("ocean", "river", "lake", "cliffs", "shoals", "volcano")
 
 # Map dream, phase 1 (user's own sketch): a new Desert biome in the south of the

@@ -5645,6 +5645,27 @@ def test_advance_farming_harvest_scales_with_population():
     assert tribe.food > config.CROP_HARVEST_YIELD
 
 
+def test_advance_farming_harvest_labor_multiplier_is_capped_for_a_large_tribe():
+    """Explicit correction, after a live 986-cycle run: "we have scaled the Farm
+    a bit hard." At the run's real peak population (530), the uncapped labor
+    multiplier would have been 530/8=66.25x -- FARM_LABOR_MULTIPLIER_CAP holds
+    it to 5x regardless of how far past that a tribe's population grows."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.farm_plots = 1
+    tribe.population = 530  # real peak population from the live run that caught this
+    tribe.crop_growth = 100 - config.CROP_GROWTH_PER_CYCLE
+    tribe.water = 100
+    tribe.food = 0
+    tribe.last_celebration_cycle = sim.cycle  # skip the celebration cost for a clean read
+
+    sim._advance_farming(tribe)
+
+    assert tribe.food == config.CROP_HARVEST_YIELD * config.FARM_LABOR_MULTIPLIER_CAP
+
+
 def test_advance_farming_harvest_scales_with_cooking_multiplier():
     from backend import config
 

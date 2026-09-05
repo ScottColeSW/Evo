@@ -4216,10 +4216,16 @@ class Simulation:
             # already out-yield an entire ~10-cycle farming cycle, which is a real
             # economic reason to never bother planting, independent of any framing
             # bias. More hands to bring in a harvest should mean more harvested.
-            harvested = round(
-                config.CROP_HARVEST_YIELD * tribe.farm_plots * _labor_multiplier(tribe.population)
-                * _food_multiplier(tribe)
-            )
+            #
+            # Explicit correction: "we have scaled the Farm a bit hard" -- unlike a
+            # gather action (throttled by the model actually choosing it), a
+            # harvest fires automatically and unconditionally, so the same
+            # uncapped _labor_multiplier that's fine for GATHER_FOOD let a large,
+            # late-game population's harvest run into the thousands against a
+            # few-hundred-food storage cap. See config.FARM_LABOR_MULTIPLIER_CAP's
+            # own comment for the real numbers this was caught against.
+            labor_multiplier = min(_labor_multiplier(tribe.population), config.FARM_LABOR_MULTIPLIER_CAP)
+            harvested = round(config.CROP_HARVEST_YIELD * tribe.farm_plots * labor_multiplier * _food_multiplier(tribe))
             added = self._capped_add(tribe, "food", harvested)
             tribe.last_harvest_cycle = self.cycle
             if added < harvested:
