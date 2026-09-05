@@ -4858,17 +4858,20 @@ async def test_step_does_not_hold_the_tribal_gathering_off_its_interval():
 
 
 @run_async
-async def test_step_does_not_advance_expeditions_off_the_dawn_boundary():
+async def test_step_does_not_advance_a_settled_tribes_expeditions_off_the_dawn_boundary():
     """Live report: "Exploration time is like 6 now, but this is being counted
     as 6 cycles, not full days. It should be 6 days." _advance_expeditions used
     to run every single cycle regardless -- now gated to the same dawn
     boundary _hold_tribal_gathering already uses, so EXPEDITION_MAX_DAYS-style
     constants (3-6) actually mean real days (DAY_LENGTH_CYCLES cycles each),
-    not raw simulation cycles."""
+    not raw simulation cycles. Only true once a tribe has ever settled -- see
+    test_step_advances_a_not_yet_settled_tribes_expeditions_every_cycle for
+    the explicit exemption before that."""
     from backend import config
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
     tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
     tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [70, 50],
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
@@ -4885,11 +4888,43 @@ async def test_step_does_not_advance_expeditions_off_the_dawn_boundary():
 
 
 @run_async
+async def test_step_advances_a_not_yet_settled_tribes_expeditions_every_cycle():
+    """Explicit correction, after a live run's tribe died of thirst before ever
+    founding: "the Scouts didn't return with Water info fast enough." The
+    dawn gate above made a scout's own round trip take real days while
+    STARTING_WATER/upkeep stayed the same, so the pre-founding search window
+    got ~4x longer without the tribe's survival clock slowing down to match.
+    A tribe that has never settled is exempt from the gate and keeps
+    advancing every cycle -- finding and reaching water is life-or-death
+    before founding in a way it isn't once a tribe has a home to fall back
+    on."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
+    tribe = sim.tribes["tribe_0"]
+    assert tribe.has_ever_settled is False
+    tribe.expeditions = [{
+        "pos": [50, 50], "origin": [50, 50], "target": [70, 50],
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+    sim.cycle = config.DAY_LENGTH_CYCLES - 2  # off the dawn boundary -- shouldn't matter here
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
+        await sim.step()
+
+    assert tribe.expeditions[0]["day"] == 1  # advanced anyway -- not yet settled
+    assert tribe.expeditions[0]["pos"] != [50, 50]  # actually moved
+
+
+@run_async
 async def test_step_advances_expeditions_on_the_dawn_boundary():
     from backend import config
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
     tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
     tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [70, 50],
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,

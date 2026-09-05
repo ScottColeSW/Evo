@@ -1296,7 +1296,14 @@ BOAT_WATER_BIOMES = {"river", "lake"}
 BOAT_WATER_MOVEMENT_MULTIPLIER = 1.2
 
 EXPEDITION_SPEED = 10
-EXPEDITION_MAX_DAYS = 3
+# Raised 3 -> 5 (explicit request, same conversation that diagnosed a tribe
+# dying of thirst before ever founding): "give the Scout a 5 day start. They
+# are not penalized if they come back late, the Tribe is, given someone
+# dies." A scout that gives up early just means dispatching another one from
+# scratch -- more patience per dispatch costs the scout nothing and gives a
+# real search more room to actually find water before the tribe's own
+# survival clock runs out.
+EXPEDITION_MAX_DAYS = 5
 
 # A tribe could previously only ever have one party (scouting or hunting) in the field
 # at a time -- a chief with real people to spare had no way to send out more than a

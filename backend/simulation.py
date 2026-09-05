@@ -8,7 +8,7 @@ from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _eligible_breeding_pair, _food_multiplier, _item_storage_cap,
-    _labor_multiplier, _long_house_fur_discount, _storage_cap, expedition_capacity,
+    _labor_multiplier, _long_house_fur_discount, _record_combat, _storage_cap, expedition_capacity,
 )
 from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
@@ -490,6 +490,17 @@ class Tribe:
         self.raids_lost = 0
         self.raids_defended = 0
         self.trades_completed = 0
+        # Explicit request: sidebar boxes for "an elastic and running total of
+        # things traded away/received" and "each type of combat with W/L
+        # totals" -- the scalar counters above already exist for the
+        # end-of-run scoreboard (backend/scoreboard.py) but don't break down
+        # by resource or by which kind of fight this actually was. Keyed
+        # dicts instead of a fixed field per resource/combat-kind, so a newly
+        # traded resource or a combat kind that's never happened yet doesn't
+        # need its own hardcoded field.
+        self.trade_given: dict[str, int] = {}
+        self.trade_received: dict[str, int] = {}
+        self.combat_record: dict[str, dict[str, int]] = {}
         # See actions.py._declare_alliance/_declare_war -- keyed by the other
         # tribe's id, value in {"ALLIED", "WAR"}. Absent = implicitly NEUTRAL.
         # Symmetric: set on both tribes at once, since only one side ever "chooses"
@@ -964,6 +975,9 @@ class Tribe:
             "raiders_approaching": self.raiders_approaching,
             "raiders_repelled_by_wall": self.raiders_repelled_by_wall,
             "stance_toward": self.stance_toward,
+            "trade_given": self.trade_given,
+            "trade_received": self.trade_received,
+            "combat_record": self.combat_record,
             "wellbeing": self.wellbeing,
             "next_era": next_era_info,
             "expeditions": [
@@ -1556,10 +1570,22 @@ class Simulation:
         # up after only 6 cycles (0.3 of a real day) instead of 120. Gated to dawn, the
         # same cycle _hold_tribal_gathering already fires on, so a party "sets out" and
         # advances with the rest of the tribe's own daily rhythm.
-        if self.cycle % config.DAY_LENGTH_CYCLES == 0:
-            for tribe in self.tribes.values():
-                if not tribe.extinct and tribe.expeditions:
-                    self._advance_expeditions(tribe)
+        #
+        # Explicit correction, after a live run's tribe died of thirst before ever
+        # founding: "the Scouts didn't return with Water info fast enough." That
+        # fix made a scout's own round trip take real days -- confirmed water at
+        # cycle 40, home to report it only at cycle 80 -- while STARTING_WATER (30)
+        # and upkeep didn't get any bigger to match, so the pre-founding search
+        # window got ~4x longer without the tribe's survival clock slowing down to
+        # match. A still-searching tribe (never has_ever_settled) is exempt from
+        # the dawn gate below and keeps advancing every cycle -- finding and
+        # reaching water is life-or-death before founding in a way it just isn't
+        # once a tribe already has a home and a stockpile to fall back on.
+        for tribe in self.tribes.values():
+            if tribe.extinct or not tribe.expeditions:
+                continue
+            if not tribe.has_ever_settled or self.cycle % config.DAY_LENGTH_CYCLES == 0:
+                self._advance_expeditions(tribe)
 
         for tribe in self.tribes.values():
             if not tribe.extinct:
@@ -3470,6 +3496,7 @@ class Simulation:
             self.recent_encounters.append({
                 "x": x, "y": y, "kind": "raider_attack", "label": "Raiders routed by boat", "outcome": "repelled",
             })
+            _record_combat(tribe, "Ambush", "won")
             self._relocate_raider_sighting_after_ambush(tribe, x, y)
             exp["phase"] = "returning"
             return True
@@ -3500,6 +3527,7 @@ class Simulation:
             self.recent_encounters.append({
                 "x": x, "y": y, "kind": "raider_attack", "label": "Ambush repelled", "outcome": "repelled",
             })
+            _record_combat(tribe, "Ambush", "won")
             self._relocate_raider_sighting_after_ambush(tribe, x, y)
             exp["phase"] = "returning"
             return True
@@ -3514,6 +3542,7 @@ class Simulation:
         self.recent_encounters.append({
             "x": x, "y": y, "kind": "raider_attack", "label": "Scouts ambushed", "outcome": "struck",
         })
+        _record_combat(tribe, "Ambush", "lost")
         return True
 
     def _advance_hunting_party_outbound(self, tribe: Tribe, exp: dict, current_biome: str, scout: str) -> None:
@@ -3825,6 +3854,7 @@ class Simulation:
         ))
         if random.random() < defense_chance:
             tribe.raids_defended += 1
+            _record_combat(tribe, "Home Defense", "won")
             self._award_trophy(tribe, "Raid Breaker")
             looted = {
                 resource: round(getattr(tribe, resource) * config.RAIDER_DEFEAT_LOOT_FRACTION * raider_strength)
@@ -3873,6 +3903,7 @@ class Simulation:
             "x": tribe.x, "y": tribe.y, "kind": "raider_attack",
             "label": "Raiders struck", "outcome": "struck",
         })
+        _record_combat(tribe, "Home Defense", "lost")
 
     def _lose_population(self, tribe: Tribe, amount: int, cause: str = "unknown") -> None:
         """The single place population ever decreases. A tribe can now actually go
