@@ -4874,6 +4874,53 @@ async def test_step_does_not_hold_the_tribal_gathering_off_its_interval():
 
 
 @run_async
+async def test_step_does_not_advance_expeditions_off_the_dawn_boundary():
+    """Live report: "Exploration time is like 6 now, but this is being counted
+    as 6 cycles, not full days. It should be 6 days." _advance_expeditions used
+    to run every single cycle regardless -- now gated to the same dawn
+    boundary _hold_tribal_gathering already uses, so EXPEDITION_MAX_DAYS-style
+    constants (3-6) actually mean real days (DAY_LENGTH_CYCLES cycles each),
+    not raw simulation cycles."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.expeditions = [{
+        "pos": [50, 50], "origin": [50, 50], "target": [70, 50],
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+    sim.cycle = config.DAY_LENGTH_CYCLES - 2  # step() increments before checking -- lands off the boundary
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
+        await sim.step()
+
+    assert tribe.expeditions[0]["day"] == 0  # untouched -- not a dawn cycle
+    assert tribe.expeditions[0]["pos"] == [50, 50]  # didn't move either
+
+
+@run_async
+async def test_step_advances_expeditions_on_the_dawn_boundary():
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.expeditions = [{
+        "pos": [50, 50], "origin": [50, 50], "target": [70, 50],
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+    sim.cycle = config.DAY_LENGTH_CYCLES - 1  # step() increments before checking -- lands exactly on the boundary
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
+        await sim.step()
+
+    assert tribe.expeditions[0]["day"] == 1  # advanced -- a real dawn cycle
+
+
+@run_async
 async def test_night_cycle_updates_philosophy_when_the_reviewer_calls_for_a_change():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]

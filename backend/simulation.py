@@ -1544,9 +1544,21 @@ class Simulation:
             self._check_chief_trophies(tribe)
             self._check_for_celebration(tribe)
 
-        for tribe in self.tribes.values():
-            if not tribe.extinct and tribe.expeditions:
-                self._advance_expeditions(tribe)
+        # Live report: "Exploration time is like 6 now, but this is being counted
+        # as 6 cycles, not full days. It should be 6 days." _advance_one_expedition's
+        # own docstring already says "One day of an in-progress expedition" -- it was
+        # simply being called every cycle instead of once per real day, the same class
+        # of bug the dawn/dusk gates above (_hold_tribal_gathering/_hold_evening_recap)
+        # already exist to prevent. EXPEDITION_MAX_DAYS/HUNTING_PARTY_MAX_DAYS/
+        # EXPLORATION_PARTY_MAX_DAYS/TRADE_EMISSARY_MAX_DAYS (3-6) were always meant as
+        # real days -- at DAY_LENGTH_CYCLES cycles per day, a "day 6" scout used to give
+        # up after only 6 cycles (0.3 of a real day) instead of 120. Gated to dawn, the
+        # same cycle _hold_tribal_gathering already fires on, so a party "sets out" and
+        # advances with the rest of the tribe's own daily rhythm.
+        if self.cycle % config.DAY_LENGTH_CYCLES == 0:
+            for tribe in self.tribes.values():
+                if not tribe.extinct and tribe.expeditions:
+                    self._advance_expeditions(tribe)
 
         for tribe in self.tribes.values():
             if not tribe.extinct:
