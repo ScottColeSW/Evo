@@ -1691,9 +1691,10 @@ def _trade(sim, tribe, biome, target):
     counterpart to RAID, and the mechanical outlet for a cooperative/community-minded
     chief philosophy that otherwise has nothing to act on. Instant: only works if a
     rival already happens to be within TRADE_PROXIMITY_RADIUS of target_vector right
-    now -- SEND_TRADE_EMISSARY is the deliberate, patient alternative that actually
-    goes looking. Also checks for an unaffiliated minor settlement first, the same
-    way RAID does -- a safer, smaller, one-sided exchange rather than a real trade."""
+    now -- SEND_TRADE_EMISSARY is the longer-reach alternative, for a rival already
+    in contact (DIPLOMACY_CONTACT_RADIUS) but too far for this tight a radius. Also
+    checks for an unaffiliated minor settlement first, the same way RAID does -- a
+    safer, smaller, one-sided exchange rather than a real trade."""
     tx, ty = target
     settlement = _find_minor_settlement(sim, tx, ty)
     if settlement is not None:
@@ -1779,50 +1780,35 @@ def _declare_war(sim, tribe, biome, target):
 
 
 def _send_trade_emissary(sim, tribe, biome, target):
-    """A deliberate, patient search for a rival tribe to trade with -- unlike TRADE
-    (instant, only works if a rival already happens to be within
-    TRADE_PROXIMITY_RADIUS right now), this dispatches a real, multi-day expedition
-    that actively looks, sharing the exact day-by-day travel/give-up machinery
-    HUNTING_PARTY already uses (see Simulation._advance_trade_emissary_outbound) --
-    nearly the same mechanic, per explicit confirmation. Finding a rival executes
-    the exchange immediately, at the point of contact -- the emissary still has to
-    walk home to report it, the same "not real until you're home" rule as a hunting
-    party's catch, but only for this tribe's own knowledge of what happened; the
-    exchange itself already moved both sides' goods the moment contact was made.
+    """Explicit correction, after a live 986-cycle run completed zero trades:
+    "Looks like Trade needs the Alliance treatment... I meant for the Trade
+    treatment to be like the 'ALLIANCE/DECLARE_WAR' not Scout." This used to
+    dispatch a real multi-day expedition toward the model's own guessed
+    target_vector, checking every day of travel whether a rival happened to be
+    within instant TRADE's own tight proximity of wherever the emissary
+    currently stood -- with no way to aim that guess at where a rival actually
+    is, a live run showed it almost always wandering nowhere close and
+    reporting "found no one." _declare_alliance/_declare_war solved the exact
+    same problem for geopolitical stance by requiring real, already-established
+    contact (_nearest_rival, DIPLOMACY_CONTACT_RADIUS) instead of a guess --
+    this now does the same: instant, contact-gated, no travel to simulate.
+    DIPLOMACY_CONTACT_RADIUS (15) is wider than instant TRADE's own
+    TRADE_PROXIMITY_RADIUS (3), so this remains the deliberate, longer-reach
+    option TRADE isn't, just resolved immediately rather than over several
+    days once contact already exists.
 
     Explicit request: "it's unwise to Trade before we have a full Wall" --
-    unlike instant TRADE (a chance encounter, not a deliberate choice to expose
-    the tribe), sending an emissary out looking for strangers is a real,
-    deliberate decision a tribe shouldn't make before it can defend what it
-    has at home."""
+    unlike instant TRADE (a chance encounter, not a deliberate choice to
+    expose the tribe), reaching out to a known rival is a real, deliberate
+    decision a tribe shouldn't make before it can defend what it has at
+    home."""
     if not tribe.wall_rings or not city_layout.ring_fully_built(tribe.wall_rings[0]):
         return "the first wall ring must be finished before it's wise to go looking for strangers to trade with"
-    if len(tribe.expeditions) >= expedition_capacity(tribe):
-        fields = ", ".join(
-            f"{e['lead_scout']} (day {e['day']}/{e['max_days']}, {e['phase']})" for e in tribe.expeditions
-        )
-        return f"no one left to send -- every party is already out: {fields}"
-
     tx, ty = target
-    tx = max(0, min(sim.world.grid_size - 1, tx))
-    ty = max(0, min(sim.world.grid_size - 1, ty))
-    scout = _generate_scout(tribe, sim.cycle, base_days=config.TRADE_EMISSARY_MAX_DAYS)
-    tribe.expeditions.append({
-        "kind": "trade",
-        "pos": [tribe.x, tribe.y],
-        "origin": [tribe.x, tribe.y],
-        "target": [tx, ty],
-        "day": 0,
-        "phase": "outbound",
-        "food_gathered": 0,
-        "water_gathered": 0,
-        "lead_scout": scout["name"],
-        "determination": scout["determination"],
-        "max_days": scout["max_days"],
-        "path": [[tribe.x, tribe.y]],
-    })
-    tribe.expeditions_launched += 1
-    return f"an emissary led by {scout['name']} departs camp toward ({tx},{ty}), seeking a tribe to trade with"
+    rival = _nearest_rival(sim, tribe, tx, ty)
+    if rival is None:
+        return "no rival tribe has been encountered nearby yet to send an emissary to"
+    return _execute_trade(sim, tribe, rival)
 
 
 ACTION_REGISTRY = {
@@ -1892,7 +1878,7 @@ ACTION_DESCRIPTIONS = {
     "CONSTRUCT_WALL": "Work on a wall at your current tile using stored wood and stone -- a real defensive structure built up over several turns, not finished in one. Each turn spent on it adds real progress (more so with more people to put to the work), and a more complete wall meaningfully improves your odds of defending against a raider attack. Does nothing further once complete.",
     "BUILD_LONG_HOUSE": "Build a long house at your current tile using stored wood and stone -- only possible once your wall is fully complete. Repeatable as population grows: real, lasting shelter for the tribe, one house at a time.",
     "BUILD_CASTLE": "Build a castle at your current tile using stored wood and stone -- only possible once a fortress stands and enough long houses have been built. A one-time, permanent structure that adds real defense on top of whatever your wall already provides.",
-    "BUILD_ROAD": "Build a road at your current tile using stored wood and stone. A one-time, permanent improvement: every future scouting party, hunting party, or trade emissary you send out travels faster from then on.",
+    "BUILD_ROAD": "Build a road at your current tile using stored wood and stone. A one-time, permanent improvement: every future scouting party, hunting party, or exploration party you send out travels faster from then on.",
     "EXPAND_TERRITORY": "Grow your settlement's real owned territory using stored wood and stone, unlocking the next wall section to build. Repeatable -- once a whole wall ring is fully unlocked and reinforced, this opens a brand new ring further out instead.",
     "BUILD_DOCK": "Build a dock at your current tile using stored wood -- only possible once the tribe has settled here and has already learned to fish (a real successful catch). A one-time, permanent structure: every future fish caught here pays out more from then on.",
     "BUILD_FISHERY": "Build a fishery using stored wood and stone -- only possible once a dock already stands. A one-time, permanent structure: the settlement's passive daily fish supply flows in even more steadily from then on.",
@@ -1918,7 +1904,7 @@ ACTION_DESCRIPTIONS = {
     "GATHER_EGGS": "Search for wild fowl nests near your current tile -- only possible once the tribe has settled here. A found egg is set aside and hatches on its own, growing the tribe's flock by one.",
     "CATCH_FISH": "Attempt to harvest food by fishing at your current tile -- only possible once the tribe has settled here. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",
     "SCOUT": "Dispatch an expedition to explore -- the direction is chosen automatically to spread coverage out over time, not from target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home. Your tribe can have a couple of parties out at once (scouting or hunting, any mix) -- choosing SCOUT again sends another one if there's room, or just reports on whoever's already out once you're at capacity.",
-    "EXPLORATION_PARTY": "Dispatch a deeper, longer-ranging expedition than SCOUT -- direction chosen automatically, its own sweep separate from SCOUT's. Gathers real wood and stone along the way on top of the food and water any expedition forages, until they're carrying as much as they can manage, then heads home. Can discover anything SCOUT can (water, resource sites, raider camps) plus rival settlements and Landmarks -- rare points of interest that yield a real, unique treasure the moment they're found. Shares the same expedition capacity as SCOUT/HUNTING_PARTY/SEND_TRADE_EMISSARY.",
+    "EXPLORATION_PARTY": "Dispatch a deeper, longer-ranging expedition than SCOUT -- direction chosen automatically, its own sweep separate from SCOUT's. Gathers real wood and stone along the way on top of the food and water any expedition forages, until they're carrying as much as they can manage, then heads home. Can discover anything SCOUT can (water, resource sites, raider camps) plus rival settlements and Landmarks -- rare points of interest that yield a real, unique treasure the moment they're found. Shares the same expedition capacity as SCOUT/HUNTING_PARTY.",
     "HUNTING_PARTY": "Send a hunting party toward target_vector -- shares the same expedition capacity as SCOUT (a couple of parties, scouting or hunting in any mix, can be out at once). They travel and hunt on their own supply for up to several days, facing the same wolf-pack risk as an instant hunt on every day out, until they catch something or give up. Any food caught only becomes real, usable food once they've walked all the way home -- a hunt still in the field does nothing for hunger right now, no matter how promising.",
     "RELOCATE": "Move your whole tribe several tiles toward target_vector this cycle, possibly over several cycles for a far destination. Produces no resources while traveling and costs extra food and water for the effort.",
     "BREED": "Your chief and whoever currently holds a trophy start a family together, costing food and water and growing your population by one child if it succeeds. Does nothing if fewer than two named individuals (a chief plus at least one trophy-holder) exist yet, or if food/water can't cover the cost.",
@@ -1927,5 +1913,5 @@ ACTION_DESCRIPTIONS = {
     "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. An unaffiliated minor settlement near target_vector can also be traded with -- smaller and one-sided (nothing is given up), but it never depletes the way raiding one does. Does nothing if neither is there.",
     "DECLARE_ALLIANCE": "Declare a lasting alliance with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember, not a one-time exchange. Also ends a war you'd previously declared with that same rival. Does nothing if no rival tribe exists.",
     "DECLARE_WAR": "Declare a lasting state of war with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember. Does not attack them directly (see RAID for that); this only sets how the two tribes now stand. Does nothing if no rival tribe exists, or if already at war with them.",
-    "SEND_TRADE_EMISSARY": "Dispatch an emissary toward target_vector to actively search for a rival tribe to trade with -- unlike TRADE, this doesn't need one nearby right now, only somewhere along the way over the next few days. Shares the same expedition capacity as SCOUT and HUNTING_PARTY. Finding a partner exchanges goods immediately; the emissary still has to walk home to report what happened.",
+    "SEND_TRADE_EMISSARY": "Reach out to open trade with a rival tribe already in contact (a much longer reach than TRADE's tight radius, but requires the rival to have actually been encountered before -- same requirement as ALLIANCE/DECLARE_WAR). Instant: goods exchange immediately if a rival is found.",
 }

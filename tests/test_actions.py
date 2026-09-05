@@ -3158,7 +3158,12 @@ def test_send_trade_emissary_requires_the_wall_to_be_finished_first():
     assert tribe.expeditions == []
 
 
-def test_send_trade_emissary_dispatches_an_expedition_but_does_not_move_the_tribe():
+def test_send_trade_emissary_requires_a_known_rival():
+    """Explicit correction after a live 986-cycle run completed zero trades:
+    "Looks like Trade needs the Alliance treatment... like ALLIANCE/
+    DECLARE_WAR." SEND_TRADE_EMISSARY is now instant and contact-gated
+    (_nearest_rival, same as ALLIANCE/DECLARE_WAR) instead of dispatching a
+    blind multi-day expedition toward a guessed coordinate."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     _settle(sim, tribe)
@@ -3166,29 +3171,29 @@ def test_send_trade_emissary_dispatches_an_expedition_but_does_not_move_the_trib
 
     note = ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, tribe, "plains", (10, 10))
 
-    assert (tribe.x, tribe.y) == (50, 50)
-    assert len(tribe.expeditions) == 1
-    assert tribe.expeditions[0]["kind"] == "trade"
-    assert tribe.expeditions[0]["target"] == [10, 10]
-    assert tribe.expeditions[0]["phase"] == "outbound"
-    assert "depart" in note
+    assert "no rival tribe has been encountered" in note
+    assert tribe.expeditions == []  # never dispatches an expedition anymore
 
 
-def test_send_trade_emissary_shares_expedition_capacity_with_scout_and_hunt():
+def test_send_trade_emissary_trades_instantly_with_a_known_rival():
+    """A rival within DIPLOMACY_CONTACT_RADIUS (wider than instant TRADE's own
+    tight TRADE_PROXIMITY_RADIUS) trades immediately -- no travel simulated."""
     from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     _settle(sim, tribe)
     _complete_ring0(sim, tribe)
-    for _ in range(config.MAX_CONCURRENT_EXPEDITIONS):
-        ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, tribe, "plains", (10, 10))
-    parties = list(tribe.expeditions)
+    rx = tribe.x + config.DIPLOMACY_CONTACT_RADIUS - 1  # in contact, but well past TRADE_PROXIMITY_RADIUS
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", rx, tribe.y, "#fb923c")
+    tribe.wood, rival.wood = 100, 200
+    sim.tribes["tribe_1"] = rival
 
-    note = ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, tribe, "plains", (80, 80))
+    note = ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, tribe, "plains", (rx, tribe.y))
 
-    assert tribe.expeditions == parties
-    assert "no one left to send" in note
+    assert "opened trade" in note
+    assert tribe.wood != 100 and rival.wood != 200  # goods actually moved
+    assert tribe.expeditions == []  # instant, no expedition ever created
 
 
 def test_execute_trade_is_reused_identically_by_instant_trade_and_the_emissary():

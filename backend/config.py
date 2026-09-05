@@ -811,15 +811,6 @@ NEGOTIATE_PRIDE_RADIUS = 4
 THREAT_DECAY_RATE = 0.05
 THREAT_ASSESSMENT_MIN_LEVEL = 0.05
 
-# SEND_TRADE_EMISSARY (backend/actions.py): TRADE itself is instant and only works if
-# a rival already happens to be within TRADE_PROXIMITY_RADIUS right now -- a tribe can
-# never deliberately reach out to a rival it merely knows the rough direction of. This
-# is a real, multi-day expedition instead, sharing the exact day-by-day travel/give-up
-# machinery HUNTING_PARTY already uses (nearly the same mechanic, per explicit
-# confirmation) -- same max-days pacing as a hunting party, same proximity check as
-# instant TRADE once it's actually looking.
-TRADE_EMISSARY_MAX_DAYS = 4
-
 # Raider hazard (backend/simulation.py._check_raider_attack): a real, population-
 # scaled mechanic, not a scripted "your people are not safe" directive (a hardcoded
 # HUNT_DEER nudge was already reverted once on this exact principle). Gated behind
