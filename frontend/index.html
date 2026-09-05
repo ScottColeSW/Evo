@@ -3024,18 +3024,34 @@ function eraAtLeast(era, floor) {
 // Elastic like backend.actions._record_trade's own dict: whichever resources
 // (wood/stone/food/water, a Mine/Tannery's own named resource, a crafted
 // item's type) have actually moved show up, nothing pre-declared at zero.
+// Icon for whatever a trade actually moved -- RESOURCE_ICON's four generics,
+// Fur/a crafted item's type by the same icon furLine/the Establishments panel
+// already use for them, or a generic gem for any other named resource (a
+// Mine's own per-biome ore name) this map doesn't specifically know, mirroring
+// oreLine's own icon choice for "some named resource, whichever it is."
+const ITEM_TYPE_ICON = { tool: "🔧", weapon: "🗡️", innovation: "💡" };
+function commerceIcon(resource) {
+  if (RESOURCE_ICON[resource]) return RESOURCE_ICON[resource];
+  if (resource === "Fur") return "🦫";
+  if (ITEM_TYPE_ICON[resource]) return ITEM_TYPE_ICON[resource];
+  return "💎";
+}
+
+// Explicit request: "we should be use icons instead of words in the
+// Commerce panel." 📤/📥 for given/received, commerceIcon per resource --
+// title text stays the only words in the box.
 function commercePanel(t) {
   const given = t.trade_given || {};
   const received = t.trade_received || {};
   if (Object.keys(given).length === 0 && Object.keys(received).length === 0) return "";
-  const line = (label, dict) => {
+  const line = (arrow, dict) => {
     const entries = Object.entries(dict);
-    if (!entries.length) return `${label}: none yet`;
-    return `${label}: ` + entries.map(([res, amt]) => `${escapeHtml(res)} ${amt}`).join(", ");
+    if (!entries.length) return `${arrow} —`;
+    return `${arrow} ` + entries.map(([res, amt]) => `${commerceIcon(res)}${amt}`).join(" ");
   };
   return (
     `<div class="commerce-panel"><span class="commerce-title">🤝 Commerce</span><br>` +
-    `${line("Given", given)}<br>${line("Received", received)}</div>`
+    `${line("📤", given)}<br>${line("📥", received)}</div>`
   );
 }
 
