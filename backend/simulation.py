@@ -46,14 +46,21 @@ from .world import (
 # WEST/NORTH/SOUTH_COAST_INSET_BASE) after "the Ocean was only supposed to be a
 # 'frame'." With that shallower frame, the original two landmark-relative slots
 # only needed a small nudge to still clear SCOUT_PATROL_DISTANCE=25 from every
-# coast: slot 0 moved from (37, 75) to (37, 68) (south clearance was 18.8, short
-# of 25), slot 1 from (50, 22) to (50, 31) (north clearance was 17.7) -- both
-# confirmed by directly sampling the real boundary functions, not estimated.
-# Slots 2/3 needed no change at all. Spacing is a little tighter between slots 1
-# and 3 (11.7 tiles, down from the original 18.0) as a direct result of pulling
-# slot 1 south to clear the coast, but all four remain distinct, non-clustered
-# starting points.
-SPAWN_POINTS = [(37, 68), (50, 31), (50, 55), (40, 37)]
+# coast, confirmed each time by directly sampling the real boundary functions,
+# not estimated.
+#
+# Explicit follow-up request, after watching a live run on the corrected map:
+# swap which slot sits north vs. south -- slot 0 ("Tribe 1") moved from the
+# south-ish (37, 68) up to (48, 30), slot 1 ("Tribe 2") moved from the
+# north-ish (50, 31) down to (51, 68). Both were pointed at from a live
+# screenshot at roughly (48, 19) and (51, 77); those exact spots fall short of
+# SCOUT_PATROL_DISTANCE=25 clearance from the coast (14.5 and 15.7 tiles
+# respectively), so each landed on the closest compliant point along the same
+# line instead. Slots 2/3 are untouched fallbacks for a 3rd/4th tribe -- their
+# spacing against the new slot 0/1 positions is tighter than before (10.6-13.0
+# tiles vs. the original 18.0), a direct result of this swap, but all four
+# remain distinct, non-clustered starting points.
+SPAWN_POINTS = [(48, 30), (51, 68), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 
 # See _prepare_turn's own use of this -- every one-time structure with a single
