@@ -4382,17 +4382,28 @@ class Simulation:
         passive system" shape _advance_water_supply/_advance_fish_supply/
         _advance_mine_yield already use for water/fish/ore. mine_sites isn't
         repeated here -- a tribe's own excavated Mine (_advance_mine_yield, just
-        above) already covers that resource once built and fetched."""
+        above) already covers that resource once built and fetched.
+
+        Live follow-up ("GATHER_FOOD is the 'territory collector'... they go to
+        each site in the territory and collect"): this used to pay the same
+        flat per_site amount whether one site or five fell inside the
+        territory -- a boolean "any," not a real running total. Now sums per_site
+        across every in-territory site of each kind, so a tribe's own growing,
+        elastic list of discoveries actually shows up in what comes home each
+        day, not just whether the list is non-empty."""
         if tribe.territory_center is None:
             return
         upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
-        amount = max(1, round(upkeep * config.IN_TERRITORY_SITE_YIELD_MULTIPLIER))
-        if any(self._site_in_own_territory(tribe, x, y) for x, y in tribe.lumber_sites):
-            self._capped_add(tribe, "wood", amount)
-        if any(self._site_in_own_territory(tribe, s["x"], s["y"]) for s in tribe.wildlife_sites):
-            self._capped_add(tribe, "food", amount)
-        if any(self._site_in_own_territory(tribe, x, y) for x, y in tribe.quarry_sites):
-            self._capped_add(tribe, "stone", amount)
+        per_site = max(1, round(upkeep * config.IN_TERRITORY_SITE_YIELD_MULTIPLIER))
+        lumber_count = sum(1 for x, y in tribe.lumber_sites if self._site_in_own_territory(tribe, x, y))
+        wildlife_count = sum(1 for s in tribe.wildlife_sites if self._site_in_own_territory(tribe, s["x"], s["y"]))
+        quarry_count = sum(1 for x, y in tribe.quarry_sites if self._site_in_own_territory(tribe, x, y))
+        if lumber_count:
+            self._capped_add(tribe, "wood", per_site * lumber_count)
+        if wildlife_count:
+            self._capped_add(tribe, "food", per_site * wildlife_count)
+        if quarry_count:
+            self._capped_add(tribe, "stone", per_site * quarry_count)
 
     def _advance_tannery_yield(self, tribe: Tribe) -> None:
         """Once a tannery is built (actions.py._build_tannery), Fur flows in

@@ -6400,6 +6400,28 @@ def test_advance_in_territory_site_yields_ignores_a_site_outside_territory():
     assert tribe.wood == 0
 
 
+def test_advance_in_territory_site_yields_scales_with_the_number_of_sites():
+    """Live follow-up: "GATHER_FOOD is the 'territory collector'... they go to
+    each site in the territory and collect." This used to pay the same flat
+    amount whether one site or five fell inside the territory (a boolean
+    "any") -- now each in-territory site contributes its own share."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.territory_radius = 20
+    tribe.population = 10
+    tribe.lumber_sites = [(55, 55)]
+    tribe.wood = 0
+    sim._advance_in_territory_site_yields(tribe)
+    one_site_wood = tribe.wood
+
+    tribe.wood = 0
+    tribe.lumber_sites = [(55, 55), (52, 48), (45, 53)]  # three, all inside the same territory
+    sim._advance_in_territory_site_yields(tribe)
+
+    assert tribe.wood == one_site_wood * 3
+
+
 def test_advance_in_territory_site_yields_does_nothing_before_territory_exists():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
