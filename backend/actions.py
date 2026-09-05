@@ -1346,7 +1346,12 @@ def _relocate(sim, tribe, biome, target):
     tribe.water = max(0, tribe.water - config.RELOCATE_WATER_COST)
     tx, ty = target
     bonus = sim.world.trail_speed_bonus(tribe.x, tribe.y, config.MAX_TRAIL_BONUS_SPEED)
-    base_speed = config.MOVEMENT_SPEED + bonus
+    # Explicit request ("everyone moving on the board moves at the pace of 1
+    # sky tick"): a settled tribe relocating uses the slower, uniform pace;
+    # pre-settlement keeps the faster MOVEMENT_SPEED since that march (toward
+    # newly-confirmed water) is life-or-death and needs to stay fast.
+    speed_base = config.MOVEMENT_SPEED if not tribe.has_ever_settled else config.SETTLED_MOVEMENT_SPEED
+    base_speed = speed_base + bonus
     # Explicit request: "travel speed is 5x on toll roads."
     if sim.world.is_toll_road(tribe.x, tribe.y):
         base_speed *= config.TOLL_ROAD_SPEED_MULTIPLIER

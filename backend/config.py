@@ -78,12 +78,27 @@ TOLL_ROAD_SPEED_MULTIPLIER = 5
 # BREED, a rival tribe nearby for RAID) is harder to come by before settling down.
 PRE_SETTLEMENT_ACTIONS = ("GATHER_WATER", "GATHER_FOOD", "SCOUT", "RELOCATE", "BREED", "RAID")
 
-# Tiles moved per axis per cycle toward target_vector. At 1 (the original value), crossing
-# the 100-tile grid takes 100+ cycles minimum -- at roughly 2 seconds of real inference
-# time per cycle, a "good" decision to travel far was still visually imperceptible for
-# minutes. This doesn't change AI decision quality, just how fast a given decision reads
-# on screen.
+# Tiles moved per axis per cycle toward target_vector, before a tribe has ever
+# settled. At 1 (the original value), crossing the 100-tile grid takes 100+
+# cycles minimum -- at roughly 2 seconds of real inference time per cycle, a
+# "good" decision to travel far was still visually imperceptible for minutes.
+# This doesn't change AI decision quality, just how fast a given decision reads
+# on screen. Kept fast specifically for the pre-settlement march to newly-
+# confirmed water -- see SETTLED_MOVEMENT_SPEED below for the slower, uniform
+# pace that applies once a tribe has actually settled.
 MOVEMENT_SPEED = 4
+
+# Explicit request ("everyone that is moving on the board moves at the pace of
+# 1 sky tick"): once a tribe has settled, RELOCATE (and, via
+# SETTLED_EXPEDITION_SPEED below, every expedition) advances at this one
+# uniform per-cycle pace instead of MOVEMENT_SPEED/EXPEDITION_SPEED's larger,
+# once-a-day-feeling jumps -- movement should read as continuous and
+# consistent, not different speeds for different standing orders. Deliberately
+# NOT applied before a tribe has ever settled: the confirmed-water march that
+# ends a pre-founding tribe's search is life-or-death (see the founding-death
+# regression MOVEMENT_SPEED/EXPEDITION_SPEED's own pre-settlement speed
+# already exists to prevent), so that march keeps the faster pace.
+SETTLED_MOVEMENT_SPEED = 1
 
 # Marching costs stamina -- without this, RELOCATE was a free action while every gathering
 # action costs time/risk, which would make endless relocation strictly better than settling
@@ -1299,6 +1314,14 @@ BOAT_WATER_BIOMES = {"river", "lake"}
 BOAT_WATER_MOVEMENT_MULTIPLIER = 1.2
 
 EXPEDITION_SPEED = 10
+# See SETTLED_MOVEMENT_SPEED's own comment -- same uniform "1 sky tick" pace,
+# applied to expedition movement once a tribe has settled. EXPEDITION_SPEED
+# itself stays reserved for a not-yet-settled tribe's search, which still
+# needs to move fast (see Simulation._advance_one_expedition's is_new_day
+# split: movement now happens every cycle regardless of settlement, only the
+# per-cycle distance and the once-a-day bookkeeping -- day count, "daily"
+# food/water/wood/stone gains, hunting rolls -- differ by settlement status).
+SETTLED_EXPEDITION_SPEED = 1
 # Raised 3 -> 5 (explicit request, same conversation that diagnosed a tribe
 # dying of thirst before ever founding): "give the Scout a 5 day start. They
 # are not penalized if they come back late, the Tribe is, given someone

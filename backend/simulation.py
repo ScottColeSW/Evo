@@ -1581,33 +1581,30 @@ class Simulation:
             self._check_chief_trophies(tribe)
             self._check_for_celebration(tribe)
 
-        # Live report: "Exploration time is like 6 now, but this is being counted
-        # as 6 cycles, not full days. It should be 6 days." _advance_one_expedition's
-        # own docstring already says "One day of an in-progress expedition" -- it was
-        # simply being called every cycle instead of once per real day, the same class
-        # of bug the dawn/dusk gates above (_hold_tribal_gathering/_hold_evening_recap)
-        # already exist to prevent. EXPEDITION_MAX_DAYS/HUNTING_PARTY_MAX_DAYS/
-        # EXPLORATION_PARTY_MAX_DAYS (3-6) were always meant as
-        # real days -- at DAY_LENGTH_CYCLES cycles per day, a "day 6" scout used to give
-        # up after only 6 cycles (0.3 of a real day) instead of 120. Gated to dawn, the
-        # same cycle _hold_tribal_gathering already fires on, so a party "sets out" and
-        # advances with the rest of the tribe's own daily rhythm.
+        # History: this used to be gated here (dawn-only once settled, every cycle
+        # for a still-searching tribe) to fix "Exploration time is like 6 now, but
+        # this is being counted as 6 cycles, not full days" -- EXPEDITION_MAX_DAYS/
+        # HUNTING_PARTY_MAX_DAYS/EXPLORATION_PARTY_MAX_DAYS were always meant as
+        # real days, and a flat every-cycle call made a "day 6" scout give up after
+        # 0.3 of a real day. That fix then caused its own regression (a tribe died
+        # of thirst before ever founding, since a scout's round trip taking real
+        # days didn't come with a bigger starting buffer to match) -- fixed by
+        # exempting a still-searching tribe from the dawn gate.
         #
-        # Explicit correction, after a live run's tribe died of thirst before ever
-        # founding: "the Scouts didn't return with Water info fast enough." That
-        # fix made a scout's own round trip take real days -- confirmed water at
-        # cycle 40, home to report it only at cycle 80 -- while STARTING_WATER (30)
-        # and upkeep didn't get any bigger to match, so the pre-founding search
-        # window got ~4x longer without the tribe's survival clock slowing down to
-        # match. A still-searching tribe (never has_ever_settled) is exempt from
-        # the dawn gate below and keeps advancing every cycle -- finding and
-        # reaching water is life-or-death before founding in a way it just isn't
-        # once a tribe already has a home and a stockpile to fall back on.
+        # Explicit request ("everyone moving on the board moves at the pace of 1
+        # sky tick"): a settled tribe's expedition used to sit still for an entire
+        # day then jump its whole day's distance at once on the dawn boundary --
+        # visibly a teleport, not movement. The gate now lives inside
+        # _advance_one_expedition itself (is_new_day) instead of here: movement
+        # happens every cycle for every tribe regardless of settlement, only the
+        # per-cycle distance and the once-a-day bookkeeping (day count, "daily"
+        # resource gains, hunting rolls) still differ by has_ever_settled -- so the
+        # exact real-day pacing/regression-fix above is unchanged, just no longer
+        # tied to whether movement itself happens this cycle.
         for tribe in self.tribes.values():
             if tribe.extinct or not tribe.expeditions:
                 continue
-            if not tribe.has_ever_settled or self.cycle % config.DAY_LENGTH_CYCLES == 0:
-                self._advance_expeditions(tribe)
+            self._advance_expeditions(tribe)
 
         for tribe in self.tribes.values():
             if not tribe.extinct:
@@ -3086,15 +3083,20 @@ class Simulation:
                 tribe.expeditions.remove(exp)
 
     def _advance_one_expedition(self, tribe: Tribe, exp: dict) -> bool:
-        """One day of an in-progress expedition. Runs every cycle regardless of what
-        action the tribe chose that turn -- the party is out in the field on its own,
-        not waiting for the tribe's attention each cycle. Outbound: walk toward target,
-        succeeding immediately on real fresh water or on reaching the destination, or
-        giving up after EXPEDITION_MAX_DAYS. Returning: walk back toward camp; arrival
-        is the only moment a finding becomes real, actionable knowledge (memory +
-        chronicle) -- a party that hasn't made it home yet knows something the tribe as
-        a whole does not. Returns True once this expedition is over and should be
-        removed from tribe.expeditions.
+        """Advances an in-progress expedition. Runs every cycle regardless of what
+        action the tribe chose that turn -- the party is out in the field on its
+        own, not waiting for the tribe's attention each cycle. Movement (and every
+        position-dependent check: hazards, water-sensing, arrival) happens every
+        single cycle; each branch's own is_new_day flag additionally gates the
+        once-a-day bookkeeping -- the day count, "daily" resource gains, and
+        hunting/exploration's own rolls -- to real days, not raw cycles (see
+        config.SETTLED_EXPEDITION_SPEED's own comment for why). Outbound: walk
+        toward target, succeeding immediately on real fresh water or on reaching
+        the destination, or giving up after EXPEDITION_MAX_DAYS. Returning: walk
+        back toward camp; arrival is the only moment a finding becomes real,
+        actionable knowledge (memory + chronicle) -- a party that hasn't made it
+        home yet knows something the tribe as a whole does not. Returns True once
+        this expedition is over and should be removed from tribe.expeditions.
 
         Wears (and benefits from) the same worn-trail mechanic as RELOCATE: a route
         used by enough expeditions gets faster over time, so a destination just out of
@@ -3102,14 +3104,27 @@ class Simulation:
         later purely by repeatedly trying the same path -- effort compounding into
         infrastructure, not a scripted distance override."""
         if exp["phase"] == "outbound":
-            exp["day"] += 1
+            # Explicit request ("everyone moving on the board moves at the pace of
+            # 1 sky tick"): movement itself now happens every cycle regardless of
+            # settlement -- is_new_day gates only the once-a-day bookkeeping (the
+            # day count, "daily" resource gains, and hunting/exploration rolls
+            # below), matching each kind's own tuned per-day odds/totals exactly
+            # as before. Position-dependent checks (hazards, water-sensing,
+            # arrival) still run every single cycle, same as always, since those
+            # must never risk skipping a tile a party actually crosses.
+            is_new_day = not tribe.has_ever_settled or self.cycle % config.DAY_LENGTH_CYCLES == 0
+            if is_new_day:
+                exp["day"] += 1
             px, py = exp["pos"]
             tx, ty = exp["target"]
             bonus = self.world.trail_speed_bonus(px, py, config.MAX_TRAIL_BONUS_SPEED)
             # See actions.py._build_road -- a flat, always-on version of the same
             # trail bonus above, since a deliberately-built road doesn't need to
-            # wear in from repeated travel the way a trail does.
-            base_speed = config.EXPEDITION_SPEED + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
+            # wear in from repeated travel the way a trail does. See config.
+            # SETTLED_EXPEDITION_SPEED's own comment for why settlement status
+            # picks the per-cycle distance here.
+            speed_base = config.EXPEDITION_SPEED if not tribe.has_ever_settled else config.SETTLED_EXPEDITION_SPEED
+            base_speed = speed_base + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
             # Explicit request: "travel speed is 5x on toll roads."
             if self.world.is_toll_road(px, py):
                 base_speed *= config.TOLL_ROAD_SPEED_MULTIPLIER
@@ -3127,14 +3142,15 @@ class Simulation:
             # unconditional check here so an outbound leg crossing volcano ground
             # carries the same real risk the returning leg already does (below).
             self._volcano_hazard(tribe, nx, ny)
-            exp["food_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_FOOD
-            # Explicit correction: "foragers do not need to bring water back
-            # once they are settled, they should start bringing back
-            # everything else though" -- a settled-near-water tribe's passive
-            # daily supply (_advance_water_supply) already covers this; a
-            # trickle of foraged water on top just clutters the report.
-            if not self._is_settled_near_water(tribe):
-                exp["water_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_WATER
+            if is_new_day:
+                exp["food_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_FOOD
+                # Explicit correction: "foragers do not need to bring water back
+                # once they are settled, they should start bringing back
+                # everything else though" -- a settled-near-water tribe's passive
+                # daily supply (_advance_water_supply) already covers this; a
+                # trickle of foraged water on top just clutters the report.
+                if not self._is_settled_near_water(tribe):
+                    exp["water_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_WATER
             reached_biome = biome_at(nx, ny)
             scout = exp["lead_scout"]
 
@@ -3161,10 +3177,19 @@ class Simulation:
                 exp["phase"] = "returning"
                 tribe.history.append(f"{scout}'s party can go no further this way and turns back after {exp['day']} days")
                 return False
+            # Hunting/exploration's own daily rolls and gains (catch chance, wolf
+            # hazard, wood/stone foraged) are gated to is_new_day too -- calling
+            # them every movement cycle instead of once a day would inflate their
+            # tuned odds/totals purely from the new per-cycle movement, not from
+            # anything actually different happening. On a non-new-day cycle the
+            # party still just walks (already done above); hunt returns early
+            # either way (no generic discovery for a hunting party), explore falls
+            # through to the same generic checks every other kind shares below.
             if exp.get("kind") == "hunt":
-                self._advance_hunting_party_outbound(tribe, exp, reached_biome, scout)
+                if is_new_day:
+                    self._advance_hunting_party_outbound(tribe, exp, reached_biome, scout)
                 return False
-            if exp.get("kind") == "explore" and self._advance_exploration_party_outbound(tribe, exp, reached_biome, scout):
+            if exp.get("kind") == "explore" and is_new_day and self._advance_exploration_party_outbound(tribe, exp, reached_biome, scout):
                 return False  # forced home early (carry capacity or day limit) -- already flipped to returning
             # Explicit request: "the find water scouting needs to be removed
             # from available actions after they Settle. The scouts can still
@@ -3227,10 +3252,14 @@ class Simulation:
                 tribe.history.append(f"{scout}'s party surveys ({nx},{ny}), {label}, after {exp['day']} days and heads home to report")
             return False
         else:  # returning
+            # See the matching outbound-leg comment above -- same is_new_day split,
+            # every-cycle movement/hazard checks vs. once-a-day resource gain.
+            is_new_day = not tribe.has_ever_settled or self.cycle % config.DAY_LENGTH_CYCLES == 0
             px, py = exp["pos"]
             ox, oy = exp["origin"]
             bonus = self.world.trail_speed_bonus(px, py, config.MAX_TRAIL_BONUS_SPEED)
-            base_speed = config.EXPEDITION_SPEED + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
+            speed_base = config.EXPEDITION_SPEED if not tribe.has_ever_settled else config.SETTLED_EXPEDITION_SPEED
+            base_speed = speed_base + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
             # Explicit request: "travel speed is 5x on toll roads."
             if self.world.is_toll_road(px, py):
                 base_speed *= config.TOLL_ROAD_SPEED_MULTIPLIER
@@ -3241,9 +3270,10 @@ class Simulation:
             self._check_road_evolution(nx, ny)
             exp["pos"] = [nx, ny]
             exp["path"].append([nx, ny])
-            exp["food_gathered"] += config.EXPEDITION_RETURN_DAILY_FOOD
-            if not self._is_settled_near_water(tribe):  # see the matching outbound-leg comment above
-                exp["water_gathered"] += config.EXPEDITION_RETURN_DAILY_WATER
+            if is_new_day:
+                exp["food_gathered"] += config.EXPEDITION_RETURN_DAILY_FOOD
+                if not self._is_settled_near_water(tribe):  # see the matching outbound-leg comment above
+                    exp["water_gathered"] += config.EXPEDITION_RETURN_DAILY_WATER
             self._expedition_river_hazard(tribe, nx, ny)
             self._volcano_hazard(tribe, nx, ny)
             self._expedition_raider_ambush(tribe, exp, nx, ny)

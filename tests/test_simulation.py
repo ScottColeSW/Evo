@@ -2499,8 +2499,9 @@ def test_apply_turn_does_not_reset_relocate_clock_when_still_within_qualifying_t
 
 
 def test_apply_turn_still_resets_relocate_clock_when_leaving_qualifying_territory():
-    """Mountain terrain slows RELOCATE to ~2 tiles/cycle (TERRAIN_MOVEMENT_MULTIPLIER),
-    so this moves twice to clear the radius-4 territory, confirming a hop that
+    """A settled tribe's RELOCATE moves at config.SETTLED_MOVEMENT_SPEED (1/cycle,
+    slower still on mountain terrain via TERRAIN_MOVEMENT_MULTIPLIER) -- repeats
+    enough times to clear the radius-4 territory regardless, confirming a hop that
     crosses out of it still resets the clock as before. Column x=19 stays real
     mountains (not farmable) through y=50 -- moved here from the original x=5
     once map dream phase 2's west coast ocean inset swallowed that column
@@ -2518,8 +2519,8 @@ def test_apply_turn_still_resets_relocate_clock_when_leaving_qualifying_territor
     tribe.water = 100
     ctx = {"biome": "mountains", "available_actions": ["RELOCATE"]}
 
-    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [19, 99]}, 10.0, ctx)
-    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [19, 99]}, 10.0, ctx)
+    for _ in range(10):
+        sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [19, 99]}, 10.0, ctx)
 
     assert tribe.y > 35  # confirms the move actually happened, away from the site
     assert sim._settlement_ground_ok(tribe) is False  # now outside the radius, still not farmable
@@ -4955,15 +4956,18 @@ async def test_settled_tribe_with_a_farm_plot_does_not_dehydrate_over_many_cycle
 
 
 @run_async
-async def test_step_does_not_advance_a_settled_tribes_expeditions_off_the_dawn_boundary():
+async def test_step_advances_a_settled_tribes_expedition_position_but_not_its_day_off_the_dawn_boundary():
     """Live report: "Exploration time is like 6 now, but this is being counted
-    as 6 cycles, not full days. It should be 6 days." _advance_expeditions used
-    to run every single cycle regardless -- now gated to the same dawn
-    boundary _hold_tribal_gathering already uses, so EXPEDITION_MAX_DAYS-style
-    constants (3-6) actually mean real days (DAY_LENGTH_CYCLES cycles each),
-    not raw simulation cycles. Only true once a tribe has ever settled -- see
-    test_step_advances_a_not_yet_settled_tribes_expeditions_every_cycle for
-    the explicit exemption before that."""
+    as 6 cycles, not full days. It should be 6 days." EXPEDITION_MAX_DAYS-style
+    constants (3-6) mean real days (DAY_LENGTH_CYCLES cycles each), not raw
+    simulation cycles -- the day count (and "daily" resource gains) only
+    advance on the same dawn boundary _hold_tribal_gathering uses.
+
+    Explicit follow-up request ("everyone moving on the board moves at the
+    pace of 1 sky tick"): a settled tribe's expedition used to sit still off
+    that boundary and jump its whole day's distance at once on it -- a visible
+    teleport. Movement itself (config.SETTLED_EXPEDITION_SPEED) now happens
+    every cycle regardless of the boundary; only day-bookkeeping stays gated."""
     from backend import config
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
@@ -4981,7 +4985,35 @@ async def test_step_does_not_advance_a_settled_tribes_expeditions_off_the_dawn_b
         await sim.step()
 
     assert tribe.expeditions[0]["day"] == 0  # untouched -- not a dawn cycle
-    assert tribe.expeditions[0]["pos"] == [50, 50]  # didn't move either
+    assert tribe.expeditions[0]["pos"] == [50 + config.SETTLED_EXPEDITION_SPEED, 50]  # still moved, smoothly
+    assert tribe.expeditions[0]["food_gathered"] == 0  # "daily" gain stays gated to the dawn boundary too
+
+
+@run_async
+async def test_step_advances_a_settled_tribes_expedition_day_and_gains_on_the_dawn_boundary():
+    """Companion to the test above: on the dawn boundary itself, day-bookkeeping
+    (the day count, and EXPEDITION_OUTBOUND_DAILY_FOOD) fires exactly as it did
+    before movement was decoupled from it -- only the per-cycle distance changed,
+    not the once-a-day totals a scout's own tuning depends on."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.expeditions = [{
+        "pos": [50, 50], "origin": [50, 50], "target": [70, 50],
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+    sim.cycle = config.DAY_LENGTH_CYCLES - 1  # step() increments before checking -- lands ON the boundary
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
+        await sim.step()
+
+    assert tribe.expeditions[0]["day"] == 1
+    assert tribe.expeditions[0]["food_gathered"] == config.EXPEDITION_OUTBOUND_DAILY_FOOD
+    assert tribe.expeditions[0]["pos"] == [50 + config.SETTLED_EXPEDITION_SPEED, 50]
 
 
 @run_async

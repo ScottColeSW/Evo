@@ -1924,6 +1924,24 @@ def test_relocate_is_unbounded_before_any_territory_is_founded():
     assert tribe.x == 50 + config.MOVEMENT_SPEED  # plain speed, no clamp applied
 
 
+def test_relocate_uses_the_slower_settled_speed_once_a_tribe_has_settled():
+    """Explicit request ("everyone moving on the board moves at the pace of 1
+    sky tick"): a settled tribe's RELOCATE steps at config.SETTLED_MOVEMENT_SPEED
+    instead of the faster pre-settlement config.MOVEMENT_SPEED -- pre-settlement
+    keeps the fast pace since that march is life-or-death (see the founding-
+    death regression config.SETTLED_MOVEMENT_SPEED's own comment references)."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+
+    ACTION_REGISTRY["RELOCATE"](sim, tribe, "plains", (80, 50))
+
+    assert tribe.x == 50 + config.SETTLED_MOVEMENT_SPEED
+    assert config.SETTLED_MOVEMENT_SPEED < config.MOVEMENT_SPEED  # genuinely slower, not coincidentally equal
+
+
 def test_relocate_costs_stamina():
     """Without a cost here, RELOCATE would be strictly free compared to every gathering
     action, which all cost time and risk -- marching should be tiring."""
