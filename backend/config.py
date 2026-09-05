@@ -188,6 +188,18 @@ HUNT_HAZARD_POPULATION_LOSS = 1
 # -- and every extra day out is another HUNT_HAZARD_CHANCE roll, not just one.
 HUNTING_PARTY_MAX_DAYS = 4
 HUNTING_PARTY_CATCH_CHANCE_BASE = 0.35
+
+# Live bug report: "never landed a clean hunt? that's very intolerant." A real
+# 346-cycle run showed every single HUNTING_PARTY dispatch come home empty --
+# BIOME_YIELD_MULTIPLIER["game"] drops as low as 0.05 in cliffs/desert (0.35 *
+# 0.05 = a 1.75% catch chance per day roll, only HUNTING_PARTY_MAX_DAYS rolls
+# before giving up), so a party unlucky enough to keep landing in poor game
+# terrain could plausibly never catch anything across many dispatches. Floors
+# any already-nonzero game multiplier up to this value before the catch roll
+# -- true zero-game biomes (ocean, volcano) stay genuinely un-huntable, this
+# only rescues the biomes where hunting is nominally possible but was rolling
+# at next to nothing.
+HUNTING_PARTY_MIN_GAME_MULTIPLIER = 0.15
 HUNTING_PARTY_CATCH_FOOD_MIN = 20
 HUNTING_PARTY_CATCH_FOOD_MAX = 35
 

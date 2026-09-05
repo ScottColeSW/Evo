@@ -1023,7 +1023,7 @@ def test_cook_food_unavailable_with_only_one_of_the_two_prerequisites():
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
     tribe.hunt_ever_succeeded = True
-    # fire_ever_built stays False
+    # fire_ever_built stays False -- required regardless of hunt/forage success
 
     _, ctx = sim._prepare_turn(tribe)
 
@@ -1044,6 +1044,24 @@ def test_cook_food_available_once_hunted_and_fire_built():
 
     assert "COOK_FOOD" in ctx["available_actions"]
     assert "learning to cook would make stored food go much further" in request["prompt"]
+
+
+def test_cook_food_available_via_forage_success_too():
+    """Loosened (live bug: "never landed a clean hunt? that's very intolerant"
+    -- a real 346-cycle run never landed one HUNTING_PARTY catch, permanently
+    blocking cooking on hunting luck alone). Matches BUILD_FIRE's own
+    hunt-or-forage gate: a proven forage success satisfies this just as well
+    as a hunt, since a tribe forages successfully almost immediately."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.foraged_ever_succeeded = True
+    tribe.fire_ever_built = True
+    assert tribe.hunt_ever_succeeded is False  # confirms this isn't riding the hunt path
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "COOK_FOOD" in ctx["available_actions"]
 
 
 def test_cook_food_retires_once_learned():
@@ -1401,6 +1419,46 @@ def test_hunting_party_wolf_attack_marks_a_map_encounter():
         sim._advance_hunting_party_outbound(tribe, exp, "plains", "Ashgar")
 
     assert sim.recent_encounters == [{"x": 50, "y": 50, "kind": "wolf_attack", "label": "Wolf pack!", "outcome": "struck"}]
+
+
+def test_hunting_party_catch_chance_has_a_floor_in_poor_game_biomes():
+    """Live bug: "never landed a clean hunt? that's very intolerant." Desert's
+    raw game multiplier (0.05) makes a catch nearly impossible (0.35 * 0.05 =
+    1.75% per day roll) -- floored up to config.HUNTING_PARTY_MIN_GAME_
+    MULTIPLIER (0.15, giving 5.25%) so hunting stays nominally possible
+    instead of practically dead in poor-game terrain."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    exp = {"pos": [50, 50], "kind": "hunt", "food_caught": 0}
+
+    # 0.99 clears the wolf-hazard roll; 0.03 sits between desert's floored
+    # (5.25%) and unfloored (1.75%) catch chance -- only succeeds if floored.
+    with mock.patch("backend.simulation.random.random", side_effect=[0.99, 0.03]):
+        sim._advance_hunting_party_outbound(tribe, exp, "desert", "Ashgar")
+
+    assert exp["food_caught"] > 0
+
+
+def test_hunting_party_catch_chance_stays_zero_in_true_zero_game_biomes():
+    """Companion to the test above: ocean/volcano genuinely have no game --
+    the floor must not make hunting possible there."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    exp = {
+        "pos": [50, 50], "origin": [50, 50], "target": [50, 50], "kind": "hunt", "food_caught": 0,
+        "day": 0, "pushed_onward": True,  # already pushed once -- falls through to give-up, not another push
+    }
+
+    # 0.99 clears the wolf-hazard roll; the catch check never even rolls
+    # against the leftover 0.0 since a zero game multiplier short-circuits it.
+    with mock.patch("backend.simulation.random.random", side_effect=[0.99, 0.0]):
+        sim._advance_hunting_party_outbound(tribe, exp, "ocean", "Ashgar")
+
+    assert exp["food_caught"] == 0
 
 
 def test_action_repetition_streak_increments_and_resets():

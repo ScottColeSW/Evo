@@ -2151,14 +2151,22 @@ class Simulation:
 
         # Explicit request: "if you learn to hunt successfully and you learn to
         # build fire successfully, you should get the chance to learn cooking...
-        # this can happen early." COOK_FOOD is gated on these two real, proven
-        # prerequisites rather than era progression -- see Tribe.hunt_ever_succeeded/
-        # fire_ever_built. Retires once learned, the same one-way "generalist
-        # narrows/task is done" shape foraging_retired and watering_retired use --
-        # there's nothing left to decide once cooking is known forever.
+        # this can happen early." COOK_FOOD is gated on real, proven
+        # prerequisites rather than era progression. Retires once learned, the
+        # same one-way "generalist narrows/task is done" shape foraging_retired
+        # and watering_retired use -- there's nothing left to decide once
+        # cooking is known forever.
+        #
+        # Loosened (live bug: "never landed a clean hunt? that's very
+        # intolerant" -- a real run went 346 cycles without a single
+        # HUNTING_PARTY catch, permanently blocking cooking, and by extension
+        # the Kitchen, on hunting luck alone). Matches BUILD_FIRE's own gate
+        # just above exactly: hunt_ever_succeeded or foraged_ever_succeeded --
+        # foraging succeeds almost immediately for any tribe, so a run of bad
+        # hunting luck no longer locks cooking out entirely.
         if tribe.cooking_learned:
             available_actions = [a for a in available_actions if a != "COOK_FOOD"]
-        elif not (tribe.hunt_ever_succeeded and tribe.fire_ever_built):
+        elif not ((tribe.hunt_ever_succeeded or tribe.foraged_ever_succeeded) and tribe.fire_ever_built):
             available_actions = [a for a in available_actions if a != "COOK_FOOD"]
 
         # Explicit request: "they don't need to CATCH_FISH once they know how."
@@ -3692,6 +3700,12 @@ class Simulation:
             return
 
         game_multiplier = BIOME_YIELD_MULTIPLIER["game"].get(current_biome, 0.0)
+        # Live bug: "never landed a clean hunt? that's very intolerant." A
+        # nonzero-but-tiny multiplier (cliffs/desert at 0.05) made a catch
+        # nearly impossible in practice, not just harder -- floored up to a
+        # real minimum. True zero-game biomes (ocean, volcano) are untouched.
+        if game_multiplier > 0:
+            game_multiplier = max(game_multiplier, config.HUNTING_PARTY_MIN_GAME_MULTIPLIER)
         if game_multiplier > 0 and random.random() < config.HUNTING_PARTY_CATCH_CHANCE_BASE * game_multiplier:
             exp["food_caught"] = random.randint(config.HUNTING_PARTY_CATCH_FOOD_MIN, config.HUNTING_PARTY_CATCH_FOOD_MAX)
             exp["phase"] = "returning"
