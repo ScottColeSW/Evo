@@ -2489,6 +2489,32 @@ def test_raid_win_steals_resources_and_absorbs_some_of_the_defenders_population(
     assert attacker.population == 9  # 8 + 2 absorbed - 1 (RAID_ATTACKER_POPULATION_LOSS_ON_WIN)
 
 
+def test_raid_records_combat_wins_and_losses_for_both_sides():
+    """Explicit request: sidebar box for "each type of combat with W/L
+    totals." A raid win/loss should show up in both the attacker's "Raiding"
+    record and the defender's "Raid Defense" record, on the opposite side
+    each time."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    defender.population = 20  # plenty of survivors either way
+    sim.tribes = {"tribe_0": attacker, "tribe_1": defender}
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # attacker always wins
+        ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 51))
+
+    assert attacker.combat_record["Raiding"] == {"won": 1, "lost": 0}
+    assert defender.combat_record["Raid Defense"] == {"won": 0, "lost": 1}
+
+    with mock.patch("backend.actions.random.random", return_value=0.999):  # attacker always loses now
+        ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 51))
+
+    assert attacker.combat_record["Raiding"] == {"won": 1, "lost": 1}
+    assert defender.combat_record["Raid Defense"] == {"won": 1, "lost": 1}
+
+
 def test_raid_win_awards_first_conquest_trophy_only_on_the_first_win():
     from unittest import mock
 
@@ -3235,3 +3261,38 @@ def test_execute_trade_is_reused_identically_by_instant_trade_and_the_emissary()
 
     assert "opened trade" in note
     assert tribe.wood != 100 and partner.wood != 200  # goods actually moved
+
+
+def test_execute_trade_records_given_and_received_per_resource():
+    """Explicit request: sidebar boxes for "an elastic and running total of
+    things traded away/received." Both sides of a trade should show up on
+    both sides' ledgers, on opposite sides of the exchange."""
+    from backend.actions import _execute_trade
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    partner = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    tribe.wood, partner.wood = 100, 200
+    sim.tribes = {"tribe_0": tribe, "tribe_1": partner}
+
+    _execute_trade(sim, tribe, partner)
+
+    assert tribe.trade_given["wood"] > 0
+    assert tribe.trade_received["wood"] > 0
+    assert tribe.trade_given["wood"] == partner.trade_received["wood"]
+    assert tribe.trade_received["wood"] == partner.trade_given["wood"]
+
+
+def test_trade_with_minor_settlement_records_received_only():
+    """One-way -- nothing is ever given up trading with a minor settlement, so
+    only trade_received should show anything."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    settlement = _minor_settlement(x=52, y=50)
+    sim.minor_settlements = [settlement]
+
+    ACTION_REGISTRY["TRADE"](sim, tribe, "plains", (52, 50))
+
+    assert tribe.trade_received["wood"] > 0
+    assert tribe.trade_given == {}

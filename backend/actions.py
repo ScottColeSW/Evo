@@ -1496,6 +1496,8 @@ def _raid(sim, tribe, biome, target):
             setattr(defender, resource, getattr(defender, resource) - stolen)
             setattr(tribe, resource, getattr(tribe, resource) + stolen)
         tribe.raids_won += 1
+        _record_combat(tribe, "Raiding", "won")
+        _record_combat(defender, "Raid Defense", "lost")
         if tribe.raids_won == 1:
             sim._award_trophy(tribe, "First Conquest")
         sim._check_custom_awards(tribe, "raiding")
@@ -1541,6 +1543,8 @@ def _raid(sim, tribe, biome, target):
         # already-extinct tribe has nothing left to absorb.
         tribe.raids_lost += 1
         defender.raids_defended += 1
+        _record_combat(tribe, "Raiding", "lost")
+        _record_combat(defender, "Raid Defense", "won")
         if defender.raids_defended == 1:
             sim._award_trophy(defender, "Raid Breaker")
         for resource in ("wood", "stone", "food", "water"):
@@ -1599,6 +1603,7 @@ def _strike_raider_camp(sim, tribe, biome, target):
             "x": camp[0], "y": camp[1], "kind": "raider_camp_strike",
             "label": "Raider camp destroyed", "outcome": "won",
         })
+        _record_combat(tribe, "Raider Camp Strike", "won")
         return f"the raider camp at {camp} is destroyed -- {looted} food recovered"
 
     sim._lose_population(tribe, config.STRIKE_RAIDER_CAMP_POPULATION_LOSS_ON_FAILURE, cause="failed_raider_strike")
@@ -1607,7 +1612,33 @@ def _strike_raider_camp(sim, tribe, biome, target):
         "x": camp[0], "y": camp[1], "kind": "raider_camp_strike",
         "label": "Strike failed", "outcome": "lost",
     })
+    _record_combat(tribe, "Raider Camp Strike", "lost")
     return f"the strike on the raider camp at {camp} failed -- they escaped into the wilds"
+
+
+def _record_trade(tribe, resource: str, given: int = 0, received: int = 0) -> None:
+    """Shared by every trade path (_execute_trade, _trade_with_minor_settlement)
+    -- explicit request: sidebar boxes for "an elastic and running total of
+    things traded away/received." A keyed dict per resource rather than a
+    fixed field per resource, so a newly-tradeable resource (Fur, a Mine's own
+    named ore, a crafted item's type) doesn't need a hardcoded slot. Zero
+    amounts are skipped entirely rather than padding the dict with a resource
+    that never actually moved this trade."""
+    if given:
+        tribe.trade_given[resource] = tribe.trade_given.get(resource, 0) + given
+    if received:
+        tribe.trade_received[resource] = tribe.trade_received.get(resource, 0) + received
+
+
+def _record_combat(tribe, kind: str, outcome: str) -> None:
+    """Shared by every real win/lose combat outcome (RAID, raid defense, home
+    NPC raid defense, STRIKE_RAIDER_CAMP, expedition raider ambush) --
+    explicit request: a sidebar box for "each type of combat with W/L
+    totals." `outcome` is "won" or "lost"; elastic like _record_trade above --
+    a combat kind this tribe has never faced simply doesn't appear until it
+    does."""
+    record = tribe.combat_record.setdefault(kind, {"won": 0, "lost": 0})
+    record[outcome] += 1
 
 
 def _execute_trade(sim, tribe, partner) -> str:
@@ -1622,6 +1653,8 @@ def _execute_trade(sim, tribe, partner) -> str:
         partner_gift = round(partner_amount * config.TRADE_GIFT_FRACTION)
         setattr(tribe, resource, tribe_amount - tribe_gift + partner_gift)
         setattr(partner, resource, partner_amount - partner_gift + tribe_gift)
+        _record_trade(tribe, resource, given=tribe_gift, received=partner_gift)
+        _record_trade(partner, resource, given=partner_gift, received=tribe_gift)
 
     # Explicit request: "maybe some hunters want a Tannery and they can trade
     # furs too." A Mine/Tannery's named resource (Fur, Orosite Ore, ...) used
@@ -1636,6 +1669,8 @@ def _execute_trade(sim, tribe, partner) -> str:
         partner_gift = round(partner_amount * config.TRADE_GIFT_FRACTION)
         tribe.unique_resources[resource] = tribe_amount - tribe_gift + partner_gift
         partner.unique_resources[resource] = partner_amount - partner_gift + tribe_gift
+        _record_trade(tribe, resource, given=tribe_gift, received=partner_gift)
+        _record_trade(partner, resource, given=partner_gift, received=tribe_gift)
 
     # A forged item is a discrete, indivisible thing -- can't hand over a "fraction"
     # of one the way the fractional gifts above work, so each side that actually has
@@ -1646,8 +1681,12 @@ def _execute_trade(sim, tribe, partner) -> str:
     partner_item_gift = partner.items.pop(0) if partner.items else None
     if tribe_item_gift is not None:
         partner.items.append(tribe_item_gift)
+        _record_trade(tribe, tribe_item_gift["type"], given=1)
+        _record_trade(partner, tribe_item_gift["type"], received=1)
     if partner_item_gift is not None:
         tribe.items.append(partner_item_gift)
+        _record_trade(partner, partner_item_gift["type"], given=1)
+        _record_trade(tribe, partner_item_gift["type"], received=1)
 
     tribe.trades_completed += 1
     partner.trades_completed += 1
@@ -1684,6 +1723,7 @@ def _trade_with_minor_settlement(sim, tribe, settlement):
         settlement[resource] -= taken
         setattr(tribe, resource, getattr(tribe, resource) + taken)
         gained[resource] = taken
+        _record_trade(tribe, resource, received=taken)  # one-way -- nothing given up
     tribe.trades_completed += 1
     if tribe.trades_completed == 1:
         sim._award_trophy(tribe, "First Contact")

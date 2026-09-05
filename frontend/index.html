@@ -132,6 +132,15 @@
   .farming-panel { margin-top: 6px; padding: 6px 8px; background: #1a2a1a; border: 1px solid #365d36; border-radius: 5px; font-size: 11px; color: #bbf7d0; }
   .farming-panel .farming-title { color: #86efac; font-weight: bold; }
 
+  /* Explicit request: small sidebar boxes for a running Commerce (given/
+     received) and Combat (per-kind W/L) tally -- same box shape as
+     farming-panel/wellbeing-panel above, own accent color each so the three
+     read as distinct at a glance. */
+  .commerce-panel { margin-top: 6px; padding: 6px 8px; background: #2a2410; border: 1px solid #5d4f1f; border-radius: 5px; font-size: 11px; color: #fde68a; }
+  .commerce-panel .commerce-title { color: #fbbf24; font-weight: bold; }
+  .combat-panel { margin-top: 6px; padding: 6px 8px; background: #2a1616; border: 1px solid #5d2f2f; border-radius: 5px; font-size: 11px; color: #fecaca; }
+  .combat-panel .combat-title { color: #f87171; font-weight: bold; }
+
   .wellbeing-panel { margin-top: 6px; padding: 6px 8px; background: #1a1a2a; border: 1px solid #35365d; border-radius: 5px; font-size: 11px; color: #c7d2fe; }
   .wellbeing-panel .wellbeing-title { color: #a5b4fc; font-weight: bold; }
   .wellbeing-row { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
@@ -3010,6 +3019,38 @@ function eraAtLeast(era, floor) {
   return i >= 0 && i >= f;
 }
 
+// Explicit request: a sidebar box for "an elastic and running total of things
+// traded away" and "received" -- mirrors farmingPanel's own box shape below.
+// Elastic like backend.actions._record_trade's own dict: whichever resources
+// (wood/stone/food/water, a Mine/Tannery's own named resource, a crafted
+// item's type) have actually moved show up, nothing pre-declared at zero.
+function commercePanel(t) {
+  const given = t.trade_given || {};
+  const received = t.trade_received || {};
+  if (Object.keys(given).length === 0 && Object.keys(received).length === 0) return "";
+  const line = (label, dict) => {
+    const entries = Object.entries(dict);
+    if (!entries.length) return `${label}: none yet`;
+    return `${label}: ` + entries.map(([res, amt]) => `${escapeHtml(res)} ${amt}`).join(", ");
+  };
+  return (
+    `<div class="commerce-panel"><span class="commerce-title">🤝 Commerce</span><br>` +
+    `${line("Given", given)}<br>${line("Received", received)}</div>`
+  );
+}
+
+// Explicit request: a sidebar box for "each type of combat with W/L totals."
+// Elastic like commercePanel above -- a combat kind (Raiding, Raid Defense,
+// Home Defense, Raider Camp Strike, Ambush) this tribe has never faced simply
+// doesn't show a row until it does.
+function combatPanel(t) {
+  const record = t.combat_record || {};
+  const kinds = Object.keys(record);
+  if (!kinds.length) return "";
+  const rows = kinds.map(kind => `${escapeHtml(kind)}: ${record[kind].won}W / ${record[kind].lost}L`).join("<br>");
+  return `<div class="combat-panel"><span class="combat-title">⚔️ Combat</span><br>${rows}</div>`;
+}
+
 function farmingPanel(t) {
   const ring0 = (t.wall_rings || [])[0];
   const ring0Reinforced = !!ring0 && ring0.sections.every(s => s.natural_barrier || s.tier >= WALL_MAX_LAYERS);
@@ -3326,6 +3367,8 @@ function updateSidebar(state) {
           ${t.survival_warning ? `<div class="survival-warning">⚠️ ${t.survival_warning.replace("[SURVIVAL INSTINCT]: ", "")}</div>` : ""}
           ${farmingPanel(t)}
           ${wellbeingPanel(t)}
+          ${commercePanel(t)}
+          ${combatPanel(t)}
         </div>`;
     }
     (t.history || []).forEach(entry => {
