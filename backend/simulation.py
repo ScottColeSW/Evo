@@ -4341,19 +4341,60 @@ class Simulation:
             tribe.founded_city = True
             tribe.history.append(f"the first Long House stands -- {tribe.name} formally founds a city")
 
+    def _choose_territory_center(self, tribe: Tribe) -> tuple[int, int]:
+        """Picks where the Hut/Town Hall and wall ring 0 actually get centered --
+        not necessarily the tribe's exact settling tile. Explicit correction after
+        a live run: "the territories contain a lot of water and so, the need to
+        back away from the Hut so that only 1 natural Wall at most exists." A
+        tribe settled deep in a river bend, or against a concave lake shore, can
+        have the water cross ring 0's circumference (radius WALL_RING_RADIUS_STEP)
+        in two or more places -- opposite banks of the same river, say -- turning
+        most of the wall into freebie natural_barrier sections (city_layout.
+        _is_natural_barrier) instead of a real perimeter worth building.
+
+        Searches outward from the settling tile in a spiral, checking each
+        candidate's real ring-0 footprint (city_layout.build_ring, the same
+        function that actually builds it -- not a separate estimate that could
+        drift from it), and returns the closest one with at most one
+        natural-barrier section. Backing away like this doesn't undo the water
+        access that qualified the tribe to settle here in the first place (see
+        _is_settled_near_water/SETTLEMENT_WATER_TERRITORY_RADIUS) -- that was
+        already earned at the tribe's actual position; this only decides where
+        the walls and the building sit. Falls back to whichever candidate found
+        the fewest natural barriers if none hits the target within the search
+        radius, and never proposes a center sitting on unbuildable ground."""
+        origin = (tribe.x, tribe.y)
+        best_center, best_count = origin, None
+        for radius in range(0, 4 * config.WALL_RING_RADIUS_STEP + 1, 3):
+            angles = [0.0] if radius == 0 else [i * math.pi / 8 for i in range(16)]
+            for angle in angles:
+                cx = tribe.x + round(radius * math.cos(angle))
+                cy = tribe.y + round(radius * math.sin(angle))
+                if self.world.biome(cx, cy) in config.UNBUILDABLE_BIOMES:
+                    continue
+                ring = city_layout.build_ring(self.world, (cx, cy), ring_index=0)
+                count = sum(1 for sec in ring["sections"] if sec["natural_barrier"])
+                if best_count is None or count < best_count:
+                    best_center, best_count = (cx, cy), count
+                if count <= 1:
+                    return (cx, cy)
+        return best_center
+
     def _found_territory(self, tribe: Tribe) -> None:
         """Grants a real, owned territory the instant a tribe first qualifies as
         settled (has_ever_settled) -- explicit request: "when a Tribe becomes
         Settled, they automatically get a region of territory they own." Anchors
-        territory_center at the founding coordinate (deliberately not tribe.x/y --
-        see Tribe.__init__'s own comment on why RELOCATE can't be allowed to drag a
-        city's buildings/walls around), builds the first wall ring, and places the
-        Town Hall centered on that same coordinate."""
-        tribe.territory_center = (tribe.x, tribe.y)
+        territory_center at a chosen founding coordinate (deliberately not always
+        tribe.x/y -- see _choose_territory_center's own comment, and Tribe.
+        __init__'s comment on why RELOCATE can't be allowed to drag a city's
+        buildings/walls around once chosen), builds the first wall ring, and
+        places the Town Hall centered on that same coordinate."""
+        tribe.territory_center = self._choose_territory_center(tribe)
         tribe.territory_radius = config.WALL_RING_RADIUS_STEP
-        tribe.wall_rings = [city_layout.build_ring(self.world, tribe, ring_index=0)]
+        tribe.wall_rings = [city_layout.build_ring(self.world, tribe.territory_center, ring_index=0)]
         w, h = config.BUILDING_FOOTPRINTS["town_hall"]
-        architect.record_building(tribe, "town_hall", tribe.x - w // 2, tribe.y - h // 2, w, h, self.cycle)
+        cx, cy = tribe.territory_center
+        architect.record_building(tribe, "town_hall", cx - w // 2, cy - h // 2, w, h, self.cycle)
 
         # Explicit request: "when they start to build a Wall we need to force
         # existing Raider sites out of the Territory and for some distance away

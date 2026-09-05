@@ -522,7 +522,7 @@ def _expand_territory(sim, tribe, biome, target):
     if unlockable is None:
         if not city_layout.ring_fully_reinforced(tribe.wall_rings[-1]):
             return "the outermost wall ring must be fully reinforced before territory can expand further"
-        tribe.wall_rings.append(city_layout.build_ring(sim.world, tribe, len(tribe.wall_rings)))
+        tribe.wall_rings.append(city_layout.build_ring(sim.world, tribe.territory_center, len(tribe.wall_rings)))
         unlockable = city_layout.next_unlockable_section(tribe)
 
     tribe.wood -= config.TERRITORY_EXPANSION_WOOD_COST

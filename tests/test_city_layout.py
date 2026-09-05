@@ -25,7 +25,7 @@ def test_build_ring_produces_the_expected_section_count_and_radius():
     world = Landscape(100)
     tribe = _tribe_at()
 
-    ring = build_ring(world, tribe, ring_index=0)
+    ring = build_ring(world, tribe.territory_center, ring_index=0)
 
     assert ring["radius"] == config.WALL_RING_RADIUS_STEP
     assert len(ring["sections"]) == config.WALL_RING_SECTION_COUNT
@@ -37,8 +37,8 @@ def test_build_ring_second_ring_sits_further_out():
     world = Landscape(100)
     tribe = _tribe_at()
 
-    ring0 = build_ring(world, tribe, ring_index=0)
-    ring1 = build_ring(world, tribe, ring_index=1)
+    ring0 = build_ring(world, tribe.territory_center, ring_index=0)
+    ring1 = build_ring(world, tribe.territory_center, ring_index=1)
 
     assert ring1["radius"] > ring0["radius"]
 
@@ -58,7 +58,7 @@ def test_natural_barrier_sections_start_unlocked_others_do_not():
     world = Landscape(100)
     tribe = _tribe_at()
 
-    ring = build_ring(world, tribe, ring_index=0)
+    ring = build_ring(world, tribe.territory_center, ring_index=0)
 
     for sec in ring["sections"]:
         assert sec["unlocked"] == sec["natural_barrier"]

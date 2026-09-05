@@ -1346,8 +1346,11 @@ def test_landmark_discovery_awards_more_fame_inside_own_territory():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
     tribe = sim.tribes["tribe_0"]
     sim._found_territory(tribe)
-    exp = {"pos": [tribe.x, tribe.y], "wood_gathered": 0, "stone_gathered": 0, "food_gathered": 0, "water_gathered": 0,
-           "day": 0, "max_days": 6}
+    # tribe.x/y (40,37) is real river -- _choose_territory_center backs the actual
+    # town center away from it (see that method's own comment), so "right on the
+    # town center" now means tribe.territory_center, not the settling tile itself.
+    exp = {"pos": list(tribe.territory_center), "wood_gathered": 0, "stone_gathered": 0, "food_gathered": 0,
+           "water_gathered": 0, "day": 0, "max_days": 6}
 
     with mock.patch("backend.simulation.random.random", return_value=0.0):
         sim._advance_exploration_party_outbound(tribe, exp, "plains", "Test Scout")
@@ -3917,6 +3920,49 @@ def test_find_minor_settlement_site_avoids_every_tribes_territory():
         x, y = sim._find_minor_settlement_site(occupied=[])
         dist = ((x - 50) ** 2 + (y - 50) ** 2) ** 0.5
         assert dist > 20 + config.MINOR_SETTLEMENT_TERRITORY_BUFFER
+
+
+def test_found_territory_backs_the_center_away_from_a_river_crossing_it_twice():
+    """Explicit correction, after watching a live run: "the territories contain
+    a lot of water and so, the need to back away from the Hut so that only 1
+    natural Wall at most exists." Settling directly on the river's course (x=50,
+    y=39, confirmed by direct sampling to sit on real river terrain) puts ring
+    0's east AND west sections on the river -- two natural_barrier sections,
+    since the ~7-tile-wide river band crosses the whole 24-tile-diameter ring.
+    _found_territory must back territory_center away until at most one section
+    is a natural barrier, and the Town Hall must follow it there (not stay
+    pinned to the river tile the tribe actually settled on)."""
+    from backend import config, world
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 50, "y": 39}])
+    tribe = sim.tribes["tribe_0"]
+    assert world.biome_at(50, 39) == "river"  # confirms this test exercises the real bug
+
+    sim._found_territory(tribe)
+
+    natural_barrier_count = sum(1 for sec in tribe.wall_rings[0]["sections"] if sec["natural_barrier"])
+    assert natural_barrier_count <= 1
+    assert tribe.territory_center != (50, 39)  # backed away from the settling tile
+    town_hall = next(b for b in tribe.buildings if b["type"] == "town_hall")
+    cx, cy = tribe.territory_center
+    w, h = config.BUILDING_FOOTPRINTS["town_hall"]
+    assert (town_hall["x"], town_hall["y"]) == (cx - w // 2, cy - h // 2)  # follows the chosen center, not tribe.x/y
+
+
+def test_found_territory_leaves_a_dry_settling_spot_untouched():
+    """The common case -- settling well away from any water shouldn't move the
+    center at all; _choose_territory_center should return the settling tile
+    itself the instant it finds zero natural barriers there. (55, 65) is
+    confirmed (by directly building ring 0 there) to have zero natural-barrier
+    sections -- the river/lake/tributary complex running through the map's
+    center means many otherwise-plausible "dry" points, like (50, 50), actually
+    do have the wall ring crossing water somewhere."""
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 55, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+
+    sim._found_territory(tribe)
+
+    assert tribe.territory_center == (55, 65)
 
 
 def test_found_territory_relocates_minor_settlements_caught_inside():

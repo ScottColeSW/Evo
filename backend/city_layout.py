@@ -26,12 +26,14 @@ def _is_natural_barrier(world, x: int, y: int, w: int, h: int) -> bool:
     )
 
 
-def build_ring(world, tribe, ring_index: int) -> dict:
+def build_ring(world, center: tuple[int, int], ring_index: int) -> dict:
     """Computes one ring's full geometry, called once, lazily, the moment it's first
-    needed (ring 0 at founding; ring i>0 the first time EXPAND_TERRITORY opens it)."""
+    needed (ring 0 at founding; ring i>0 the first time EXPAND_TERRITORY opens it).
+    Takes the center directly (not a tribe) so Simulation._choose_territory_center
+    can probe candidate centers before committing to tribe.territory_center."""
     radius = config.WALL_RING_RADIUS_STEP * (ring_index + 1)
     assert radius >= config.WALL_MIN_RING_RADIUS  # tripwire, not expected to ever fire
-    cx, cy = tribe.territory_center
+    cx, cy = center
     sections = []
     for i, direction in enumerate(_DIRECTIONS):
         # -pi/2 offset so index 0 ("N") points toward decreasing y (this codebase's
