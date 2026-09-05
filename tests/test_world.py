@@ -216,17 +216,26 @@ def test_regeneration_fully_clears_a_tile_eventually():
 
 def test_biome_at_covers_all_eight_regions():
     # (10, 10) moved from "mountains" to "volcano" once VOLCANO_CENTER=(10, 12)/
-    # VOLCANO_RADIUS=4 was added (map dream, phase 1) -- (10, 40) is still real
-    # mountains, comfortably outside the volcano's radius. (50, 90) moved from
-    # "plains" to "desert" once DESERT_NORTH_BOUNDARY_BASE=78 carved out the
-    # southern band -- (50, 70) is still real plains, north of that boundary.
-    assert biome_at(80, 10) == "forest"
-    assert biome_at(10, 40) == "mountains"
+    # VOLCANO_RADIUS=4 was added (map dream, phase 1) -- (10, 40) was still real
+    # mountains at that point, comfortably outside the volcano's radius. (50, 90)
+    # moved from "plains" to "desert" once DESERT_NORTH_BOUNDARY_BASE=78 carved
+    # out the southern band -- (50, 70) is still real plains, north of that
+    # boundary.
+    #
+    # Map dream, phase 2: turning the map into a real island (west/north/south
+    # ocean insets) swallowed several of the points above outright -- (80, 10),
+    # (10, 40), (50, 90), and the original volcano's own (10, 10) all now land in
+    # new ocean. Each was replaced with a fresh point of the same biome, found by
+    # sampling biome_at directly rather than estimated, and the volcano itself
+    # was relocated to (32, 30) (see VOLCANO_CENTER's own comment) since its old
+    # spot became unreachable ocean.
+    assert biome_at(65, 51) == "forest"
+    assert biome_at(19, 40) == "mountains"
     assert biome_at(50, 70) == "plains"
     assert biome_at(40, 37) == "river"
     assert biome_at(95, 50) == "ocean"
-    assert biome_at(50, 90) == "desert"
-    assert biome_at(10, 10) == "volcano"
+    assert biome_at(80, 77) == "desert"
+    assert biome_at(32, 30) == "volcano"
     from backend.world import LAKE_CENTER
     assert biome_at(*LAKE_CENTER) == "lake"
 
@@ -235,13 +244,21 @@ def test_desert_zone_does_not_swallow_ground_north_of_its_boundary():
     """Map dream, phase 1: Desert claims the southern band that would otherwise
     fall through to forest/plains -- a point clearly north of
     DESERT_NORTH_BOUNDARY_BASE (78) at the same x must stay whatever it already
-    was, not flip to desert."""
+    was, not flip to desert.
+
+    Map dream, phase 2: the new south coast ocean inset squeezed the desert band
+    down to as little as ~0.3-6 tiles wide (checked by sampling both boundary
+    functions across the grid), too thin for the original x=50/offset-5 check --
+    at x=50 an offset of 5 now overshoots straight into the new south ocean. x=80
+    with a smaller offset of 2 is confirmed (by direct sampling, not estimated)
+    to land cleanly on each side of the boundary without also crossing the
+    south coast."""
     from backend.world import _desert_north_boundary
 
-    x = 50
+    x = 80
     boundary = _desert_north_boundary(x)
-    assert biome_at(x, round(boundary) + 5) == "desert"
-    assert biome_at(x, round(boundary) - 5) != "desert"
+    assert biome_at(x, round(boundary) + 2) == "desert"
+    assert biome_at(x, round(boundary) - 2) != "desert"
 
 
 def test_volcano_zone_is_a_clean_circle_around_its_center():
@@ -351,9 +368,17 @@ def test_river_mouth_does_not_extend_past_a_receded_coastline():
 
 
 def test_river_originates_near_the_mountains():
-    from backend.world import RIVER_SOURCE_X, _river_center_y
+    """Map dream, phase 2: _is_river's source end now clips to
+    max(RIVER_SOURCE_X, _west_coast_boundary(y)), the same way its mouth already
+    clips to the real east coastline -- RIVER_SOURCE_X=15 itself now sits inside
+    the new west ocean at every y along the river's early course, so the river's
+    real origin is wherever real land actually begins, not the old fixed
+    constant. x=21 is the first point (scanning from RIVER_SOURCE_X outward)
+    where the river's true course, using its own _river_center_y(x) rather than
+    a value sampled at a different x, clears the west coast."""
+    from backend.world import _river_center_y
 
-    assert biome_at(RIVER_SOURCE_X, round(_river_center_y(RIVER_SOURCE_X))) == "river"
+    assert biome_at(21, round(_river_center_y(21))) == "river"
 
 
 def test_river_reaches_the_coast():
@@ -382,6 +407,85 @@ def test_river_crosses_more_than_one_biome_on_its_way_to_the_sea():
         for dy in (-4, 0, 4):  # sample just off the river's own centerline
             biomes_crossed.add(biome_at(x, y + dy))
     assert {"mountains", "plains", "forest"}.issubset(biomes_crossed)
+
+
+def test_west_north_south_coasts_are_wavy_not_straight_lines():
+    """Map dream, phase 2: same "the whole point" check as
+    test_coastline_is_wavy_not_a_straight_line, extended to the three new
+    coastlines that turned the map into a real island."""
+    from backend.world import _north_coast_boundary, _south_coast_boundary, _west_coast_boundary
+
+    assert len({round(_west_coast_boundary(y)) for y in range(0, 100)}) > 1
+    assert len({round(_north_coast_boundary(x)) for x in range(0, 100)}) > 1
+    assert len({round(_south_coast_boundary(x)) for x in range(0, 100)}) > 1
+
+
+def test_west_north_south_oceans_actually_appear_in_biome_at():
+    """Confirms the three new coastlines are actually wired into biome_at's
+    chain, not just computed and ignored -- a point safely inside each new
+    inset (base minus the sine waves' own amplitude, so it's ocean regardless
+    of where in the wave this particular column/row falls) must read as ocean."""
+    from backend.world import _south_coast_boundary
+
+    assert biome_at(3, 50) == "ocean"  # west: WEST_COAST_INSET_BASE=18, deep inside any wave trough
+    assert biome_at(50, 3) == "ocean"  # north: NORTH_COAST_INSET_BASE=18, same margin
+    south_y = round(_south_coast_boundary(50)) + 8  # well past the south boundary at x=50
+    assert biome_at(50, south_y) == "ocean"
+
+
+def test_west_north_south_coast_bands_are_cliffs_or_shoals():
+    """Same cliffs-on-a-headland/shoals-in-a-bay texture as the existing east
+    coast (test_coast_band_is_cliffs_on_a_headland_and_shoals_in_a_bay),
+    confirmed for each of the three new coastlines -- scans for a real
+    headland and a real bay on each rather than assuming specific coordinates."""
+    from backend.world import (
+        _is_headland_like, _north_coast_boundary, _south_coast_boundary, _west_coast_boundary,
+    )
+
+    # Sampled from the interior (30-70), away from the map's four corners --
+    # near a corner, two coastlines' insets overlap and biome_at's chain order
+    # lets whichever is checked first (west, then north, then south) claim the
+    # tile outright, which isn't the headland/bay texture this test is after.
+    for boundary_fn, sample_range, ocean_on_increasing_side, land_of in (
+        (_west_coast_boundary, range(30, 70), False, lambda c, b: (round(b) + 1, c)),
+        (_north_coast_boundary, range(30, 70), False, lambda c, b: (c, round(b) + 1)),
+        (_south_coast_boundary, range(30, 70), True, lambda c, b: (c, round(b) - 1)),
+    ):
+        headland_c = next(c for c in sample_range if _is_headland_like(boundary_fn, c, ocean_on_increasing_side))
+        bay_c = next(c for c in sample_range if not _is_headland_like(boundary_fn, c, ocean_on_increasing_side))
+        hx, hy = land_of(headland_c, boundary_fn(headland_c))
+        bx, by = land_of(bay_c, boundary_fn(bay_c))
+        assert biome_at(hx, hy) == "cliffs"
+        assert biome_at(bx, by) == "shoals"
+
+
+def test_volcano_clears_every_coastline_with_real_margin():
+    """Map dream, phase 2: the volcano's original (10, 12) center fell inside
+    the new west+north ocean bands outright -- its relocated (32, 30) must
+    clear every one of the four coastlines by more than VOLCANO_RADIUS, not
+    just barely poke over the line."""
+    from backend.world import VOLCANO_CENTER, VOLCANO_RADIUS, _north_coast_boundary, _west_coast_boundary
+
+    vx, vy = VOLCANO_CENTER
+    assert vx - _west_coast_boundary(vy) > VOLCANO_RADIUS
+    assert vy - _north_coast_boundary(vx) > VOLCANO_RADIUS
+    assert biome_at(vx, vy) == "volcano"
+
+
+def test_river_still_connects_real_land_to_real_land_end_to_end():
+    """Map dream, phase 2: the river's west (source) end now clips to the real
+    west coastline instead of the old fixed RIVER_SOURCE_X (see
+    test_river_originates_near_the_mountains) -- confirms the river, sampled
+    along its own course, never starts or ends in the new ocean at a handful
+    of representative x values, the same connectivity test_river_reaches_the_
+    coast already runs for the east end."""
+    from backend.world import OCEAN_X_START, RIVER_SOURCE_X, _river_center_y
+
+    river_xs = [x for x in range(RIVER_SOURCE_X, OCEAN_X_START) if biome_at(x, round(_river_center_y(x))) == "river"]
+    assert river_xs  # the river exists somewhere along this stretch
+    first_x, last_x = min(river_xs), max(river_xs)
+    assert biome_at(first_x - 1, round(_river_center_y(first_x - 1))) != "river"
+    assert biome_at(last_x + 1, round(_river_center_y(last_x + 1))) == "ocean"
 
 
 def test_nearest_water_returns_own_tile_when_already_on_water():

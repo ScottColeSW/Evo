@@ -90,6 +90,40 @@ def _coast_is_headland(y: float) -> bool:
     curvature = _coast_boundary_x(y + step) - 2 * _coast_boundary_x(y) + _coast_boundary_x(y - step)
     return curvature < 0
 
+
+# Map dream, phase 2: "another attempt at increasing the Ocean/unplayable
+# area" -- a real island, ocean wrapping the north/south/west edges too, not
+# just the existing east coast above. Same "fixed inset + two sine waves"
+# shape, different phase/frequency per side so the four coastlines don't all
+# look identical. West/north measure inward from x=0/y=0; south measures
+# inward from GRID_SIZE-1, mirroring how the east coast measures inward from
+# OCEAN_X_START.
+def _west_coast_boundary(y: float) -> float:
+    return config.WEST_COAST_INSET_BASE + 5 * math.sin(y * 0.09 + 0.4) + 2 * math.sin(y * 0.24 + 2.1)
+
+
+def _north_coast_boundary(x: float) -> float:
+    return config.NORTH_COAST_INSET_BASE + 5 * math.sin(x * 0.07 + 1.1) + 2 * math.sin(x * 0.19 + 0.3)
+
+
+def _south_coast_boundary(x: float) -> float:
+    return (
+        (config.GRID_SIZE - 1) - config.SOUTH_COAST_INSET_BASE
+        - 5 * math.sin(x * 0.08 + 2.5) - 2 * math.sin(x * 0.21 + 0.9)
+    )
+
+
+def _is_headland_like(boundary_fn, coord: float, ocean_on_increasing_side: bool) -> bool:
+    """Generalizes _coast_is_headland to any of the four coastlines. A headland
+    is where land locally pushes further toward the ocean than its neighbors --
+    which curvature sign that means depends on which side of the boundary the
+    ocean actually is: increasing coordinate for the east/south coasts (a
+    larger boundary value means land reaches further that way), decreasing for
+    west/north (a smaller boundary value means land reaches further that way)."""
+    step = 1.0
+    curvature = boundary_fn(coord + step) - 2 * boundary_fn(coord) + boundary_fn(coord - step)
+    return curvature < 0 if ocean_on_increasing_side else curvature > 0
+
 # A tributary forking off the main river toward the lower-middle of the map, ending in
 # a lake -- the only drinkable fresh water on the whole map used to be that single river
 # ribbon, which left most of the grid genuinely far from any water no matter how well a
@@ -101,12 +135,20 @@ LAKE_RADIUS = 7
 LAKE_TRIBUTARY_HALF_WIDTH = 2
 
 # Map dream, phase 1: "the volcano is a Hazard they will die if they go there" --
-# a single, small, fixed decorative-but-lethal feature inside the existing
-# mountain region, not a wavy zone boundary (this is one place, not an organic
-# terrain type that should look different every map). Same circle-test shape as
-# the lake above, deliberately simpler than the sine-wave boundaries -- a one-off
-# feature reads better as a clean circle than an "organic" wobbly one.
-VOLCANO_CENTER = (10, 12)
+# a single, small, fixed decorative-but-lethal feature near the mountains, not a
+# wavy zone boundary (this is one place, not an organic terrain type that should
+# look different every map). Same circle-test shape as the lake above,
+# deliberately simpler than the sine-wave boundaries -- a one-off feature reads
+# better as a clean circle than an "organic" wobbly one.
+#
+# Map dream, phase 2: relocated from the original (10, 12) -- that point is now
+# deep inside the new west+north ocean bands (west/north coast insets reach as
+# far as ~25 tiles in). (32, 30) was picked by actually sampling
+# _west_coast_boundary/_north_coast_boundary across the grid: it clears the
+# worst-case west coast by ~9 tiles and the worst-case north coast by ~9 tiles
+# (VOLCANO_RADIUS=4 plus real margin either way), while staying just east of the
+# mountain range's own boundary so it still reads as "near the mountains."
+VOLCANO_CENTER = (32, 30)
 VOLCANO_RADIUS = 4
 
 
@@ -126,7 +168,12 @@ def _is_river(x: int, y: int) -> bool:
     # to whichever is closer keeps the strip river/highland stretch (mouth nowhere
     # near the coast, boundary_x always >= OCEAN_X_START there) exactly as before, and
     # only pulls the mouth itself in to match the real shoreline.
-    if x < RIVER_SOURCE_X or x >= min(OCEAN_X_START, _coast_boundary_x(y)):
+    #
+    # Map dream, phase 2: the source end gets the identical treatment now that
+    # there's real west ocean too -- the river starts wherever real land begins
+    # (max of the old fixed RIVER_SOURCE_X and the actual wavy west coastline),
+    # instead of potentially starting inside the new ocean band.
+    if x < max(RIVER_SOURCE_X, _west_coast_boundary(y)) or x >= min(OCEAN_X_START, _coast_boundary_x(y)):
         return False
     return abs(y - _river_center_y(x)) <= RIVER_HALF_WIDTH
 
@@ -192,6 +239,23 @@ def biome_at(x: int, y: int) -> str:
         return "ocean"
     if boundary - x <= COAST_BAND_WIDTH:
         return "cliffs" if _coast_is_headland(y) else "shoals"
+    # Map dream, phase 2: the other three sides of the island, same "ocean then a
+    # cliff/shoal texture band just inland of it" shape as the east coast above.
+    west_boundary = _west_coast_boundary(y)
+    if x <= west_boundary:
+        return "ocean"
+    if x - west_boundary <= COAST_BAND_WIDTH:
+        return "cliffs" if _is_headland_like(_west_coast_boundary, y, ocean_on_increasing_side=False) else "shoals"
+    north_boundary = _north_coast_boundary(x)
+    if y <= north_boundary:
+        return "ocean"
+    if y - north_boundary <= COAST_BAND_WIDTH:
+        return "cliffs" if _is_headland_like(_north_coast_boundary, x, ocean_on_increasing_side=False) else "shoals"
+    south_boundary = _south_coast_boundary(x)
+    if y >= south_boundary:
+        return "ocean"
+    if south_boundary - y <= COAST_BAND_WIDTH:
+        return "cliffs" if _is_headland_like(_south_coast_boundary, x, ocean_on_increasing_side=True) else "shoals"
     if _is_lake(x, y):
         return "lake"
     # Checked before mountains -- the volcano sits inside the mountain region and

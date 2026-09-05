@@ -895,9 +895,13 @@ const LAKE_TRIBUTARY_BRANCH_X = 35, LAKE_CENTER = [25, 65], LAKE_RADIUS = 7, LAK
 // _coast_is_headland exactly.
 const COAST_BAND_WIDTH = 3;
 // Map dream, phase 1 -- mirrors world.py's VOLCANO_CENTER/_RADIUS and
-// DESERT_NORTH_BOUNDARY_BASE exactly.
-const VOLCANO_CENTER = [10, 12], VOLCANO_RADIUS = 4;
+// DESERT_NORTH_BOUNDARY_BASE exactly. VOLCANO_CENTER moved to (32, 30) in phase
+// 2 -- see the matching comment on world.py's own constant.
+const VOLCANO_CENTER = [32, 30], VOLCANO_RADIUS = 4;
 const DESERT_NORTH_BOUNDARY_BASE = 78;
+// Map dream, phase 2 -- mirrors world.py's WEST/NORTH/SOUTH_COAST_INSET_BASE
+// exactly (config.py).
+const WEST_COAST_INSET_BASE = 18, NORTH_COAST_INSET_BASE = 18, SOUTH_COAST_INSET_BASE = 18;
 
 function riverCenterY(x) {
   const span = OCEAN_X_START - RIVER_SOURCE_X;
@@ -908,9 +912,10 @@ function riverCenterY(x) {
 function isRiver(x, y) {
   // Clipped to whichever is closer, the flat cutoff or the real (wavy) coastline --
   // otherwise the river's mouth kept extending to the old fixed line even where the
-  // coast recedes into a bay, sticking out several tiles into open ocean. Mirrors
-  // backend/world.py's _is_river exactly.
-  if (x < RIVER_SOURCE_X || x >= Math.min(OCEAN_X_START, coastBoundaryX(y))) return false;
+  // coast recedes into a bay, sticking out several tiles into open ocean. The source
+  // end gets the identical treatment (map dream, phase 2) now that there's real west
+  // ocean too. Mirrors backend/world.py's _is_river exactly.
+  if (x < Math.max(RIVER_SOURCE_X, westCoastBoundary(y)) || x >= Math.min(OCEAN_X_START, coastBoundaryX(y))) return false;
   return Math.abs(y - riverCenterY(x)) <= RIVER_HALF_WIDTH;
 }
 
@@ -991,6 +996,27 @@ function coastIsHeadland(y) {
   return curvature < 0;
 }
 
+// Map dream, phase 2 -- mirrors world.py's _west_coast_boundary/
+// _north_coast_boundary/_south_coast_boundary exactly.
+function westCoastBoundary(y) {
+  return WEST_COAST_INSET_BASE + 5 * Math.sin(y * 0.09 + 0.4) + 2 * Math.sin(y * 0.24 + 2.1);
+}
+
+function northCoastBoundary(x) {
+  return NORTH_COAST_INSET_BASE + 5 * Math.sin(x * 0.07 + 1.1) + 2 * Math.sin(x * 0.19 + 0.3);
+}
+
+function southCoastBoundary(x) {
+  return (GRID - 1) - SOUTH_COAST_INSET_BASE - 5 * Math.sin(x * 0.08 + 2.5) - 2 * Math.sin(x * 0.21 + 0.9);
+}
+
+// Mirrors world.py's _is_headland_like exactly.
+function isHeadlandLike(boundaryFn, coord, oceanOnIncreasingSide) {
+  const step = 1.0;
+  const curvature = boundaryFn(coord + step) - 2 * boundaryFn(coord) + boundaryFn(coord - step);
+  return oceanOnIncreasingSide ? curvature < 0 : curvature > 0;
+}
+
 // Mountain/forest/plains boundaries wobble with the same two-frequency sine technique
 // as the coastline above, instead of meeting along perfectly straight lines -- mirrors
 // backend/world.py's _mountain_x_boundary/_mountain_y_boundary/_forest_north_boundary/
@@ -1018,6 +1044,16 @@ function biomeNameAt(x, y) {
   const boundary = coastBoundaryX(y);
   if (x >= boundary) return "ocean";
   if (boundary - x <= COAST_BAND_WIDTH) return coastIsHeadland(y) ? "cliffs" : "shoals";
+  // Map dream, phase 2 -- the other three sides of the island.
+  const westBoundary = westCoastBoundary(y);
+  if (x <= westBoundary) return "ocean";
+  if (x - westBoundary <= COAST_BAND_WIDTH) return isHeadlandLike(westCoastBoundary, y, false) ? "cliffs" : "shoals";
+  const northBoundary = northCoastBoundary(x);
+  if (y <= northBoundary) return "ocean";
+  if (y - northBoundary <= COAST_BAND_WIDTH) return isHeadlandLike(northCoastBoundary, x, false) ? "cliffs" : "shoals";
+  const southBoundary = southCoastBoundary(x);
+  if (y >= southBoundary) return "ocean";
+  if (southBoundary - y <= COAST_BAND_WIDTH) return isHeadlandLike(southCoastBoundary, x, true) ? "cliffs" : "shoals";
   if (isLake(x, y)) return "lake";
   if (isVolcano(x, y)) return "volcano";
   if (x < mountainXBoundary(y) && y < mountainYBoundary(x)) return "mountains";

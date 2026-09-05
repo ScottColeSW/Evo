@@ -40,14 +40,17 @@ from .world import (
 # toward each other when both clip the same boundary, read live as "the scouts basically
 # follow the first one").
 #
-# Explicit placement request (2026-09-03) replaced the first two slots with a direct,
-# landmark-relative brief instead of "pick a point in the right-named biome": the first
-# slot southeast of world.LAKE_CENTER, the second in the north-center, above the river --
-# both still far enough from that water to need a real scouting trip (not a freebie), and
-# both still clearing SCOUT_PATROL_DISTANCE=25 from the grid edge (or as close to it as
-# the requested position allows -- 22-24 here, same real ceiling the old Mountains slot
-# hit, not a regression). Slots 2/3 are unchanged fallbacks for a 3rd/4th tribe.
-SPAWN_POINTS = [(37, 75), (50, 22), (50, 55), (40, 37)]
+# Map dream, phase 2: turning the map into a real island (ocean insets on all four
+# sides, not just the east) shrank the land that clears every coastline by
+# SCOUT_PATROL_DISTANCE=25 down to a single interior band roughly x in [38,63],
+# y in [37,58] -- found by directly sampling world._west/_north/_south/_coast_
+# boundary_x across the whole grid, not estimated. All four spawns below sit
+# inside that band (25.0-25.8 tiles of real clearance from every coast, verified
+# the same way) and were picked by a max-min search over that band's plains
+# tiles for the best pairwise spread achievable there: 15.8-26.4 tiles apart,
+# tighter than the old 18-55 spread since the whole safe interior is now much
+# smaller, but still four distinct, non-clustered starting points.
+SPAWN_POINTS = [(38, 42), (56, 37), (55, 53), (40, 58)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 
 # See _prepare_turn's own use of this -- every one-time structure with a single

@@ -61,9 +61,10 @@ def test_terrain_aware_step_moves_at_full_speed_on_plains():
 def test_terrain_aware_step_slows_down_in_mountains():
     """Regression test: RELOCATE/expeditions used to be a pure straight-line vector
     with zero regard for terrain -- a mountain crossing cost exactly the same as open
-    plains. (10, 10) is mountains (multiplier 0.4), so a base speed of 4 should only
-    actually cover round(4 * 0.4) = 2 tiles."""
-    assert terrain_aware_step(10, 10, 40, 10, base_speed=4) == (12, 10)
+    plains. (17, 40) is mountains (multiplier 0.4) -- moved here from the original
+    (10, 10) once map dream phase 2's west/north ocean insets swallowed that point --
+    so a base speed of 4 should only actually cover round(4 * 0.4) = 2 tiles."""
+    assert terrain_aware_step(17, 40, 47, 40, base_speed=4) == (19, 40)
 
 
 def test_terrain_aware_step_never_drops_below_one_tile_of_progress():

@@ -5,6 +5,16 @@ TICK_SECONDS = 0.5
 GRID_SIZE = 100
 MAX_TRIBES = 4
 
+# Map dream, phase 2: "another attempt at increasing the Ocean/unplayable
+# area" -- a real island, ocean wrapping the north/south/west edges too, not
+# just the existing east coast (world._coast_boundary_x). Same "fixed inset +
+# two sine waves" shape as every other wavy boundary in world.py; the sine
+# waves themselves add up to ~7 more at a crest, so the real reach of each
+# inset is base+~7, not just the base number.
+WEST_COAST_INSET_BASE = 18
+NORTH_COAST_INSET_BASE = 18
+SOUTH_COAST_INSET_BASE = 18
+
 # GATHER_WOOD/GATHER_STONE used to be available from the moment a tribe existed, before
 # it had even decided where to actually live -- a nomadic band stockpiling timber and
 # quarried stone before choosing a home. Simulation._is_camped gates both behind

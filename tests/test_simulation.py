@@ -870,12 +870,14 @@ def test_visible_entities_reports_a_direct_lightning_hit():
 def test_visible_entities_reports_a_nearby_forest_lightning_strike():
     sim = _bare_simulation()
     sim.tribes = {}
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 80, 10, "#c084fc")  # deep in the forest band
-    sim.lightning_strike = (82, 10)  # 2 tiles away -- nearby, not a direct hit
+    # (65, 51) replaces the original (80, 10) -- that point fell inside the new
+    # north coast ocean band once map dream phase 2 added it.
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 65, 51, "#c084fc")  # deep in the forest band
+    sim.lightning_strike = (67, 51)  # 2 tiles away -- nearby, not a direct hit
 
     entities, _ = sim._build_visible_entities(tribe, "forest", [], [], [])
 
-    assert "lightning struck a tree near (82,10) -- it looks like it's burning" in entities
+    assert "lightning struck a tree near (67,51) -- it looks like it's burning" in entities
 
 
 def test_visible_entities_ignores_a_distant_lightning_strike():
@@ -2431,26 +2433,27 @@ def test_apply_turn_does_not_reset_relocate_clock_when_still_within_qualifying_t
 def test_apply_turn_still_resets_relocate_clock_when_leaving_qualifying_territory():
     """Mountain terrain slows RELOCATE to ~2 tiles/cycle (TERRAIN_MOVEMENT_MULTIPLIER),
     so this moves twice to clear the radius-4 territory, confirming a hop that
-    crosses out of it still resets the clock as before. Column x=5 stays real
-    mountains (not farmable) through y=59, same terrain used by the existing
-    settlement-radius tests above, so biome alone can't accidentally satisfy
-    _settlement_ground_ok here."""
-    sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 5, "y": 55}])
+    crosses out of it still resets the clock as before. Column x=19 stays real
+    mountains (not farmable) through y=50 -- moved here from the original x=5
+    once map dream phase 2's west coast ocean inset swallowed that column
+    entirely -- so biome alone can't accidentally satisfy _settlement_ground_ok
+    here."""
+    sim = Simulation([{"name": "Mountain Tribe", "model": "gemma2:2b", "x": 19, "y": 35}])
     tribe = sim.tribes["tribe_0"]
     # Settled already -- see the matching comment on the test just above; the
     # pre-settlement closest-water-site RELOCATE override would otherwise pull
-    # every target back toward (5,53) and prevent the away-from-it move below.
+    # every target back toward (19,33) and prevent the away-from-it move below.
     tribe.has_ever_settled = True
-    tribe.confirmed_water_sites = [(5, 53)]  # distance 2 from tribe -- within radius 4
+    tribe.confirmed_water_sites = [(19, 33)]  # distance 2 from tribe -- within radius 4
     tribe.cycles_since_relocate = 5
     tribe.food = 100
     tribe.water = 100
     ctx = {"biome": "mountains", "available_actions": ["RELOCATE"]}
 
-    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [5, 99]}, 10.0, ctx)
-    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [5, 99]}, 10.0, ctx)
+    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [19, 99]}, 10.0, ctx)
+    sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [19, 99]}, 10.0, ctx)
 
-    assert tribe.y > 55  # confirms the move actually happened, away from the site
+    assert tribe.y > 35  # confirms the move actually happened, away from the site
     assert sim._settlement_ground_ok(tribe) is False  # now outside the radius, still not farmable
     assert tribe.cycles_since_relocate == 0
 
@@ -2707,11 +2710,13 @@ def test_expedition_reaching_its_target_without_water_turns_back_and_reports_ter
     there), the same as if it had landed on the grid's literal edge -- shorter, more
     numerous local patrols instead of one long committed dash."""
     sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 60, 10, "#c084fc")
+    # (38, 51) replaces the original (60, 10) -- that point fell inside the new
+    # north coast ocean band once map dream phase 2 added it.
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 38, 51, "#c084fc")
     tribe.expeditions = [{
-        # (60,10) is well clear of the river/lake -- WATER_SENSING_RADIUS must not
+        # (38,51) is well clear of the river/lake -- WATER_SENSING_RADIUS must not
         # fire here, or this would test the wrong mechanic.
-        "pos": [60, 10], "origin": [60, 10], "target": [66, 10],  # one step away, not water
+        "pos": [38, 51], "origin": [38, 51], "target": [44, 51],  # one step away, not water
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
@@ -2731,13 +2736,15 @@ def test_expedition_does_not_give_up_from_day_count_alone():
     should never end an outbound search anymore -- only running out of world to
     search does."""
     sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 60, 10, "#c084fc")
+    # (38, 51) replaces the original (60, 10) -- that point fell inside the new
+    # north coast ocean band once map dream phase 2 added it.
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 38, 51, "#c084fc")
     tribe.expeditions = [{
         # Nowhere near its assigned target yet -- a huge day count should still
-        # change nothing. (60,10) is well clear of the river/lake --
+        # change nothing. (38,51) is well clear of the river/lake --
         # WATER_SENSING_RADIUS must not fire here, or this would test the wrong
         # mechanic.
-        "pos": [60, 10], "origin": [60, 10], "target": [99, 10],
+        "pos": [38, 51], "origin": [38, 51], "target": [99, 51],
         "day": 50, "phase": "outbound", "found": None, "terrain_report": "plains",
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
@@ -2762,18 +2769,20 @@ def test_build_road_speeds_up_expeditions():
             "lead_scout": "Test Scout", "determination": 0.5, "max_days": 10, "path": [[tribe.x, tribe.y]],
         }
 
+    # (38, 51) replaces the original (60, 10) -- that point fell inside the new
+    # north coast ocean band once map dream phase 2 added it.
     sim = _bare_simulation()
-    plain_tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 60, 10, "#c084fc")
+    plain_tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 38, 51, "#c084fc")
     exp = _expedition(plain_tribe)
     sim._advance_one_expedition(plain_tribe, exp)
-    plain_distance = math.hypot(exp["pos"][0] - 60, exp["pos"][1] - 10)
+    plain_distance = math.hypot(exp["pos"][0] - 38, exp["pos"][1] - 51)
 
     sim2 = _bare_simulation()
-    road_tribe = Tribe("tribe_1", "Road Tribe", "gemma2:2b", 60, 10, "#fb923c")
+    road_tribe = Tribe("tribe_1", "Road Tribe", "gemma2:2b", 38, 51, "#fb923c")
     road_tribe.road_built = True
     exp2 = _expedition(road_tribe)
     sim2._advance_one_expedition(road_tribe, exp2)
-    road_distance = math.hypot(exp2["pos"][0] - 60, exp2["pos"][1] - 10)
+    road_distance = math.hypot(exp2["pos"][0] - 38, exp2["pos"][1] - 51)
 
     assert road_distance > plain_distance
 
@@ -2787,11 +2796,14 @@ def test_expedition_gives_up_when_physically_boxed_in_by_ocean():
     target never does. Being physically unable to advance at all must count as
     "nowhere left to search," same as reaching the grid's literal edge."""
     sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 90, 84, "#c084fc")
+    # (86, 40) replaces the original (90, 84) -- once map dream phase 2 added a
+    # south coast too, (90, 84) fell south of it into open ocean outright,
+    # rather than sitting on the boxed-in coastal edge this test needs.
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 86, 40, "#c084fc")
     tribe.expeditions = [{
-        # (90, 84) is coastal; every candidate step toward (99, 84) is ocean, verified
+        # (86, 40) is coastal; every candidate step toward (99, 40) is ocean, verified
         # directly against physics.terrain_aware_step first.
-        "pos": [90, 84], "origin": [50, 84], "target": [99, 84],
+        "pos": [86, 40], "origin": [50, 40], "target": [99, 40],
         "day": 5, "phase": "outbound", "found": None, "terrain_report": "forest",
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
@@ -2800,7 +2812,7 @@ def test_expedition_gives_up_when_physically_boxed_in_by_ocean():
     sim._advance_one_expedition(tribe, tribe.expeditions[0])
 
     assert tribe.expeditions[0]["phase"] == "returning"
-    assert tribe.expeditions[0]["pos"] == [90, 84]  # didn't silently teleport anywhere
+    assert tribe.expeditions[0]["pos"] == [86, 40]  # didn't silently teleport anywhere
     assert any("can go no further" in entry for entry in tribe.history)
 
 
@@ -2811,12 +2823,15 @@ def test_expedition_gives_up_upon_reaching_the_edge_of_the_world():
         # One day's step from here lands exactly on the target, which happens to
         # be the grid's literal edge -- same unified "reached the assigned
         # point, turn back" handling as reaching an ordinary (non-edge) patrol
-        # target. South (increasing y) rather than east: x=99 is past
-        # OCEAN_X_START and would be deflected by the impassable-ocean physics,
-        # never actually arriving. Distance is 5, not EXPEDITION_SPEED's full 10
-        # -- (50, 94)-(50, 99) is desert (map dream, phase 1), whose
-        # TERRAIN_MOVEMENT_MULTIPLIER (0.5) halves the effective daily speed.
-        "pos": [50, 94], "origin": [50, 50], "target": [50, 99],
+        # target. Map dream phase 2 turned the whole map into an island, so
+        # almost the entire y=99 row is now ocean -- (91, 99) is one of the very
+        # few remaining slivers of real land right on that edge (a headland where
+        # the wavy south/east coastlines happen to leave a strip of cliffs/shoals
+        # reaching the literal boundary), found by sampling biome_at across the
+        # whole edge row directly. Distance is the full EXPEDITION_SPEED (10):
+        # cliffs/shoals aren't in TERRAIN_MOVEMENT_MULTIPLIER, so they fall back
+        # to its 1.0 default, same as plains.
+        "pos": [91, 89], "origin": [50, 50], "target": [91, 99],
         "day": 4, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
@@ -3207,9 +3222,11 @@ def test_hunting_party_gives_up_when_physically_boxed_in_by_ocean():
     target can land in open water exactly the same way, and hunting parties are
     dispatched to a branch that returned before ever reaching that check."""
     sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 90, 84, "#c084fc")
+    # (86, 40) replaces the original (90, 84) -- see the scout version of this test
+    # for why (90, 84) no longer sits on the boxed-in coastal edge this needs.
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 86, 40, "#c084fc")
     tribe.expeditions = [{
-        "kind": "hunt", "pos": [90, 84], "origin": [50, 84], "target": [99, 84],
+        "kind": "hunt", "pos": [86, 40], "origin": [50, 40], "target": [99, 40],
         "day": 5, "phase": "outbound", "food_caught": 0, "pushed_onward": True,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
@@ -3219,7 +3236,7 @@ def test_hunting_party_gives_up_when_physically_boxed_in_by_ocean():
         sim._advance_expeditions(tribe)
 
     assert tribe.expeditions[0]["phase"] == "returning"
-    assert tribe.expeditions[0]["pos"] == [90, 84]
+    assert tribe.expeditions[0]["pos"] == [86, 40]
     assert any("can go no further" in entry for entry in tribe.history)
 
 
