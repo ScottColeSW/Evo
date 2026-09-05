@@ -526,6 +526,16 @@ function oreLine(t) {
   return `&nbsp;💎 ${amount} ${escapeHtml(t.mine_resource_name)}`;
 }
 
+// Same "surface it the same way wood/stone/food/water already are" precedent
+// as oreLine above, once Fur can actually do something (BUILD_LONG_HOUSE's
+// discount, backend/actions.py._long_house_fur_discount) instead of just
+// piling up unseen.
+function furLine(t) {
+  if (!t.tannery_built) return "";
+  const amount = (t.unique_resources && t.unique_resources.Fur) || 0;
+  return `&nbsp;🦫 ${amount} Fur`;
+}
+
 function renderEraLadder(state) {
   const ladder = document.getElementById("era-ladder");
   if (!ladder) return;
@@ -3295,6 +3305,7 @@ function updateSidebar(state) {
             (${t.x}, ${t.y}) · ${t.model} · Pop ${t.population}<br>
             🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${t.food} &nbsp;💧 ${t.water}
             ${oreLine(t)}
+            ${furLine(t)}
             ${t.chief_name ? `<br><span class="chief-line">👑 ${t.chief_name} — ${t.chief_philosophy}</span>` : ""}
             ${t.chief_victory ? `<br><span class="chief-line">⚔️ ${t.chief_victory}</span>` : ""}
             ${t.chief_decree ? `<br><span class="chief-line">📜 decreed: ${t.chief_decree}</span>` : ""}

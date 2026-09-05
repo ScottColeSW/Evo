@@ -366,6 +366,22 @@ def _build_moat(sim, tribe, biome, target):
     return "a moat is dug around the camp -- a further defense bonus, cheaper than another wall layer"
 
 
+def _long_house_fur_discount(tribe) -> tuple[int, int, int]:
+    """(wood_cost, stone_cost, furs_to_consume) for the tribe's next Long House
+    -- shared by _can_afford_build_long_house (simulation.py, the menu-
+    availability check) and _build_long_house below, so the two can never drift
+    apart on what a Long House actually costs. Spends whichever Fur the tribe
+    already has banked, up to the point where either cost hits its floor
+    (config.FUR_LONG_HOUSE_MIN_*_COST) -- see those constants' own comment for
+    why a floor, not a full substitute."""
+    max_furs_by_wood = (config.LONG_HOUSE_WOOD_COST - config.FUR_LONG_HOUSE_MIN_WOOD_COST) // config.FUR_LONG_HOUSE_WOOD_DISCOUNT
+    max_furs_by_stone = (config.LONG_HOUSE_STONE_COST - config.FUR_LONG_HOUSE_MIN_STONE_COST) // config.FUR_LONG_HOUSE_STONE_DISCOUNT
+    furs = min(tribe.unique_resources.get("Fur", 0), max_furs_by_wood, max_furs_by_stone)
+    wood_cost = config.LONG_HOUSE_WOOD_COST - furs * config.FUR_LONG_HOUSE_WOOD_DISCOUNT
+    stone_cost = config.LONG_HOUSE_STONE_COST - furs * config.FUR_LONG_HOUSE_STONE_DISCOUNT
+    return wood_cost, stone_cost, furs
+
+
 def _build_long_house(sim, tribe, biome, target):
     """Explicit request, gated on the wall already being complete first -- defense
     before shelter. Explicit correction: "most structures they only need 1 of.
@@ -379,30 +395,39 @@ def _build_long_house(sim, tribe, biome, target):
     turn): locking out housing for an entire ring's construction would stall it
     too long, so a banked wall_lock_long_house_credits (one per section
     completed, see _construct_wall) lets exactly one Long House through early,
-    before ring 0 is actually finished."""
+    before ring 0 is actually finished.
+
+    Explicit request: "'furs' can make the Long Houses more comfortable and
+    easier to build" -- see _long_house_fur_discount for the actual cost math;
+    furs consumed here (not just checked) so a discount can only ever be used
+    once per Fur, never re-applied to a later Long House."""
     ring0_done = bool(tribe.wall_rings) and city_layout.ring_fully_built(tribe.wall_rings[0])
     if not ring0_done and tribe.wall_lock_long_house_credits <= 0:
         return "the first wall ring must be finished before a long house is worth building here (or bank a credit by completing another wall section)"
     houses_needed = max(1, -(-tribe.population // config.HOUSING_POPULATION_PER_LONG_HOUSE))
     if tribe.long_houses_built >= houses_needed:
         return None
-    if tribe.wood < config.LONG_HOUSE_WOOD_COST or tribe.stone < config.LONG_HOUSE_STONE_COST:
+    wood_cost, stone_cost, furs_used = _long_house_fur_discount(tribe)
+    if tribe.wood < wood_cost or tribe.stone < stone_cost:
         return None
     slot = architect.find_free_slot(sim.world, tribe, "long_house")
     if slot is None:
         return None
-    tribe.wood -= config.LONG_HOUSE_WOOD_COST
-    tribe.stone -= config.LONG_HOUSE_STONE_COST
+    tribe.wood -= wood_cost
+    tribe.stone -= stone_cost
+    if furs_used:
+        tribe.unique_resources["Fur"] -= furs_used
     w, h = config.BUILDING_FOOTPRINTS["long_house"]
     architect.record_building(tribe, "long_house", slot[0], slot[1], w, h, sim.cycle)
     tribe.long_houses_built += 1
     if not ring0_done:
         tribe.wall_lock_long_house_credits -= 1
+    fur_note = f" ({furs_used} Fur worked in, cheaper and cozier)" if furs_used else ""
     if tribe.long_houses_built == 1:
         sim._award_trophy(tribe, "Master Builder")
         sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
-        return "a long house rises -- the tribe has real, lasting shelter for the first time"
-    return f"another long house rises -- {tribe.long_houses_built} now stand"
+        return f"a long house rises{fur_note} -- the tribe has real, lasting shelter for the first time"
+    return f"another long house rises{fur_note} -- {tribe.long_houses_built} now stand"
 
 
 def _build_keep(sim, tribe, biome, target):

@@ -500,6 +500,69 @@ def test_build_long_house_is_a_no_op_once_already_built():
     assert tribe.trophies == trophies_after
 
 
+def test_build_long_house_spends_banked_fur_for_a_real_discount():
+    """Explicit request: "'furs' can make the Long Houses more comfortable and
+    easier to build" -- each Fur spent knocks a fixed amount off both costs
+    (config.FUR_LONG_HOUSE_WOOD_DISCOUNT/_STONE_DISCOUNT), and is actually
+    consumed, not just checked ("be sure they are consumed as used")."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    _complete_ring0(sim, tribe)
+    tribe.unique_resources["Fur"] = 2
+    tribe.wood = config.LONG_HOUSE_WOOD_COST - 2 * config.FUR_LONG_HOUSE_WOOD_DISCOUNT
+    tribe.stone = config.LONG_HOUSE_STONE_COST - 2 * config.FUR_LONG_HOUSE_STONE_DISCOUNT
+
+    result = ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.long_houses_built == 1
+    assert tribe.wood == 0
+    assert tribe.stone == 0
+    assert tribe.unique_resources["Fur"] == 0  # spent, not merely checked
+    assert "Fur worked in" in result
+
+
+def test_build_long_house_fur_discount_never_fully_substitutes_the_cost():
+    """Explicit correction: "reduce the cost, don't fully substitute it. My
+    cost reduction would have been too much." A huge Fur stockpile must still
+    leave a real wood/stone cost -- the floor (config.FUR_LONG_HOUSE_MIN_
+    WOOD_COST/_STONE_COST) caps how many Fur any single build can actually
+    use, however many are banked."""
+    from backend.actions import _long_house_fur_discount
+    from backend import config
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.unique_resources["Fur"] = 999
+
+    wood_cost, stone_cost, furs_used = _long_house_fur_discount(tribe)
+
+    assert wood_cost == config.FUR_LONG_HOUSE_MIN_WOOD_COST
+    assert stone_cost == config.FUR_LONG_HOUSE_MIN_STONE_COST
+    assert wood_cost > 0 and stone_cost > 0  # a real cost remains, never free
+    assert furs_used < 999  # excess Fur beyond the floor is left untouched
+
+
+def test_can_afford_build_long_house_reflects_the_fur_discount():
+    """The menu-availability check (_can_afford_build_long_house) must agree
+    with what BUILD_LONG_HOUSE actually charges -- otherwise a tribe with
+    enough Fur to afford it would never see it offered, or vice versa."""
+    from backend.simulation import _can_afford_build_long_house
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    _complete_ring0(sim, tribe)
+    tribe.wood = config.LONG_HOUSE_WOOD_COST - config.FUR_LONG_HOUSE_WOOD_DISCOUNT
+    tribe.stone = config.LONG_HOUSE_STONE_COST - config.FUR_LONG_HOUSE_STONE_DISCOUNT
+
+    assert _can_afford_build_long_house(tribe, sim.world) is False  # no Fur banked yet
+    tribe.unique_resources["Fur"] = 1
+    assert _can_afford_build_long_house(tribe, sim.world) is True
+
+
 def test_build_keep_requires_ten_long_houses():
     from backend import config
 

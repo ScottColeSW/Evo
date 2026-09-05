@@ -977,6 +977,20 @@ LONG_HOUSE_STONE_COST = 20
 # that mostly just controlled how fast Long Houses accumulated.
 HOUSING_POPULATION_PER_LONG_HOUSE = 30
 
+# Explicit request: "'furs' can make the Long Houses more comfortable and
+# easier to build" -- Tannery Fur (TANNERY_YIELD_PER_CYCLE, tribe.
+# unique_resources["Fur"]) already existed but nothing ever spent it. Each
+# Fur used knocks a fixed amount off both costs -- a real speed-up, not a
+# free ride: explicit correction, "reduce the cost, don't fully substitute
+# it," floors the discount well above zero. (25, 20) -> as low as (16, 11) at
+# the 3-Fur cap (both floors coincide at exactly 3 furs), a 36-45% reduction,
+# and every Fur actually used is deducted from the pile (see
+# actions._long_house_fur_discount) -- "be sure they are consumed as used."
+FUR_LONG_HOUSE_WOOD_DISCOUNT = 3
+FUR_LONG_HOUSE_STONE_DISCOUNT = 3
+FUR_LONG_HOUSE_MIN_WOOD_COST = 16
+FUR_LONG_HOUSE_MIN_STONE_COST = 11
+
 # The defensive tier ladder after Long House (backend/actions.py._build_keep/
 # _build_fortress/_build_castle): explicit request -- "they can have 10 houses
 # before they build a Keep, 40 until they reach a Fortress, 70 until they can

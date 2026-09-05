@@ -8,7 +8,7 @@ from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _eligible_breeding_pair, _execute_trade, _find_trade_partner, _food_multiplier, _item_storage_cap,
-    _labor_multiplier, _storage_cap, expedition_capacity,
+    _labor_multiplier, _long_house_fur_discount, _storage_cap, expedition_capacity,
 )
 from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
@@ -178,17 +178,18 @@ def _can_afford_build_long_house(tribe, world) -> bool:
     _build_long_house's own real prerequisite (ring_fully_built, or a banked
     wall_lock_long_house_credits -- see that field's own comment) and repeat
     gate (real housing need, not a flat one-time flag) exactly, so a
-    guaranteed no-op never dangles in the menu."""
+    guaranteed no-op never dangles in the menu. Cost check reuses _long_house_
+    fur_discount (same Fur-discounted cost _build_long_house actually charges)
+    rather than the flat base cost, so banked Fur can be the difference
+    between this showing as affordable or not."""
     ring0_done = bool(tribe.wall_rings) and city_layout.ring_fully_built(tribe.wall_rings[0])
     if not ring0_done and tribe.wall_lock_long_house_credits <= 0:
         return False
     houses_needed = max(1, -(-tribe.population // config.HOUSING_POPULATION_PER_LONG_HOUSE))
     if tribe.long_houses_built >= houses_needed:
         return False
-    return (
-        tribe.wood >= config.LONG_HOUSE_WOOD_COST and tribe.stone >= config.LONG_HOUSE_STONE_COST
-        and _can_place(tribe, world, "long_house")
-    )
+    wood_cost, stone_cost, _ = _long_house_fur_discount(tribe)
+    return tribe.wood >= wood_cost and tribe.stone >= stone_cost and _can_place(tribe, world, "long_house")
 
 
 AFFORDABILITY_CHECKS = {
