@@ -49,18 +49,24 @@ from .world import (
 # coast, confirmed each time by directly sampling the real boundary functions,
 # not estimated.
 #
-# Explicit follow-up request, after watching a live run on the corrected map:
-# swap which slot sits north vs. south -- slot 0 ("Tribe 1") moved from the
-# south-ish (37, 68) up to (48, 30), slot 1 ("Tribe 2") moved from the
-# north-ish (50, 31) down to (51, 68). Both were pointed at from a live
-# screenshot at roughly (48, 19) and (51, 77); those exact spots fall short of
-# SCOUT_PATROL_DISTANCE=25 clearance from the coast (14.5 and 15.7 tiles
-# respectively), so each landed on the closest compliant point along the same
-# line instead. Slots 2/3 are untouched fallbacks for a 3rd/4th tribe -- their
-# spacing against the new slot 0/1 positions is tighter than before (10.6-13.0
-# tiles vs. the original 18.0), a direct result of this swap, but all four
-# remain distinct, non-clustered starting points.
-SPAWN_POINTS = [(48, 30), (51, 68), (50, 55), (40, 37)]
+# Explicit follow-up requests, after watching live runs on the corrected map:
+# first, swap which slot sits north vs. south (slot 0 "Tribe 1" north, slot 1
+# "Tribe 2" south); then, told the first attempt's compliant-but-conservative
+# points ((48, 30)/(51, 68), chosen to keep SCOUT_PATROL_DISTANCE=25 clearance
+# from the coast) were "still too close" together, and to push both closer to
+# their respective edges. The exact points originally marked on a screenshot,
+# (48, 19)/(51, 77), go one real constraint too far, though: see
+# test_every_spawn_point_keeps_scout_patrol_clearance_from_every_grid_edge's
+# own comment -- a documented live bug (two scouts leaving in nearly the same
+# direction) means every spawn needs at least 20 tiles of clearance from the
+# literal grid edge (0 or 99), not just the coastline, and y=19 undercuts that
+# by one tile. (48, 21) and (51, 78) are the closest points on the same lines
+# that still clear it (21 and 21 tiles respectively), both still solid plains.
+# Slots 2/3 are untouched fallbacks for a 3rd/4th tribe -- their spacing
+# against the new slot 0/1 positions is tighter than the original four-corner
+# layout, a direct result of pulling 0/1 toward the coast, but all four remain
+# distinct, non-clustered starting points.
+SPAWN_POINTS = [(48, 21), (51, 78), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 
 # See _prepare_turn's own use of this -- every one-time structure with a single
