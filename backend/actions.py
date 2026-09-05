@@ -138,6 +138,30 @@ def expedition_capacity(tribe) -> int:
     return min(uncapped, config.MAX_CONCURRENT_EXPEDITIONS_CEILING)
 
 
+def _expedition_dispatch_blocked(tribe, kind: str) -> str | None:
+    """Shared dispatch gate for SCOUT/EXPLORATION_PARTY/HUNTING_PARTY -- returns
+    a real in-fiction reason the party can't go out this cycle, or None if it
+    can. Live bug report: "it was still extremely slow... it's best they can
+    only send 1 type of each at a time." expedition_capacity(tribe) alone
+    could still let a tribe stack several of the SAME kind (e.g. three
+    HUNTING_PARTYs) at once, which is most of what made the board feel
+    flooded and slow. Each kind is now capped at one live party at a time, on
+    top of the existing overall ceiling -- a tribe can still have one of each
+    kind out together, just never two racing each other."""
+    if len(tribe.expeditions) >= expedition_capacity(tribe):
+        fields = ", ".join(
+            f"{e['lead_scout']} (day {e['day']}/{e['max_days']}, {e['phase']})" for e in tribe.expeditions
+        )
+        return f"no one left to send -- every party is already out: {fields}"
+    same_kind = next((e for e in tribe.expeditions if e.get("kind") == kind), None)
+    if same_kind is not None:
+        return (
+            f"{same_kind['lead_scout']}'s party is already out on this same kind of expedition "
+            f"(day {same_kind['day']}/{same_kind['max_days']}, {same_kind['phase']}) -- only one at a time"
+        )
+    return None
+
+
 def _storage_cap(tribe) -> int:
     """A generous ceiling, not a tight one -- STORAGE_CAP_BASE alone already clears
     every era's own resource requirement, so this is never the reason a tribe can't
@@ -1162,11 +1186,9 @@ def _scout(sim, tribe, biome, target):
     population past config.MAX_CONCURRENT_EXPEDITIONS' floor -- see that function), any
     mix of scouting and hunting -- capped rather than unlimited since nothing currently
     deducts population to launch one."""
-    if len(tribe.expeditions) >= expedition_capacity(tribe):
-        fields = ", ".join(
-            f"{e['lead_scout']} (day {e['day']}/{e['max_days']}, {e['phase']})" for e in tribe.expeditions
-        )
-        return f"no one left to send -- every party is already out: {fields}"
+    blocked = _expedition_dispatch_blocked(tribe, "scout")
+    if blocked is not None:
+        return blocked
 
     angle_degrees = (
         config.SCOUT_ROTATION_START_ANGLE_DEGREES
@@ -1236,11 +1258,9 @@ def _exploration_party(sim, tribe, biome, target):
     via Simulation._advance_one_expedition's common fallthrough. Own rotating
     heading (tribe.explore_rotation_index, offset from SCOUT's own sweep) so
     the two parties don't retrace each other's ground."""
-    if len(tribe.expeditions) >= expedition_capacity(tribe):
-        fields = ", ".join(
-            f"{e['lead_scout']} (day {e['day']}/{e['max_days']}, {e['phase']})" for e in tribe.expeditions
-        )
-        return f"no one left to send -- every party is already out: {fields}"
+    blocked = _expedition_dispatch_blocked(tribe, "explore")
+    if blocked is not None:
+        return blocked
 
     angle_degrees = (
         config.SCOUT_ROTATION_START_ANGLE_DEGREES
@@ -1301,11 +1321,9 @@ def _hunting_party(sim, tribe, biome, target):
     testable tension: a tribe that's starving *right now* gets no relief from a hunt
     that's still out in the field, no matter how promising, and every extra day spent
     searching is another chance at a hazard, not a free wait."""
-    if len(tribe.expeditions) >= expedition_capacity(tribe):
-        fields = ", ".join(
-            f"{e['lead_scout']} (day {e['day']}/{e['max_days']}, {e['phase']})" for e in tribe.expeditions
-        )
-        return f"no one left to send -- every party is already out: {fields}"
+    blocked = _expedition_dispatch_blocked(tribe, "hunt")
+    if blocked is not None:
+        return blocked
 
     tx, ty = target
     # Explicit request: "the bounds-safe function is too loose at the edges of our

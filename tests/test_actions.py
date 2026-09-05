@@ -2240,16 +2240,45 @@ def test_exploration_party_travels_farther_than_a_plain_scout():
 
 
 def test_exploration_party_shares_expedition_capacity_with_scout():
+    """config.MAX_CONCURRENT_EXPEDITIONS (2) is a shared pool across kinds, not
+    a separate one per kind -- filled here with one of each of the other two
+    kinds (not two SCOUTs) since a live bug fix now also caps each kind at one
+    live party at a time (see test_expedition_dispatch_only_allows_one_of_
+    each_kind_at_a_time)."""
     from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    for _ in range(config.MAX_CONCURRENT_EXPEDITIONS):
-        ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (0, 0))
+    assert config.MAX_CONCURRENT_EXPEDITIONS == 2
+    ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (0, 0))
+    ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "plains", (0, 0))
 
     result = ACTION_REGISTRY["EXPLORATION_PARTY"](sim, tribe, "plains", (0, 0))
 
     assert "no one left to send" in result
+
+
+def test_expedition_dispatch_only_allows_one_of_each_kind_at_a_time():
+    """Live bug report: "it was still extremely slow... it's best they can
+    only send 1 type of each at a time." A tribe large enough to afford
+    several concurrent expeditions (expedition_capacity(tribe) well above 1)
+    could still stack multiple of the SAME kind -- three hunting parties at
+    once, say -- which is most of what made the board feel flooded. Each kind
+    is now capped at one live party regardless of overall capacity headroom,
+    while a different kind can still go out alongside it."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 100  # plenty of overall expedition_capacity headroom
+
+    ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "plains", (0, 0))
+    second_hunt = ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "plains", (0, 0))
+
+    assert "only one at a time" in second_hunt
+    assert sum(1 for e in tribe.expeditions if e.get("kind") == "hunt") == 1
+
+    # A different kind isn't blocked by the first kind already being out.
+    ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (0, 0))
+    assert sum(1 for e in tribe.expeditions if e.get("kind") == "scout") == 1
 
 
 def test_advance_exploration_party_outbound_gathers_real_wood_and_stone():
@@ -3093,31 +3122,39 @@ def test_breed_refuses_at_the_population_cap():
     assert tribe.pending_birth is None
 
 
-def test_scout_launches_a_second_party_while_capacity_remains():
-    """A tribe can run up to config.MAX_CONCURRENT_EXPEDITIONS parties at once -- a
-    chief with people to spare shouldn't be capped at just one no matter what."""
+def test_scout_refuses_a_second_party_of_the_same_kind():
+    """Live bug report: "it was still extremely slow... it's best they can only
+    send 1 type of each at a time." A second SCOUT is refused while the first
+    is still out, regardless of overall expedition_capacity headroom -- see
+    test_expedition_dispatch_only_allows_one_of_each_kind_at_a_time for the
+    shared-helper version of this same rule covering all three kinds."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 100  # plenty of overall capacity -- not what's blocking this
     ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (10, 10))
     first_expedition = tribe.expeditions[0]
 
     note = ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (80, 80))
 
-    assert len(tribe.expeditions) == 2
-    assert tribe.expeditions[0] is first_expedition  # the first party is untouched
-    assert "depart" in note
+    assert len(tribe.expeditions) == 1
+    assert tribe.expeditions[0] is first_expedition  # unchanged, no second scout squeezed in
+    assert "only one at a time" in note
 
 
-def test_scout_refuses_once_at_capacity():
+def test_scout_refuses_once_at_overall_capacity():
+    """The overall expedition_capacity ceiling still applies on top of the
+    one-per-kind rule -- filled here with a mix of kinds (not repeated SCOUT,
+    which would only ever get one at a time now) to reach the floor of 2."""
     from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    for _ in range(config.MAX_CONCURRENT_EXPEDITIONS):
-        ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (10, 10))
+    assert config.MAX_CONCURRENT_EXPEDITIONS == 2
+    ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (10, 10))
+    ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "plains", (10, 10))
     parties = list(tribe.expeditions)
 
-    note = ACTION_REGISTRY["SCOUT"](sim, tribe, "plains", (80, 80))
+    note = ACTION_REGISTRY["EXPLORATION_PARTY"](sim, tribe, "plains", (80, 80))
 
     assert tribe.expeditions == parties  # unchanged, no third party squeezed in
     assert "no one left to send" in note
@@ -3166,32 +3203,21 @@ def test_hunting_party_launch_uses_its_own_max_days_baseline():
     assert config.HUNTING_PARTY_MAX_DAYS - span <= max_days <= config.HUNTING_PARTY_MAX_DAYS + span
 
 
-def test_hunting_party_launches_a_second_party_while_capacity_remains():
+def test_hunting_party_refuses_a_second_party_of_the_same_kind():
+    """Live bug report: "it's best they can only send 1 type of each at a
+    time." A second HUNTING_PARTY is refused while the first is still out,
+    regardless of overall expedition_capacity headroom."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 100  # plenty of overall capacity -- not what's blocking this
     ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (10, 10))
     first_expedition = tribe.expeditions[0]
 
     note = ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (80, 80))
 
-    assert len(tribe.expeditions) == 2
+    assert len(tribe.expeditions) == 1
     assert tribe.expeditions[0] is first_expedition
-    assert "depart" in note
-
-
-def test_hunting_party_refuses_once_at_capacity():
-    from backend import config
-
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    for _ in range(config.MAX_CONCURRENT_EXPEDITIONS):
-        ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (10, 10))
-    parties = list(tribe.expeditions)
-
-    note = ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (80, 80))
-
-    assert tribe.expeditions == parties
-    assert "no one left to send" in note
+    assert "only one at a time" in note
 
 
 def test_scout_and_hunting_party_can_both_be_out_at_once():
