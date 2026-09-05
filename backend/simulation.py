@@ -4503,28 +4503,35 @@ class Simulation:
         Searches outward from the settling tile in a spiral, checking each
         candidate's real ring-0 footprint (city_layout.build_ring, the same
         function that actually builds it -- not a separate estimate that could
-        drift from it), and returns the closest one with at most one
-        natural-barrier section. Backing away like this doesn't undo the water
-        access that qualified the tribe to settle here in the first place (see
-        _is_settled_near_water/SETTLEMENT_WATER_TERRITORY_RADIUS) -- that was
-        already earned at the tribe's actual position; this only decides where
-        the walls and the building sit. Falls back to whichever candidate found
-        the fewest natural barriers if none hits the target within the search
-        radius, and never proposes a center sitting on unbuildable ground.
+        drift from it), and returns the closest one at or under config.
+        TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS. Backing away like this
+        doesn't undo the water access that qualified the tribe to settle here
+        in the first place (see _is_settled_near_water/
+        SETTLEMENT_WATER_TERRITORY_RADIUS) -- that was already earned at the
+        tribe's actual position; this only decides where the walls and the
+        building sit. Falls back to whichever candidate found the fewest
+        natural barriers if none hits the target within the search radius, and
+        never proposes a center sitting on unbuildable ground.
 
         Live bug report: "Tribe 1 found a perfect spot, built a Hut then
         mysteriously transferred the Territory and Hut to the 2nd found Water
         site." The tribe never actually moved (confirmed via board_history --
         tribe.x/y stayed put the whole run) -- this search used to range out to
-        4*WALL_RING_RADIUS_STEP (48 tiles) and landed on a "technically 1 fewer
-        natural barrier" candidate 12 tiles from the settling tile, which is
-        exactly far enough to read as "the city teleported" and to leave the
-        actual population outside their own wall ring's real coverage (the ring
-        itself only reaches WALL_RING_RADIUS_STEP out from its center). Capped
-        to a much tighter search so the settling tile is always guaranteed to
-        stay well inside the eventual ring, even in the worst case -- a modest
-        extra natural-barrier freebie is a far smaller problem than a Hut
-        nobody is standing anywhere near."""
+        4*WALL_RING_RADIUS_STEP (48 tiles) and, at the old >1-barrier
+        threshold, moved 12 tiles away from a settling tile that only had 3 of
+        8 sections on the river -- exactly far enough to read as "the city
+        teleported" and to leave the actual population outside their own wall
+        ring's real coverage (the ring itself only reaches
+        WALL_RING_RADIUS_STEP out from its center). Direct visual confirmation
+        (replaying the exact captured state) plus explicit follow-up
+        feedback -- "the first place Tribe 1 landed, including Territory, was
+        perfect" -- established that 3 of 8 is good, defensible, river-framed
+        ground, not a defect worth relocating over. Search distance capped
+        (2*WALL_RING_RADIUS_STEP, keeping the settling tile well inside the
+        eventual ring even in the worst case) AND the acceptance threshold
+        raised to TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS, so a spot only
+        gets abandoned once water genuinely dominates the ring, not just
+        touches a few sections of it."""
         origin = (tribe.x, tribe.y)
         best_center, best_count = origin, None
         max_search_radius = 2 * config.WALL_RING_RADIUS_STEP
@@ -4539,7 +4546,7 @@ class Simulation:
                 count = sum(1 for sec in ring["sections"] if sec["natural_barrier"])
                 if best_count is None or count < best_count:
                     best_center, best_count = (cx, cy), count
-                if count <= 1:
+                if count <= config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS:
                     return (cx, cy)
         return best_center
 

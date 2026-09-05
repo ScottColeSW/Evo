@@ -345,6 +345,17 @@ VOLCANO_TRAUMA_RADIUS = 8  # wider than DROWNING_TRAUMA_RADIUS (6) -- a bigger, 
 TERRITORY_FOUNDING_REGION = 3  # base radius = SETTLEMENT_WATER_TERRITORY_RADIUS * this = 12 tiles
 WALL_RING_RADIUS_STEP = SETTLEMENT_WATER_TERRITORY_RADIUS * TERRITORY_FOUNDING_REGION  # 12; ring i sits at 12*(i+1)
 
+# Explicit correction (2026-09-05), after watching the live consequence: a
+# settling tile with 3 of ring 0's 8 sections on the river got backed away
+# from -- 12 tiles, visibly splitting the tribe's own icon from its Hut and
+# walls on the map. "The first place Tribe 1 landed, including Territory, was
+# perfect" -- 3 natural barriers out of 8 reads as good, defensible,
+# river-framed ground, not a problem worth relocating over. Raised from the
+# original threshold (>1 triggered a search) so a spot needs to be genuinely
+# dominated by water (half the ring or more) before _choose_territory_center
+# goes looking elsewhere.
+TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS = 3
+
 # EXPAND_TERRITORY unlocks exactly one new wall section per call, in fixed compass
 # order -- "expansion must be done for each wall section," no exception for ring 0.
 # tribe.territory_radius (see actions._expand_territory) is always derived as

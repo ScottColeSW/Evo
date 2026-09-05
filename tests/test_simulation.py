@@ -3974,27 +3974,46 @@ def test_find_minor_settlement_site_avoids_every_tribes_territory():
         assert dist > 20 + config.MINOR_SETTLEMENT_TERRITORY_BUFFER
 
 
-def test_found_territory_backs_the_center_away_from_a_river_crossing_it_twice():
-    """Explicit correction, after watching a live run: "the territories contain
-    a lot of water and so, the need to back away from the Hut so that only 1
-    natural Wall at most exists." Settling directly on the river's course (x=50,
-    y=39, confirmed by direct sampling to sit on real river terrain) puts ring
-    0's east AND west sections on the river -- two natural_barrier sections,
-    since the ~7-tile-wide river band crosses the whole 24-tile-diameter ring.
-    _found_territory must back territory_center away until at most one section
-    is a natural barrier, and the Town Hall must follow it there (not stay
-    pinned to the river tile the tribe actually settled on)."""
+def test_found_territory_accepts_a_modest_natural_barrier_count():
+    """Explicit follow-up, after direct visual confirmation of the live bug: "the
+    first place Tribe 1 landed, including Territory, was perfect." A settling
+    tile with a river touching a couple of ring-0 sections is good, defensible,
+    river-framed ground, not a defect -- (30, 60) is real, buildable plains with
+    exactly 2 of 8 sections flagged as natural barriers, at or under config.
+    TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS (3). _found_territory should
+    leave the Hut and walls right where the tribe actually stands."""
     from backend import config, world
 
-    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 50, "y": 39}])
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 30, "y": 60}])
     tribe = sim.tribes["tribe_0"]
-    assert world.biome_at(50, 39) == "river"  # confirms this test exercises the real bug
+    assert world.biome_at(30, 60) == "plains"
 
     sim._found_territory(tribe)
 
     natural_barrier_count = sum(1 for sec in tribe.wall_rings[0]["sections"] if sec["natural_barrier"])
-    assert natural_barrier_count <= 1
-    assert tribe.territory_center != (50, 39)  # backed away from the settling tile
+    assert natural_barrier_count == 2
+    assert natural_barrier_count <= config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS
+    assert tribe.territory_center == (30, 60)  # stays put -- nothing worth backing away from
+
+
+def test_found_territory_still_backs_away_from_genuinely_bad_geometry():
+    """Companion to the test above: a settling tile really dominated by water
+    (here: 5 of 8 ring-0 sections, well past config.
+    TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS) still gets backed away from --
+    raising the tolerance for a good river-adjacent spot doesn't mean the
+    backing-away mechanism stopped working for a genuinely bad one. The Town
+    Hall must follow the chosen center, not stay pinned to the settling tile."""
+    from backend import config, world
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 41, "y": 45}])
+    tribe = sim.tribes["tribe_0"]
+    assert world.biome_at(41, 45) == "plains"  # confirms this exercises real map geometry, not ocean/edge
+
+    sim._found_territory(tribe)
+
+    natural_barrier_count = sum(1 for sec in tribe.wall_rings[0]["sections"] if sec["natural_barrier"])
+    assert natural_barrier_count <= config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS
+    assert tribe.territory_center != (41, 45)  # backed away from the settling tile
     town_hall = next(b for b in tribe.buildings if b["type"] == "town_hall")
     cx, cy = tribe.territory_center
     w, h = config.BUILDING_FOOTPRINTS["town_hall"]
