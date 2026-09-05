@@ -3196,6 +3196,29 @@ def test_send_trade_emissary_trades_instantly_with_a_known_rival():
     assert tribe.expeditions == []  # instant, no expedition ever created
 
 
+def test_send_trade_emissary_can_reach_a_minor_settlement_too():
+    """Explicit follow-up: "they can also seek the Raidable Settlements too...
+    Trade is good to offer" -- same _find_minor_settlement check instant
+    TRADE/RAID already use, checked before the contact-gated rival lookup."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    _complete_ring0(sim, tribe)
+    settlement = _minor_settlement(x=52, y=50)
+    sim.minor_settlements = [settlement]
+    wood_before = tribe.wood
+
+    note = ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, tribe, "plains", (52, 50))
+
+    gained = round(100 * config.MINOR_SETTLEMENT_TRADE_FRACTION)
+    assert tribe.wood == wood_before + gained
+    assert settlement["raids_remaining"] == config.MINOR_SETTLEMENT_MAX_RAIDS  # untouched by trading
+    assert "traded peacefully with an outlying settlement" in note
+    assert tribe.expeditions == []  # instant, no expedition ever created
+
+
 def test_execute_trade_is_reused_identically_by_instant_trade_and_the_emissary():
     """Both TRADE and SEND_TRADE_EMISSARY resolve a found partner through the same
     _execute_trade helper -- confirms the refactor didn't change instant TRADE's

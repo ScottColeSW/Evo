@@ -1809,10 +1809,19 @@ def _send_trade_emissary(sim, tribe, biome, target):
     unlike instant TRADE (a chance encounter, not a deliberate choice to
     expose the tribe), reaching out to a known rival is a real, deliberate
     decision a tribe shouldn't make before it can defend what it has at
-    home."""
+    home.
+
+    Explicit follow-up: "they can also seek the Raidable Settlements too...
+    Trade is good to offer" -- checks for an unaffiliated minor settlement
+    first, the same way instant TRADE/RAID already do (_find_minor_settlement,
+    a fixed map feature found by target_vector, not a contact requirement),
+    before falling back to the contact-gated rival check above."""
     if not tribe.wall_rings or not city_layout.ring_fully_built(tribe.wall_rings[0]):
         return "the first wall ring must be finished before it's wise to go looking for strangers to trade with"
     tx, ty = target
+    settlement = _find_minor_settlement(sim, tx, ty)
+    if settlement is not None:
+        return _trade_with_minor_settlement(sim, tribe, settlement)
     rival = _nearest_rival(sim, tribe, tx, ty)
     if rival is None:
         return "no rival tribe has been encountered nearby yet to send an emissary to"
@@ -1921,5 +1930,5 @@ ACTION_DESCRIPTIONS = {
     "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. An unaffiliated minor settlement near target_vector can also be traded with -- smaller and one-sided (nothing is given up), but it never depletes the way raiding one does. Does nothing if neither is there.",
     "DECLARE_ALLIANCE": "Declare a lasting alliance with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember, not a one-time exchange. Also ends a war you'd previously declared with that same rival. Does nothing if no rival tribe exists.",
     "DECLARE_WAR": "Declare a lasting state of war with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember. Does not attack them directly (see RAID for that); this only sets how the two tribes now stand. Does nothing if no rival tribe exists, or if already at war with them.",
-    "SEND_TRADE_EMISSARY": "Reach out to open trade with a rival tribe already in contact (a much longer reach than TRADE's tight radius, but requires the rival to have actually been encountered before -- same requirement as ALLIANCE/DECLARE_WAR). Instant: goods exchange immediately if a rival is found.",
+    "SEND_TRADE_EMISSARY": "Reach out to open trade with a rival tribe already in contact (a much longer reach than TRADE's tight radius, but requires the rival to have actually been encountered before -- same requirement as ALLIANCE/DECLARE_WAR). An unaffiliated minor settlement near target_vector can also be traded with, the same as TRADE -- safer than RAIDing it, and it never depletes the way raiding does. Instant: goods exchange immediately if either is found.",
 }
