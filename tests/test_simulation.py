@@ -2827,7 +2827,11 @@ def test_expedition_senses_nearby_water_without_stepping_onto_it():
 
     assert tribe.expeditions[0]["pos"] == [25, 54]  # landed short of the lake itself
     assert tribe.expeditions[0]["phase"] == "returning"
-    assert tribe.expeditions[0]["found"] == [27, 54]  # the actual water tile it sensed, not its own position
+    # (27, 56), not its own (25, 54) -- the actual nearest water tile it sensed.
+    # Coordinate shifted from the pre-rework (27, 54) when the lake's tributary
+    # got its natural-hydrology narrowing (see scripts/generate_hydrology.py);
+    # recomputed fresh against the current map, not just nudged to pass.
+    assert tribe.expeditions[0]["found"] == [27, 56]
     assert tribe.population == 8  # no drowning -- never touched the water
     assert any("hears water nearby" in entry for entry in tribe.history)
 

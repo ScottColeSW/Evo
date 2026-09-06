@@ -306,6 +306,94 @@ def test_lake_does_not_extend_beyond_its_radius():
     assert biome_at(lx, ly + LAKE_RADIUS + 1) != "lake"
 
 
+def test_river_is_narrower_upstream_than_at_its_mouth():
+    """Natural river/lake rework: "the river can be less wide." The eroded
+    river (scripts/generate_hydrology.py) is a subset of the old fixed-width
+    ribbon, with more of the outer band eroded away upstream than near the
+    mouth -- so its per-column width should now genuinely vary, tapering
+    narrower toward the source, rather than holding a constant width."""
+    from backend.world import OCEAN_X_START, RIVER_SOURCE_X, river_tiles
+
+    by_x: dict[int, int] = {}
+    for x, _ in river_tiles():
+        by_x[x] = by_x.get(x, 0) + 1
+    xs = sorted(by_x)
+    assert xs  # the river exists somewhere
+    near_source_width = min(by_x[x] for x in xs if x < RIVER_SOURCE_X + 10)
+    near_mouth_width = max(by_x[x] for x in xs if x > OCEAN_X_START - 10)
+    assert near_source_width < near_mouth_width
+
+
+def test_lake_basin_is_no_longer_a_perfect_circle():
+    """Natural river/lake rework: "the lake less rounded." A perfect circle of
+    LAKE_RADIUS around LAKE_CENTER would include every point at that exact
+    distance -- the eroded basin (scripts/generate_hydrology.py) only keeps an
+    inner core and erodes the outer shell, so at least one point on the old
+    circle's own boundary should now read as dry land while the center is
+    still lake."""
+    from backend.world import LAKE_CENTER, LAKE_RADIUS
+
+    lx, ly = LAKE_CENTER
+    assert biome_at(lx, ly) == "lake"
+    boundary_points = [
+        (lx + round(LAKE_RADIUS * dx), ly + round(LAKE_RADIUS * dy))
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (0.7, 0.7), (-0.7, 0.7), (0.7, -0.7), (-0.7, -0.7))
+    ]
+    assert any(biome_at(x, y) != "lake" for x, y in boundary_points)
+
+
+def test_river_tiles_never_touch_ocean_except_at_the_mouth():
+    """Structural invariant of the baked hydrology data itself, independent of
+    biome_at's own dispatch order: every baked river tile must sit strictly
+    inside all four real coastlines. Checked directly against the coastline
+    functions rather than through biome_at (which would always report "river"
+    for a baked river tile regardless of the coast)."""
+    from backend.world import _coast_boundary_x, _north_coast_boundary, _south_coast_boundary, _west_coast_boundary, river_tiles
+
+    tiles = river_tiles()
+    assert tiles
+    for x, y in tiles:
+        assert x < _coast_boundary_x(y)
+        assert x > _west_coast_boundary(y)
+        assert y > _north_coast_boundary(x)
+        assert y < _south_coast_boundary(x)
+
+
+def test_river_and_lake_tiles_are_a_subset_of_the_pre_rework_shape():
+    """The anchoring guarantee this whole rework depends on: erosion only ever
+    subtracts from the original sine-wave river / circle-plus-tributary lake,
+    never grows or relocates it -- so every gameplay fixture that already
+    depended on a specific tile NOT being river/lake keeps working. Recomputes
+    the pre-rework formulas directly (the same ones scripts/generate_hydrology.py
+    treats as its outer footprint) rather than importing a frozen copy."""
+    import math
+
+    from backend.world import (
+        LAKE_CENTER, LAKE_RADIUS, LAKE_TRIBUTARY_BRANCH_X, LAKE_TRIBUTARY_HALF_WIDTH,
+        OCEAN_X_START, RIVER_HALF_WIDTH, RIVER_SOURCE_X,
+        _coast_boundary_x, _river_center_y, _west_coast_boundary, lake_tiles, river_tiles,
+    )
+
+    def old_is_river(x, y):
+        if x < max(RIVER_SOURCE_X, _west_coast_boundary(y)) or x >= min(OCEAN_X_START, _coast_boundary_x(y)):
+            return False
+        return abs(y - _river_center_y(x)) <= RIVER_HALF_WIDTH
+
+    def old_is_lake(x, y):
+        lx, ly = LAKE_CENTER
+        if math.hypot(x - lx, y - ly) <= LAKE_RADIUS:
+            return True
+        bx, by = LAKE_TRIBUTARY_BRANCH_X, _river_center_y(LAKE_TRIBUTARY_BRANCH_X)
+        dx, dy = lx - bx, ly - by
+        length_sq = dx * dx + dy * dy
+        t = max(0.0, min(1.0, ((x - bx) * dx + (y - by) * dy) / length_sq))
+        proj_x, proj_y = bx + t * dx, by + t * dy
+        return math.hypot(x - proj_x, y - proj_y) <= LAKE_TRIBUTARY_HALF_WIDTH
+
+    assert all(old_is_river(x, y) for x, y in river_tiles())
+    assert all(old_is_lake(x, y) for x, y in lake_tiles())
+
+
 def test_ocean_occupies_the_entire_east_edge():
     for y in range(0, 100, 10):
         assert biome_at(99, y) == "ocean"

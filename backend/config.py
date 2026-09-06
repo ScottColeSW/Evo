@@ -23,6 +23,14 @@ WEST_COAST_INSET_BASE = 6
 NORTH_COAST_INSET_BASE = 6
 SOUTH_COAST_INSET_BASE = 6
 
+# Natural river/lake rework, phase 1: "I'd love the river and lake to look
+# better and more natural." backend/world_hydrology_data.py is a ONE-TIME baked
+# tile set (see scripts/generate_hydrology.py), not something world.py computes
+# per call -- this seed is what that offline generator used, kept here so it's
+# reproducible and so a future map-variety phase has an obvious place to thread
+# a per-run seed through instead of this fixed constant (not implemented yet).
+HYDROLOGY_SEED = 20260906
+
 # GATHER_WOOD/GATHER_STONE used to be available from the moment a tribe existed, before
 # it had even decided where to actually live -- a nomadic band stockpiling timber and
 # quarried stone before choosing a home. Simulation._is_camped gates both behind

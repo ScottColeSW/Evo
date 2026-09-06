@@ -3,6 +3,7 @@ import math
 import random
 
 from . import config
+from . import world_hydrology_data as _hydrology
 
 BIOME_LABELS = {
     "forest": "Whispering Wilds",
@@ -169,34 +170,39 @@ def _river_center_y(x: int) -> float:
 
 
 def _is_river(x: int, y: int) -> bool:
-    # The river's mouth used to always cut off at the flat OCEAN_X_START regardless of
-    # the wavy coastline -- wherever the coast recedes into a bay (its own boundary_x
-    # drops below OCEAN_X_START), the river kept extending to the old fixed line
-    # anyway, sticking out several tiles past the real coast into open ocean. Clipping
-    # to whichever is closer keeps the strip river/highland stretch (mouth nowhere
-    # near the coast, boundary_x always >= OCEAN_X_START there) exactly as before, and
-    # only pulls the mouth itself in to match the real shoreline.
-    #
-    # Map dream, phase 2: the source end gets the identical treatment now that
-    # there's real west ocean too -- the river starts wherever real land begins
-    # (max of the old fixed RIVER_SOURCE_X and the actual wavy west coastline),
-    # instead of potentially starting inside the new ocean band.
-    if x < max(RIVER_SOURCE_X, _west_coast_boundary(y)) or x >= min(OCEAN_X_START, _coast_boundary_x(y)):
-        return False
-    return abs(y - _river_center_y(x)) <= RIVER_HALF_WIDTH
+    # Natural river/lake rework: "I'd love the river and lake to look better and
+    # more natural." The old body here was a live formula -- the river's mouth
+    # clipped to whichever was closer, the flat OCEAN_X_START cutoff or the real
+    # (wavy) coastline (so it never stuck out past a receded bay), and a fixed
+    # RIVER_HALF_WIDTH ribbon around _river_center_y(x). That formula is now the
+    # generator's OUTER FOOTPRINT (see scripts/generate_hydrology.py) rather than
+    # the live check: a heightfield+erosion pass only ever subtracts from it
+    # (never widens or relocates it), baked once into world_hydrology_data.py so
+    # this stays an O(1) lookup despite biome_at running thousands of times per
+    # tick. _river_center_y/RIVER_SOURCE_X/RIVER_HALF_WIDTH etc. are kept below,
+    # still real and still load-bearing -- the generator's protected "core" is
+    # exactly this centerline, which is why tests deriving expected points from
+    # it still pass unchanged.
+    return (x, y) in _hydrology.RIVER_TILES
 
 
 def _is_lake(x: int, y: int) -> bool:
-    lx, ly = LAKE_CENTER
-    if math.hypot(x - lx, y - ly) <= LAKE_RADIUS:
-        return True
-    # Distance from (x, y) to the tributary's line segment, branch point to lake center.
-    bx, by = LAKE_TRIBUTARY_BRANCH_X, _river_center_y(LAKE_TRIBUTARY_BRANCH_X)
-    dx, dy = lx - bx, ly - by
-    length_sq = dx * dx + dy * dy
-    t = max(0.0, min(1.0, ((x - bx) * dx + (y - by) * dy) / length_sq))
-    proj_x, proj_y = bx + t * dx, by + t * dy
-    return math.hypot(x - proj_x, y - proj_y) <= LAKE_TRIBUTARY_HALF_WIDTH
+    # See _is_river's comment -- same rework, same baked-lookup treatment. The
+    # old perfect-circle-plus-straight-tributary formula is the generator's
+    # outer footprint; LAKE_CENTER and the exact tributary line are its
+    # protected core.
+    return (x, y) in _hydrology.LAKE_TILES
+
+
+def river_tiles() -> frozenset[tuple[int, int]]:
+    """The baked river tile set -- for tests and scripts/compare_hydrology_wall_impact.py
+    rather than reaching into world_hydrology_data directly."""
+    return _hydrology.RIVER_TILES
+
+
+def lake_tiles() -> frozenset[tuple[int, int]]:
+    """The baked lake (+tributary) tile set -- see river_tiles()."""
+    return _hydrology.LAKE_TILES
 
 
 def _is_volcano(x: int, y: int) -> bool:

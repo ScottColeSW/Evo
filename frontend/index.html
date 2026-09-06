@@ -1018,10 +1018,7 @@ function checkChiefElections(state) {
 
 // Mirrors backend/world.py's biome_at exactly -- the river winds from the mountains
 // (west) to the coast (east) rather than being an arbitrary diagonal band.
-const OCEAN_X_START = 90, MOUNTAIN_X_END = 24, MOUNTAIN_Y_END = 55, RIVER_SOURCE_X = 15, RIVER_HALF_WIDTH = 3;
-// A tributary forking off the river toward the lower-middle of the map, ending in a
-// lake -- mirrors world.py's LAKE_CENTER/_is_lake exactly.
-const LAKE_TRIBUTARY_BRANCH_X = 35, LAKE_CENTER = [25, 65], LAKE_RADIUS = 7, LAKE_TRIBUTARY_HALF_WIDTH = 2;
+const OCEAN_X_START = 90, MOUNTAIN_X_END = 24, MOUNTAIN_Y_END = 55;
 // The coast is wavy, not a straight line -- mirrors world.py's _coast_boundary_x/
 // _coast_is_headland exactly.
 const COAST_BAND_WIDTH = 3;
@@ -1034,31 +1031,29 @@ const DESERT_NORTH_BOUNDARY_BASE = 78;
 // exactly (config.py).
 const WEST_COAST_INSET_BASE = 6, NORTH_COAST_INSET_BASE = 6, SOUTH_COAST_INSET_BASE = 6;
 
-function riverCenterY(x) {
-  const span = OCEAN_X_START - RIVER_SOURCE_X;
-  const progress = Math.max(0, Math.min(1, (x - RIVER_SOURCE_X) / span));
-  return 18 + progress * 50 + 6 * Math.sin(x * 0.07);
-}
+// Natural river/lake rework, phase 1: "I'd love the river and lake to look
+// better and more natural." The river/lake used to be pure sine-wave/circle
+// formulas computed live (a `riverCenterY`+fixed-half-width band, a perfect
+// circle+straight tributary); they're now a one-time baked tile set (see
+// scripts/generate_hydrology.py, which mirrors world.py's original formulas
+// as its own OUTER FOOTPRINT and only ever erodes inward from there -- never
+// wider, never relocated, so the exact anchor tiles gameplay already depends
+// on stay put). Baked here as flat encoded ints (x*100+y) rather than porting
+// the heightfield/erosion algorithm to JS too -- the map is fixed for this
+// phase, so both sides only need the *result*, not a second from-scratch
+// computation that would be a real hazard to keep byte-for-byte identical to
+// Python's numpy/RNG pipeline by hand.
+// === GENERATED HYDROLOGY DATA START (scripts/generate_hydrology.py, do not hand-edit) ===
+const HYDROLOGY_RIVER_TILES = new Set([1523, 1624, 1725, 1826, 1926, 2027, 2128, 2229, 2329, 2430, 2531, 2631, 2732, 2832, 2933, 3033, 3134, 3234, 3334, 3435, 3535, 3635, 3736, 3836, 3936, 4037, 4136, 4137, 4138, 4236, 4237, 4238, 4336, 4337, 4338, 4437, 4438, 4439, 4537, 4538, 4539, 4637, 4638, 4639, 4737, 4738, 4739, 4838, 4839, 4840, 4938, 4939, 4940, 5038, 5039, 5040, 5139, 5140, 5141, 5239, 5240, 5241, 5339, 5340, 5341, 5439, 5440, 5441, 5540, 5541, 5542, 5640, 5641, 5642, 5740, 5741, 5742, 5841, 5842, 5843, 5941, 5942, 5943, 6042, 6043, 6044, 6142, 6143, 6144, 6243, 6244, 6245, 6343, 6344, 6345, 6444, 6445, 6446, 6544, 6545, 6546, 6645, 6646, 6647, 6746, 6747, 6748, 6846, 6847, 6848, 6947, 6948, 6949, 7048, 7049, 7050, 7149, 7150, 7151, 7249, 7250, 7251, 7350, 7351, 7352, 7451, 7452, 7453, 7552, 7553, 7554, 7653, 7654, 7655, 7754, 7755, 7756, 7855, 7856, 7857, 7956, 7957, 7958, 8057, 8058, 8059, 8158, 8159, 8160, 8259, 8260, 8261, 8360, 8361, 8362, 8461, 8462, 8463]);
+const HYDROLOGY_LAKE_TILES = new Set([1964, 1965, 2062, 2063, 2064, 2065, 2066, 2067, 2068, 2161, 2162, 2163, 2164, 2165, 2166, 2167, 2168, 2169, 2260, 2261, 2262, 2263, 2264, 2265, 2266, 2267, 2268, 2269, 2270, 2359, 2360, 2361, 2362, 2363, 2364, 2365, 2366, 2367, 2368, 2369, 2370, 2459, 2460, 2461, 2462, 2463, 2464, 2465, 2466, 2467, 2468, 2469, 2470, 2559, 2560, 2561, 2562, 2563, 2564, 2565, 2566, 2567, 2568, 2569, 2570, 2571, 2659, 2660, 2661, 2662, 2663, 2664, 2665, 2666, 2667, 2668, 2669, 2670, 2756, 2757, 2758, 2759, 2760, 2761, 2762, 2763, 2764, 2765, 2766, 2767, 2768, 2769, 2770, 2853, 2854, 2855, 2856, 2857, 2858, 2859, 2860, 2861, 2862, 2863, 2864, 2865, 2866, 2867, 2868, 2869, 2870, 2951, 2952, 2953, 2954, 2955, 2956, 2961, 2962, 2963, 2964, 2965, 2966, 2967, 2968, 2969, 3047, 3048, 3049, 3050, 3051, 3052, 3053, 3062, 3063, 3064, 3065, 3066, 3067, 3068, 3144, 3145, 3146, 3147, 3148, 3149, 3150, 3164, 3165, 3241, 3242, 3243, 3244, 3245, 3246, 3247, 3339, 3340, 3341, 3342, 3343, 3344, 3436, 3437, 3438, 3439, 3440, 3441, 3535, 3536, 3537, 3538]);
+// === GENERATED HYDROLOGY DATA END ===
 
 function isRiver(x, y) {
-  // Clipped to whichever is closer, the flat cutoff or the real (wavy) coastline --
-  // otherwise the river's mouth kept extending to the old fixed line even where the
-  // coast recedes into a bay, sticking out several tiles into open ocean. The source
-  // end gets the identical treatment (map dream, phase 2) now that there's real west
-  // ocean too. Mirrors backend/world.py's _is_river exactly.
-  if (x < Math.max(RIVER_SOURCE_X, westCoastBoundary(y)) || x >= Math.min(OCEAN_X_START, coastBoundaryX(y))) return false;
-  return Math.abs(y - riverCenterY(x)) <= RIVER_HALF_WIDTH;
+  return HYDROLOGY_RIVER_TILES.has(x * 100 + y);
 }
 
 function isLake(x, y) {
-  const [lx, ly] = LAKE_CENTER;
-  if (Math.hypot(x - lx, y - ly) <= LAKE_RADIUS) return true;
-  const bx = LAKE_TRIBUTARY_BRANCH_X, by = riverCenterY(LAKE_TRIBUTARY_BRANCH_X);
-  const dx = lx - bx, dy = ly - by;
-  const lengthSq = dx * dx + dy * dy;
-  const t = Math.max(0, Math.min(1, ((x - bx) * dx + (y - by) * dy) / lengthSq));
-  const projX = bx + t * dx, projY = by + t * dy;
-  return Math.hypot(x - projX, y - projY) <= LAKE_TRIBUTARY_HALF_WIDTH;
+  return HYDROLOGY_LAKE_TILES.has(x * 100 + y);
 }
 
 // Mirrors world.py's _is_volcano exactly.
@@ -1077,17 +1072,19 @@ function coastBoundaryX(y) {
 }
 
 // Explicit request: "make that end of the river flowing into the ocean look like a
-// waterfall." Precomputed once (river tiles bordering ocean are a fixed, small set
-// determined entirely by the map's own procedural generation, never by live game
-// state) rather than scanned every frame -- only the coastal band near
-// OCEAN_X_START can possibly qualify, so this stays a handful of tiles, not a
-// GRID x GRID sweep.
+// waterfall," later trimmed tighter as part of the natural river/lake rework
+// ("the waterfalls (head and tail) more trimmed"). Precomputed once (river
+// tiles bordering ocean are a fixed, small set baked at generation time, never
+// live game state) rather than scanned every frame. Iterates the baked river
+// tile set directly instead of a hardcoded x-range sweep -- the eroded river's
+// width is no longer a fixed constant, so a guessed range would either miss
+// tiles or scan far more than it needs to; this is exactly the real mouth,
+// wherever generation put it.
 function computeWaterfallTiles() {
   const tiles = [];
-  for (let x = OCEAN_X_START - RIVER_HALF_WIDTH - 2; x <= OCEAN_X_START + 2; x++) {
-    for (let y = 0; y < GRID; y++) {
-      if (isRiver(x, y) && biomeNameAt(x + 1, y) === "ocean") tiles.push([x, y]);
-    }
+  for (const encoded of HYDROLOGY_RIVER_TILES) {
+    const x = Math.floor(encoded / 100), y = encoded % 100;
+    if (biomeNameAt(x + 1, y) === "ocean") tiles.push([x, y]);
   }
   return tiles;
 }
