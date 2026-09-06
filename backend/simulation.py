@@ -3049,17 +3049,21 @@ class Simulation:
     async def _trigger_game_over(self, reason: str) -> None:
         """Ends the run for real -- there will be no more turns, ever, for any
         model this session used, until a fresh ADD_TRIBE clears this back to
-        normal (see add_tribe). Two ways to get here: every tribe has gone
-        extinct (reason="extinction"), or every still-living tribe has reached
+        normal (see add_tribe). Three ways to get here: every tribe has gone
+        extinct (reason="extinction"), every still-living tribe has reached
         the era ceiling with nowhere further to progress (reason=
         "era_ceiling" -- explicit request: "we are missing 'the end'", after a
         real run spent 400+ cycles, over half its total length, stepping with
-        nothing left to reach). Rather than let step() keep getting called
-        every tick forever (harmless but pointless once there's truly nothing
-        left to change) and leave every model sitting loaded in Ollama until
-        its keep_alive window expires on its own, stop stepping, generate the
-        Overseer-voice retrospective the frontend's end-of-run splash
-        displays, and unload every model immediately."""
+        nothing left to reach), or the user hit QUIT (reason="manual_quit" --
+        explicit follow-up: "since I can click Quit anytime, it should come up
+        when I quit", so a manually-ended run gets the same real summary
+        instead of silently reloading with nothing shown). Rather than let
+        step() keep getting called every tick forever (harmless but pointless
+        once there's truly nothing left to change) and leave every model
+        sitting loaded in Ollama until its keep_alive window expires on its
+        own, stop stepping, generate the Overseer-voice retrospective the
+        frontend's end-of-run splash displays, and unload every model
+        immediately."""
         self.game_over = True
         self.game_over_reason = reason
         self.status = "GAME OVER"
@@ -3076,11 +3080,13 @@ class Simulation:
         lines = []
         if reason == "extinction":
             lines.append("OVERSEER LOG: Every observed population has ceased to exist.")
-        else:
+        elif reason == "era_ceiling":
             lines.append(
                 "OVERSEER LOG: Every surviving population has exhausted the known stages of "
                 "civilizational development. No further advancement remains observable."
             )
+        else:
+            lines.append("OVERSEER LOG: Observation ended by operator request. Final standing recorded below.")
         for tribe in self.tribes.values():
             status = "extinct" if tribe.extinct else "surviving"
             cause_note = f", cause of collapse: {tribe.extinction_cause or 'unknown'}" if tribe.extinct else ""
@@ -3092,7 +3098,7 @@ class Simulation:
                 f"Chiefs elected: {tribe.chiefs_elected}. Distinctions: {trophy_names}."
             )
         living = [t for t in self.tribes.values() if not t.extinct]
-        if reason == "era_ceiling" and living:
+        if reason in ("era_ceiling", "manual_quit") and living:
             leader = max(living, key=lambda t: t.max_population)
             lines.append(
                 f"Analysis: {leader.name} attained the highest peak population ({leader.max_population}) "

@@ -500,9 +500,14 @@ function checkGameOver(state) {
   lastGameOverStatus = isOver;
 }
 
+const GAME_OVER_TITLES = {
+  extinction: "ALL POPULATIONS LOST",
+  era_ceiling: "SIMULATION COMPLETE",
+  manual_quit: "RUN STOPPED",
+};
+
 function showGameOverSplash(state) {
-  document.getElementById("game-over-title").textContent =
-    state.game_over_reason === "extinction" ? "ALL POPULATIONS LOST" : "SIMULATION COMPLETE";
+  document.getElementById("game-over-title").textContent = GAME_OVER_TITLES[state.game_over_reason] || "SIMULATION COMPLETE";
   document.getElementById("game-over-summary").textContent = state.game_over_summary || "";
   document.getElementById("game-over-splash").classList.remove("hidden");
 }
@@ -516,8 +521,16 @@ document.getElementById("btn-try-again").addEventListener("click", () => {
   startSimulation(lastRunConfig.tribes, lastRunConfig.immortalCycles);
 });
 
+// The splash's own QUIT is the real exit: close the socket and reload to a clean
+// picker screen. This used to live on the top-bar btn-quit, but that button now
+// only asks the backend to stop -- the final GAME OVER snapshot it sends back is
+// what makes this splash appear in the first place, so it can't also tear down
+// the socket in the same click.
 document.getElementById("btn-game-over-quit").addEventListener("click", () => {
-  document.getElementById("btn-quit").click();
+  if (socket) {
+    try { socket.close(); } catch (e) { /* already closing */ }
+  }
+  location.reload();
 });
 
 /* ---------- Spawn splash: covers the warm-up window while Simulation.create()
@@ -571,15 +584,17 @@ document.getElementById("btn-pause").addEventListener("click", () => {
 });
 
 // PAUSE only stops stepping -- it never released the models a run had loaded. QUIT
-// ends the session for real: tells the backend to unload them (Simulation.shutdown,
-// see app.py's STOP command) before dropping the connection, then reloads to a clean
-// picker screen rather than trying to hand-reset every piece of theater state.
+// ends the session for real, but doesn't tear the connection down itself: "since I
+// can click Quit anytime, it should come up when I quit" -- it just tells the
+// backend to stop (which unloads the models and sends back one final GAME OVER
+// snapshot, see app.py's STOP command), and that snapshot's arrival is what shows
+// the end-of-run splash via checkGameOver/showGameOverSplash below. The splash's
+// own QUIT button (btn-game-over-quit) is what actually closes the socket and
+// reloads back to a clean picker screen.
 document.getElementById("btn-quit").addEventListener("click", () => {
   if (socket) {
     try { socket.send(JSON.stringify({ command: "STOP" })); } catch (e) { /* already closing */ }
-    socket.close();
   }
-  location.reload();
 });
 
 document.querySelectorAll(".tab-btn").forEach(btn => {

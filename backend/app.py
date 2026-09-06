@@ -94,7 +94,21 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                 # Explicit end of this run -- PAUSE only stops stepping, it never
                 # released the models a run had loaded. Distinct from just closing
                 # the tab (see the finally block below, which catches that case too).
-                await session["sim"].shutdown()
+                #
+                # Explicit request: "since I can click Quit anytime, it should
+                # come up when I quit" -- the end-of-run splash (Simulation.
+                # _generate_game_over_summary) used to only ever appear on the
+                # two automatic endings (extinction, era ceiling); a manual
+                # QUIT just closed the socket and reloaded straight back to the
+                # picker with no summary at all. _trigger_game_over already
+                # does the real stop-and-unload work (same as the old bare
+                # shutdown() call) -- this just also tags it and sends one
+                # final snapshot so the frontend's own game-over check fires
+                # before the session is torn down.
+                sim = session["sim"]
+                await sim._trigger_game_over("manual_quit")
+                record_board_state(sim.run_id, sim.cycle, sim.snapshot())
+                await ws.send_str(json.dumps(sim.snapshot()))
                 session["sim"] = None
     finally:
         # A tab closing or reloading mid-game used to leave that session's models
