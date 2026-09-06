@@ -2793,7 +2793,12 @@ function drawFrame() {
       // don't stay around" (unreadable, no contrast) in the first place.
       ctx.fillStyle = "rgba(18,22,42,0.85)";
       ctx.fillRect(cx - labelWidth / 2 - 5, cy + TILE * 0.3, labelWidth + 10, TILE * 0.5);
-      ctx.font = `${Math.max(10, TILE * 0.9)}px sans-serif`;
+      // Explicit report: "I can barely see the tiny swords flashing in a
+      // fight, so maybe we need to make them a lot bigger" -- this never got
+      // the same size boost the raiders_approaching marker below already has
+      // (Math.max(16, TILE*1.5)). Matches it here, a little larger still
+      // since this is the actual clash, not just the approach.
+      ctx.font = `${Math.max(20, TILE * 1.8)}px sans-serif`;
       ctx.textAlign = "center";
       // The emoji shakes with the scuffle; the label stays put underneath so it's
       // still readable while the dust is flying.
@@ -2824,11 +2829,14 @@ function drawFrame() {
       const cy = approach.y * TILE + TILE / 2;
       // Explicit request: "the raider invasion forces should look a lot bigger on
       // the approach (like 1.5x house size)" -- a real, growing threat reads better
-      // as visibly imposing than as a same-size-as-everything-else icon.
-      ctx.font = `${Math.max(16, TILE * 1.5)}px sans-serif`;
+      // as visibly imposing than as a same-size-as-everything-else icon. Raised
+      // further (explicit follow-up: "so maybe we need to make them a lot
+      // bigger as they ride in") -- still not standing out enough against a
+      // busy map at typical window sizes.
+      ctx.font = `${Math.max(24, TILE * 2.2)}px sans-serif`;
       ctx.textAlign = "center";
       ctx.fillText("\u{1F3F4}", cx, cy);
-      ctx.font = `bold ${Math.max(10, TILE * 0.5)}px sans-serif`;
+      ctx.font = `bold ${Math.max(12, TILE * 0.6)}px sans-serif`;
       ctx.fillStyle = "#fca5a5";
       ctx.fillText(`${approach.cycles_left}`, cx, cy + TILE * 0.85);
     });
