@@ -3759,7 +3759,25 @@ class Simulation:
                 self._cliffs_hazard(tribe, nx, ny)
                 self._ocean_hazard(tribe, nx, ny)
                 self._expedition_raider_ambush(tribe, exp, nx, ny)
-            if [nx, ny] == [ox, oy]:
+            # Live bug ("Scouts, after settlement, are doing weird things"):
+            # the outbound leg already gives up when physics.terrain_aware_step
+            # reports boxed in by ocean on every axis (see that check above --
+            # a live run once caught a party frozen at the same tile for 400+
+            # days), but the returning leg never got the same treatment.
+            # Confirmed live: a settled tribe's scout heading home got stuck at
+            # a single tile 42 tiles from camp for 30+ cycles straight, silently
+            # re-rolling the exact same "stay put" fallback once a day forever
+            # with no way to ever actually arrive. A boxed-in party can't
+            # sensibly retarget (it's already given up searching), so treat
+            # getting stuck as arrival: whatever it found/gathered becomes real
+            # right here instead of never being reported at all.
+            boxed_in = [nx, ny] == [px, py] and [px, py] != [ox, oy]
+            if boxed_in:
+                tribe.history.append(
+                    f"{exp['lead_scout']}'s party can go no further on the way home and reports in from "
+                    f"here after {exp['day']} days"
+                )
+            if [nx, ny] == [ox, oy] or boxed_in:
                 # Whatever was foraged along the way comes home regardless of whether the
                 # expedition succeeded -- the trip cost real time either way, so it isn't
                 # a total loss on a failed search. The findings themselves only become

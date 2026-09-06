@@ -3121,6 +3121,34 @@ def test_expedition_gives_up_when_its_target_is_the_literal_grid_edge():
     assert any("can go no further" in entry for entry in tribe.history)
 
 
+def test_returning_expedition_gives_up_when_physically_boxed_in_on_the_way_home():
+    """Live bug report ("Scouts, after settlement, are doing weird things"):
+    confirmed via board_history.db -- a settled tribe's scout got stuck at a
+    single tile 42 tiles from camp for 30+ cycles straight, spanning at least
+    one full day-length boundary with zero movement. The outbound leg already
+    gives up when physics.terrain_aware_step reports boxed in by ocean on
+    every axis (test_expedition_gives_up_when_physically_boxed_in_by_ocean),
+    but the returning leg never got the same treatment -- it just silently
+    re-rolled the same "stay put" fallback forever with no way to ever
+    actually arrive. A boxed-in party on the way home can't sensibly
+    retarget, so it now reports in from wherever it got stuck instead."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.expeditions = [{
+        "pos": [16, 52], "origin": [58, 44], "target": [58, 44],
+        "day": 3, "phase": "returning", "found": None, "terrain_report": "plains",
+        "food_gathered": 5, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 6, "path": [],
+    }]
+
+    with mock.patch("backend.physics.terrain_aware_step", return_value=(16, 52)):
+        sim._advance_expeditions(tribe)
+
+    assert tribe.expeditions == []  # trip concluded, not left dangling forever
+    assert any("can go no further" in entry for entry in tribe.history)
+    assert tribe.food > 0  # whatever was foraged along the way still comes home
+
+
 def test_expedition_arrival_home_delivers_water_finding_to_memory_and_clears_state():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
