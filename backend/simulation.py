@@ -2110,7 +2110,26 @@ class Simulation:
         # already uses) means a chosen destination hasn't been reached yet --
         # settling waits for that arrival instead of firing out from under it.
         still_journeying = tribe.last_target is not None and tribe.last_target != [tribe.x, tribe.y]
-        if camped and not still_journeying and not tribe.has_ever_settled:
+        # Explicit bug report: Tribe 2 settled on dry plains at cycle ~10 (the
+        # stability clock alone, camped on FARMABLE_BIOMES, doesn't require water)
+        # with no water ever confirmed -- that permanently lifted every
+        # pre-settlement restriction, including RELOCATE being hidden entirely
+        # until confirmed_water_sites is non-empty (see the PRE_SETTLEMENT_ACTIONS
+        # branch below, "RELOCATE should not show until they find water"). Once
+        # settled, that protection is gone for good, so the tribe was free to
+        # RELOCATE toward a confirmed stone vein instead -- and did, repeatedly,
+        # spending scarce water it didn't have to chase a resource it already had
+        # plenty of, while genuinely dying of thirst.
+        #
+        # Requiring real confirmed water here (not just "a scouting trip
+        # concluded, water or not") closes that loop completely: RELOCATE stays
+        # hidden and the tribe stays uncommitted until water is genuinely found.
+        # This map always has a reachable river and lake, and SCOUT/GATHER_WATER/
+        # GATHER_FOOD stay available indefinitely while searching (unlimited
+        # attempts, not just one) -- so this doesn't reintroduce the "permanently
+        # stranded tribe" risk the looser _is_camped gate was originally written
+        # to avoid.
+        if camped and not still_journeying and not tribe.has_ever_settled and (settled_near_water or tribe.confirmed_water_sites):
             tribe.has_ever_settled = True
             self._found_territory(tribe)
 
