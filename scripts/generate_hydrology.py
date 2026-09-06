@@ -41,6 +41,10 @@ from backend.world import (
     RIVER_HALF_WIDTH,
     RIVER_SOURCE_X,
     _coast_boundary_x,
+    _forest_east_boundary,
+    _forest_north_boundary,
+    _mountain_x_boundary,
+    _mountain_y_boundary,
     _river_center_y,
     _west_coast_boundary,
 )
@@ -100,29 +104,53 @@ def _build_roughness_field(rng: np.random.Generator) -> np.ndarray:
     return (h - h.min()) / (h.max() - h.min())
 
 
-def _river_tiles(roughness: np.ndarray) -> frozenset[tuple[int, int]]:
-    tiles: set[tuple[int, int]] = set()
-    span = OCEAN_X_START - RIVER_SOURCE_X
+# Follow-up simplification, direct request after the erosion-based width
+# tapering turned out to be "the problem" (its per-tile noise threshold was
+# what produced the diagonal-pinch speckle fixed above, and read as unevenly
+# patchy rather than deliberate): a plain, deterministic width per stretch of
+# the river instead of a roughness field. Order matters -- mountains checked
+# before forest, matching biome_at's own dispatch precedence -- and the falls
+# zone at each end overrides whatever biome it's in, the same way a real
+# waterfall is a distinct feature, not just "wide mountain river."
+RIVER_WIDTH_MOUNTAINS = 2
+RIVER_WIDTH_FIELDS = 3
+RIVER_WIDTH_FOREST = 4
+RIVER_WIDTH_FALLS = 5
+RIVER_FALLS_LENGTH = 3  # tiles at each end (source and mouth) that get the falls width
+
+
+def _river_width_at(x: int, y: int) -> int:
+    if _mountain_x_boundary_check(x, y):
+        return RIVER_WIDTH_MOUNTAINS
+    if y < _forest_north_boundary(x) or x >= _forest_east_boundary(y):
+        return RIVER_WIDTH_FOREST
+    return RIVER_WIDTH_FIELDS
+
+
+def _mountain_x_boundary_check(x: int, y: int) -> bool:
+    return x < _mountain_x_boundary(y) and y < _mountain_y_boundary(x)
+
+
+def _river_tiles() -> frozenset[tuple[int, int]]:
+    core_columns: list[tuple[int, int]] = []
     for x in range(GRID):
         core_y = round(_river_center_y(x))
         if not (0 <= core_y < GRID) or not _old_is_river(x, core_y):
             continue  # outside today's valid (coast-clipped) x-range entirely
-        tiles.add((x, core_y))  # protected core: the exact centerline tile
-        progress = max(0.0, min(1.0, (x - RIVER_SOURCE_X) / span))
-        # Erosive reach grows toward the mouth -- a trickle at the source,
-        # its full historical width only near the sea ("the river can be less
-        # wide" -- upstream stretches erode away almost the whole old ribbon).
-        reach = progress * RIVER_HALF_WIDTH
-        for offset in range(1, RIVER_HALF_WIDTH + 1):
-            if offset > reach + 0.5:
-                continue
-            survive_chance = max(0.0, (reach - offset + 1) / (offset + 1))
-            for sign in (-1, 1):
-                y = core_y + sign * offset
-                if not (0 <= y < GRID) or not _old_is_river(x, y):
-                    continue
-                if roughness[x, y] < survive_chance:
-                    tiles.add((x, y))
+        core_columns.append((x, core_y))
+
+    tiles: set[tuple[int, int]] = set()
+    for i, (x, core_y) in enumerate(core_columns):
+        at_either_end = i < RIVER_FALLS_LENGTH or i >= len(core_columns) - RIVER_FALLS_LENGTH
+        width = RIVER_WIDTH_FALLS if at_either_end else _river_width_at(x, core_y)
+        # Centered as evenly as possible: width=2 -> {-1, 0}, width=3 -> {-1, 0, 1},
+        # width=4 -> {-2, -1, 0, 1}, width=5 -> {-2, -1, 0, 1, 2}. offset 0 (the
+        # centerline) is always included, same anchor guarantee as before.
+        low = -(width // 2)
+        for offset in range(low, low + width):
+            y = core_y + offset
+            if 0 <= y < GRID and _old_is_river(x, y):
+                tiles.add((x, y))
     return frozenset(tiles)
 
 
@@ -258,7 +286,7 @@ def _bridge_diagonal_pinches(tiles: frozenset[tuple[int, int]]) -> frozenset[tup
 def generate() -> tuple[frozenset[tuple[int, int]], frozenset[tuple[int, int]]]:
     rng = np.random.default_rng(SEED)
     roughness = _build_roughness_field(rng)
-    river = _river_tiles(roughness) | _confluence_pool()
+    river = _river_tiles() | _confluence_pool()
     lake = _lake_tiles(roughness)
     return _bridge_diagonal_pinches(frozenset(river)), _bridge_diagonal_pinches(frozenset(lake))
 
