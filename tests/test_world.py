@@ -289,14 +289,28 @@ def test_lake_center_and_its_tributary_are_lake_biome():
 
 
 def test_lake_tributary_actually_connects_the_river_to_the_lake():
-    """A real fork, not two disconnected features -- the midpoint between the branch
-    point and the lake center should read as lake (the connecting stream), not plains."""
-    from backend.world import LAKE_CENTER, LAKE_TRIBUTARY_BRANCH_X, _river_center_y
+    """A real fork, not two disconnected features -- BFS from LAKE_CENTER across
+    lake_tiles() must reach a tile 8-adjacent to a real river tile. Robust to
+    the tributary's exact path (a natural bow, not a straight line -- see
+    scripts/generate_hydrology.py) rather than checking one hardcoded midpoint
+    that would break every time the path's shape is retuned."""
+    from backend.world import LAKE_CENTER, lake_tiles, river_tiles
 
-    bx, by = LAKE_TRIBUTARY_BRANCH_X, _river_center_y(LAKE_TRIBUTARY_BRANCH_X)
-    lx, ly = LAKE_CENTER
-    mid_x, mid_y = round((bx + lx) / 2), round((by + ly) / 2)
-    assert biome_at(mid_x, mid_y) == "lake"
+    lake, river = lake_tiles(), river_tiles()
+    visited = {LAKE_CENTER}
+    frontier = [LAKE_CENTER]
+    while frontier:
+        x, y = frontier.pop()
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                neighbor = (x + dx, y + dy)
+                if neighbor in lake and neighbor not in visited:
+                    visited.add(neighbor)
+                    frontier.append(neighbor)
+    touches_river = any(
+        (x + dx, y + dy) in river for x, y in visited for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+    )
+    assert touches_river
 
 
 def test_lake_does_not_extend_beyond_its_radius():
@@ -359,39 +373,64 @@ def test_river_tiles_never_touch_ocean_except_at_the_mouth():
         assert y < _south_coast_boundary(x)
 
 
-def test_river_and_lake_tiles_are_a_subset_of_the_pre_rework_shape():
-    """The anchoring guarantee this whole rework depends on: erosion only ever
-    subtracts from the original sine-wave river / circle-plus-tributary lake,
-    never grows or relocates it -- so every gameplay fixture that already
-    depended on a specific tile NOT being river/lake keeps working. Recomputes
-    the pre-rework formulas directly (the same ones scripts/generate_hydrology.py
-    treats as its outer footprint) rather than importing a frozen copy."""
-    import math
+def test_river_tiles_are_a_subset_of_the_pre_rework_shape():
+    """The river's own anchoring guarantee: erosion only ever subtracts from
+    the original sine-wave ribbon, never grows or relocates it -- so every
+    gameplay fixture that already depended on a specific tile NOT being river
+    keeps working. Recomputes the pre-rework formula directly (the same one
+    scripts/generate_hydrology.py treats as its outer footprint) rather than
+    importing a frozen copy.
 
-    from backend.world import (
-        LAKE_CENTER, LAKE_RADIUS, LAKE_TRIBUTARY_BRANCH_X, LAKE_TRIBUTARY_HALF_WIDTH,
-        OCEAN_X_START, RIVER_HALF_WIDTH, RIVER_SOURCE_X,
-        _coast_boundary_x, _river_center_y, _west_coast_boundary, lake_tiles, river_tiles,
-    )
+    The lake doesn't get an equivalent test: a direct request ("we can extend
+    the lake, naturally curving into the south-west") deliberately lets the
+    lake grow a real bay beyond its old circle in that one direction -- see
+    test_lake_does_not_sprawl_past_a_generous_bound and
+    test_wall_barrier_anchor_points_stay_dry_land below for what actually
+    matters there instead."""
+    from backend.world import OCEAN_X_START, RIVER_HALF_WIDTH, RIVER_SOURCE_X, _coast_boundary_x, _river_center_y, _west_coast_boundary, river_tiles
 
     def old_is_river(x, y):
         if x < max(RIVER_SOURCE_X, _west_coast_boundary(y)) or x >= min(OCEAN_X_START, _coast_boundary_x(y)):
             return False
         return abs(y - _river_center_y(x)) <= RIVER_HALF_WIDTH
 
-    def old_is_lake(x, y):
-        lx, ly = LAKE_CENTER
-        if math.hypot(x - lx, y - ly) <= LAKE_RADIUS:
-            return True
-        bx, by = LAKE_TRIBUTARY_BRANCH_X, _river_center_y(LAKE_TRIBUTARY_BRANCH_X)
-        dx, dy = lx - bx, ly - by
-        length_sq = dx * dx + dy * dy
-        t = max(0.0, min(1.0, ((x - bx) * dx + (y - by) * dy) / length_sq))
-        proj_x, proj_y = bx + t * dx, by + t * dy
-        return math.hypot(x - proj_x, y - proj_y) <= LAKE_TRIBUTARY_HALF_WIDTH
-
     assert all(old_is_river(x, y) for x, y in river_tiles())
-    assert all(old_is_lake(x, y) for x, y in lake_tiles())
+
+
+def test_lake_does_not_sprawl_past_a_generous_bound():
+    """The southwest bay is a deliberate, bounded extension (see
+    scripts/generate_hydrology.py's LAKE_SOUTHWEST_EXTENSION_MAX), not an
+    unbounded flood-fill -- a sanity guard, not a precise geometric proof.
+    lake_tiles() also includes the tributary corridor, which legitimately
+    reaches all the way out to the branch point on the river (~31 tiles from
+    LAKE_CENTER) -- so the bound is derived from that real distance plus the
+    corridor's own width/bow margin, not just the lake body's own radius."""
+    import math
+
+    from backend.world import (
+        LAKE_CENTER, LAKE_TRIBUTARY_BRANCH_X, LAKE_TRIBUTARY_HALF_WIDTH, _river_center_y, lake_tiles,
+    )
+
+    lx, ly = LAKE_CENTER
+    bx, by = LAKE_TRIBUTARY_BRANCH_X, _river_center_y(LAKE_TRIBUTARY_BRANCH_X)
+    tributary_length = math.hypot(lx - bx, ly - by)
+    max_reach = tributary_length + LAKE_TRIBUTARY_HALF_WIDTH + 5
+    assert all(math.hypot(x - lx, y - ly) <= max_reach for x, y in lake_tiles())
+
+
+def test_wall_barrier_anchor_points_stay_dry_land():
+    """Several existing wall/natural-barrier tests (test_simulation.py) hardcode
+    specific tiles that must NOT be river or lake -- (30, 60) in particular sits
+    just 3.15 tiles from the tributary's old straight-line path, the tightest
+    margin in the whole rework. Direct, explicit regression coverage for the
+    anchors those tests depend on, independent of whatever the exact hydrology
+    shape looks like after any future retune."""
+    from backend.world import lake_tiles, river_tiles
+
+    river, lake = river_tiles(), lake_tiles()
+    for x, y in ((40, 62), (30, 60), (41, 45), (55, 65)):
+        assert (x, y) not in river
+        assert (x, y) not in lake
 
 
 def test_ocean_occupies_the_entire_east_edge():

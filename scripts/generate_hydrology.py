@@ -126,33 +126,79 @@ def _river_tiles(roughness: np.ndarray) -> frozenset[tuple[int, int]]:
     return frozenset(tiles)
 
 
-def _lake_tiles(roughness: np.ndarray) -> frozenset[tuple[int, int]]:
-    lx, ly = LAKE_CENTER
+# Follow-up fix, direct feedback on the first pass: "the lake is perfectly
+# round. the river to the lake is straight. the tributary looks broken." A
+# 2-tile shell peeled off a radius-7 circle still reads as a circle, and the
+# tributary was left an exact straight line. This redesign (a) gives the lake
+# an angular wavy boundary using the same two-sine-wave idiom every coastline
+# in world.py already uses, (b) lets it grow a real bay toward the southwest
+# -- confirmed clear of every test fixture and every other biome boundary,
+# and the OPPOSITE direction from the one nearby test anchor (30, 60) that
+# must stay dry land -- per direct request ("we can extend the lake,
+# naturally curving into the south-west part below it"), and (c) bows the
+# tributary into a single natural arch instead of a straight line, verified
+# computationally to bow AWAY from (30, 60) (increasing its clearance from
+# 3.15 to just over 5 tiles, strictly safer than the straight line it
+# replaces).
+LAKE_SOUTHWEST_ANGLE = 3 * math.pi / 4  # atan2(dy, dx): -x (west) and +y (south)
+LAKE_SOUTHWEST_EXTENSION_MAX = 8.0
+TRIBUTARY_BOW_AMPLITUDE = 3.5
+
+
+def _lake_boundary_radius(theta: float) -> float:
+    """The lake body's own edge, same shape as _coast_boundary_x etc. but as a
+    function of angle from LAKE_CENTER instead of x or y. Clipped to never
+    exceed the original LAKE_RADIUS -- real coves and lobes, not a fuzzy
+    circle -- everywhere except the deliberate southwest bay below."""
+    base = LAKE_RADIUS - 2.5 + 1.5 * math.sin(3 * theta + 0.7) + 1.0 * math.sin(5 * theta + 2.1)
+    return min(LAKE_RADIUS, base)
+
+
+def _southwest_extension(theta: float) -> float:
+    """Extra reach, unclipped, concentrated around the southwest direction --
+    a real secondary bay, not just edge texture. Squared cosine keeps it a
+    tight lobe rather than a wide lopsided bulge."""
+    aligned = max(0.0, math.cos(theta - LAKE_SOUTHWEST_ANGLE))
+    return LAKE_SOUTHWEST_EXTENSION_MAX * aligned ** 2
+
+
+def _tributary_center(t: float) -> tuple[float, float]:
+    """A single bow (zero at both ends, peak at the midpoint) instead of a
+    straight line -- verified to bow away from the (30, 60) test anchor, see
+    this module's own docstring."""
     bx, by = LAKE_TRIBUTARY_BRANCH_X, _river_center_y(LAKE_TRIBUTARY_BRANCH_X)
-    inner_radius = LAKE_RADIUS - 2  # protected core disk
-    tiles: set[tuple[int, int]] = set()
-    for x in range(max(0, lx - LAKE_RADIUS - 1), min(GRID, lx + LAKE_RADIUS + 2)):
-        for y in range(max(0, ly - LAKE_RADIUS - 1), min(GRID, ly + LAKE_RADIUS + 2)):
-            dist = math.hypot(x - lx, y - ly)
-            if dist > LAKE_RADIUS:
-                continue
-            if dist <= inner_radius:
-                tiles.add((x, y))
-                continue
-            # Outer shell: erode based on roughness, biased to erode more near
-            # the old edge -- "the lake less rounded": a perfect circle becomes
-            # an irregular, sometimes-receding shoreline, never wider than before.
-            shell_progress = (dist - inner_radius) / (LAKE_RADIUS - inner_radius)
-            if roughness[x, y] > shell_progress:
-                tiles.add((x, y))
-    # Tributary: protected core is the exact line (perpendicular distance <=
-    # 1), the outer skin out to LAKE_TRIBUTARY_HALF_WIDTH erodes the same way.
+    lx, ly = LAKE_CENTER
     dx, dy = lx - bx, ly - by
     length = math.hypot(dx, dy)
-    steps = max(1, int(length) * 2)
+    perp = (-dy / length, dx / length)
+    bow = TRIBUTARY_BOW_AMPLITUDE * math.sin(math.pi * t)
+    return bx + t * dx + bow * perp[0], by + t * dy + bow * perp[1]
+
+
+def _lake_tiles(roughness: np.ndarray) -> frozenset[tuple[int, int]]:
+    lx, ly = LAKE_CENTER
+    max_reach = LAKE_RADIUS + LAKE_SOUTHWEST_EXTENSION_MAX
+    tiles: set[tuple[int, int]] = set()
+    for x in range(max(0, lx - int(max_reach) - 1), min(GRID, lx + int(max_reach) + 2)):
+        for y in range(max(0, ly - int(max_reach) - 1), min(GRID, ly + int(max_reach) + 2)):
+            dist = math.hypot(x - lx, y - ly)
+            if dist == 0:
+                tiles.add((x, y))
+                continue
+            theta = math.atan2(y - ly, x - lx)
+            if dist <= _lake_boundary_radius(theta) + _southwest_extension(theta):
+                tiles.add((x, y))
+    # Tributary: protected core is the bowed centerline itself (perpendicular
+    # distance <= 1), the outer skin out to LAKE_TRIBUTARY_HALF_WIDTH erodes
+    # by roughness, tapering wider toward the lake the same progress-based way
+    # the main river already does.
+    bx, by = LAKE_TRIBUTARY_BRANCH_X, _river_center_y(LAKE_TRIBUTARY_BRANCH_X)
+    length = math.hypot(lx - bx, ly - by)
+    steps = max(1, int(length) * 4)
     for i in range(steps + 1):
         t = i / steps
-        cx, cy = bx + t * dx, by + t * dy
+        cx, cy = _tributary_center(t)
+        reach = t * LAKE_TRIBUTARY_HALF_WIDTH
         span = LAKE_TRIBUTARY_HALF_WIDTH + 1
         for ox in range(-span, span + 1):
             for oy in range(-span, span + 1):
@@ -162,15 +208,36 @@ def _lake_tiles(roughness: np.ndarray) -> frozenset[tuple[int, int]]:
                 perp_dist = math.hypot(x - cx, y - cy)
                 if perp_dist > LAKE_TRIBUTARY_HALF_WIDTH:
                     continue
-                if perp_dist <= 1.0 or roughness[x, y] < 0.5:
+                if perp_dist <= 1.0:
+                    tiles.add((x, y))
+                elif perp_dist - 1.0 <= reach and roughness[x, y] < 0.6:
                     tiles.add((x, y))
     return frozenset(tiles)
+
+
+def _confluence_pool() -> frozenset[tuple[int, int]]:
+    """A small rounded pool of river tiles right at the branch point, so the
+    incoming mountain river, the tributary peeling off, and the river's own
+    continuation toward the coast read as one natural confluence instead of a
+    hard, mismatched-width fork -- direct feedback: "the tributary looks
+    broken at the river to the lake and the remainder extending east." Only
+    ever keeps tiles the old fixed-width river formula already covered there
+    (a wide, unaffected stretch -- see this module's own verification step),
+    so this never violates the "never wider than the old footprint" guarantee."""
+    bx, by = LAKE_TRIBUTARY_BRANCH_X, round(_river_center_y(LAKE_TRIBUTARY_BRANCH_X))
+    pool = set()
+    for x in range(bx - 3, bx + 4):
+        for y in range(by - 3, by + 4):
+            if math.hypot(x - bx, y - by) <= 2.2 and _old_is_river(x, y):
+                pool.add((x, y))
+    return frozenset(pool)
 
 
 def generate() -> tuple[frozenset[tuple[int, int]], frozenset[tuple[int, int]]]:
     rng = np.random.default_rng(SEED)
     roughness = _build_roughness_field(rng)
-    return _river_tiles(roughness), _lake_tiles(roughness)
+    river = _river_tiles(roughness) | _confluence_pool()
+    return frozenset(river), _lake_tiles(roughness)
 
 
 def _write_backend_module(river_tiles: frozenset, lake_tiles: frozenset) -> None:

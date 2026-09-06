@@ -2814,9 +2814,16 @@ def test_expedition_senses_nearby_water_without_stepping_onto_it():
     as a find -- and, since the party never actually touched the water, it should
     carry none of the on-tile drowning risk."""
     sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 25, 44, "#c084fc")
+    # x=22, not the original x=25 -- the lake's southwest bay (see
+    # scripts/generate_hydrology.py's "we can extend the lake, naturally
+    # curving into the south-west" rework) now genuinely covers (25, 54), so
+    # a straight approach down that column would land ON water instead of
+    # near it. x=22 is a fresh column, confirmed by actually running this
+    # exact scenario against the current map, that still lands on dry ground
+    # within WATER_SENSING_RADIUS of the lake's real edge.
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 22, 44, "#c084fc")
     tribe.expeditions = [{
-        "pos": [25, 44], "origin": [25, 44], "target": [25, 65],  # the lake, far off yet
+        "pos": [22, 44], "origin": [22, 44], "target": [22, 65],  # the lake, far off yet
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
@@ -2825,13 +2832,9 @@ def test_expedition_senses_nearby_water_without_stepping_onto_it():
     with mock.patch("backend.simulation.random.random", return_value=0.0):  # would drown if on-tile
         sim._advance_expeditions(tribe)
 
-    assert tribe.expeditions[0]["pos"] == [25, 54]  # landed short of the lake itself
+    assert tribe.expeditions[0]["pos"] == [22, 54]  # landed short of the lake itself
     assert tribe.expeditions[0]["phase"] == "returning"
-    # (27, 56), not its own (25, 54) -- the actual nearest water tile it sensed.
-    # Coordinate shifted from the pre-rework (27, 54) when the lake's tributary
-    # got its natural-hydrology narrowing (see scripts/generate_hydrology.py);
-    # recomputed fresh against the current map, not just nudged to pass.
-    assert tribe.expeditions[0]["found"] == [27, 56]
+    assert tribe.expeditions[0]["found"] == [25, 54]  # the actual water tile it sensed, not its own position
     assert tribe.population == 8  # no drowning -- never touched the water
     assert any("hears water nearby" in entry for entry in tribe.history)
 
