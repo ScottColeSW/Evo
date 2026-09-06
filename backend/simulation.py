@@ -866,6 +866,13 @@ class Tribe:
         # PRE_SETTLEMENT_ACTIONS. Distinct from currently-settled (which can toggle)
         # because the point is to have proven the tribe CAN settle, once.
         self.has_ever_settled = False
+        # The cycle has_ever_settled flipped True -- explicit request ("suspend
+        # crisis for 10 cycles beyond Territory lock"): the march to reach
+        # confirmed water is itself expensive (RELOCATE's own food/water cost,
+        # several cycles running), so a tribe often arrives and founds its city
+        # already right at the survival-crisis threshold. See
+        # SURVIVAL_CRISIS_ACTIONS's own grace-period comment in _prepare_turn.
+        self.settled_at_cycle: int | None = None
 
         # Real territory + building footprints (2026-09-02 redesign): granted the
         # instant has_ever_settled becomes True, via Simulation._found_territory.
@@ -2139,8 +2146,23 @@ class Simulation:
         # attempts, not just one) -- so this doesn't reintroduce the "permanently
         # stranded tribe" risk the looser _is_camped gate was originally written
         # to avoid.
-        if camped and not still_journeying and not tribe.has_ever_settled and (settled_near_water or tribe.confirmed_water_sites):
+        #
+        # Second bug, found the very next run: `or tribe.confirmed_water_sites`
+        # here checked whether a site had EVER been confirmed anywhere on the
+        # map, not whether the tribe was actually there -- the instant a distant
+        # scout came home with news, has_ever_settled fired wherever the tribe
+        # happened to be standing that same cycle (often mid-GATHER, nowhere
+        # near the real site), founding territory there. Every later RELOCATE
+        # toward the real water then got clamped to that wrong center's
+        # territory_radius, unable to ever actually arrive -- "got stuck at its
+        # own territory boundary... did not move in a direct line to the water
+        # found." settled_near_water alone already means "within
+        # SETTLEMENT_WATER_TERRITORY_RADIUS of a confirmed site right now" (see
+        # _near_confirmed_water) -- the correct, proximity-based check; the
+        # existence-based OR added nothing but this bug.
+        if camped and not still_journeying and not tribe.has_ever_settled and settled_near_water:
             tribe.has_ever_settled = True
+            tribe.settled_at_cycle = self.cycle
             self._found_territory(tribe)
 
         if not tribe.has_ever_settled:
@@ -2176,7 +2198,17 @@ class Simulation:
         # first, lose RELOCATE forever, and be permanently unable to ever reach real
         # water and actually farm. RELOCATE only locks in once a tribe has settled
         # somewhere that's actually good enough for that -- next to real water.
-        if settled_near_water:
+        #
+        # Second regression: settled_near_water alone goes True up to
+        # SETTLEMENT_WATER_TERRITORY_RADIUS tiles before actual arrival -- a tribe
+        # still mid-march (still_journeying, not yet tribe.has_ever_settled) could
+        # already be within that radius, which stripped RELOCATE here the same
+        # cycle the pre-settlement branch above was forcing RELOCATE as the ONLY
+        # choice (see "can not issue new commands until they Settle") -- an empty
+        # available_actions, crashing _resolve_action's own fallback. This lockout
+        # is only meant for a tribe that has actually settled and shouldn't
+        # casually uproot -- gate it on that, not just current proximity.
+        if settled_near_water and tribe.has_ever_settled:
             # A tribe that has genuinely put down roots next to real water --
             # invested in long enough to be gathering wood and stone and farming here
             # -- shouldn't be one bad turn away from uprooting the whole settlement on
@@ -2356,6 +2388,19 @@ class Simulation:
                 tribe.wall_commitment_active = False
 
         survival_crisis = tribe.food_crisis_active or tribe.water_crisis_active
+        # Explicit request: "suspend crisis for 10 cycles beyond Territory lock."
+        # The march to reach confirmed water is itself expensive (RELOCATE's own
+        # food/water cost, several cycles running) -- a tribe often arrives and
+        # founds its city already right at the crisis threshold, immediately
+        # cutting its menu down to SURVIVAL_CRISIS_ACTIONS the instant it's
+        # finally able to build/farm/settle in. food_crisis_active/
+        # water_crisis_active themselves stay real (still shown as facts
+        # elsewhere) -- only the menu-narrowing below is suspended, and only for
+        # this one grace window right after founding.
+        if survival_crisis and tribe.settled_at_cycle is not None:
+            cycles_since_settling = self.cycle - tribe.settled_at_cycle
+            if cycles_since_settling < config.SETTLEMENT_CRISIS_GRACE_CYCLES:
+                survival_crisis = False
         if survival_crisis:
             # Fail-open guard: never cut the menu down to nothing (e.g. an
             # unusual pre-settlement gating combination) -- a soft-lock is worse

@@ -711,6 +711,15 @@ HUNGER_CRITICAL_CYCLES_LEFT = 1
 THIRST_WARNING_CYCLES_LEFT = 4
 THIRST_CRITICAL_CYCLES_LEFT = 1
 
+# Explicit request ("suspend crisis for 10 cycles beyond Territory lock"): the
+# march to reach confirmed water is itself expensive (RELOCATE's own food/
+# water cost, several cycles running at MOVEMENT_SPEED), so a tribe often
+# arrives and founds its city already right at the survival-crisis threshold
+# -- immediately cutting its menu down to SURVIVAL_CRISIS_ACTIONS the instant
+# it's finally able to build/farm/settle in would be a harsh, undeserved
+# start. See Tribe.settled_at_cycle and _prepare_turn's crisis-check block.
+SETTLEMENT_CRISIS_GRACE_CYCLES = 10
+
 # Real runs showed tribes starving/dehydrating while sitting on 100+ wood or stone --
 # gathering more of a resource that was never the bottleneck, apparently without
 # realizing the stockpile was already well past any near-term building need. Set above

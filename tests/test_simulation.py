@@ -991,12 +991,13 @@ def test_farming_and_eggs_available_once_settled_even_away_from_water():
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
-    # has_ever_settled now requires real confirmed water to fire on its own (see
-    # that gate's own comment in _prepare_turn) -- a fake confirmed site lets
+    # has_ever_settled now requires REAL PROXIMITY to confirmed water (see that
+    # gate's own comment in _prepare_turn -- a distant confirmed site doesn't
+    # count) -- a fake site right at the tribe's own position lets
     # _prepare_turn's own settlement logic run for real (including founding
     # territory/walls, which PLANT_CROP's own placement check needs), rather
     # than hand-setting has_ever_settled and skipping that setup.
-    tribe.confirmed_water_sites = [(0, 0)]
+    tribe.confirmed_water_sites = [(65, 65)]
 
     _request, ctx = sim._prepare_turn(tribe)
 
@@ -6635,12 +6636,13 @@ def test_catch_fish_available_once_settled_even_away_from_water():
     tribe = sim.tribes["tribe_0"]
     tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
-    # has_ever_settled now requires real confirmed water to fire on its own (see
-    # that gate's own comment in _prepare_turn) -- a fake confirmed site lets
+    # has_ever_settled now requires REAL PROXIMITY to confirmed water (see that
+    # gate's own comment in _prepare_turn -- a distant confirmed site doesn't
+    # count) -- a fake site right at the tribe's own position lets
     # _prepare_turn's own settlement logic run for real (including founding
     # territory/walls, which PLANT_CROP's own placement check needs), rather
     # than hand-setting has_ever_settled and skipping that setup.
-    tribe.confirmed_water_sites = [(0, 0)]
+    tribe.confirmed_water_sites = [(65, 65)]
 
     request, ctx = sim._prepare_turn(tribe)
 
