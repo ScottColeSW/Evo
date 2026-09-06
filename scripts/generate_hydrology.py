@@ -233,11 +233,34 @@ def _confluence_pool() -> frozenset[tuple[int, int]]:
     return frozenset(pool)
 
 
+def _bridge_diagonal_pinches(tiles: frozenset[tuple[int, int]]) -> frozenset[tuple[int, int]]:
+    """Small display cleanup, flagged directly from a live screenshot: near
+    the river's source its protected centerline is only 1 tile wide and steps
+    diagonally (both x and y advance by 1 each column, since the centerline's
+    slope runs close to 1:1 there) -- two tiles touching only at a corner,
+    with neither of the two orthogonal squares between them filled in. Every
+    tile-based renderer draws that as a staircase of separate speckles, not a
+    connected line, even though it's one connected shape by 8-connectivity.
+    Fills exactly one of the two orthogonal bridge tiles for every such corner
+    pair so nothing this renders ever touches only at a corner."""
+    tiles = set(tiles)
+    for x, y in list(tiles):
+        for dx, dy in ((1, 1), (1, -1)):
+            diagonal = (x + dx, y + dy)
+            if diagonal not in tiles:
+                continue
+            bridge_a, bridge_b = (x + dx, y), (x, y + dy)
+            if bridge_a not in tiles and bridge_b not in tiles:
+                tiles.add(bridge_a)
+    return frozenset(tiles)
+
+
 def generate() -> tuple[frozenset[tuple[int, int]], frozenset[tuple[int, int]]]:
     rng = np.random.default_rng(SEED)
     roughness = _build_roughness_field(rng)
     river = _river_tiles(roughness) | _confluence_pool()
-    return frozenset(river), _lake_tiles(roughness)
+    lake = _lake_tiles(roughness)
+    return _bridge_diagonal_pinches(frozenset(river)), _bridge_diagonal_pinches(frozenset(lake))
 
 
 def _write_backend_module(river_tiles: frozenset, lake_tiles: frozenset) -> None:
