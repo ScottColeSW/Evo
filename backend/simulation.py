@@ -60,13 +60,27 @@ from .world import (
 # own comment -- a documented live bug (two scouts leaving in nearly the same
 # direction) means every spawn needs at least 20 tiles of clearance from the
 # literal grid edge (0 or 99), not just the coastline, and y=19 undercuts that
-# by one tile. (48, 21) and (51, 78) are the closest points on the same lines
-# that still clear it (21 and 21 tiles respectively), both still solid plains.
+# by one tile.
+#
+# Slot 1 ("Tribe 2") moved again after the lake's natural-hydrology rework
+# grew a real southwest bay (see scripts/generate_hydrology.py): the old
+# (51, 78) ended up only 23.3 tiles from the lake's new nearest shore, inside
+# SCOUT_PATROL_DISTANCE=25 -- "instant range of Scouts," trivializing the
+# water search that spawn was meant to pose. (64, 70), confirmed
+# computationally, is 33.2 tiles from the lake (clear of patrol range) while
+# staying within a single expedition's reach of real water (19.1 tiles,
+# comfortably under EXPEDITION_SPEED*EXPEDITION_MAX_DAYS=50 -- see
+# test_every_spawn_point_is_within_a_single_expeditions_reach_of_water),
+# still solid plains, 21.1 tiles clear of the nearest coastline (the map's
+# geometry doesn't leave room for the full 25 once the lake-distance and
+# edge-clearance constraints are both satisfied here), and at least 20 tiles
+# from every other spawn. (48, 21) unaffected -- it sits near the mountains,
+# nowhere close to the lake's new southwest reach.
 # Slots 2/3 are untouched fallbacks for a 3rd/4th tribe -- their spacing
 # against the new slot 0/1 positions is tighter than the original four-corner
 # layout, a direct result of pulling 0/1 toward the coast, but all four remain
 # distinct, non-clustered starting points.
-SPAWN_POINTS = [(48, 21), (51, 78), (50, 55), (40, 37)]
+SPAWN_POINTS = [(48, 21), (64, 70), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 
 # See _prepare_turn's own use of this -- every one-time structure with a single
