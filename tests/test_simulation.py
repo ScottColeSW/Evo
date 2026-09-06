@@ -4604,7 +4604,12 @@ def test_raider_strength_scales_with_population_and_can_outweigh_its_own_defense
     assert big.raids_defended == 0
 
 
-def test_full_wall_reduces_population_loss_more_than_a_partial_wall():
+def test_a_failed_defense_always_costs_exactly_one_life_regardless_of_wall():
+    """Explicit spec (2026-09-06): "Raid defeats are kill 1, lose 75%
+    holdings, report, gravemarker." A failed defense used to cost less
+    population the more complete the wall was (2 undefended vs. 1 at full
+    wall) -- wall progress now only ever affects whether the defense
+    succeeds at all (defense_chance); once it fails, the cost is flat."""
     sim_partial = _bare_simulation()
     partial = Tribe("tribe_0", "A", "gemma2:2b", 50, 50, "#c084fc")
     partial.population = 10
@@ -4631,7 +4636,7 @@ def test_full_wall_reduces_population_loss_more_than_a_partial_wall():
     with mock.patch("backend.simulation.random.random", return_value=0.99):
         sim_full._resolve_raider_attack(full)
 
-    assert (10 - full.population) < (10 - partial.population)
+    assert (10 - full.population) == (10 - partial.population) == 1
 
 
 def test_failed_wall_defense_knocks_down_one_section_by_one_layer():
@@ -7576,6 +7581,86 @@ def test_volcano_hazard_respects_its_own_chance_roll():
 
     with mock.patch("backend.simulation.random.random", return_value=0.99):  # misses even the 75% chance
         fired = sim._volcano_hazard(tribe, vx, vy)
+
+    assert fired is False
+    assert tribe.population == 10
+
+
+def test_cliffs_hazard_fires_on_cliffs_ground():
+    """Explicit request: "we need to add back the Cliffs hazard or those
+    Scouts stay there." Same shape as the volcano/river hazards, moderate
+    rather than volcano-severe -- cliffs are routine coastal terrain, not a
+    landmark to avoid outright."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    cx, cy = 5, 35  # confirmed real cliffs terrain
+    assert sim.world.biome(cx, cy) == "cliffs"
+
+    with mock.patch("backend.simulation.random.random", return_value=0.01):
+        fired = sim._cliffs_hazard(tribe, cx, cy)
+
+    assert fired is True
+    assert tribe.population == 10 - config.CLIFFS_HAZARD_POPULATION_LOSS
+    assert any("cliffs" in entry for entry in tribe.history)
+    assert any(e["kind"] == "hazard_death" and (e["x"], e["y"]) == (cx, cy) for e in sim.recent_encounters)
+
+
+def test_cliffs_hazard_never_fires_off_cliffs_ground():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+
+    with mock.patch("backend.simulation.random.random", return_value=0.01):
+        fired = sim._cliffs_hazard(tribe, 50, 50)  # plains, not cliffs ground
+
+    assert fired is False
+    assert tribe.population == 10
+
+
+def test_cliffs_hazard_respects_its_own_chance_roll():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    cx, cy = 5, 35
+
+    with mock.patch("backend.simulation.random.random", return_value=0.99):  # misses even the 20% chance
+        fired = sim._cliffs_hazard(tribe, cx, cy)
+
+    assert fired is False
+    assert tribe.population == 10
+
+
+def test_ocean_hazard_is_certain_on_ocean_ground():
+    """Explicit spec: "Ocean is instant kill 1, report, gravemarker." A
+    safety net for the rare reflected/overshot-target edge case that can
+    still land a party on ocean despite normal movement always deflecting
+    around it -- certain, not a rolled chance, matching "instant.\""""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    ox, oy = 0, 0  # confirmed real ocean terrain
+    assert sim.world.biome(ox, oy) == "ocean"
+
+    with mock.patch("backend.simulation.random.random", return_value=0.99):  # even a near-miss roll still kills
+        fired = sim._ocean_hazard(tribe, ox, oy)
+
+    assert fired is True
+    assert tribe.population == 10 - config.OCEAN_HAZARD_POPULATION_LOSS
+    assert any("sea" in entry for entry in tribe.history)
+    assert any(e["kind"] == "hazard_death" and (e["x"], e["y"]) == (ox, oy) for e in sim.recent_encounters)
+
+
+def test_ocean_hazard_never_fires_off_ocean_ground():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+
+    fired = sim._ocean_hazard(tribe, 50, 50)  # plains, not ocean
 
     assert fired is False
     assert tribe.population == 10

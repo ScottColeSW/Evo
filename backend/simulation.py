@@ -3219,6 +3219,8 @@ class Simulation:
             # above still happens every cycle.
             if is_new_day:
                 self._volcano_hazard(tribe, nx, ny)
+                self._cliffs_hazard(tribe, nx, ny)
+                self._ocean_hazard(tribe, nx, ny)
                 exp["food_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_FOOD
                 # Explicit correction: "foragers do not need to bring water back
                 # once they are settled, they should start bringing back
@@ -3368,6 +3370,8 @@ class Simulation:
                 # one per real day these chances were actually tuned against.
                 self._expedition_river_hazard(tribe, nx, ny)
                 self._volcano_hazard(tribe, nx, ny)
+                self._cliffs_hazard(tribe, nx, ny)
+                self._ocean_hazard(tribe, nx, ny)
                 self._expedition_raider_ambush(tribe, exp, nx, ny)
             if [nx, ny] == [ox, oy]:
                 # Whatever was foraged along the way comes home regardless of whether the
@@ -3598,6 +3602,49 @@ class Simulation:
         # same missing marker.
         self.recent_encounters.append({
             "x": x, "y": y, "kind": "hazard_death", "label": "Lost to the volcano", "outcome": "struck",
+        })
+        return True
+
+    def _cliffs_hazard(self, tribe: Tribe, x: int, y: int) -> bool:
+        """Explicit request: "we need to add back the Cliffs hazard or those
+        Scouts stay there." Same shape as _expedition_river_hazard/
+        _volcano_hazard -- see config.CLIFFS_HAZARD_CHANCE's own comment for
+        why this is moderate rather than volcano-severe. Called from every
+        real way a tribe's people could end up on a cliffs tile: expedition
+        movement and RELOCATE (actions._relocate), same broad coverage
+        _volcano_hazard already gets."""
+        if biome_at(x, y) != "cliffs" or random.random() >= config.CLIFFS_HAZARD_CHANCE:
+            return False
+        self.trauma.radiate_event_wave(x, y, config.CLIFFS_TRAUMA_MAGNITUDE, config.CLIFFS_TRAUMA_RADIUS)
+        self._lose_population(tribe, config.CLIFFS_HAZARD_POPULATION_LOSS, cause="cliffs")
+        tribe.history.append(f"the cliffs near ({x},{y}) claimed a life on the loose rock -- the survivors turn back")
+        tribe.memory.remember(
+            f"The cliffs near ({x},{y}) are dangerous underfoot -- real risk lingering there.",
+            self.cycle, weight=0.8,
+        )
+        self.recent_encounters.append({
+            "x": x, "y": y, "kind": "hazard_death", "label": "Lost to the cliffs", "outcome": "struck",
+        })
+        return True
+
+    def _ocean_hazard(self, tribe: Tribe, x: int, y: int) -> bool:
+        """Explicit spec: "Ocean is instant kill 1, report, gravemarker." A
+        safety net, not a routine check -- physics.terrain_aware_step already
+        deflects ordinary movement around ocean, so this only ever fires
+        through the known reflected/overshot-target edge case (see physics.
+        reflect_into_grid's own docstring). Certain rather than a rolled
+        chance, matching "instant.\""""
+        if biome_at(x, y) != "ocean":
+            return False
+        self.trauma.radiate_event_wave(x, y, config.DROWNING_TRAUMA_MAGNITUDE, config.DROWNING_TRAUMA_RADIUS)
+        self._lose_population(tribe, config.OCEAN_HAZARD_POPULATION_LOSS, cause="ocean")
+        tribe.history.append(f"the open sea claimed a life near ({x},{y}) -- the survivors turn back")
+        tribe.memory.remember(
+            f"The open sea off ({x},{y}) is fatal -- real danger, never go there.",
+            self.cycle, weight=0.9,
+        )
+        self.recent_encounters.append({
+            "x": x, "y": y, "kind": "hazard_death", "label": "Lost to the sea", "outcome": "struck",
         })
         return True
 

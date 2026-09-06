@@ -342,6 +342,28 @@ VOLCANO_HAZARD_POPULATION_LOSS = 5
 VOLCANO_TRAUMA_MAGNITUDE = -0.6  # more severe dread than DROWNING_TRAUMA_MAGNITUDE (-0.4)
 VOLCANO_TRAUMA_RADIUS = 8  # wider than DROWNING_TRAUMA_RADIUS (6) -- a bigger, more memorable disaster
 
+# Explicit request (2026-09-06): "we need to add back the Cliffs hazard or
+# those Scouts stay there." Cliffs form the whole coastal ring around the
+# island (unlike the volcano's small, localized danger zone) and were fully
+# passable with zero consequence -- a scout patrolling that direction simply
+# parked there forever with nothing to gain and nothing to fear. Moderate,
+# not volcano-severe: this is routine coastal terrain a scout crosses often,
+# not a rare landmark to avoid outright -- real risk for lingering, not a
+# near-certain death sentence for going anywhere near the coastline.
+CLIFFS_HAZARD_CHANCE = 0.2
+CLIFFS_HAZARD_POPULATION_LOSS = 1
+CLIFFS_TRAUMA_MAGNITUDE = -0.4
+CLIFFS_TRAUMA_RADIUS = 6
+
+# Explicit spec (2026-09-06): "Ocean is instant kill 1, report, gravemarker."
+# physics.terrain_aware_step already deflects ordinary movement around ocean
+# (it's the one biome real navigation treats as impassable) -- this is a
+# safety net for the known edge case where a reflected/overshot target can
+# still land exactly on one (see physics.reflect_into_grid's own docstring),
+# not a routine occurrence. Certain rather than a rolled chance, matching
+# "instant" -- see Simulation._ocean_hazard.
+OCEAN_HAZARD_POPULATION_LOSS = 1
+
 # Redesigned 2026-09-02 ("these shouldn't be disconnected... look at it as a whole"):
 # retires the old abstract city_buildings counter (population-driven, unrelated to any
 # real named building) in favor of real placed building footprints (backend/
@@ -599,10 +621,16 @@ FAME_PER_CELEBRATION = 2
 FAME_PER_LANDMARK = 3
 FAME_PER_LANDMARK_IN_TERRITORY = 6
 # Normalizes tribe.fame into the same 0..1 scale every other wellbeing tier
-# uses -- reaching "satisfied" (wellbeing.TIER_SATISFIED_THRESHOLD) takes
-# roughly 6 celebrations' worth, deliberately slower than esteem's own trophy
-# count since fame is meant to accumulate over a whole run, not an early spike.
-FAME_SCORE_REFERENCE = 12
+# uses. Explicit correction (2026-09-06): "Fame is scaled too high" -- at the
+# original 12, "satisfied" only took 6 celebrations' worth, which a live
+# 756-cycle (38-day) run blew past almost immediately (real celebrations fire
+# far more often than the original estimate assumed); tribe.fame ended that
+# run at 104-233, meaning the score had been pinned at 1.0 for nearly the
+# entire run instead of "accumulating over a whole run" as originally
+# intended. Raised to roughly match a real full run's own endgame fame, so
+# the score keeps climbing across the run instead of saturating in the first
+# day or two.
+FAME_SCORE_REFERENCE = 100
 CELEBRATION_COOLDOWN_CYCLES = 20
 # _check_for_celebration's surplus-only branch (no real discovery, just "food is
 # comfortably above FOOD_TROPHY_THRESHOLD") can otherwise fire every single cooldown
@@ -923,9 +951,15 @@ RAIDER_STRENGTH_DEFENSE_PENALTY_AT_MAX = 0.35
 # progress, never fully negated. Reuses RAID_TRAUMA_MAGNITUDE/RADIUS and
 # RAID_PRIDE_MAGNITUDE/RADIUS (above) rather than new ones: mechanically the same kind
 # of violence event as a tribe-vs-tribe raid, not a new trauma category.
-RAIDER_ATTACK_POPULATION_LOSS_UNDEFENDED = 2
+#
+# Explicit spec (2026-09-06): "Raid defeats are kill 1, lose 75% holdings,
+# report, gravemarker." A flat one-life cost regardless of wall progress
+# (wall progress is what determines whether the defense succeeds at all, via
+# defense_chance -- this is what a *failed* defense actually costs once it
+# happens) and a much steeper stockpile loss than before.
+RAIDER_ATTACK_POPULATION_LOSS_UNDEFENDED = 1
 RAIDER_ATTACK_POPULATION_LOSS_AT_FULL_WALL = 1
-RAIDER_STEAL_FRACTION = 0.25
+RAIDER_STEAL_FRACTION = 0.75
 
 # Explicit request: "the repelling Tribe better get some good rewards from that.
 # it's huge for them!" -- a successful defense used to yield only pride and a
@@ -1141,7 +1175,14 @@ QUARRY_STONE_MULTIPLIER = 3
 # same shape, same fixed footprint every time (see config.BUILDING_FOOTPRINTS --
 # explicit request: "a building that never changes its footprint regardless of how
 # much it is holding").
-STORAGE_CAP_BASE = 150
+# Raised 150 -> 300 (explicit request, 2026-09-06: "let's give the Warehouse
+# more basic capacity. They are wasting a lot of cycles on building them.")
+# Confirmed live: a tribe built 12 Warehouses over a 756-cycle run (1350
+# total capacity) while wood/food/stone were still in the low thousands --
+# each individual Warehouse's bonus was too small relative to a mature
+# economy's real accumulation rate, so the model kept spending real turns on
+# more of them instead of anything else.
+STORAGE_CAP_BASE = 300
 
 # Explicit request: "these guys need punishment for choosing the wrong thing.
 # like for waste when they overfill the storage." Gathering into an
@@ -1155,7 +1196,11 @@ STORAGE_CAP_BASE = 150
 # the same tile) is the point.
 WASTE_TRAUMA_MAGNITUDE = -0.4
 WASTE_TRAUMA_RADIUS = 5
-WAREHOUSE_STORAGE_BONUS_PER_BUILDING = 100
+# Raised 100 -> 400 (same request as STORAGE_CAP_BASE above): each Warehouse
+# now covers 4x as much capacity for the same cost, so a mature economy needs
+# far fewer of them to keep pace -- fewer turns spent on repeat construction,
+# not a change to what a single Warehouse costs.
+WAREHOUSE_STORAGE_BONUS_PER_BUILDING = 400
 WAREHOUSE_WOOD_COST = 25
 WAREHOUSE_STONE_COST = 20
 
