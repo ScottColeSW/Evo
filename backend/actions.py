@@ -585,6 +585,13 @@ def _expand_territory(sim, tribe, biome, target):
     if unlockable is None:
         if not city_layout.ring_fully_reinforced(tribe.wall_rings[-1]):
             return "the outermost wall ring must be fully reinforced before territory can expand further"
+        # See config.MAX_WALL_RINGS's own comment -- a real ceiling, not an
+        # unbounded ratchet. Simulation._prepare_turn retires EXPAND_TERRITORY
+        # from the choice set once this is hit, so reaching this branch at all
+        # would mean the menu itself let a stale choice through; fail closed
+        # rather than open a ring past the intended cap.
+        if len(tribe.wall_rings) >= config.MAX_WALL_RINGS:
+            return None
         tribe.wall_rings.append(city_layout.build_ring(sim.world, tribe.territory_center, len(tribe.wall_rings)))
         unlockable = city_layout.next_unlockable_section(tribe)
 

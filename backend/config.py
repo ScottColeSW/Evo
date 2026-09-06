@@ -359,16 +359,26 @@ VOLCANO_TRAUMA_RADIUS = 8  # wider than DROWNING_TRAUMA_RADIUS (6) -- a bigger, 
 TERRITORY_FOUNDING_REGION = 3  # base radius = SETTLEMENT_WATER_TERRITORY_RADIUS * this = 12 tiles
 WALL_RING_RADIUS_STEP = SETTLEMENT_WATER_TERRITORY_RADIUS * TERRITORY_FOUNDING_REGION  # 12; ring i sits at 12*(i+1)
 
-# Explicit correction (2026-09-05), after watching the live consequence: a
-# settling tile with 3 of ring 0's 8 sections on the river got backed away
-# from -- 12 tiles, visibly splitting the tribe's own icon from its Hut and
-# walls on the map. "The first place Tribe 1 landed, including Territory, was
-# perfect" -- 3 natural barriers out of 8 reads as good, defensible,
-# river-framed ground, not a problem worth relocating over. Raised from the
-# original threshold (>1 triggered a search) so a spot needs to be genuinely
-# dominated by water (half the ring or more) before _choose_territory_center
-# goes looking elsewhere.
-TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS = 3
+# Explicit request (2026-09-06): "we need to eliminate a 3 ring and begin to
+# reinforce them with Concrete... 2 rings is enough. they will have to build
+# outside the walls once they hit that point." EXPAND_TERRITORY used to open a
+# whole new ring, unconditionally, every time the outermost was fully
+# reinforced -- no ceiling beyond raw land availability, confirmed live (a
+# real run built well past 2). Once a tribe already has this many rings, all
+# fully reinforced, EXPAND_TERRITORY retires from the choice set for good, the
+# same one-way "generalist narrows once its job is done" shape BUILD_FIRE/
+# COOK_FOOD already use -- a real ceiling instead of an unbounded ratchet.
+MAX_WALL_RINGS = 2
+
+# Lowered back to 1 (explicit correction, 2026-09-06): "with 2 built, they
+# feel too safe even in an open field." Briefly raised to 3 the night before
+# after a settling tile with 3 natural barriers looked good on inspection --
+# but watching a full run through to its era ceiling showed 2+ free natural
+# wall sections reads as too much passive safety, not "good, defensible
+# ground." Back to the original bar: only a single freebie natural-barrier
+# section is tolerated before _choose_territory_center goes looking for
+# somewhere less water-dominated.
+TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS = 1
 
 # EXPAND_TERRITORY unlocks exactly one new wall section per call, in fixed compass
 # order -- "expansion must be done for each wall section," no exception for ring 0.

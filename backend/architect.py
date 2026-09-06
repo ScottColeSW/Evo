@@ -55,21 +55,34 @@ def _ring_perimeter_offsets(d: int):
 def find_free_slot(world, tribe, building_type: str) -> tuple[int, int] | None:
     """Square-spiral scan outward from tribe.territory_center for a free,
     non-overlapping anchor for building_type's footprint. Returns the top-left
-    (x, y) of the footprint, or None if the whole territory has no room left."""
+    (x, y) of the footprint, or None if the whole map has no room left.
+
+    Explicit request (2026-09-06, alongside config.MAX_WALL_RINGS capping how
+    many wall rings a tribe can ever build): "they will have to build outside
+    the walls once they hit that point." Used to stop dead at
+    tribe.territory_radius, returning None the instant the walled area filled
+    up -- with walls now capped, that would have silently soft-locked every
+    future build the moment a tribe's 2-ring territory ran out of room. The
+    spiral already checks closer tiles first, so extending the search by one
+    more ring's worth of distance (config.WALL_RING_RADIUS_STEP) keeps
+    building inside the walls preferred and only spills just outside them once
+    that's genuinely full -- bounded, not the whole map, so a tribe that's
+    truly out of room (see test_affordability_gate_hides_a_buildable_action_
+    once_territory_has_no_room) still correctly gets told so instead of
+    planting a building arbitrarily far from its own settlement."""
     if tribe.territory_center is None:
         return None
     w, h = config.BUILDING_FOOTPRINTS[building_type]
     cx, cy = tribe.territory_center
     occupied = _occupied_rects(tribe)
     padding = config.BUILDING_PLACEMENT_PADDING
+    max_search_radius = tribe.territory_radius + config.WALL_RING_RADIUS_STEP
 
-    for d in range(0, tribe.territory_radius + 1):
+    for d in range(0, max_search_radius + 1):
         for dx, dy in _ring_perimeter_offsets(d):
             x = cx + dx - w // 2
             y = cy + dy - h // 2
             if x < 0 or y < 0 or x + w > world.grid_size or y + h > world.grid_size:
-                continue
-            if max(abs((x + w / 2) - cx), abs((y + h / 2) - cy)) > tribe.territory_radius:
                 continue
             if any(world.biome(tx, ty) in config.UNBUILDABLE_BIOMES for tx in range(x, x + w) for ty in range(y, y + h)):
                 continue

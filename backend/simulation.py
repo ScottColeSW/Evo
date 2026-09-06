@@ -798,6 +798,10 @@ class Tribe:
         # _advance_water_supply's passive income exists (settled_near_water) -- see
         # Simulation._prepare_turn.
         self.watering_retired = False
+        # Same one-way retirement shape, for EXPAND_TERRITORY once config.
+        # MAX_WALL_RINGS is reached and fully reinforced -- see
+        # Simulation._prepare_turn.
+        self.walls_complete = False
         # Egg-gathering/flock genetics (backend/actions.py GATHER_EGGS, Simulation.
         # _resolve_hatch, backend/genetics.py hatch()) -- same pending_X/resolve shape
         # as pending_birth/lineage above, applied to a flock instead of the tribe's own
@@ -2197,6 +2201,25 @@ class Simulation:
             )
         if tribe.foraging_retired:
             available_actions = [a for a in available_actions if a != "GATHER_FOOD"]
+
+        # Explicit request ("2 rings is enough. they will have to build outside
+        # the walls once they hit that point"): EXPAND_TERRITORY retires the
+        # same one-way way GATHER_FOOD/GATHER_WATER do above, once config.
+        # MAX_WALL_RINGS is reached and the outermost ring is fully reinforced
+        # -- a real ceiling instead of an unbounded ratchet on ring count.
+        if (
+            not tribe.walls_complete
+            and len(tribe.wall_rings) >= config.MAX_WALL_RINGS
+            and city_layout.ring_fully_reinforced(tribe.wall_rings[-1])
+        ):
+            tribe.walls_complete = True
+            tribe.history.append(
+                f"\U0001f4dc {tribe.name}'s walls are complete at {len(tribe.wall_rings)} rings -- "
+                "EXPAND_TERRITORY is retired now that the settlement has reached its full defensive size; "
+                "future building spreads out beyond the walls"
+            )
+        if tribe.walls_complete:
+            available_actions = [a for a in available_actions if a != "EXPAND_TERRITORY"]
 
         # Explicit request ("i know you can see they kept try to build a dock when
         # they already had one"): every other one-time structure with a single

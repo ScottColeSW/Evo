@@ -812,6 +812,32 @@ def test_expand_territory_opens_a_new_ring_once_the_current_one_is_maxed():
     assert "territory expands" in result
 
 
+def test_expand_territory_refuses_a_ring_past_the_cap():
+    """Explicit request: "2 rings is enough. they will have to build outside
+    the walls once they hit that point." A no-op fail-closed guard --
+    Simulation._prepare_turn already retires EXPAND_TERRITORY from the menu
+    once config.MAX_WALL_RINGS is reached, but this covers the action itself
+    refusing too, in case that menu retirement is ever bypassed."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    assert config.MAX_WALL_RINGS == 2
+    _complete_ring0(sim, tribe, tier=config.WALL_MAX_LAYERS)
+    tribe.wood = tribe.stone = 1000
+    ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET)  # opens ring 1
+    assert len(tribe.wall_rings) == 2
+    for sec in tribe.wall_rings[1]["sections"]:
+        sec["unlocked"] = True
+        sec["tier"] = config.WALL_MAX_LAYERS
+
+    result = ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
+
+    assert result is None
+    assert len(tribe.wall_rings) == 2  # no third ring opened
+
+
 def test_build_dock_is_a_no_op_before_fishing_is_learned():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")

@@ -1837,7 +1837,17 @@ def test_affordability_gate_hides_a_buildable_action_once_territory_has_no_room(
     _, ctx_roomy = sim._prepare_turn(tribe)
     assert "BUILD_WAREHOUSE" in ctx_roomy["available_actions"]
 
-    tribe.territory_radius = 0  # no room for a fresh 3x3 footprint anywhere
+    # find_free_slot now searches a bounded buffer (config.WALL_RING_RADIUS_STEP)
+    # past territory_radius too (2026-09-06, "build outside the walls once
+    # they hit that point") -- radius=0 alone no longer means "no room
+    # anywhere," so one big occupied rectangle spans the whole expanded search
+    # zone instead.
+    from backend import architect
+
+    tribe.territory_radius = 0
+    span = tribe.territory_radius + config.WALL_RING_RADIUS_STEP + 5  # padding slack
+    cx, cy = tribe.territory_center
+    architect.record_building(tribe, "fire", cx - span, cy - span, span * 2, span * 2, cycle=0)
     _, ctx_full = sim._prepare_turn(tribe)
     assert "BUILD_WAREHOUSE" not in ctx_full["available_actions"]
 
@@ -4061,15 +4071,33 @@ def test_find_minor_settlement_site_avoids_every_tribes_territory():
         assert dist > 20 + config.MINOR_SETTLEMENT_TERRITORY_BUFFER
 
 
-def test_found_territory_accepts_a_modest_natural_barrier_count():
-    """Explicit follow-up, after direct visual confirmation of the live bug: "the
-    first place Tribe 1 landed, including Territory, was perfect." A settling
-    tile with a river touching a couple of ring-0 sections is good, defensible,
-    river-framed ground, not a defect -- (30, 60) is real, buildable plains with
-    exactly 2 of 8 sections flagged as natural barriers, at or under config.
-    TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS (3). _found_territory should
-    leave the Hut and walls right where the tribe actually stands."""
+def test_found_territory_accepts_a_single_natural_barrier():
+    """Explicit correction (2026-09-06), after watching a full run through to
+    its era ceiling: "with 2 built, they feel too safe even in an open
+    field" -- lowered config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS back to
+    1. (40, 62) is real, buildable plains with exactly 1 of 8 sections flagged
+    as a natural barrier -- a single freebie is still tolerated, so
+    _found_territory should leave the Hut and walls right where the tribe
+    actually stands."""
     from backend import config, world
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 40, "y": 62}])
+    tribe = sim.tribes["tribe_0"]
+    assert world.biome_at(40, 62) == "plains"
+
+    sim._found_territory(tribe)
+
+    natural_barrier_count = sum(1 for sec in tribe.wall_rings[0]["sections"] if sec["natural_barrier"])
+    assert natural_barrier_count == 1
+    assert natural_barrier_count <= config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS
+    assert tribe.territory_center == (40, 62)  # stays put -- nothing worth backing away from
+
+
+def test_found_territory_backs_away_from_two_natural_barriers_now():
+    """Companion to the test above: two free natural-barrier sections used to
+    be tolerated (briefly raised to 3 the night before) -- now backs away from
+    (30, 60), which has exactly 2, the same as any other now-excessive spot."""
+    from backend import world
 
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 30, "y": 60}])
     tribe = sim.tribes["tribe_0"]
@@ -4077,10 +4105,7 @@ def test_found_territory_accepts_a_modest_natural_barrier_count():
 
     sim._found_territory(tribe)
 
-    natural_barrier_count = sum(1 for sec in tribe.wall_rings[0]["sections"] if sec["natural_barrier"])
-    assert natural_barrier_count == 2
-    assert natural_barrier_count <= config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS
-    assert tribe.territory_center == (30, 60)  # stays put -- nothing worth backing away from
+    assert tribe.territory_center != (30, 60)
 
 
 def test_found_territory_still_backs_away_from_genuinely_bad_geometry():
@@ -6606,6 +6631,59 @@ def test_gather_water_stays_available_before_settling_near_water():
 
     assert "GATHER_WATER" in ctx["available_actions"]
     assert tribe.watering_retired is False
+
+
+def test_expand_territory_retires_once_max_wall_rings_are_reached():
+    """Explicit request: "2 rings is enough. they will have to build outside
+    the walls once they hit that point." config.MAX_WALL_RINGS rings, all
+    fully reinforced, retires EXPAND_TERRITORY the same one-way way GATHER_
+    FOOD/GATHER_WATER retire above."""
+    from backend import config, city_layout
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"
+    tribe.territory_center = (40, 37)
+    tribe.wall_rings = [
+        city_layout.build_ring(sim.world, tribe.territory_center, i) for i in range(config.MAX_WALL_RINGS)
+    ]
+    for ring in tribe.wall_rings:
+        for sec in ring["sections"]:
+            sec["unlocked"] = True
+            sec["tier"] = config.WALL_MAX_LAYERS
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "EXPAND_TERRITORY" not in ctx["available_actions"]
+    assert tribe.walls_complete is True
+    assert any("walls are complete" in e for e in tribe.history)
+
+
+def test_expand_territory_stays_available_below_the_wall_ring_cap():
+    """Companion to the test above: a single fully-reinforced ring, one below
+    config.MAX_WALL_RINGS, still leaves EXPAND_TERRITORY on the table -- the
+    cap is on ring count, not on any one ring being finished."""
+    from backend import config, city_layout
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"
+    tribe.territory_center = (40, 37)
+    tribe.wood = tribe.stone = 1000
+    assert config.MAX_WALL_RINGS > 1
+    tribe.wall_rings = [city_layout.build_ring(sim.world, tribe.territory_center, 0)]
+    for sec in tribe.wall_rings[0]["sections"]:
+        sec["unlocked"] = True
+        sec["tier"] = config.WALL_MAX_LAYERS
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "EXPAND_TERRITORY" in ctx["available_actions"]
+    assert tribe.walls_complete is False
 
 
 def test_gather_water_retires_once_settled_near_water():

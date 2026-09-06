@@ -54,20 +54,57 @@ def test_find_free_slot_avoids_wall_ring_sections():
     assert not (x < 50 + 5 + 1 and 50 < x + 1 + 1 and y < 45 + 1 + 1 and 45 < y + 1 + 1)
 
 
+def test_find_free_slot_spills_just_outside_a_full_territory():
+    """Explicit request (2026-09-06, alongside config.MAX_WALL_RINGS): "they
+    will have to build outside the walls once they hit that point." A fully
+    occupied territory no longer means no more room -- a slot just past
+    territory_radius, within the config.WALL_RING_RADIUS_STEP buffer, is
+    found instead of returning None outright."""
+    from backend import config
+
+    world = Landscape(100)
+    tribe = _tribe_with_territory(radius=5)
+    # Fill the entire walled territory with 1x1s -- nothing fits inside it.
+    for dx in range(-5, 6):
+        for dy in range(-5, 6):
+            record_building(tribe, "fire", 50 + dx, 50 + dy, 1, 1, cycle=0)
+
+    slot = find_free_slot(world, tribe, "fire")
+
+    assert slot is not None
+    x, y = slot
+    dist = max(abs(x - 50), abs(y - 50))  # this spiral moves in square rings
+    assert dist > tribe.territory_radius  # genuinely outside the walls
+    assert dist <= tribe.territory_radius + config.WALL_RING_RADIUS_STEP  # but still bounded, not anywhere on the map
+
+
 def test_find_free_slot_returns_none_when_territory_has_no_room():
+    """Explicit request (2026-09-06): find_free_slot now searches a bounded
+    buffer (config.WALL_RING_RADIUS_STEP) past territory_radius too, so a
+    tribe whose walls are complete can still build just outside them -- "no
+    room anywhere" now means the whole search disc, not just the walled area.
+    One big occupied rectangle spanning the entire expanded search zone
+    reproduces that cheaply, without placing hundreds of individual 1x1s."""
+    from backend import config
+
     world = Landscape(100)
     tribe = _tribe_with_territory(radius=0)
+    span = tribe.territory_radius + config.WALL_RING_RADIUS_STEP + 5  # padding slack
+    record_building(tribe, "fire", 50 - span, 50 - span, span * 2, span * 2, cycle=0)
 
     assert find_free_slot(world, tribe, "long_house") is None
 
 
 def test_find_free_slot_returns_none_when_fully_occupied():
+    """See the test above -- the fully-occupied area now has to cover the
+    expanded search zone (territory_radius + config.WALL_RING_RADIUS_STEP),
+    not just the bare territory_radius."""
+    from backend import config
+
     world = Landscape(100)
     tribe = _tribe_with_territory(radius=2)
-    # A 1x1 building fits at every tile in this tiny territory -- fill all of them.
-    for dx in range(-2, 3):
-        for dy in range(-2, 3):
-            record_building(tribe, "fire", 50 + dx, 50 + dy, 1, 1, cycle=0)
+    span = tribe.territory_radius + config.WALL_RING_RADIUS_STEP + 5  # padding slack
+    record_building(tribe, "fire", 50 - span, 50 - span, span * 2, span * 2, cycle=0)
 
     assert find_free_slot(world, tribe, "fire") is None
 
