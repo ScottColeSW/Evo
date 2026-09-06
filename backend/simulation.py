@@ -480,6 +480,11 @@ class Tribe:
         # of only at the one instant the era itself advanced.
         self.city_founding_eligible = False
         self.extinct = False
+        # Set alongside self.extinct in _lose_population -- lets a game-over
+        # summary (Simulation._generate_game_over_summary) say *why* a tribe
+        # ended, not just that it did. Mirrors the same `cause` scoreboard.py
+        # already records, just kept on the tribe itself too.
+        self.extinction_cause: str | None = None
         self.chief_name = ""
         self.chief_philosophy = ""
         self.chief_decree = ""
@@ -1061,6 +1066,14 @@ class Simulation:
         self.paused = False
         self.status = "OPERATIONAL"
         self.game_over = False
+        # Explicit request: "we are missing 'the end'" -- a run that reached
+        # the era ceiling used to just keep stepping forever with nothing left
+        # to progress toward (confirmed live: 400+ cycles, over half a real
+        # run, spent this way). Set by _trigger_game_over alongside
+        # self.game_over/self.status; game_over_summary is the Overseer-voice
+        # retrospective the frontend's end-of-run splash actually displays.
+        self.game_over_reason: str | None = None
+        self.game_over_summary: str = ""
         # A wandering storm cloud (see Simulation._advance_weather) -- world weather,
         # independent of any tribe. None when no storm is active; otherwise
         # {"x", "y", "heading", "cycles_left"}. lightning_strike is only ever set for
@@ -1451,6 +1464,8 @@ class Simulation:
         # A fresh tribe means the game isn't over anymore, even if every previous tribe
         # died -- undoes _trigger_game_over's stop/unload so stepping resumes.
         self.game_over = False
+        self.game_over_reason = None
+        self.game_over_summary = ""
         if self.status == "GAME OVER":
             self.status = "OPERATIONAL"
         return None
@@ -1477,6 +1492,8 @@ class Simulation:
         return {
             "cycle": self.cycle,
             "status": self.status,
+            "game_over_reason": self.game_over_reason,
+            "game_over_summary": self.game_over_summary,
             "paused": self.paused,
             "immortality_cycles": self.immortality_cycles,
             "storm_cloud": {"x": self.storm_cloud["x"], "y": self.storm_cloud["y"]} if self.storm_cloud else None,
@@ -1653,8 +1670,15 @@ class Simulation:
                 if model not in still_used:
                     await self.client.unload_model(model)
 
-        if self.tribes and all(tribe.extinct for tribe in self.tribes.values()):
-            await self._trigger_game_over()
+        living_tribes = [t for t in self.tribes.values() if not t.extinct]
+        if self.tribes and not living_tribes:
+            await self._trigger_game_over("extinction")
+        # Explicit request: "we are missing 'the end'" -- every still-living
+        # tribe reaching the era ceiling (next_era returns None) is just as
+        # real an ending as total extinction; a real run kept stepping 400+
+        # cycles past this point with nothing left to progress toward.
+        elif living_tribes and all(next_era(t.era) is None for t in living_tribes):
+            await self._trigger_game_over("era_ceiling")
 
         if self.self_mod:
             self.self_mod.tick()
@@ -3022,16 +3046,61 @@ class Simulation:
             memory_text += f" {hazard_note}."
         tribe.memory.remember(memory_text, self.cycle, weight)
 
-    async def _trigger_game_over(self) -> None:
-        """Every tribe in this session has gone extinct -- there will be no more turns,
-        ever, for any model this session used. Rather than let step() keep getting
-        called every tick forever (harmless but pointless once requests is always
-        empty) and leave every model sitting loaded in Ollama until its keep_alive
-        window expires on its own, stop stepping and unload them immediately. A fresh
-        ADD_TRIBE clears this back to normal (see add_tribe)."""
+    async def _trigger_game_over(self, reason: str) -> None:
+        """Ends the run for real -- there will be no more turns, ever, for any
+        model this session used, until a fresh ADD_TRIBE clears this back to
+        normal (see add_tribe). Two ways to get here: every tribe has gone
+        extinct (reason="extinction"), or every still-living tribe has reached
+        the era ceiling with nowhere further to progress (reason=
+        "era_ceiling" -- explicit request: "we are missing 'the end'", after a
+        real run spent 400+ cycles, over half its total length, stepping with
+        nothing left to reach). Rather than let step() keep getting called
+        every tick forever (harmless but pointless once there's truly nothing
+        left to change) and leave every model sitting loaded in Ollama until
+        its keep_alive window expires on its own, stop stepping, generate the
+        Overseer-voice retrospective the frontend's end-of-run splash
+        displays, and unload every model immediately."""
         self.game_over = True
+        self.game_over_reason = reason
         self.status = "GAME OVER"
+        self.game_over_summary = self._generate_game_over_summary(reason)
         await self.shutdown()
+
+    def _generate_game_over_summary(self, reason: str) -> str:
+        """A detached, analytical retrospective on this run -- explicit
+        request: "an intelligent summary of the game (Overseer/Scientist
+        perspective)." Built entirely from data already on hand (final tribe
+        stats, trophies, chief lineage) -- no extra model call, this reads as
+        an observer's report on what happened, not another in-fiction voice
+        the tribes themselves might use."""
+        lines = []
+        if reason == "extinction":
+            lines.append("OVERSEER LOG: Every observed population has ceased to exist.")
+        else:
+            lines.append(
+                "OVERSEER LOG: Every surviving population has exhausted the known stages of "
+                "civilizational development. No further advancement remains observable."
+            )
+        for tribe in self.tribes.values():
+            status = "extinct" if tribe.extinct else "surviving"
+            cause_note = f", cause of collapse: {tribe.extinction_cause or 'unknown'}" if tribe.extinct else ""
+            era_label = next((e.label for e in ERAS if e.key == tribe.era), tribe.era)
+            trophy_names = ", ".join(t["name"] for t in tribe.trophies) or "none recorded"
+            lines.append(
+                f"-- {tribe.name} ({tribe.model}): {status}{cause_note}. Reached {era_label}. "
+                f"Peak population {tribe.max_population}, final population {tribe.population}. "
+                f"Chiefs elected: {tribe.chiefs_elected}. Distinctions: {trophy_names}."
+            )
+        living = [t for t in self.tribes.values() if not t.extinct]
+        if reason == "era_ceiling" and living:
+            leader = max(living, key=lambda t: t.max_population)
+            lines.append(
+                f"Analysis: {leader.name} attained the highest peak population ({leader.max_population}) "
+                f"among surviving populations. Session concluded at cycle {self.cycle}."
+            )
+        else:
+            lines.append(f"Analysis: session concluded at cycle {self.cycle}.")
+        return "\n".join(lines)
 
     async def shutdown(self) -> None:
         """Best-effort cleanup when this session ends for any reason -- an explicit
@@ -4181,6 +4250,7 @@ class Simulation:
             tribe.population = max(0, tribe.population - amount)
             if tribe.population == 0:
                 tribe.extinct = True
+                tribe.extinction_cause = cause
                 tribe.history.append(f"{tribe.name} has gone extinct.")
                 self.trauma.radiate_event_wave(
                     tribe.x, tribe.y, config.EXTINCTION_TRAUMA_MAGNITUDE, config.EXTINCTION_TRAUMA_RADIUS

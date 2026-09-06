@@ -17,6 +17,8 @@ def _bare_simulation():
     sim.immortality_cycles = 0
     sim.storm_cloud = None
     sim.lightning_strike = None
+    sim.game_over_reason = None
+    sim.game_over_summary = ""
     sim.recent_encounters = []
     sim.minor_settlements = []
     # _found_territory now also clears any minor settlement caught inside the
@@ -7474,7 +7476,82 @@ async def test_step_triggers_game_over_and_unloads_models_when_all_tribes_die():
 
     assert sim.game_over is True
     assert sim.status == "GAME OVER"
+    assert sim.game_over_reason == "extinction"
+    assert "OVERSEER LOG" in sim.game_over_summary
     assert {c.args[0] for c in mock_unload.call_args_list} == {"gemma2:2b", "qwen2.5:3b"}
+
+
+@run_async
+async def test_step_triggers_game_over_when_every_living_tribe_hits_the_era_ceiling():
+    """Explicit request: "we are missing 'the end'" -- a real run spent 400+
+    cycles, over half its total length, stepping with nothing left to
+    progress toward once every tribe had already reached the final era.
+    Reaching the era ceiling is now just as real an ending as extinction."""
+    from backend.eras import ERAS
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    for tribe in sim.tribes.values():
+        tribe.era = ERAS[-1].key
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
+        await sim.step()
+
+    assert sim.game_over is True
+    assert sim.status == "GAME OVER"
+    assert sim.game_over_reason == "era_ceiling"
+    assert "OVERSEER LOG" in sim.game_over_summary
+    assert mock_unload.await_count == 2
+
+
+@run_async
+async def test_step_does_not_trigger_game_over_when_only_some_tribes_hit_the_era_ceiling():
+    from backend.eras import ERAS
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    tribes = list(sim.tribes.values())
+    tribes[0].era = ERAS[-1].key
+    tribes[1].era = ERAS[0].key  # still has real progress left to make
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
+        await sim.step()
+
+    assert sim.game_over is False
+    assert sim.status != "GAME OVER"
+
+
+def test_game_over_summary_names_each_tribes_final_standing():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.era = "cosmic_post_human"
+    tribe.population = 40
+    tribe.max_population = 90
+    tribe.chiefs_elected = 3
+    tribe.trophies = [{"name": "Raid Breaker", "chief": "Ashgar", "cycle": 5}]
+    sim.tribes = {"tribe_0": tribe}
+
+    summary = sim._generate_game_over_summary("era_ceiling")
+
+    assert "Forest Tribe" in summary
+    assert "Peak population 90" in summary
+    assert "final population 40" in summary
+    assert "Raid Breaker" in summary
+    assert "Cosmic Post-Human" in summary
+
+
+def test_game_over_summary_names_an_extinct_tribes_cause():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.extinct = True
+    tribe.extinction_cause = "starvation"
+    sim.tribes = {"tribe_0": tribe}
+
+    summary = sim._generate_game_over_summary("extinction")
+
+    assert "extinct" in summary
+    assert "starvation" in summary
 
 
 @run_async

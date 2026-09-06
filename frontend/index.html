@@ -73,6 +73,15 @@
   @keyframes spawn-spin { to { transform: rotate(360deg); } }
   #spawn-splash .spawn-text { color: #c7d2fe; font-size: 13px; font-family: monospace; letter-spacing: 0.3px; }
 
+  #game-over-splash { position: absolute; inset: 0; background: rgba(9,9,13,0.97); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; z-index: 25; border-radius: 4px; padding: 24px; }
+  #game-over-splash.hidden { display: none; }
+  #game-over-splash .game-over-title { color: #fde68a; font-size: 20px; font-weight: bold; letter-spacing: 1px; }
+  #game-over-splash .game-over-summary { color: #c7d2fe; font-size: 12px; font-family: monospace; line-height: 1.6; white-space: pre-wrap; max-width: 520px; max-height: 60%; overflow-y: auto; background: rgba(0,0,0,0.3); border: 1px solid #2a2a3a; border-radius: 6px; padding: 14px 16px; margin: 0; }
+  #game-over-splash .game-over-actions { display: flex; gap: 12px; }
+  #game-over-splash .game-over-actions button { padding: 10px 22px; font-size: 13px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; }
+  #btn-try-again { background: #4338ca; color: #e0e7ff; }
+  #btn-game-over-quit { background: #7f1d1d; color: #fecaca; }
+
   #icon-key { position: absolute; top: 12px; right: 12px; width: 240px; max-height: calc(100% - 24px); background: rgba(17,17,17,0.95); border: 2px solid #2a2a3a; border-radius: 6px; z-index: 15; display: flex; flex-direction: column; }
   #icon-key.hidden { display: none; }
   .icon-key-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #2a2a3a; font-weight: bold; font-size: 13px; color: #e2e8f0; flex-shrink: 0; }
@@ -213,6 +222,20 @@
       <div id="spawn-splash" class="hidden">
         <div class="spawn-spinner"></div>
         <div class="spawn-text" id="spawn-splash-text">Tribes are forming their first councils...</div>
+      </div>
+      <!-- Explicit request: "we are missing 'the end' - stop the game, unload
+           models, show a splash screen of info and an intelligent summary of
+           the game (Overseer/Scientist perspective). Should have Quit or Try
+           Again Buttons." Shown once state.status flips to "GAME OVER", from
+           either every tribe going extinct or every survivor hitting the era
+           ceiling (Simulation._trigger_game_over/_generate_game_over_summary). -->
+      <div id="game-over-splash" class="hidden">
+        <div class="game-over-title" id="game-over-title">SIMULATION COMPLETE</div>
+        <pre class="game-over-summary" id="game-over-summary"></pre>
+        <div class="game-over-actions">
+          <button id="btn-try-again">TRY AGAIN</button>
+          <button id="btn-game-over-quit">QUIT</button>
+        </div>
       </div>
       <canvas id="simCanvas"></canvas>
       <!-- Explicit request: "it would be great to be able to change the map to
@@ -397,16 +420,20 @@ document.getElementById("btn-add").addEventListener("click", async () => {
   addTribeRow(`Tribe ${tribeCount + 1}`, data.models || []);
 });
 
-document.getElementById("btn-start").addEventListener("click", () => {
-  const rows = document.querySelectorAll("#tribe-list .tribe-row");
-  const tribes = Array.from(rows).map(row => ({
-    name: row.querySelector("input").value || "Unnamed Tribe",
-    model: row.querySelector("select").value,
-  }));
+// Explicit request ("Should have Quit or Try Again Buttons" on the new
+// end-of-run splash): pulled out of the btn-start click handler so "Try
+// Again" can relaunch with the exact same tribe/model configuration without
+// making the user re-pick it on the picker screen. lastRunConfig is updated
+// on every real start, including from Try Again itself.
+let lastRunConfig = null;
+
+function startSimulation(tribes, immortalCycles) {
   if (tribes.length === 0) return;
+  lastRunConfig = { tribes, immortalCycles };
 
   document.getElementById("picker").style.display = "none";
   document.getElementById("theater").classList.add("active");
+  hideGameOverSplash();
   lastEraByTribe = {};
   populateInjectModelSelect();
   requestAnimationFrame(resizeCanvas);
@@ -414,15 +441,16 @@ document.getElementById("btn-start").addEventListener("click", () => {
   lastExtinctByTribe = {};
   lastChiefByTribe = {};
   lastRaiderAttackCycleByTribe = {};
+  lastGameOverStatus = false;
   heldEncounters = [];
   previousLandmarkKeys = {};
   newLandmarks = [];
   firstStateReceived = false;
   showSpawnSplash();
 
-  const immortalOn = document.getElementById("immortal-toggle").checked;
-  const immortalCycles = immortalOn ? (parseInt(document.getElementById("immortal-cycles").value, 10) || 0) : 0;
-
+  if (socket) {
+    try { socket.close(); } catch (e) { /* already closing */ }
+  }
   socket = new WebSocket(`ws://${location.host}/ws`);
   socket.onopen = () => socket.send(JSON.stringify({ command: "START", tribes, immortality_cycles: immortalCycles }));
   socket.onmessage = (event) => {
@@ -443,8 +471,53 @@ document.getElementById("btn-start").addEventListener("click", () => {
     checkChiefElections(latestState);
     checkCelebrations(latestState);
     checkRaids(latestState);
+    checkGameOver(latestState);
     updateSidebar(latestState);
   };
+}
+
+document.getElementById("btn-start").addEventListener("click", () => {
+  const rows = document.querySelectorAll("#tribe-list .tribe-row");
+  const tribes = Array.from(rows).map(row => ({
+    name: row.querySelector("input").value || "Unnamed Tribe",
+    model: row.querySelector("select").value,
+  }));
+  const immortalOn = document.getElementById("immortal-toggle").checked;
+  const immortalCycles = immortalOn ? (parseInt(document.getElementById("immortal-cycles").value, 10) || 0) : 0;
+  startSimulation(tribes, immortalCycles);
+});
+
+/* ---------- Game-over splash: the end-of-run summary, shown once
+   state.status flips to "GAME OVER" (Simulation._trigger_game_over) ---------- */
+
+let lastGameOverStatus = false;
+
+function checkGameOver(state) {
+  const isOver = state.status === "GAME OVER";
+  if (isOver && !lastGameOverStatus) {
+    showGameOverSplash(state);
+  }
+  lastGameOverStatus = isOver;
+}
+
+function showGameOverSplash(state) {
+  document.getElementById("game-over-title").textContent =
+    state.game_over_reason === "extinction" ? "ALL POPULATIONS LOST" : "SIMULATION COMPLETE";
+  document.getElementById("game-over-summary").textContent = state.game_over_summary || "";
+  document.getElementById("game-over-splash").classList.remove("hidden");
+}
+
+function hideGameOverSplash() {
+  document.getElementById("game-over-splash").classList.add("hidden");
+}
+
+document.getElementById("btn-try-again").addEventListener("click", () => {
+  if (!lastRunConfig) return;
+  startSimulation(lastRunConfig.tribes, lastRunConfig.immortalCycles);
+});
+
+document.getElementById("btn-game-over-quit").addEventListener("click", () => {
+  document.getElementById("btn-quit").click();
 });
 
 /* ---------- Spawn splash: covers the warm-up window while Simulation.create()
