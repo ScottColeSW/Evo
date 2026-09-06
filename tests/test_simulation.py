@@ -3243,7 +3243,39 @@ def test_expedition_raider_ambush_ends_the_trip_and_costs_population():
     assert abs(sx - 60) <= config.RAIDER_SIGHTING_OFFSET and abs(sy - 60) <= config.RAIDER_SIGHTING_OFFSET
     assert any("ambushed by raiders" in entry for entry in tribe.history)
     assert "DREAD" in sim.trauma.bias_string(60, 60)
-    assert sim.recent_encounters and sim.recent_encounters[0]["label"] == "Scouts ambushed"
+    # Explicit spec: "report, gravemarker" -- reuses hazard_death (☠️), the
+    # same kind every other wandering-hazard death already reports with, not
+    # raider_attack (⚔️, a combat clash the settlement-raid mechanic still
+    # uses for both its own win and loss outcomes).
+    assert sim.recent_encounters and sim.recent_encounters[0]["kind"] == "hazard_death"
+    assert sim.recent_encounters[0]["label"] == "Lost to raiders"
+
+
+def test_expedition_raider_ambush_loss_cuts_75_percent_of_carried_holdings():
+    """Explicit spec (2026-09-06): "I wanted only wandering Raids on the board
+    to take the 75% of their collected holdings and the 1 life, if they
+    lose." Cuts whatever the expedition is actually carrying in the field,
+    not the tribe's home stockpile."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.population = 10
+    exp = {
+        "lead_scout": "Test Scout", "food_gathered": 4, "water_gathered": 2,
+        "wood_gathered": 3, "stone_gathered": 2, "food_caught": 8,
+    }
+
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, 0.99]):
+        sim._expedition_raider_ambush(tribe, exp, 60, 60)
+
+    keep_fraction = 1 - config.EXPEDITION_RAIDER_AMBUSH_LOOT_FRACTION
+    assert exp["food_gathered"] == round(4 * keep_fraction)
+    assert exp["water_gathered"] == round(2 * keep_fraction)
+    assert exp["wood_gathered"] == round(3 * keep_fraction)
+    assert exp["stone_gathered"] == round(2 * keep_fraction)
+    assert exp["food_caught"] == round(8 * keep_fraction)
 
 
 def test_expedition_raider_ambush_can_be_defended_for_loot():
@@ -4604,12 +4636,12 @@ def test_raider_strength_scales_with_population_and_can_outweigh_its_own_defense
     assert big.raids_defended == 0
 
 
-def test_a_failed_defense_always_costs_exactly_one_life_regardless_of_wall():
-    """Explicit spec (2026-09-06): "Raid defeats are kill 1, lose 75%
-    holdings, report, gravemarker." A failed defense used to cost less
-    population the more complete the wall was (2 undefended vs. 1 at full
-    wall) -- wall progress now only ever affects whether the defense
-    succeeds at all (defense_chance); once it fails, the cost is flat."""
+def test_full_wall_reduces_population_loss_more_than_a_partial_wall():
+    """Explicit correction (2026-09-06): the "kill 1, lose 75%" spec was
+    briefly (and incorrectly) applied to this settlement-defense mechanic --
+    "if the Settlement gets raided, we already have that down cold." Reverted:
+    wall progress continuously reduces a failed defense's real cost, same as
+    before that detour."""
     sim_partial = _bare_simulation()
     partial = Tribe("tribe_0", "A", "gemma2:2b", 50, 50, "#c084fc")
     partial.population = 10
@@ -4636,7 +4668,7 @@ def test_a_failed_defense_always_costs_exactly_one_life_regardless_of_wall():
     with mock.patch("backend.simulation.random.random", return_value=0.99):
         sim_full._resolve_raider_attack(full)
 
-    assert (10 - full.population) == (10 - partial.population) == 1
+    assert (10 - full.population) < (10 - partial.population)
 
 
 def test_failed_wall_defense_knocks_down_one_section_by_one_layer():

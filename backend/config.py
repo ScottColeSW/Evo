@@ -952,14 +952,16 @@ RAIDER_STRENGTH_DEFENSE_PENALTY_AT_MAX = 0.35
 # RAID_PRIDE_MAGNITUDE/RADIUS (above) rather than new ones: mechanically the same kind
 # of violence event as a tribe-vs-tribe raid, not a new trauma category.
 #
-# Explicit spec (2026-09-06): "Raid defeats are kill 1, lose 75% holdings,
-# report, gravemarker." A flat one-life cost regardless of wall progress
-# (wall progress is what determines whether the defense succeeds at all, via
-# defense_chance -- this is what a *failed* defense actually costs once it
-# happens) and a much steeper stockpile loss than before.
-RAIDER_ATTACK_POPULATION_LOSS_UNDEFENDED = 1
+# Reverted (explicit correction, 2026-09-06): "I wanted only wandering Raids on
+# the board to take the 75% ... If the Settlement gets raided, we already have
+# that down cold." The "kill 1, lose 75%" spec was meant for an expedition
+# ambushed while out in the field (see config.EXPEDITION_RAIDER_AMBUSH_LOOT_
+# FRACTION), not this settlement-defense mechanic -- restored to its original
+# values, wall progress still meaningfully reduces the cost of a failed
+# defense here.
+RAIDER_ATTACK_POPULATION_LOSS_UNDEFENDED = 2
 RAIDER_ATTACK_POPULATION_LOSS_AT_FULL_WALL = 1
-RAIDER_STEAL_FRACTION = 0.75
+RAIDER_STEAL_FRACTION = 0.25
 
 # Explicit request: "the repelling Tribe better get some good rewards from that.
 # it's huge for them!" -- a successful defense used to yield only pride and a
@@ -1018,6 +1020,17 @@ RAIDER_APPROACH_START_DISTANCE = 8
 # raiding.
 EXPEDITION_RAIDER_AMBUSH_CHANCE = 0.04
 EXPEDITION_RAIDER_AMBUSH_POPULATION_LOSS = 1
+
+# Explicit spec (2026-09-06): "I wanted only wandering Raids on the board to
+# take the 75% of their collected holdings and the 1 life, if they lose. so
+# they might loose 4 meat, 3 wood, 2 stone... Given that's a 75% cut of what
+# they hold." Population loss above already matched (1); this is the new
+# piece -- a lost ambush now also cuts whatever the party is actually
+# carrying (exp["food_gathered"]/"water_gathered"/"wood_gathered"/
+# "stone_gathered"), not just the tribe's population, since a wandering
+# party's real "holdings" are what it's carrying in the field, not the whole
+# settlement's stockpile.
+EXPEDITION_RAIDER_AMBUSH_LOOT_FRACTION = 0.75
 
 # Explicit finding, after a live 986-cycle run: "how many times did they
 # defend and get loot? in an ambush scenario" -- turned out to be zero, a

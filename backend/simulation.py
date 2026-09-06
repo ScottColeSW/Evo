@@ -3746,13 +3746,30 @@ class Simulation:
 
         self.trauma.radiate_event_wave(x, y, config.RAIDER_SIGHTING_TRAUMA_MAGNITUDE, config.RAIDER_SIGHTING_TRAUMA_RADIUS)
         self._lose_population(tribe, config.EXPEDITION_RAIDER_AMBUSH_POPULATION_LOSS, cause="raider_ambush")
+        # Explicit spec: "wandering Raids on the board [take] 75% of their
+        # collected holdings and the 1 life, if they lose." A wandering
+        # party's real "holdings" are whatever it's actually carrying in the
+        # field -- cuts whichever of these the expedition kind happens to
+        # have (food_caught only exists for a hunting party, wood/stone only
+        # for an exploration party), not the tribe's home stockpile.
+        for field in ("food_gathered", "water_gathered", "wood_gathered", "stone_gathered", "food_caught"):
+            if field in exp:
+                exp[field] = round(exp[field] * (1 - config.EXPEDITION_RAIDER_AMBUSH_LOOT_FRACTION))
         self._relocate_raider_sighting_after_ambush(tribe, x, y)
-        tribe.history.append(f"{exp['lead_scout']}'s party was ambushed by raiders near ({x},{y}) and flees for home")
+        tribe.history.append(
+            f"{exp['lead_scout']}'s party was ambushed by raiders near ({x},{y}), losing most of what "
+            "they'd gathered, and flees for home"
+        )
         tribe.memory.remember(
             f"Raiders ambushed our party near ({x},{y}) -- real danger there.", self.cycle, weight=0.85,
         )
+        # Explicit spec: "report, gravemarker" -- reuses the same "hazard_death"
+        # kind (☠️) every other wandering-hazard death (volcano/river/cliffs/
+        # ocean) already reports with, rather than the "raider_attack" (⚔️)
+        # kind a won/repelled encounter uses -- this is a loss with a real
+        # life lost, not a clash the tribe can be proud of.
         self.recent_encounters.append({
-            "x": x, "y": y, "kind": "raider_attack", "label": "Scouts ambushed", "outcome": "struck",
+            "x": x, "y": y, "kind": "hazard_death", "label": "Lost to raiders", "outcome": "struck",
         })
         _record_combat(tribe, "Ambush", "lost")
         return True

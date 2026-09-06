@@ -2799,14 +2799,13 @@ function drawFrame() {
       // still readable while the dust is flying.
       // Live report: "if a party member dies and they have to run away to tell
       // the Tribe, there should be a skull-n-crossbones marker" -- backend/
-      // simulation.py's volcano/river hazard deaths now report a "hazard_death"
-      // kind encounter to match. Explicit spec (2026-09-06): "Raid defeats are
-      // kill 1, lose 75% holdings, report, gravemarker" -- a raid the tribe
-      // actually lost (outcome "struck", a real population loss) gets the
-      // same gravemarker a hazard death does; a successfully repelled raid
-      // still reads as a real clash, not a death.
-      const encounterIcon = e.kind === "raider_attack" && e.outcome === "struck" ? "☠️"
-        : e.kind === "raider_attack" ? "⚔️"
+      // simulation.py's volcano/river/cliffs/ocean hazard deaths, and now a
+      // lost wandering-party raider ambush too, report a "hazard_death" kind
+      // encounter to match. A settlement-level raid (kind "raider_attack")
+      // always reads as a clash either way, won or lost -- "we already have
+      // that down cold," per explicit correction (2026-09-06) after this was
+      // briefly (and incorrectly) applied there too.
+      const encounterIcon = e.kind === "raider_attack" ? "⚔️"
         : e.kind === "wolf_attack" ? "🐺"
         : e.kind === "hazard_death" ? "☠️"
         : "\u{1F3F4}";
