@@ -2982,6 +2982,32 @@ def test_scout_pushes_onward_past_its_patrol_point_with_days_remaining():
     assert (66, 10) in exp["terrain_checkpoints"]  # the old ground is still remembered
 
 
+def test_scout_turns_back_instead_of_bouncing_forever_near_a_grid_edge():
+    """Explicit follow-up, after finding a live party oscillate forever near a
+    coastline: "so they aren't turning back like they should. maybe we should
+    'kick' them back home automatically." _push_past_visited_ground's own
+    grid-edge reflection can send the next leg's target BACKWARD -- close
+    enough to an edge that a full patrol distance would overshoot off the
+    map, the reflected point lands closer to home than out, and a heading
+    that keeps reflecting the same way settles into a permanent back-and-
+    forth. A party at (10, 10) heading due west (origin far to the east) has
+    nowhere left to usefully go -- it should turn back for real instead of
+    pushing onward to a "fresh" leg that doesn't actually gain any ground."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 60, 10, "#c084fc")
+    tribe.expeditions = [{
+        "kind": "scout",
+        "pos": [10, 10], "origin": [60, 10], "target": [10, 10],  # heading due west, near the edge
+        "day": 2, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 10, "path": [],
+    }]
+
+    sim._advance_expeditions(tribe)
+
+    assert tribe.expeditions[0]["phase"] == "returning"  # sent home, not bounced onward again
+
+
 def test_expedition_does_not_give_up_from_day_count_alone():
     """Regression test: an arbitrary day-count cutoff used to end a search regardless
     of whether the party still had somewhere left to look. Elapsed days, alone,

@@ -3398,7 +3398,21 @@ class Simulation:
             # exploration parties now use. A still-searching tribe's scout was
             # already exempt from this and keeps advancing (and moving fast)
             # every cycle regardless.
-            is_new_day = not tribe.has_ever_settled or self.cycle % config.DAY_LENGTH_CYCLES == 0
+            #
+            # Explicit follow-up: "the push-on can be at normal pace, not
+            # slower/shorter. It's painful to watch scouts sit at the borders
+            # and not move much if at all visibly." A settled tribe's scout
+            # normally only advances once every DAY_LENGTH_CYCLES (20) cycles --
+            # fine for one quick patrol-and-report, but a pushed-onward search
+            # (see the outbound arrival branch below) needs several such legs
+            # back to back, stacking multiple 20-cycle waits into one agonizing
+            # watch. Once a party has ever pushed onward (exp["pushing_onward"]),
+            # it moves every cycle for the rest of this trip, outbound and
+            # returning both -- the same full-speed pace a not-yet-settled
+            # tribe's scout already gets, not a new slower mode.
+            is_new_day = (
+                not tribe.has_ever_settled or exp.get("pushing_onward") or self.cycle % config.DAY_LENGTH_CYCLES == 0
+            )
             is_scout = exp.get("kind") == "scout"
             if tribe.has_ever_settled and is_scout and not is_new_day:
                 return False
@@ -3578,8 +3592,24 @@ class Simulation:
                     new_tx, new_ty = _push_past_visited_ground(
                         tribe, nx, ny, heading, config.SCOUT_PATROL_DISTANCE, self.world.grid_size
                     )
-                    if (new_tx, new_ty) != (nx, ny):
+                    # Explicit request, after finding a live party bounce forever
+                    # near a coastline: "so they aren't turning back like they
+                    # should. maybe we should 'kick' them back home automatically
+                    # for simplification." _push_past_visited_ground's own
+                    # grid-edge reflection can send the next leg's target
+                    # BACKWARD -- once a heading is close enough to an edge that
+                    # the full patrol distance would overshoot off the map, the
+                    # reflected point lands closer to home than out. Confirmed
+                    # live: a party heading due west from (60,10) settled into a
+                    # permanent (10,10)<->(15,10) bounce, never actually turning
+                    # back. Only push onward if the new leg is genuinely farther
+                    # from where this trip started than the ground just covered --
+                    # otherwise there's no real ground left this heading, and it's
+                    # simpler and more honest to send them home now.
+                    made_progress = math.hypot(new_tx - ox, new_ty - oy) > math.hypot(nx - ox, ny - oy)
+                    if (new_tx, new_ty) != (nx, ny) and made_progress:
                         exp["target"] = [new_tx, new_ty]
+                        exp["pushing_onward"] = True
                         return False
                 exp["terrain_report"] = reached_biome
                 exp["phase"] = "returning"
@@ -3588,8 +3618,11 @@ class Simulation:
             return False
         else:  # returning
             # See the matching outbound-leg comment above -- same is_new_day/
-            # scout-speed split.
-            is_new_day = not tribe.has_ever_settled or self.cycle % config.DAY_LENGTH_CYCLES == 0
+            # scout-speed split, including the pushing_onward full-pace
+            # exemption for the whole rest of a trip that ever pushed onward.
+            is_new_day = (
+                not tribe.has_ever_settled or exp.get("pushing_onward") or self.cycle % config.DAY_LENGTH_CYCLES == 0
+            )
             is_scout = exp.get("kind") == "scout"
             if tribe.has_ever_settled and is_scout and not is_new_day:
                 return False
