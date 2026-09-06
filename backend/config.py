@@ -94,7 +94,14 @@ PRE_SETTLEMENT_ACTIONS = ("GATHER_WATER", "GATHER_FOOD", "SCOUT", "RELOCATE", "B
 # on screen. Kept fast specifically for the pre-settlement march to newly-
 # confirmed water -- see SETTLED_MOVEMENT_SPEED below for the slower, uniform
 # pace that applies once a tribe has actually settled.
-MOVEMENT_SPEED = 4
+#
+# Explicit request ("improve the Tribe movement speed to the Scout speed
+# pre-settlement"), after has_ever_settled was tightened to require real
+# confirmed water: once water IS found, the whole tribe's own march there
+# shouldn't be slower than the scout that found it. Matches EXPEDITION_SPEED
+# (10, below) directly -- kept as a literal since EXPEDITION_SPEED is defined
+# later in this file; keep the two in sync if either is retuned.
+MOVEMENT_SPEED = 10
 
 # Explicit request ("everyone that is moving on the board moves at the pace of
 # 1 sky tick"): once a tribe has settled, RELOCATE (and, via

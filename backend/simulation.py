@@ -651,6 +651,16 @@ class Tribe:
         except ValueError:
             tribe_index = 0
         stagger = tribe_index * config.SCOUT_ROTATION_TRIBE_STAGGER_STEPS
+        # Explicit request ("make the Scout from Tribe 2 go West first"): SPAWN_
+        # POINTS[1] sits east of every water body on the map (see that constant's
+        # own comment), so the generic stagger formula's angle for tribe_index=1
+        # (135 + 12*7 = 219 degrees, northwest-ish) isn't the useful direction here
+        # -- override just this one slot's starting index to 4 (135 + 12*4 = 183
+        # degrees, squarely in _compass_direction's "west" bucket) so its opening
+        # SCOUT heads toward where the water actually is instead of away from it.
+        # Every other tribe keeps the generic formula.
+        if tribe_index == 1:
+            stagger = 4
         self.scout_rotation_index = stagger
         # See actions.py._exploration_party -- its own separate rotating heading
         # (offset from SCOUT's own sweep) so the two don't retrace each other's
@@ -2145,6 +2155,16 @@ class Simulation:
                 # SCOUT first: RELOCATE only becomes a real, informed choice once a
                 # scout has actually confirmed somewhere worth moving toward.
                 available_actions = [a for a in available_actions if a != "RELOCATE"]
+            elif still_journeying:
+                # Explicit request: "if then start RELOCATING to a place to settle
+                # with Water, then can not issue new commands until they Settle."
+                # Pre-settlement RELOCATE's target is already mechanically forced to
+                # the nearest confirmed water site (see the RELOCATE branch below) --
+                # once that march is actually under way (still_journeying), it's a
+                # real, informed choice with nothing left to reconsider until arrival;
+                # letting the model pick GATHER_WATER/SCOUT/etc. instead mid-march
+                # just delays reaching water it already knows is there.
+                available_actions = ["RELOCATE"]
         else:
             available_actions = sorted(unlocked_actions_through(tribe.era))
         if not camped:

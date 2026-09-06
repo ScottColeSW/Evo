@@ -1911,18 +1911,23 @@ def test_relocate_moves_five_times_as_fast_from_an_evolved_toll_road():
     from backend import config
 
     sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    # x=30, not the original x=50 -- MOVEMENT_SPEED raised to match
+    # EXPEDITION_SPEED (explicit request, "improve the Tribe movement speed to
+    # the Scout speed pre-settlement") pushed the toll-boosted speed past what
+    # the map's east coast leaves clear from the exact center; 30 leaves enough
+    # real land eastward for the full, uncapped speed to land short of the coast.
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 30, 50, "#c084fc")
     # Evolving the road itself also wears the tile a little (unavoidable, same
     # wear_trail call) -- computed against the exact bonus this leaves behind
     # rather than assuming a bare config.MOVEMENT_SPEED baseline.
     for _ in range(config.ROAD_EVOLVE_CROSSINGS + 1):
-        sim.world.wear_trail(50, 50, 0.01, tribe_id=tribe.id)
-    trail_bonus = sim.world.trail_speed_bonus(50, 50, config.MAX_TRAIL_BONUS_SPEED)
+        sim.world.wear_trail(30, 50, 0.01, tribe_id=tribe.id)
+    trail_bonus = sim.world.trail_speed_bonus(30, 50, config.MAX_TRAIL_BONUS_SPEED)
     expected_speed = round((config.MOVEMENT_SPEED + trail_bonus) * config.TOLL_ROAD_SPEED_MULTIPLIER)
 
-    ACTION_REGISTRY["RELOCATE"](sim, tribe, "plains", (80, 50))
+    ACTION_REGISTRY["RELOCATE"](sim, tribe, "plains", (95, 50))
 
-    assert tribe.x - 50 == expected_speed
+    assert tribe.x - 30 == expected_speed
     assert expected_speed > config.MOVEMENT_SPEED * config.TOLL_ROAD_SPEED_MULTIPLIER - 1  # genuinely ~5x, not 1x
 
 
@@ -1936,19 +1941,25 @@ def test_relocate_clamps_to_the_tribes_own_territory_once_founded():
     from backend import config
 
     sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.territory_center = (50, 50)
+    # x=30, not the original x=50 -- see the toll-road speed test's own comment:
+    # MOVEMENT_SPEED matching EXPEDITION_SPEED now overshoots straight into ocean
+    # from the exact map center, which masked the actual territory clamp being
+    # tested (terrain_aware_step falls back to "stay put" when every direct
+    # candidate lands in the sea). 30 leaves real land clear of the coast for the
+    # raw, pre-clamp movement to land on before the territory clamp pulls it back.
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 30, 50, "#c084fc")
+    tribe.territory_center = (30, 50)
     tribe.territory_radius = 12
     # A toll road under them plus a maxed trail bonus -- the same stacked-speed
     # scenario that produced the live 19-tile jump.
     for _ in range(config.ROAD_EVOLVE_CROSSINGS + 1):
-        sim.world.wear_trail(50, 50, 0.01, tribe_id=tribe.id)
+        sim.world.wear_trail(30, 50, 0.01, tribe_id=tribe.id)
 
-    ACTION_REGISTRY["RELOCATE"](sim, tribe, "plains", (99, 50))
+    ACTION_REGISTRY["RELOCATE"](sim, tribe, "plains", (95, 50))
 
-    dist = ((tribe.x - 50) ** 2 + (tribe.y - 50) ** 2) ** 0.5
+    dist = ((tribe.x - 30) ** 2 + (tribe.y - 50) ** 2) ** 0.5
     assert dist <= tribe.territory_radius + 0.01  # rounding slack only
-    assert tribe.x > 50  # still moved meaningfully toward the target, just capped
+    assert tribe.x > 30  # still moved meaningfully toward the target, just capped
 
 
 def test_relocate_is_unbounded_before_any_territory_is_founded():
@@ -2211,8 +2222,13 @@ def test_second_tribes_opening_scout_heads_a_different_way_than_the_first():
     heading_0 = _compass_direction(target_0[0] - 50, target_0[1] - 50)
     heading_1 = _compass_direction(target_1[0] - 50, target_1[1] - 50)
     assert heading_0 != heading_1
-    # +1 each: _scout advances the index by one step after every real dispatch.
-    assert tribe_1.scout_rotation_index == config.SCOUT_ROTATION_TRIBE_STAGGER_STEPS + 1
+    # tribe_1 (spawn slot 1, "Tribe 2") gets a special-cased starting stagger of 4
+    # instead of the generic tribe_index*SCOUT_ROTATION_TRIBE_STAGGER_STEPS -- see
+    # Tribe.__init__'s own comment ("make the Scout from Tribe 2 go West first"):
+    # that spawn sits east of every water body on the map, so its generic
+    # northwest-ish opening heading wasn't useful. +1: _scout advances the index
+    # by one step after every real dispatch.
+    assert tribe_1.scout_rotation_index == 4 + 1
 
 
 def test_scout_rotation_ignores_target_vector_entirely():
