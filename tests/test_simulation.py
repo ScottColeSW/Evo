@@ -385,6 +385,12 @@ def test_wall_progress_fact_notes_natural_barriers_separately_from_the_real_coun
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.has_ever_settled = True
     sim._found_territory(tribe)
+    # Unlocked (as if EXPAND_TERRITORY had already run its course), but no real
+    # progress made yet -- isolates the natural-barrier-counting behavior this
+    # test targets from the separate "nothing is unlocked yet" nudge.
+    for s in tribe.wall_rings[0]["sections"]:
+        if not s["natural_barrier"]:
+            s["unlocked"] = True
     natural_count = sum(1 for s in tribe.wall_rings[0]["sections"] if s["natural_barrier"])
     real_total = len(tribe.wall_rings[0]["sections"]) - natural_count
 
@@ -400,7 +406,16 @@ def test_no_wall_started_yet_nudges_toward_construct_wall():
     """Bug report: "wall building is not coming up for them" -- a tribe sat at
     Tribal Synapse for many cycles with a wall never even started, buried among
     a dozen other newly-unlocked actions with nothing calling it out
-    specifically."""
+    specifically.
+
+    CONSTRUCT_WALL itself is correctly ABSENT from available_actions here --
+    see _can_afford_construct_wall's own comment: dangling it as a guaranteed
+    no-op ("let the action's own message surface instead") was exactly the
+    live bug ("Walls didn't unlock for some reason and they wasted cycles"),
+    since a small model never once picked EXPAND_TERRITORY in response to
+    that message across 100+ real attempts. The nudge below is now gated on
+    the era having unlocked CONSTRUCT_WALL as a concept, not on it currently
+    passing its own affordability check, so it still fires here."""
     from backend import config
 
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
@@ -414,7 +429,7 @@ def test_no_wall_started_yet_nudges_toward_construct_wall():
 
     request, ctx = sim._prepare_turn(tribe)
 
-    assert "CONSTRUCT_WALL" in ctx["available_actions"]
+    assert "CONSTRUCT_WALL" not in ctx["available_actions"]
     assert "No wall has been started here yet" in request["prompt"]
 
 
@@ -1729,6 +1744,14 @@ def test_wall_commitment_narrows_the_menu_to_wall_and_survival_actions():
     tribe.has_ever_settled = True
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"  # unlocks every action, so the filter is doing the work
+    sim._found_territory(tribe)
+    # Unlocked and incomplete -- CONSTRUCT_WALL needs a real target to stay
+    # affordable (see _can_afford_construct_wall); this test is about what the
+    # wall-commitment lock narrows the menu down TO, not about the unlock gate
+    # itself (see test_no_wall_started_yet_nudges_toward_construct_wall for that).
+    for s in tribe.wall_rings[0]["sections"]:
+        if not s["natural_barrier"]:
+            s["unlocked"] = True
     tribe.wall_commitment_active = True
 
     request, ctx = sim._prepare_turn(tribe)
@@ -1935,10 +1958,19 @@ def test_affordability_gate_hides_construct_wall_when_the_next_section_is_unaffo
     assert "CONSTRUCT_WALL" in ctx["available_actions"]
 
 
-def test_affordability_gate_does_not_hide_construct_wall_when_nothing_needs_building():
-    """No unlocked, unfinished section at all isn't a cost problem -- the
-    action's own 'no wall section is currently unlocked' message should still
-    surface instead of the menu entry silently vanishing."""
+def test_affordability_gate_hides_construct_wall_when_nothing_is_unlocked_to_build():
+    """Live bug ("Walls didn't unlock for some reason and they wasted
+    cycles"): confirmed via board_history.db -- a tribe called CONSTRUCT_WALL
+    well over 100 times in a row against a ring with zero sections ever
+    unlocked, because this used to return True here on the theory that the
+    action's own "no wall section is currently unlocked" rejection message
+    would redirect the tribe to EXPAND_TERRITORY instead. It never did, not
+    once, across either tribe's whole run -- the same "a stated fact doesn't
+    reliably redirect a small model" pattern documented elsewhere in this
+    file. No unlocked, unfinished (or reinforceable) section at all is a
+    guaranteed no-op exactly like an unaffordable one, so it's hidden the
+    same way now; the era-gated nudge (see test_no_wall_started_yet_nudges_
+    toward_construct_wall) is what actually states the fact instead."""
     from backend import config
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
@@ -1946,12 +1978,12 @@ def test_affordability_gate_does_not_hide_construct_wall_when_nothing_needs_buil
     tribe.has_ever_settled = True
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"
-    tribe.wood = tribe.stone = 0
+    tribe.wood = tribe.stone = 200  # plenty -- isolates the "nothing unlocked" case from cost
     tribe.wall_rings = []  # nothing built yet -- not a cost issue
 
     _, ctx = sim._prepare_turn(tribe)
 
-    assert "CONSTRUCT_WALL" in ctx["available_actions"]
+    assert "CONSTRUCT_WALL" not in ctx["available_actions"]
 
 
 def test_affordability_gate_hides_forge_item_once_the_item_storage_cap_is_reached():

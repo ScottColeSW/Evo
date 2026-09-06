@@ -188,9 +188,22 @@ def _wall_next_afford_cost(tribe) -> tuple[int, int] | None:
 
 
 def _can_afford_construct_wall(tribe, world) -> bool:
+    # Live bug ("Walls didn't unlock for some reason and they wasted cycles"):
+    # this used to return True here on the theory that letting the action's
+    # own "nothing to build" message surface would redirect the tribe to
+    # EXPAND_TERRITORY -- confirmed live it does not: one tribe chose
+    # CONSTRUCT_WALL well over 100 times in a row against a ring with zero
+    # sections ever unlocked, the message never once causing it to pick
+    # EXPAND_TERRITORY instead. cost is None here in two cases -- nothing is
+    # currently unlocked to work on, or the wall is genuinely complete and
+    # maxed out -- and CONSTRUCT_WALL is a guaranteed no-op in both, so it's
+    # hidden the same way every other satisfied/blocked one-off action in
+    # this table already is. The _prepare_turn nudge above (see "EXPAND_
+    # TERRITORY unlocks the next one") now carries the "what to do instead"
+    # fact that used to live only in this action's own rejection message.
     cost = _wall_next_afford_cost(tribe)
     if cost is None:
-        return True  # let the action's own "nothing to build" message surface instead
+        return False
     wood_cost, stone_cost = cost
     return tribe.wood >= wood_cost and tribe.stone >= stone_cost
 
@@ -2698,7 +2711,13 @@ class Simulation:
         ring0 = tribe.wall_rings[0] if tribe.wall_rings else None
         ring0_reinforced = bool(ring0) and city_layout.ring_fully_reinforced(ring0)
 
-        if "CONSTRUCT_WALL" in available_actions:
+        # Checks era-unlock, not "CONSTRUCT_WALL in available_actions" -- since
+        # _can_afford_construct_wall now hides the action whenever nothing is
+        # unlocked to build (see its own comment), that membership test would
+        # go False exactly during the state these nudges most need to explain,
+        # silencing the "EXPAND_TERRITORY unlocks the next one" fact right when
+        # it matters most.
+        if "CONSTRUCT_WALL" in unlocked_actions_through(tribe.era):
             # NUDGE (2026-09-01, explicit request: live logs showed the chief
             # repeatedly choosing BUILD_LONG_HOUSE against a wall that wasn't
             # finished yet, over and over, each attempt silently rejected inside
@@ -2729,6 +2748,7 @@ class Simulation:
                 # CONSTRUCT_WALL still has left to do.
                 real_sections = [s for s in ring0["sections"] if not s["natural_barrier"]]
                 built = sum(1 for s in real_sections if s["progress"] >= 100)
+                unlocked_count = sum(1 for s in real_sections if s["unlocked"])
                 real_total = len(real_sections)
                 natural_count = len(ring0["sections"]) - real_total
                 natural_note = (
@@ -2742,9 +2762,35 @@ class Simulation:
                 # single cycle just nagged about an option the tribe can't even
                 # see yet. The "now worth building" callout below already fires
                 # at the one moment it's actually true.
-                visible_entities.append(
-                    f"The settlement's first wall ring has {built}/{real_total} real sections built{natural_note}."
-                )
+                #
+                # Live bug ("Walls didn't unlock for some reason and they wasted
+                # cycles"): confirmed via board_history -- a tribe called
+                # CONSTRUCT_WALL well over 100 times against a ring with zero
+                # sections ever unlocked, since _can_afford_construct_wall used
+                # to keep it in the menu anyway ("let the action's own message
+                # surface instead") and that message alone never once redirected
+                # either tribe to EXPAND_TERRITORY, the same "a fact doesn't
+                # reliably redirect a small model" pattern documented elsewhere
+                # in this file. CONSTRUCT_WALL is now hidden from the menu
+                # entirely whenever nothing is unlocked (see
+                # _can_afford_construct_wall) -- this states plainly, every
+                # cycle it's true, that EXPAND_TERRITORY is the actual next step.
+                if unlocked_count < real_total and built >= unlocked_count:
+                    if unlocked_count == 0:
+                        visible_entities.append(
+                            f"The settlement's first wall ring has no section unlocked yet -- EXPAND_TERRITORY "
+                            f"unlocks the first one before CONSTRUCT_WALL has anything to build{natural_note}."
+                        )
+                    else:
+                        visible_entities.append(
+                            f"The settlement's first wall ring has {built}/{real_total} real sections built, and "
+                            f"every unlocked section is complete -- EXPAND_TERRITORY unlocks the next "
+                            f"one{natural_note}."
+                        )
+                else:
+                    visible_entities.append(
+                        f"The settlement's first wall ring has {built}/{real_total} real sections built{natural_note}."
+                    )
             elif not ring0_reinforced:
                 if tribe.long_houses_built == 0:
                     visible_entities.append(
