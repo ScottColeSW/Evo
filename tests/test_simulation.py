@@ -5277,12 +5277,19 @@ async def test_settled_scouts_hazard_rolls_are_gated_to_the_dawn_boundary():
     cycle, not once per cycle spent sitting there."""
     from backend import config
 
-    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 10, "y": 13}])  # adjacent to the real volcano
+    # (18, 13), not the original (10, 13) -- the west coast's richer
+    # three-wave texture (see world._west_coast_boundary's own comment)
+    # narrowed the coastal band right at y=13 enough that (10, 13), 3 tiles
+    # from VOLCANO_CENTER, fell within VOLCANO_RADIUS=4 once it was no longer
+    # masked by the (now-shifted) coast band -- the tribe's own home tile
+    # became real volcano ground and triggered an unrelated hazard every
+    # cycle. (18, 13) is a clean 5 tiles from the volcano, real mountains.
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 18, "y": 13}])  # adjacent to the real volcano
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
     tribe.population = 20
     tribe.expeditions = [{
-        "kind": "scout", "pos": [13, 13], "origin": [10, 13], "target": [13, 13],  # sitting on the volcano
+        "kind": "scout", "pos": [13, 13], "origin": [18, 13], "target": [13, 13],  # sitting on the volcano
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
@@ -7755,7 +7762,11 @@ def test_cliffs_hazard_fires_on_cliffs_ground():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.population = 10
-    cx, cy = 5, 35  # confirmed real cliffs terrain
+    # (7, 8), not the original (5, 35) -- the west coast's richer three-wave
+    # texture (see world._west_coast_boundary's own comment) moved the exact
+    # headland/bay pattern; (5, 35) had only ever cleared "ocean" by a hair
+    # (0.04 tiles) under the old formula and fell in with the new one.
+    cx, cy = 7, 8  # confirmed real cliffs terrain
     assert sim.world.biome(cx, cy) == "cliffs"
 
     with mock.patch("backend.simulation.random.random", return_value=0.01):

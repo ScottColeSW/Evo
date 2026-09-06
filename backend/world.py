@@ -103,22 +103,32 @@ def _coast_is_headland(y: float) -> bool:
 # Explicit correction: "the Ocean was only supposed to be a 'frame'" -- the
 # first attempt reused the east coast's own +-7 wave amplitude on top of a
 # much deeper base (18), which ate into the mountains and produced sandbar-
-# like spits near the corners. This wave is deliberately small (+-2, not the
-# east coast's +-7) so paired with WEST/NORTH/SOUTH_COAST_INSET_BASE=6, the
-# frame's real depth stays within the requested 4-8 tiles everywhere, not
-# just at its calmest point.
+# like spits near the corners. WEST/NORTH/SOUTH_COAST_INSET_BASE=6 stayed, but
+# amplitude alone isn't what makes the east coast read as a real coastline
+# with distinct capes and inlets -- mixing three sine frequencies instead of
+# two does that, without deepening the envelope at all. Explicit follow-up
+# request: "clean up the Ocean edges all around the Island" with richer
+# texture at the SAME depth (confirmed computationally: still 4-8 tiles
+# everywhere, same as the two-term version, no relocations needed for the
+# volcano/spawns/river source).
 def _west_coast_boundary(y: float) -> float:
-    return config.WEST_COAST_INSET_BASE + 1.5 * math.sin(y * 0.09 + 0.4) + 0.5 * math.sin(y * 0.24 + 2.1)
+    return (
+        config.WEST_COAST_INSET_BASE
+        + 1.1 * math.sin(y * 0.05 + 0.4) + 0.6 * math.sin(y * 0.14 + 2.3) + 0.3 * math.sin(y * 0.33 + 1.0)
+    )
 
 
 def _north_coast_boundary(x: float) -> float:
-    return config.NORTH_COAST_INSET_BASE + 1.5 * math.sin(x * 0.07 + 1.1) + 0.5 * math.sin(x * 0.19 + 0.3)
+    return (
+        config.NORTH_COAST_INSET_BASE
+        + 1.1 * math.sin(x * 0.04 + 1.1) + 0.6 * math.sin(x * 0.12 + 0.3) + 0.3 * math.sin(x * 0.29 + 2.6)
+    )
 
 
 def _south_coast_boundary(x: float) -> float:
     return (
         (config.GRID_SIZE - 1) - config.SOUTH_COAST_INSET_BASE
-        - 1.5 * math.sin(x * 0.08 + 2.5) - 0.5 * math.sin(x * 0.21 + 0.9)
+        - 1.1 * math.sin(x * 0.045 + 2.5) - 0.6 * math.sin(x * 0.11 + 0.9) - 0.3 * math.sin(x * 0.27 + 1.5)
     )
 
 

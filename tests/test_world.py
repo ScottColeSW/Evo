@@ -226,8 +226,14 @@ def test_biome_at_covers_all_eight_regions():
     # point above still holds except the volcano's own spot, which moved from
     # (10, 10) to (13, 13) (see VOLCANO_CENTER's own comment) since the west/
     # north coast band now brushes right up against the original coordinate.
+    #
+    # (10, 40) -- moved to (18, 40) once the west coast's richer three-wave
+    # texture (see _west_coast_boundary's own comment) shifted where its peaks
+    # land: at y=40 the boundary+coast-band reach grew enough to swallow the
+    # old point, which was only ever a few tiles from the coast to begin with.
+    # (18, 40) sits comfortably deeper in real mountain ground either way.
     assert biome_at(80, 10) == "forest"
-    assert biome_at(10, 40) == "mountains"
+    assert biome_at(18, 40) == "mountains"
     assert biome_at(50, 70) == "plains"
     assert biome_at(40, 37) == "river"
     assert biome_at(95, 50) == "ocean"

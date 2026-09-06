@@ -1124,18 +1124,22 @@ function coastIsHeadland(y) {
   return curvature < 0;
 }
 
-// Map dream, phase 2 -- mirrors world.py's _west_coast_boundary/
-// _north_coast_boundary/_south_coast_boundary exactly.
+// Coastline texture rework -- mirrors world.py's _west_coast_boundary/
+// _north_coast_boundary/_south_coast_boundary exactly (three sine
+// frequencies instead of two, same overall 4-8 tile envelope).
 function westCoastBoundary(y) {
-  return WEST_COAST_INSET_BASE + 1.5 * Math.sin(y * 0.09 + 0.4) + 0.5 * Math.sin(y * 0.24 + 2.1);
+  return WEST_COAST_INSET_BASE
+    + 1.1 * Math.sin(y * 0.05 + 0.4) + 0.6 * Math.sin(y * 0.14 + 2.3) + 0.3 * Math.sin(y * 0.33 + 1.0);
 }
 
 function northCoastBoundary(x) {
-  return NORTH_COAST_INSET_BASE + 1.5 * Math.sin(x * 0.07 + 1.1) + 0.5 * Math.sin(x * 0.19 + 0.3);
+  return NORTH_COAST_INSET_BASE
+    + 1.1 * Math.sin(x * 0.04 + 1.1) + 0.6 * Math.sin(x * 0.12 + 0.3) + 0.3 * Math.sin(x * 0.29 + 2.6);
 }
 
 function southCoastBoundary(x) {
-  return (GRID - 1) - SOUTH_COAST_INSET_BASE - 1.5 * Math.sin(x * 0.08 + 2.5) - 0.5 * Math.sin(x * 0.21 + 0.9);
+  return (GRID - 1) - SOUTH_COAST_INSET_BASE
+    - 1.1 * Math.sin(x * 0.045 + 2.5) - 0.6 * Math.sin(x * 0.11 + 0.9) - 0.3 * Math.sin(x * 0.27 + 1.5);
 }
 
 // Mirrors world.py's _is_headland_like exactly.
