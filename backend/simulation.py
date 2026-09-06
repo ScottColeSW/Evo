@@ -2411,6 +2411,19 @@ class Simulation:
                 "tended at once."
             )
 
+        # NUDGE (2026-09-06, explicit report: "Kitchen and Cooking are not coming
+        # 'easy'... we have not made these obvious or appealing offers"). Confirmed
+        # across multiple real long runs: BUILD_KITCHEN was never chosen even once,
+        # despite being reachable, in a 756-cycle run where cooking itself was
+        # learned and a Kitchen would have stacked to 9x food from every future
+        # forage/hunt/catch. Named directly, the same "don't leave a real payoff
+        # implicit" treatment PLANT_CROP's own nudge above already proved out.
+        if "BUILD_KITCHEN" in available_actions:
+            visible_entities.append(
+                "A Kitchen would stack with cooking for nine times as much food from every future "
+                "forage, hunt, or catch, instead of only three -- affordable right now."
+            )
+
         if not settled_near_water and tribe.confirmed_water_sites:
             # NUDGE (2026-08-30, explicit request: "the Water Bringer must lead the
             # whole tribe to the settlement location"). Scouts confirming water used

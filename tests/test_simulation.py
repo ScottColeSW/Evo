@@ -1646,6 +1646,49 @@ def test_farming_nudge_names_plant_crop_under_real_food_pressure():
     assert "wear-down" in request["prompt"]
 
 
+def test_kitchen_nudge_names_the_real_payoff_once_reachable():
+    """Live report: "Kitchen and Cooking are not coming 'easy'... we have not
+    made these obvious or appealing offers." Confirmed across multiple real
+    long runs -- BUILD_KITCHEN was never chosen even once despite being
+    reachable. Named directly, the same treatment PLANT_CROP's own nudge
+    already proved out, rather than left implicit in a generic action list."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)  # BUILD_KITCHEN's own placement check needs it
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "tribal_synapse"
+    tribe.cooking_learned = True
+    tribe.long_houses_built = 1
+    tribe.wood = tribe.stone = 1000
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_KITCHEN" in ctx["available_actions"]
+    assert "nine times as much food" in request["prompt"]
+
+
+def test_kitchen_nudge_stays_quiet_before_it_is_actually_reachable():
+    """Same 'never dangle' reasoning as the PLANT_CROP nudge -- no point
+    naming a fix the tribe can't actually reach this cycle."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "tribal_synapse"
+    # cooking_learned stays False, long_houses_built stays 0 -- not reachable yet
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_KITCHEN" not in ctx["available_actions"]
+    assert "nine times as much food" not in request["prompt"]
+
+
 def test_farming_nudge_stays_quiet_once_a_plot_exists_or_food_is_comfortable():
     from backend import config
 
