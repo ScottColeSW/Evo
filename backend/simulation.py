@@ -8,7 +8,8 @@ from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _eligible_breeding_pair, _food_multiplier, _item_storage_cap,
-    _labor_multiplier, _long_house_fur_discount, _record_combat, _storage_cap, expedition_capacity,
+    _labor_multiplier, _long_house_fur_discount, _push_past_visited_ground, _record_combat, _storage_cap,
+    expedition_capacity,
 )
 from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
@@ -3303,6 +3304,48 @@ class Simulation:
                 ms["raids_remaining"] = config.MINOR_SETTLEMENT_MAX_RAIDS
                 ms["depleted_at_cycle"] = None
 
+    def _discover_sites_along_route(self, tribe: Tribe, x: int, y: int, scout: str) -> None:
+        """Checks one point a scout actually walked through for a real, pre-seeded
+        lumber/wildlife/quarry/mine site (world.site_seed_points) -- extracted so a
+        multi-leg pushed-onward trip (see _advance_one_expedition's outbound arrival
+        branch) can call this once per leg instead of only for the trip's final
+        stopping point. 2026-09-02 rework ("a twisted sparse matrix assignment based
+        on the existing map"): these are real, fixed locations a scout discovers by
+        landing within world.SITE_DISCOVERY_RADIUS of one, not an independent chance
+        roll on their exact tile -- each site type has its own independent seed set,
+        so two types can't stack on the same coordinate by construction."""
+        grid_size = self.world.grid_size
+        lumber_found = find_nearby_site("lumber", x, y, grid_size, set(tribe.lumber_sites))
+        if lumber_found is not None:
+            tribe.lumber_sites.append(lumber_found)
+        known_wildlife = {(s["x"], s["y"]) for s in tribe.wildlife_sites}
+        wildlife_found = find_nearby_site("wildlife", x, y, grid_size, known_wildlife)
+        if wildlife_found is not None:
+            wx, wy = wildlife_found
+            site_type = random.choice(WILDLIFE_SITE_TYPES)
+            tribe.wildlife_sites.append({"x": wx, "y": wy, "type": site_type})
+            if tribe.last_celebration_cycle != self.cycle:
+                self._celebrate_game_discovery(tribe, wx, wy)
+        quarry_found = find_nearby_site("quarry", x, y, grid_size, set(tribe.quarry_sites))
+        if quarry_found is not None:
+            tribe.quarry_sites.append(quarry_found)
+        # Explicit request: "Mines can [also] contain the Unique Resource of the
+        # Biome (these locations are scattered about the map)." Same pre-seeded
+        # discovery as above; the one deliberate exception stays -- a mine's
+        # resource name is read off whatever real biome the pre-seeded point itself
+        # sits on (world.UNIQUE_RESOURCE_BY_BIOME), not the scout's own tile.
+        known_mines = {(site["x"], site["y"]) for site in tribe.mine_sites}
+        mine_found = find_nearby_site("mine", x, y, grid_size, known_mines)
+        if mine_found is not None:
+            mx, my = mine_found
+            mine_biome = biome_at(mx, my)
+            resource_name = UNIQUE_RESOURCE_BY_BIOME.get(mine_biome, "Unknown Ore")
+            tribe.mine_sites.append({"x": mx, "y": my, "biome": mine_biome, "resource": resource_name})
+            tribe.history.append(
+                f"{scout} also reports something rarer at ({mx},{my}) -- a vein of "
+                f"{resource_name}, waiting to be excavated"
+            )
+
     def _advance_expeditions(self, tribe: Tribe) -> None:
         """Advances every one of a tribe's in-field parties by one day (see
         actions.py._scout/_hunting_party) -- a tribe can have up to
@@ -3514,6 +3557,30 @@ class Simulation:
                 # scout_rotation_index) instead of one long committed sprint. The
                 # terrain actually reached is still worth reporting home (see how
                 # terrain_report drives lumber/quarry/mine/wildlife discovery below).
+                #
+                # Explicit follow-up, after watching a live scout turn back at day
+                # 3 of an available 6 with days to spare: "they should have
+                # continued." A plain SCOUT (not exploration party, which has its
+                # own separate day-limit-aware logic) now pushes onward to a fresh
+                # patrol leg along the SAME heading when real days remain, instead
+                # of always stopping here -- still short, bounded hops
+                # (_push_past_visited_ground, the identical "keep walking, skip
+                # already-covered ground" idea used at dispatch), not the old
+                # unbounded dash to the grid's true edge this branch was
+                # originally narrowed away from. Every leg's ground still gets
+                # checked for a real site once the party finally comes home (see
+                # _discover_sites_along_route and terrain_checkpoints below), not
+                # just the leg that happens to end the trip.
+                if exp.get("kind") == "scout" and exp["day"] < exp["max_days"]:
+                    exp.setdefault("terrain_checkpoints", []).append((nx, ny))
+                    ox, oy = exp["origin"]
+                    heading = math.atan2(ty - oy, tx - ox)
+                    new_tx, new_ty = _push_past_visited_ground(
+                        tribe, nx, ny, heading, config.SCOUT_PATROL_DISTANCE, self.world.grid_size
+                    )
+                    if (new_tx, new_ty) != (nx, ny):
+                        exp["target"] = [new_tx, new_ty]
+                        return False
                 exp["terrain_report"] = reached_biome
                 exp["phase"] = "returning"
                 label = BIOME_LABELS.get(reached_biome, reached_biome)
@@ -3658,47 +3725,17 @@ class Simulation:
                     label = BIOME_LABELS.get(exp["terrain_report"], exp["terrain_report"])
                     tx, ty = exp["target"]
                     tribe.memory.remember(f"Scouts explored toward ({tx},{ty}) and found {label} terrain.", self.cycle, weight=0.6)
-                    # 2026-09-02 rework ("a twisted sparse matrix assignment based on
-                    # the existing map"): lumber/wildlife/quarry/mine sites are no
-                    # longer decided fresh on every report -- they're real, pre-seeded
-                    # locations (world.site_seed_points) a scout discovers by landing
-                    # within world.SITE_DISCOVERY_RADIUS of one, not an independent
-                    # chance roll on their exact tile. Solves the earlier fairness
-                    # fix's own remaining gap for free: each site type has its own
-                    # independent seed set, so two types can no longer stack on the
-                    # same coordinate by construction, no nudging needed.
-                    grid_size = self.world.grid_size
-                    lumber_found = find_nearby_site("lumber", tx, ty, grid_size, set(tribe.lumber_sites))
-                    if lumber_found is not None:
-                        tribe.lumber_sites.append(lumber_found)
-                    known_wildlife = {(s["x"], s["y"]) for s in tribe.wildlife_sites}
-                    wildlife_found = find_nearby_site("wildlife", tx, ty, grid_size, known_wildlife)
-                    if wildlife_found is not None:
-                        wx, wy = wildlife_found
-                        site_type = random.choice(WILDLIFE_SITE_TYPES)
-                        tribe.wildlife_sites.append({"x": wx, "y": wy, "type": site_type})
-                        if tribe.last_celebration_cycle != self.cycle:
-                            self._celebrate_game_discovery(tribe, wx, wy)
-                    quarry_found = find_nearby_site("quarry", tx, ty, grid_size, set(tribe.quarry_sites))
-                    if quarry_found is not None:
-                        tribe.quarry_sites.append(quarry_found)
-                    # Explicit request: "Mines can [also] contain the Unique
-                    # Resource of the Biome (these locations are scattered about
-                    # the map)." Same pre-seeded discovery as above; the one
-                    # deliberate exception stays -- a mine's resource name is read
-                    # off whatever real biome the pre-seeded point itself sits on
-                    # (world.UNIQUE_RESOURCE_BY_BIOME), not the scout's own tile.
-                    known_mines = {(site["x"], site["y"]) for site in tribe.mine_sites}
-                    mine_found = find_nearby_site("mine", tx, ty, grid_size, known_mines)
-                    if mine_found is not None:
-                        mx, my = mine_found
-                        mine_biome = biome_at(mx, my)
-                        resource_name = UNIQUE_RESOURCE_BY_BIOME.get(mine_biome, "Unknown Ore")
-                        tribe.mine_sites.append({"x": mx, "y": my, "biome": mine_biome, "resource": resource_name})
-                        tribe.history.append(
-                            f"{scout} also reports something rarer at ({mx},{my}) -- a vein of "
-                            f"{resource_name}, waiting to be excavated"
-                        )
+                    self._discover_sites_along_route(tribe, tx, ty, scout)
+                    # Explicit request: "the Scout returned before they found water
+                    # on the first outbound run. They should have continued and
+                    # reported all the sightings at once on returning." A scout
+                    # that pushed onward through several patrol legs (see the
+                    # outbound arrival branch above) checks every earlier leg's
+                    # ground for a real site too, not just the final one -- one
+                    # combined report for the whole trip instead of only the last
+                    # stretch of it.
+                    for cx, cy in exp.get("terrain_checkpoints", []):
+                        self._discover_sites_along_route(tribe, cx, cy, scout)
                     tribe.history.append(
                         f"{scout} is home and gives {recipient} a full report: "
                         f"{label} terrain at ({tx},{ty}), {forage_note}"

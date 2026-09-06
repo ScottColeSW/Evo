@@ -2924,21 +2924,25 @@ def test_expedition_senses_water_crossed_mid_step_even_if_the_landing_tile_misse
     assert biome_at(*found) in ("river", "lake")
 
 
-def test_expedition_reaching_its_target_without_water_turns_back_and_reports_terrain():
+def test_expedition_reaching_its_target_without_water_turns_back_once_days_are_spent():
     """Bug report (2026-09-02): "they go big long lines like they are flying, possibly
     too far." Reaching the assigned patrol target used to push the search onward all
     the way to the map's true edge if days remained -- live data showed a scout
     covering 26 tiles in 2 days on a dead-straight heading. Reaching a non-water
-    target now ends the outbound leg for good (still noting what terrain was actually
-    there), the same as if it had landed on the grid's literal edge -- shorter, more
-    numerous local patrols instead of one long committed dash."""
+    target ends the outbound leg for good once real days are actually spent (still
+    noting what terrain was there), the same as if it had landed on the grid's
+    literal edge. `day == max_days` here, not the original day=0/max_days=3 --
+    days remaining now pushes onward instead (see the companion test below); a
+    kind-less expedition is no longer a realistic stand-in for a real scout
+    dispatch (see actions.py._scout, which always sets kind="scout")."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 60, 10, "#c084fc")
     tribe.expeditions = [{
+        "kind": "scout",
         # (60,10) is well clear of the river/lake -- WATER_SENSING_RADIUS must not
         # fire here, or this would test the wrong mechanic.
         "pos": [60, 10], "origin": [60, 10], "target": [66, 10],  # one step away, not water
-        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "day": 3, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
     }]
@@ -2949,6 +2953,33 @@ def test_expedition_reaching_its_target_without_water_turns_back_and_reports_ter
     assert tribe.expeditions[0]["terrain_report"] is not None  # still noted what's there
     assert tribe.expeditions[0]["found"] is None
     assert any("surveys" in entry and "heads home to report" in entry for entry in tribe.history)
+
+
+def test_scout_pushes_onward_past_its_patrol_point_with_days_remaining():
+    """Explicit follow-up, after watching a live scout turn back at day 3 of an
+    available 6 with days to spare: "they should have continued." A plain SCOUT
+    with real days left, reaching its assigned patrol point without finding
+    water, now presses on to a fresh leg along the same heading instead of
+    turning back -- the old ground gets recorded (terrain_checkpoints) so it's
+    still reported once the trip finally ends."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 60, 10, "#c084fc")
+    tribe.expeditions = [{
+        "kind": "scout",
+        # (60,10) is well clear of the river/lake -- WATER_SENSING_RADIUS must not
+        # fire here, or this would test the wrong mechanic.
+        "pos": [60, 10], "origin": [60, 10], "target": [66, 10],  # one step away, not water
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+
+    sim._advance_expeditions(tribe)
+
+    exp = tribe.expeditions[0]
+    assert exp["phase"] == "outbound"  # kept going, didn't turn back
+    assert exp["target"] != [66, 10]  # pushed to a fresh leg past the old patrol point
+    assert (66, 10) in exp["terrain_checkpoints"]  # the old ground is still remembered
 
 
 def test_expedition_does_not_give_up_from_day_count_alone():
