@@ -594,7 +594,13 @@ def _expand_territory(sim, tribe, biome, target):
         # rather than open a ring past the intended cap.
         if len(tribe.wall_rings) >= config.MAX_WALL_RINGS:
             return None
-        tribe.wall_rings.append(city_layout.build_ring(sim.world, tribe.territory_center, len(tribe.wall_rings)))
+        new_ring = city_layout.build_ring(sim.world, tribe.territory_center, len(tribe.wall_rings))
+        # See city_layout.cap_natural_barriers' own comment: this ring sits at a
+        # larger radius from the same fixed territory_center ring 0 was searched
+        # for, and was never itself checked against the "at most 1 natural
+        # barrier" rule -- confirmed live, one came out 5/8 free water sections.
+        city_layout.cap_natural_barriers(new_ring["sections"])
+        tribe.wall_rings.append(new_ring)
         unlockable = city_layout.next_unlockable_section(tribe)
 
     tribe.wood -= config.TERRITORY_EXPANSION_WOOD_COST

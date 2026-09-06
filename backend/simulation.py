@@ -5094,7 +5094,13 @@ class Simulation:
         places the Town Hall centered on that same coordinate."""
         tribe.territory_center = self._choose_territory_center(tribe)
         tribe.territory_radius = config.WALL_RING_RADIUS_STEP
-        tribe.wall_rings = [city_layout.build_ring(self.world, tribe.territory_center, ring_index=0)]
+        ring0 = city_layout.build_ring(self.world, tribe.territory_center, ring_index=0)
+        # Safety net for the rare case _choose_territory_center's search never found a
+        # candidate under the cap and fell back to its best (fewest-barrier) attempt --
+        # see cap_natural_barriers' own comment for why this can't be applied inside
+        # the search itself.
+        city_layout.cap_natural_barriers(ring0["sections"])
+        tribe.wall_rings = [ring0]
         w, h = config.BUILDING_FOOTPRINTS["town_hall"]
         cx, cy = tribe.territory_center
         architect.record_building(tribe, "town_hall", cx - w // 2, cy - h // 2, w, h, self.cycle)

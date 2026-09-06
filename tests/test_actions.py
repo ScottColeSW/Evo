@@ -812,6 +812,34 @@ def test_expand_territory_opens_a_new_ring_once_the_current_one_is_maxed():
     assert "territory expands" in result
 
 
+def test_expand_territory_caps_natural_barriers_on_a_newly_opened_ring():
+    """Live bug report: "the final locked Territory ring is not backing away
+    from natural barriers. They are only allowed 1 natural barrier at most
+    ever." Simulation._choose_territory_center only searches for a good
+    center at founding, for ring 0 -- a later ring, opened here at the same
+    fixed center but a larger radius, was never checked at all. Confirmed
+    live: one such ring came out with 5 of 8 sections as free water. Forces
+    every section of the newly-opened ring to read as a natural barrier (via
+    monkeypatching the terrain check, not real map geometry) to prove
+    _expand_territory itself enforces the cap, not just city_layout.build_ring."""
+    from unittest import mock
+
+    from backend import city_layout, config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    _complete_ring0(sim, tribe, tier=config.WALL_MAX_LAYERS)
+    tribe.wood = tribe.stone = 200
+
+    with mock.patch("backend.city_layout._is_natural_barrier", return_value=True):
+        ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
+
+    assert len(tribe.wall_rings) == 2
+    barrier_count = sum(1 for s in tribe.wall_rings[1]["sections"] if s["natural_barrier"])
+    assert barrier_count == config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS
+
+
 def test_expand_territory_refuses_a_ring_past_the_cap():
     """Explicit request: "2 rings is enough. they will have to build outside
     the walls once they hit that point." A no-op fail-closed guard --

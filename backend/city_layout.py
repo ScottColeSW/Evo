@@ -59,6 +59,29 @@ def build_ring(world, center: tuple[int, int], ring_index: int) -> dict:
     return {"radius": radius, "sections": sections}
 
 
+def cap_natural_barriers(sections: list[dict]) -> None:
+    """Explicit rule, "they are only allowed 1 natural barrier at most ever"
+    (config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS): Simulation.
+    _choose_territory_center already enforces this for ring 0 by searching
+    for a low-water center before founding, but every later ring -- opened
+    by EXPAND_TERRITORY at the SAME fixed center (it can't move once
+    buildings are already anchored to it) but a larger radius -- was never
+    checked at all. Confirmed live: a ring 1 built this way came out with 5
+    of its 8 sections as free water barriers, essentially an unearned wall.
+    Since the center can't move for an existing ring, any natural barrier
+    beyond the cap is converted back into a real, buildable section here
+    instead -- still literally sitting on water, but no longer a free ride,
+    closing the same gap the center search exists to prevent for ring 0.
+    Mutates sections in place; call once right after build_ring for any ring
+    actually being committed to a tribe (not for _choose_territory_center's
+    own candidate probes, which need the true, uncapped count to compare
+    candidates against each other)."""
+    barriers = [s for s in sections if s["natural_barrier"]]
+    for sec in barriers[config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS:]:
+        sec["natural_barrier"] = False
+        sec["unlocked"] = False
+
+
 def next_wall_work_section(tribe) -> tuple[int, int] | None:
     """(ring_index, section_index) for CONSTRUCT_WALL to act on next: unfinished
     construction first, across every ring/section in fixed order, then

@@ -3,6 +3,7 @@ from backend.city_layout import (
     _is_natural_barrier,
     breach_outer_ring,
     build_ring,
+    cap_natural_barriers,
     inner_ring_defense_bonus,
     next_unlockable_section,
     next_wall_work_section,
@@ -133,6 +134,43 @@ def test_next_unlockable_section_none_when_ring_fully_unlocked():
     tribe.wall_rings = [ring]
 
     assert next_unlockable_section(tribe) is None
+
+
+def test_cap_natural_barriers_converts_excess_ones_back_to_real_sections():
+    """Live bug report: "the final locked Territory ring is not backing away
+    from natural barriers. They are only allowed 1 natural barrier at most
+    ever." Simulation._choose_territory_center only ever searches for a good
+    center for ring 0, at founding -- confirmed live, a ring built later by
+    EXPAND_TERRITORY (same fixed center, larger radius) came out with 5 of 8
+    sections as free water barriers. The center can't move for an existing
+    ring, so cap_natural_barriers converts every barrier beyond the cap back
+    into a real, buildable section instead."""
+    ring = _plain_ring()
+    for sec in ring["sections"][:5]:
+        sec["natural_barrier"] = True
+        sec["unlocked"] = True
+
+    cap_natural_barriers(ring["sections"])
+
+    barrier_count = sum(1 for s in ring["sections"] if s["natural_barrier"])
+    assert barrier_count == config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS
+    # The converted sections become ordinary, lockable, unbuilt sections --
+    # not silently left "unlocked" from their former free-ride state.
+    converted = ring["sections"][config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS:5]
+    for sec in converted:
+        assert sec["natural_barrier"] is False
+        assert sec["unlocked"] is False
+
+
+def test_cap_natural_barriers_is_a_no_op_at_or_under_the_cap():
+    ring = _plain_ring()
+    ring["sections"][0]["natural_barrier"] = True
+    ring["sections"][0]["unlocked"] = True
+    before = [dict(s) for s in ring["sections"]]
+
+    cap_natural_barriers(ring["sections"])
+
+    assert ring["sections"] == before
 
 
 def test_ring_fully_built_requires_every_section_at_100_or_natural():
