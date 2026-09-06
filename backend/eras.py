@@ -23,10 +23,17 @@ population every subsequent era leans on higher resource requirements to keep
 climbing past rather than a raised population floor -- there's no longer a
 population ceiling at all (config.POPULATION_GROWTH_CAP, explicit request: "we
 should not put a cap on population").
-Mechanization/Silicon/Cosmic Post-Human currently unlock no new actions -- their real
-content (self-modification, symbolic doctrine-sharing, the endgame epilogue) is
-deliberately sequenced as separate follow-up work, not invented here just to fill
-the slot.
+
+Later narrowed to 6 real stages: a run finally reached the old ceiling
+("cosmic_post_human") for the first time with nothing left to do there --
+explicit request, "we have to extend it now." The old top three
+(mechanization_era/silicon_era/cosmic_post_human) were all empty reserved
+slots (unlocks_actions=()); they're replaced outright by two real eras
+(object_creator_era, war_and_world_domination_era) rather than kept around
+alongside new ones appended after. ENABLE_SELF_MODIFICATION (the old reason
+mechanization_era existed) and symbolic doctrine-sharing (silicon_era's old
+reserved purpose) both stay explicitly deferred, not folded into either
+replacement -- each needs its own future design/sign-off pass.
 """
 
 from dataclasses import dataclass
@@ -100,8 +107,10 @@ ERAS: tuple[Era, ...] = (
         # No new discrete action -- small models essentially never reach for a newly
         # unlocked one anyway (see _check_for_celebration's own docstring on this
         # exact finding). This era's real content is a passive system, not an
-        # action: the tribe-level genetics.breed() cultural crossover, sequenced as
-        # separate follow-up work rather than invented here just to fill the slot.
+        # action: the tribe-level cultural crossover (Simulation.
+        # _resolve_cultural_crossover, calling genetics.breed()) -- already fully
+        # built and live, just triggered by a tribe's first real DECLARE_ALLIANCE
+        # rather than gated on reaching this era specifically.
         unlocks_actions=(),
         announcement="{tribe} crosses into the Cognitive Horizon -- reflection begins to compound into wisdom.",
     ),
@@ -144,32 +153,35 @@ ERAS: tuple[Era, ...] = (
         announcement="{tribe} enters the Monolithic Era, ready to found a lasting city!",
         founds_city=True,
     ),
+    # Explicit request, after a run first reached the old era ceiling with
+    # nothing left to do there: "we have to extend it now." Two ideas floated
+    # earlier the same session -- an "Object Creator" manufacturing factory
+    # ("they can create anything they want and we have to somehow support
+    # it") as a second-to-last era, "War and World Domination" as the true
+    # final one -- replace the three old empty reserved slots
+    # (mechanization_era/silicon_era/cosmic_post_human, all unlocks_actions=())
+    # below rather than getting appended after them; the ladder goes from 7
+    # stages to 6, all of them real. ENABLE_SELF_MODIFICATION (the old reason
+    # mechanization_era existed) stays explicitly deferred -- it needs its own
+    # separate sign-off given the risk profile (autonomous filesystem writes),
+    # not folded into this pass.
     Era(
-        key="mechanization_era",
-        label="Mechanization Era",
+        key="object_creator_era",
+        label="Object Creator Era",
         requires_population=60,
         requires_resources={"water": 80, "stone": 60, "wood": 70},
         advancement_cost={"wood": 50, "stone": 50, "water": 50},
-        unlocks_actions=(),  # reserved: flips config.ENABLE_SELF_MODIFICATION on, not yet implemented
-        announcement="{tribe} enters the Mechanization Era!",
+        unlocks_actions=("BUILD_OBJECT_CREATOR", "CREATE_ITEM", "CREATE_USEFUL_STRUCTURE"),
+        announcement="{tribe} enters the Object Creator Era -- they can build anything they can imagine!",
     ),
     Era(
-        key="silicon_era",
-        label="Silicon Era",
+        key="war_and_world_domination_era",
+        label="War and World Domination",
         requires_population=80,  # config.POPULATION_GROWTH_CAP -- the hard ceiling
-        requires_resources={"water": 100, "stone": 80, "wood": 90},
-        advancement_cost={"wood": 60, "stone": 60, "water": 60},
-        unlocks_actions=(),  # reserved: symbolic doctrine-sharing crossover, not yet implemented
-        announcement="{tribe} enters the Silicon Era!",
-    ),
-    Era(
-        key="cosmic_post_human",
-        label="Cosmic Post-Human Age",
-        requires_population=80,
         requires_resources={"water": 120, "stone": 100, "wood": 110},
         advancement_cost={"wood": 70, "stone": 70, "water": 70},
-        unlocks_actions=(),  # reserved: the endgame epilogue/Transcendent Monument, not yet implemented
-        announcement="{tribe} transcends into the Cosmic Post-Human Age!",
+        unlocks_actions=("DECLARE_CONQUEST",),
+        announcement="{tribe} enters the age of War and World Domination!",
     ),
 )
 

@@ -276,6 +276,8 @@
           <div class="icon-key-row"><span class="icon-key-icon">📚</span> Library</div>
           <div class="icon-key-row"><span class="icon-key-icon">🪣</span> Well</div>
           <div class="icon-key-row"><span class="icon-key-icon">⛵</span> Boat (roams nearby water once built)</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🛠️</span> Object Creator</div>
+          <div class="icon-key-row"><span class="icon-key-icon">✨</span> Created Structure</div>
 
           <div class="icon-key-section">Discoveries</div>
           <div class="icon-key-row"><span class="icon-key-icon">💧</span> Confirmed water source</div>
@@ -502,6 +504,7 @@ function checkGameOver(state) {
 
 const GAME_OVER_TITLES = {
   extinction: "ALL POPULATIONS LOST",
+  world_domination: "WORLD DOMINATION",
   era_ceiling: "SIMULATION COMPLETE",
   manual_quit: "RUN STOPPED",
 };
@@ -2354,6 +2357,7 @@ const BUILDING_ICONS = {
   warehouse: "🏬",
   dock: "⚓", fishery: "🎣", farm_plot: "🌾", flock_pen: "🐔", fire: "🔥",
   hatchery: "🐣", boat: "⛵", bath_house: "🛁", library: "📚", well: "🪣",
+  object_creator: "🛠️", created_structure: "✨",
 };
 
 function drawBuildings(t) {
@@ -3137,7 +3141,7 @@ const WALL_MAX_LAYERS = 2;
 // tribe structurally can't act on yet, not a real "0 done so far."
 const ERA_ORDER = [
   "primitive_dawn", "cognitive_horizon", "tribal_synapse",
-  "monolithic_era", "mechanization_era", "silicon_era", "cosmic_post_human",
+  "monolithic_era", "object_creator_era", "war_and_world_domination_era",
 ];
 function eraAtLeast(era, floor) {
   const i = ERA_ORDER.indexOf(era), f = ERA_ORDER.indexOf(floor);
@@ -3200,7 +3204,8 @@ function farmingPanel(t) {
     || t.moat_built || t.road_built || t.dock_built
     || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built || t.tannery_built
     || t.forge_built || t.warehouses_built || t.founded_city || (t.cooking_learned && !t.kitchen_built)
-    || t.hatchery_built || t.boat_built || t.bath_house_built || t.library_built || t.well_built;
+    || t.hatchery_built || t.boat_built || t.bath_house_built || t.library_built || t.well_built
+    || t.object_creator_built || t.conquests_won;
   if (!hasAny) return "";
   const parts = [];
   if (t.farm_plots > 0) {
@@ -3326,6 +3331,21 @@ function farmingPanel(t) {
   if (t.warehouses_built > 0) {
     const cap = STORAGE_CAP_BASE + t.warehouses_built * WAREHOUSE_STORAGE_BONUS_PER_BUILDING;
     parts.push(`🏬 Warehouse — ${t.warehouses_built} built, storage capacity ${cap} per resource`);
+  }
+  if (t.object_creator_built) {
+    const objects = t.created_objects || [];
+    if (objects.length) {
+      const detail = objects
+        .map(o => `${escapeHtml(o.name)} (${escapeHtml(o.category.replace(/_/g, " "))})`)
+        .join(", ");
+      parts.push(`🛠️ Object Creator — ${objects.length} creation(s): ${detail}`);
+    } else {
+      parts.push("🛠️ Object Creator — nothing designed yet");
+    }
+  }
+  if (t.conquests_won > 0) {
+    const conquered = (t.conquered_tribe_names || []).map(escapeHtml).join(", ") || "rival tribes";
+    parts.push(`⚔️ Conquest — ${t.conquests_won} rival(s) absorbed outright (${conquered})`);
   }
   return `<div class="farming-panel"><span class="farming-title">🏘️ Establishments</span><br>${parts.join("<br>")}</div>`;
 }

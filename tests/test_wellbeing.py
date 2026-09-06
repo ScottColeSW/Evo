@@ -113,7 +113,7 @@ def test_self_actualization_maxes_out_at_the_top_era():
     from backend import config
 
     top = compute_wellbeing(
-        _tribe(era="cosmic_post_human", founded_city=True, buildings=[{} for _ in range(config.SELF_ACTUALIZATION_BUILDING_REFERENCE)]),
+        _tribe(era="war_and_world_domination_era", founded_city=True, buildings=[{} for _ in range(config.SELF_ACTUALIZATION_BUILDING_REFERENCE)]),
         wall_fraction=0.0,
     )
 

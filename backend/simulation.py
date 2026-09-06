@@ -7,7 +7,7 @@ import random
 from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
-    _eligible_breeding_pair, _food_multiplier, _item_storage_cap,
+    _created_object_bonus, _eligible_breeding_pair, _food_multiplier, _item_storage_cap,
     _labor_multiplier, _long_house_fur_discount, _push_past_visited_ground, _record_combat, _storage_cap,
     expedition_capacity,
 )
@@ -108,7 +108,7 @@ ONE_TIME_BUILD_FLAGS = {
     "BUILD_MINE": "mine_built", "BUILD_FORGE": "forge_built",
     "BUILD_ROAD": "road_built", "BUILD_HATCHERY": "hatchery_built",
     "BUILD_BATH_HOUSE": "bath_house_built", "BUILD_LIBRARY": "library_built",
-    "BUILD_WELL": "well_built",
+    "BUILD_WELL": "well_built", "BUILD_OBJECT_CREATOR": "object_creator_built",
 }
 
 # See _prepare_turn's survival-crisis filter. A live run showed a tribe stay at 0
@@ -342,6 +342,26 @@ AFFORDABILITY_CHECKS = {
         and t.wood >= config.FORGE_ITEM_WOOD_COST
         and t.unique_resources.get(t.mine_resource_name, 0) >= config.FORGE_ITEM_ORE_COST
     ),
+    "BUILD_OBJECT_CREATOR": lambda t, w: (
+        t.wood >= config.OBJECT_CREATOR_WOOD_COST and t.stone >= config.OBJECT_CREATOR_STONE_COST
+        and _can_place(t, w, "object_creator")
+    ),
+    # Both require the factory itself to actually stand -- same "structural
+    # prerequisite, not just a resource cost" shape BUILD_FORGE gates FORGE_ITEM
+    # on, made explicit here rather than relying only on the handler's own
+    # no-op guard.
+    "CREATE_ITEM": lambda t, w: (
+        t.object_creator_built
+        and t.wood >= config.CREATE_ITEM_WOOD_COST and t.stone >= config.CREATE_ITEM_STONE_COST
+    ),
+    "CREATE_USEFUL_STRUCTURE": lambda t, w: (
+        t.object_creator_built
+        and t.wood >= config.CREATE_USEFUL_STRUCTURE_WOOD_COST and t.stone >= config.CREATE_USEFUL_STRUCTURE_STONE_COST
+        and _can_place(t, w, "created_structure")
+    ),
+    "DECLARE_CONQUEST": lambda t, w: (
+        t.wood >= config.DECLARE_CONQUEST_WOOD_COST and t.stone >= config.DECLARE_CONQUEST_STONE_COST
+    ),
 }
 
 
@@ -449,6 +469,9 @@ def _celebration_cost(tribe: "Tribe") -> int:
     cost = min(round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION), config.CELEBRATION_MAX_COST)
     if tribe.cooking_learned:
         cost = round(cost * config.CELEBRATION_COOKING_COST_MULTIPLIER)
+    # Object Creator era's celebration_discount effect -- see actions.py.
+    # _created_object_bonus. Floored at 0 rather than letting it go negative.
+    cost = max(0, round(cost * (1 - _created_object_bonus(tribe, "celebration_discount"))))
     return cost
 
 
@@ -826,6 +849,29 @@ class Tribe:
         # carries, redeemable via USE_ITEM or handed over in a TRADE.
         self.forge_built = False
         self.items: list[dict] = []
+        # Object Creator era (see actions.py._build_object_creator/_create_item/
+        # _create_useful_structure, eras.py's object_creator_era): the factory
+        # itself, plus every item/structure it's produced --
+        # {"name", "category" (one of config.CREATED_OBJECT_CATEGORIES),
+        # "kind": "item"|"structure"}. category is picked round-robin off this
+        # list's own length at creation time, not a hidden roll -- see
+        # _created_object_bonus for where each category's bounded effect is
+        # actually read.
+        self.object_creator_built = False
+        self.created_objects: list[dict] = []
+        # War and World Domination era (see actions.py._declare_conquest,
+        # Simulation._merge_tribes, Simulation.step's world_domination check):
+        # incremented every time this tribe fully absorbs a rival, whether via
+        # an ordinary RAID grinding a defender to 0 population or a deliberate
+        # DECLARE_CONQUEST campaign. The real signal for "this tribe won by
+        # conquest," not just "this tribe is the only one left" (which could
+        # also happen if every rival died of unrelated hazards).
+        self.conquests_won = 0
+        # _merge_tribes deletes the loser from Simulation.tribes entirely, so
+        # by the time a world_domination game-over summary is generated,
+        # nothing else on hand still names who was actually conquered --
+        # tracked here instead so that summary can name them for real.
+        self.conquered_tribe_names: list[str] = []
         # See actions.py._build_warehouse/_storage_cap -- explicit request after a
         # live run showed unbounded hoarding (200+ wood while starved on stone).
         # Repeatable, same shape as long_houses_built -- each one raises every
@@ -998,6 +1044,10 @@ class Tribe:
             "tannery_built": self.tannery_built,
             "forge_built": self.forge_built,
             "items": self.items,
+            "object_creator_built": self.object_creator_built,
+            "created_objects": self.created_objects,
+            "conquests_won": self.conquests_won,
+            "conquered_tribe_names": self.conquered_tribe_names,
             "warehouses_built": self.warehouses_built,
             "foraging_retired": self.foraging_retired,
             "watering_retired": self.watering_retired,
@@ -1715,6 +1765,15 @@ class Simulation:
         living_tribes = [t for t in self.tribes.values() if not t.extinct]
         if self.tribes and not living_tribes:
             await self._trigger_game_over("extinction")
+        # War and World Domination era's real victory condition.
+        # Simulation._merge_tribes physically removes a conquered rival from
+        # self.tribes (unlike ordinary hazard/starvation extinction, which only
+        # flags tribe.extinct and leaves them in the dict) -- "exactly one
+        # tribe remains, and it got there via at least one real conquest" is
+        # the clean, unambiguous signal that this is a win, not just an empty
+        # board left behind by unrelated hazard deaths.
+        elif len(self.tribes) == 1 and next(iter(self.tribes.values())).conquests_won > 0:
+            await self._trigger_game_over("world_domination")
         # Explicit request: "we are missing 'the end'" -- every still-living
         # tribe reaching the era ceiling (next_era returns None) is just as
         # real an ending as total extinction; a real run kept stepping 400+
@@ -3158,15 +3217,18 @@ class Simulation:
     async def _trigger_game_over(self, reason: str) -> None:
         """Ends the run for real -- there will be no more turns, ever, for any
         model this session used, until a fresh ADD_TRIBE clears this back to
-        normal (see add_tribe). Three ways to get here: every tribe has gone
-        extinct (reason="extinction"), every still-living tribe has reached
-        the era ceiling with nowhere further to progress (reason=
-        "era_ceiling" -- explicit request: "we are missing 'the end'", after a
-        real run spent 400+ cycles, over half its total length, stepping with
-        nothing left to reach), or the user hit QUIT (reason="manual_quit" --
-        explicit follow-up: "since I can click Quit anytime, it should come up
-        when I quit", so a manually-ended run gets the same real summary
-        instead of silently reloading with nothing shown). Rather than let
+        normal (see add_tribe). Four ways to get here: every tribe has gone
+        extinct (reason="extinction"), one tribe conquered every rival
+        outright (reason="world_domination" -- War and World Domination
+        era's real victory condition, see step()'s own check and
+        Tribe.conquests_won), every still-living tribe has reached the era
+        ceiling with nowhere further to progress (reason="era_ceiling" --
+        explicit request: "we are missing 'the end'", after a real run spent
+        400+ cycles, over half its total length, stepping with nothing left
+        to reach), or the user hit QUIT (reason="manual_quit" -- explicit
+        follow-up: "since I can click Quit anytime, it should come up when I
+        quit", so a manually-ended run gets the same real summary instead of
+        silently reloading with nothing shown). Rather than let
         step() keep getting called every tick forever (harmless but pointless
         once there's truly nothing left to change) and leave every model
         sitting loaded in Ollama until its keep_alive window expires on its
@@ -3189,6 +3251,11 @@ class Simulation:
         lines = []
         if reason == "extinction":
             lines.append("OVERSEER LOG: Every observed population has ceased to exist.")
+        elif reason == "world_domination":
+            lines.append(
+                "OVERSEER LOG: A single population now accounts for the entire observed civilization. "
+                "Every rival has been absorbed by conquest."
+            )
         elif reason == "era_ceiling":
             lines.append(
                 "OVERSEER LOG: Every surviving population has exhausted the known stages of "
@@ -3207,7 +3274,14 @@ class Simulation:
                 f"Chiefs elected: {tribe.chiefs_elected}. Distinctions: {trophy_names}."
             )
         living = [t for t in self.tribes.values() if not t.extinct]
-        if reason in ("era_ceiling", "manual_quit") and living:
+        if reason == "world_domination" and living:
+            victor = living[0]
+            conquered = ", ".join(victor.conquered_tribe_names) or "unknown rivals"
+            lines.append(
+                f"Analysis: {victor.name} achieved total domination, conquering {conquered}. "
+                f"Session concluded at cycle {self.cycle}."
+            )
+        elif reason in ("era_ceiling", "manual_quit") and living:
             leader = max(living, key=lambda t: t.max_population)
             lines.append(
                 f"Analysis: {leader.name} attained the highest peak population ({leader.max_population}) "
@@ -3440,7 +3514,15 @@ class Simulation:
                 speed_base = config.EXPEDITION_SPEED
             else:
                 speed_base = config.SETTLED_EXPEDITION_SPEED
-            base_speed = speed_base + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
+            # Object Creator era's expedition_boost effect: a flat extra
+            # tiles/cycle per created object of that category (see config.
+            # CREATED_OBJECT_EXPEDITION_SPEED_BONUS), not a percentage --
+            # measured the same way ROAD_SPEED_BONUS already is.
+            expedition_boost_count = sum(1 for obj in tribe.created_objects if obj["category"] == "expedition_boost")
+            base_speed = (
+                speed_base + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
+                + expedition_boost_count * config.CREATED_OBJECT_EXPEDITION_SPEED_BONUS
+            )
             # Explicit request: "travel speed is 5x on toll roads."
             if self.world.is_toll_road(px, py):
                 base_speed *= config.TOLL_ROAD_SPEED_MULTIPLIER
@@ -3643,7 +3725,15 @@ class Simulation:
                 speed_base = config.EXPEDITION_SPEED
             else:
                 speed_base = config.SETTLED_EXPEDITION_SPEED
-            base_speed = speed_base + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
+            # Object Creator era's expedition_boost effect: a flat extra
+            # tiles/cycle per created object of that category (see config.
+            # CREATED_OBJECT_EXPEDITION_SPEED_BONUS), not a percentage --
+            # measured the same way ROAD_SPEED_BONUS already is.
+            expedition_boost_count = sum(1 for obj in tribe.created_objects if obj["category"] == "expedition_boost")
+            base_speed = (
+                speed_base + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
+                + expedition_boost_count * config.CREATED_OBJECT_EXPEDITION_SPEED_BONUS
+            )
             # Explicit request: "travel speed is 5x on toll roads."
             if self.world.is_toll_road(px, py):
                 base_speed *= config.TOLL_ROAD_SPEED_MULTIPLIER
@@ -4351,6 +4441,9 @@ class Simulation:
             # levels" -- free once a tribe has both fire and a fully reinforced
             # first wall ring, no action or cost of its own.
             + (config.TORCHES_DEFENSE_BONUS if tribe.fire_ever_built and ring0_reinforced else 0.0)
+            # Object Creator era's defense_boost effect -- see actions.py.
+            # _created_object_bonus.
+            + _created_object_bonus(tribe, "defense_boost")
             - config.RAIDER_STRENGTH_DEFENSE_PENALTY_AT_MAX * raider_strength
         ))
         if random.random() < defense_chance:
@@ -5266,6 +5359,12 @@ class Simulation:
         model's own reasoning about where reliable water actually is."""
         old_name = attacker.name
         attacker.name = f"{old_name} (Advanced)"
+        # See Tribe.conquests_won's own comment and Simulation.step's
+        # world_domination victory check -- the real signal that this tribe
+        # became the last one standing by actually conquering rivals, not by
+        # outlasting others through unrelated hazard deaths.
+        attacker.conquests_won += 1
+        attacker.conquered_tribe_names.append(defender.name)
         attacker.wood += defender.wood
         attacker.stone += defender.stone
         attacker.food += defender.food

@@ -465,6 +465,7 @@ BUILDING_FOOTPRINTS = {
     "kitchen": (2, 2), "tannery": (2, 2), "dock": (2, 2), "fishery": (2, 4),
     "farm_plot": (3, 3), "flock_pen": (2, 2), "fire": (1, 1), "hatchery": (2, 2),
     "boat": (2, 3), "bath_house": (2, 2), "library": (3, 3), "well": (2, 2),
+    "object_creator": (3, 3), "created_structure": (2, 2),
 }
 
 # BUILD_FISHERY (backend/actions.py): a new building, unlocked once a Dock already
@@ -1335,6 +1336,69 @@ ITEM_STORAGE_CAP_PER_WAREHOUSE = 1
 # USE_ITEM redeems a crafted item for its value, split across wood/stone -- the
 # straightforward cash-out for a value that otherwise just sits on the tribe.
 USE_ITEM_STONE_SHARE = 0.5
+
+# Object Creator era (replaces the old empty mechanization_era/silicon_era
+# reserved slots -- see eras.py): "they can create anything they want and we
+# have to somehow support it." BUILD_OBJECT_CREATOR is the one-time factory,
+# same BUILD_FORGE-shaped gate (wood/stone cost + a free footprint slot).
+# CREATE_ITEM/CREATE_USEFUL_STRUCTURE are deliberately risk-bounded: the name
+# is genuinely random/flavorful (same "no invisible dice on what matters,
+# some dice on what it's called" precedent ITEM_NAMES_BY_TYPE already sets),
+# but the mechanical effect is drawn from a small fixed category menu at a
+# single capped magnitude -- explicit request: "let's limit the risk at this
+# time knowing we will come back to it" (full open-ended LLM-driven stat
+# generation is a deliberate future follow-up, not built now).
+OBJECT_CREATOR_WOOD_COST = 80
+OBJECT_CREATOR_STONE_COST = 80
+CREATE_ITEM_WOOD_COST = 20
+CREATE_ITEM_STONE_COST = 20
+CREATE_USEFUL_STRUCTURE_WOOD_COST = 40
+CREATE_USEFUL_STRUCTURE_STONE_COST = 40
+CREATED_OBJECT_NAMES = (
+    "Auto-Loom", "Sky Anchor", "Glass Compass", "Wind Ledger", "Storm Kiln",
+    "Echo Frame", "Sun Lattice", "Tide Engine", "Quiet Forge", "Signal Cairn",
+)
+# Bounded effect menu -- one category per creation, picked round-robin off
+# tribe.created_objects's own length (deterministic, not a hidden roll) so
+# a tribe that keeps creating things cycles through every category rather
+# than gambling on the same one repeatedly. Six categories spanning six
+# different axes of tribe life (gathering, war, defense, culture, exploration,
+# growth), not just one narrow effect repeated -- explicit invitation: "if you
+# want to add different ways the new things can alter the Tribes, I'm ok with
+# creativity." See actions.py._created_object_bonus for where each is read.
+CREATED_OBJECT_CATEGORIES = (
+    "gather_boost", "combat_boost", "defense_boost",
+    "celebration_discount", "expedition_boost", "population_boost",
+)
+# A flat, modest +20% per creation, same order of magnitude as SAWMILL_WOOD_
+# MULTIPLIER/DOCK_FISH_CATCH_BONUS_FRACTION -- not KITCHEN_FOOD_MULTIPLIER's
+# 3x stacking, deliberately smaller given these come with no real prerequisite
+# beyond the Object Creator itself. Stacks additively across multiple created
+# objects in the same category, same shape as the raider-defense bonus stack.
+# Used by gather_boost/combat_boost/defense_boost/celebration_discount --
+# expedition_boost/population_boost use their own differently-scaled
+# constants below since they're flat tile/population amounts, not percentages.
+CREATED_OBJECT_MAGNITUDE = 0.2
+# expedition_boost: a flat extra tiles/cycle for every expedition and RELOCATE
+# this tribe sends out from then on (see physics.terrain_aware_step's
+# base_speed callers) -- measured in tiles, not a percentage, so it gets its
+# own constant rather than reusing CREATED_OBJECT_MAGNITUDE.
+CREATED_OBJECT_EXPEDITION_SPEED_BONUS = 2
+# population_boost: a one-time flat population grant the moment it's created
+# (not an ongoing multiplier) -- the simplest, safest of the six effects by
+# construction, since there's nothing left to keep re-checking afterward.
+CREATED_OBJECT_POPULATION_BONUS = 3
+
+# War and World Domination era (replaces the old empty cosmic_post_human
+# slot): the ladder's real final era. DECLARE_CONQUEST is a deliberate,
+# all-in escalation of the ordinary RAID a tribe has had since tribal_synapse
+# -- win, and the rival is fully and immediately absorbed (Simulation.
+# _merge_tribes) in one campaign rather than several successful raids
+# gradually grinding them down; lose, and the cost is much steeper than an
+# ordinary repelled raid, since this is a full campaign, not a hit-and-run.
+DECLARE_CONQUEST_WOOD_COST = 100
+DECLARE_CONQUEST_STONE_COST = 100
+DECLARE_CONQUEST_FAILURE_POPULATION_LOSS = 5
 
 # Bronze Age counter-offensive (backend/actions.py._strike_raider_camp): a tribe that
 # has scouted a raider camp (raider_sightings) can strike it directly once organized

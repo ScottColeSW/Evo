@@ -94,6 +94,8 @@ def _food_multiplier(tribe) -> float:
         multiplier *= config.COOKING_FOOD_MULTIPLIER
     if tribe.kitchen_built:
         multiplier *= config.KITCHEN_FOOD_MULTIPLIER
+    # Object Creator era's gather_boost effect -- see _created_object_bonus.
+    multiplier *= 1 + _created_object_bonus(tribe, "gather_boost")
     return multiplier
 
 
@@ -1018,6 +1020,156 @@ def _use_item(sim, tribe, biome, target):
     return f"the {item['name']} is put to use -- {wood_gain} wood and {stone_gain} stone recovered from its worth"
 
 
+def _created_object_bonus(tribe, category: str) -> float:
+    """Sums the bounded per-category magnitude across every created object of
+    that category -- the single hook point every percentage-scaled Object
+    Creator effect (gather_boost/combat_boost/defense_boost/
+    celebration_discount) reads from. expedition_boost/population_boost use
+    their own flat-amount constants instead (a tile count and a one-shot
+    population grant aren't percentages), so they aren't summed here -- see
+    _create_item's own population_boost branch and Simulation.
+    _advance_one_expedition's expedition_boost hook."""
+    return sum(config.CREATED_OBJECT_MAGNITUDE for obj in tribe.created_objects if obj["category"] == category)
+
+
+def _build_object_creator(sim, tribe, biome, target):
+    """Object Creator era's signature building -- the factory that lets a
+    tribe start inventing genuinely new things. One-time, permanent, same
+    BUILD_FORGE-shaped gate (wood/stone cost + a free footprint slot), just a
+    late-game one behind the era's own steep resource threshold (see
+    eras.py's object_creator_era)."""
+    if tribe.object_creator_built:
+        return None
+    if tribe.wood < config.OBJECT_CREATOR_WOOD_COST or tribe.stone < config.OBJECT_CREATOR_STONE_COST:
+        return None
+    slot = architect.find_free_slot(sim.world, tribe, "object_creator")
+    if slot is None:
+        return None
+    tribe.wood -= config.OBJECT_CREATOR_WOOD_COST
+    tribe.stone -= config.OBJECT_CREATOR_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["object_creator"]
+    architect.record_building(tribe, "object_creator", slot[0], slot[1], w, h, sim.cycle)
+    tribe.object_creator_built = True
+    sim._award_trophy(tribe, "Visionary")
+    return "the Object Creator hums to life -- the tribe can now design and build genuinely new things"
+
+
+def _new_created_object(tribe) -> tuple[str, str]:
+    """Picks a name and effect category for a freshly created item/structure
+    -- shared by CREATE_ITEM/CREATE_USEFUL_STRUCTURE. The name is genuinely
+    random/flavorful (same creative-but-bounded balance ITEM_NAMES_BY_TYPE
+    already strikes for Forge items); the category is picked round-robin off
+    this tribe's own creation count so far, not a hidden roll, cycling
+    through all six of CREATED_OBJECT_CATEGORIES rather than gambling on the
+    same one repeatedly. Explicit request: "let's limit the risk at this
+    time knowing we will come back to it" -- full open-ended LLM-driven stat
+    generation (parsing the model's own description into a novel mechanical
+    effect) is a deliberate future follow-up, not built here."""
+    name = random.choice(config.CREATED_OBJECT_NAMES)
+    category = config.CREATED_OBJECT_CATEGORIES[len(tribe.created_objects) % len(config.CREATED_OBJECT_CATEGORIES)]
+    return name, category
+
+
+def _create_item(sim, tribe, biome, target):
+    """The Object Creator's first real output: a genuinely new, permanent
+    item with one bounded effect. population_boost is the one immediate,
+    one-shot effect (a flat population grant, see config.
+    CREATED_OBJECT_POPULATION_BONUS); every other category is read passively
+    at its own real hook point (_created_object_bonus)."""
+    if not tribe.object_creator_built:
+        return None
+    if tribe.wood < config.CREATE_ITEM_WOOD_COST or tribe.stone < config.CREATE_ITEM_STONE_COST:
+        return None
+    tribe.wood -= config.CREATE_ITEM_WOOD_COST
+    tribe.stone -= config.CREATE_ITEM_STONE_COST
+    name, category = _new_created_object(tribe)
+    tribe.created_objects.append({"name": name, "category": category, "kind": "item"})
+    if len(tribe.created_objects) == 1:
+        sim._award_trophy(tribe, "Inventor")
+    if category == "population_boost":
+        tribe.population += config.CREATED_OBJECT_POPULATION_BONUS
+        tribe.max_population = max(tribe.max_population, tribe.population)
+        return (
+            f"the {name} is unveiled -- {config.CREATED_OBJECT_POPULATION_BONUS} new people "
+            "join the tribe, inspired by the invention"
+        )
+    return f"the {name} is unveiled -- a genuinely new {category.replace('_', ' ')} for the tribe"
+
+
+def _create_useful_structure(sim, tribe, biome, target):
+    """Same idea as CREATE_ITEM, but a real building footprint instead of a
+    portable item -- "anything" the Object Creator can make spans both, per
+    direct confirmation."""
+    if not tribe.object_creator_built:
+        return None
+    if tribe.wood < config.CREATE_USEFUL_STRUCTURE_WOOD_COST or tribe.stone < config.CREATE_USEFUL_STRUCTURE_STONE_COST:
+        return None
+    slot = architect.find_free_slot(sim.world, tribe, "created_structure")
+    if slot is None:
+        return None
+    tribe.wood -= config.CREATE_USEFUL_STRUCTURE_WOOD_COST
+    tribe.stone -= config.CREATE_USEFUL_STRUCTURE_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["created_structure"]
+    architect.record_building(tribe, "created_structure", slot[0], slot[1], w, h, sim.cycle)
+    name, category = _new_created_object(tribe)
+    tribe.created_objects.append({"name": name, "category": category, "kind": "structure"})
+    if len(tribe.created_objects) == 1:
+        sim._award_trophy(tribe, "Inventor")
+    if category == "population_boost":
+        tribe.population += config.CREATED_OBJECT_POPULATION_BONUS
+        tribe.max_population = max(tribe.max_population, tribe.population)
+        return (
+            f"the {name} is built -- {config.CREATED_OBJECT_POPULATION_BONUS} new people "
+            "join the tribe, drawn by the new structure"
+        )
+    return f"the {name} is built -- a genuinely new {category.replace('_', ' ')} structure for the tribe"
+
+
+def _declare_conquest(sim, tribe, biome, target):
+    """War and World Domination era's decisive war action -- unlike ordinary
+    RAID's gradual population-siphon (several successful raids to fully
+    absorb a rival), a tribe that's reached this era can commit everything
+    to one all-in campaign: win, and the rival is fully and immediately
+    absorbed (Simulation._merge_tribes), not just weakened. Same
+    population-share win chance as RAID (boosted by a combat_boost created
+    object, same as RAID itself now gets), but a much steeper population
+    cost on failure, since this is a full campaign, not a raiding party's
+    hit-and-run."""
+    tx, ty = target
+    defender = None
+    for other in sim.tribes.values():
+        if other.id == tribe.id or other.extinct:
+            continue
+        if (other.x - tx) ** 2 + (other.y - ty) ** 2 <= config.RAID_PROXIMITY_RADIUS ** 2:
+            defender = other
+            break
+    if defender is None:
+        return "found no rival civilization there to conquer"
+    if tribe.wood < config.DECLARE_CONQUEST_WOOD_COST or tribe.stone < config.DECLARE_CONQUEST_STONE_COST:
+        return None
+    tribe.wood -= config.DECLARE_CONQUEST_WOOD_COST
+    tribe.stone -= config.DECLARE_CONQUEST_STONE_COST
+    effective_population = tribe.population * (1 + _created_object_bonus(tribe, "combat_boost"))
+    attacker_win_chance = effective_population / max(1, effective_population + defender.population)
+    if random.random() < attacker_win_chance:
+        old_name, defender_name = tribe.name, defender.name
+        _record_combat(tribe, "Conquest", "won")
+        _record_combat(defender, "Conquest Defense", "lost")
+        sim.trauma.radiate_event_wave(defender.x, defender.y, config.RAID_TRAUMA_MAGNITUDE * 2, config.RAID_TRAUMA_RADIUS)
+        sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_PRIDE_MAGNITUDE * 2, config.RAID_PRIDE_RADIUS)
+        sim.recent_encounters.append({
+            "x": defender.x, "y": defender.y, "kind": "tribe_raid",
+            "label": f"{tribe.name} conquers {defender.name}", "outcome": "won",
+        })
+        new_name = sim._merge_tribes(tribe, defender)
+        return f"declared total conquest of {defender_name} and won outright -- {old_name} becomes {new_name}!"
+    sim._lose_population(tribe, config.DECLARE_CONQUEST_FAILURE_POPULATION_LOSS, cause="conquest_failed")
+    _record_combat(tribe, "Conquest", "lost")
+    _record_combat(defender, "Conquest Defense", "won")
+    defender.history.append(f"{tribe.name}'s all-in campaign to conquer {defender.name} failed at great cost")
+    return f"the campaign to conquer {defender.name} failed -- heavy losses, nothing gained"
+
+
 def _plant_crop(sim, tribe, biome, target):
     """Only reachable at all once Simulation._prepare_turn's settled-near-water gate
     (Simulation._is_settled_near_water) allows it -- plains alone doesn't mean a tribe
@@ -1529,7 +1681,10 @@ def _raid(sim, tribe, biome, target):
     if defender is None:
         return "found no rival encampment there to raid"
 
-    attacker_win_chance = tribe.population / max(1, tribe.population + defender.population)
+    # Object Creator era's combat_boost effect applies here too, not just
+    # DECLARE_CONQUEST -- see _created_object_bonus.
+    effective_population = tribe.population * (1 + _created_object_bonus(tribe, "combat_boost"))
+    attacker_win_chance = effective_population / max(1, effective_population + defender.population)
     if random.random() < attacker_win_chance:
         for resource in ("wood", "stone", "food", "water"):
             stolen = round(getattr(defender, resource) * config.RAID_STEAL_FRACTION)
@@ -1937,6 +2092,10 @@ ACTION_REGISTRY = {
     "BUILD_FORGE": _build_forge,
     "FORGE_ITEM": _forge_item,
     "USE_ITEM": _use_item,
+    "BUILD_OBJECT_CREATOR": _build_object_creator,
+    "CREATE_ITEM": _create_item,
+    "CREATE_USEFUL_STRUCTURE": _create_useful_structure,
+    "DECLARE_CONQUEST": _declare_conquest,
     "BUILD_KITCHEN": _build_kitchen,
     "BUILD_MOAT": _build_moat,
     "BUILD_KEEP": _build_keep,
@@ -1993,6 +2152,10 @@ ACTION_DESCRIPTIONS = {
     "BUILD_FORGE": "Build a forge using stored wood and stone -- only possible once a mine stands and at least one unit of its ore is already in stock. A one-time, permanent structure: from then on, ore can be worked into real tools, weapons, and inventions.",
     "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. No durability to track: each item just carries a flat value, usable later or given away in a trade.",
     "USE_ITEM": "Redeem your oldest crafted item for its stored value, converted into wood and stone. Does nothing if you have no items.",
+    "BUILD_OBJECT_CREATOR": "Build the Object Creator using stored wood and stone -- a one-time, permanent factory that lets the tribe start inventing genuinely new items and structures from then on.",
+    "CREATE_ITEM": "Design and craft a genuinely new item at the Object Creator -- a real, permanent effect (a bonus to gathering, combat, defense, celebrations, exploration speed, or an immediate population grant), picked for you. Only possible once the Object Creator stands.",
+    "CREATE_USEFUL_STRUCTURE": "Design and build a genuinely new structure at the Object Creator -- same real, permanent effects as CREATE_ITEM, but a building instead of a portable item. Only possible once the Object Creator stands.",
+    "DECLARE_CONQUEST": "An all-in campaign to fully and immediately conquer a rival tribe near target_vector, in one decisive stroke rather than several raids. A win absorbs them completely; a loss costs far more than an ordinary failed raid. Does nothing if no rival is there.",
     "BUILD_KITCHEN": "Build a kitchen using stored wood and stone -- only possible once cooking is known and a long house stands. A one-time, permanent structure: stacks with cooking for nine times as much food from every future forage, hunt, or catch, instead of only three.",
     "BUILD_MOAT": "Dig a moat using stored wood and stone -- only possible once the wall has been reinforced with a second layer. A one-time, permanent structure, cheaper than another wall layer: a further defense bonus.",
     "BUILD_KEEP": "Build a keep using stored wood and stone -- only possible once enough long houses stand. A one-time, permanent structure: a further defense bonus for the settlement.",

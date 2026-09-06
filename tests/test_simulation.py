@@ -4651,6 +4651,66 @@ def test_raider_attack_successful_defense_radiates_pride_and_increments_raids_de
     assert any(t["name"] == "Raid Breaker" for t in tribe.trophies)
 
 
+def test_created_object_defense_boost_raises_raider_defense_chance():
+    """Object Creator era's defense_boost effect -- see actions.py._created_object_bonus
+    -- stacks additively onto _resolve_raider_attack's defense_chance, same as the
+    wall/water/keep/fortress bonuses it already sums."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 0  # zero wall/population/water bonuses -- isolates the boost
+    tribe.food = tribe.wood = tribe.stone = 100
+    # Base defense_chance here is exactly RAIDER_DEFENSE_BASE_CHANCE (0.25); a
+    # roll of 0.35 fails it but should succeed once defense_boost (+0.2) applies.
+    roll = 0.35
+    assert config.RAIDER_DEFENSE_BASE_CHANCE < roll < config.RAIDER_DEFENSE_BASE_CHANCE + config.CREATED_OBJECT_MAGNITUDE
+
+    with mock.patch("backend.simulation.random.random", return_value=roll):
+        sim._resolve_raider_attack(tribe)
+    assert tribe.raids_defended == 0
+
+    sim2 = _bare_simulation()
+    boosted = Tribe("tribe_1", "Boosted Tribe", "gemma2:2b", 50, 50, "#fb923c")
+    boosted.population = 0
+    boosted.food = boosted.wood = boosted.stone = 100
+    boosted.created_objects = [{"name": "x", "category": "defense_boost", "kind": "item"}]
+
+    with mock.patch("backend.simulation.random.random", return_value=roll):
+        sim2._resolve_raider_attack(boosted)
+    assert boosted.raids_defended == 1
+
+
+def test_created_object_expedition_boost_speeds_up_expeditions():
+    """Object Creator era's expedition_boost effect -- see actions.py.
+    _created_object_bonus -- adds a flat per-object bonus to expedition
+    base_speed, same pattern as test_build_road_speeds_up_expeditions."""
+    import math
+
+    def _expedition(tribe):
+        return {
+            "pos": [tribe.x, tribe.y], "origin": [tribe.x, tribe.y], "target": [tribe.x + 40, tribe.y],
+            "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+            "food_gathered": 0, "water_gathered": 0,
+            "lead_scout": "Test Scout", "determination": 0.5, "max_days": 10, "path": [[tribe.x, tribe.y]],
+        }
+
+    sim = _bare_simulation()
+    plain_tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 60, 10, "#c084fc")
+    exp = _expedition(plain_tribe)
+    sim._advance_one_expedition(plain_tribe, exp)
+    plain_distance = math.hypot(exp["pos"][0] - 60, exp["pos"][1] - 10)
+
+    sim2 = _bare_simulation()
+    boosted_tribe = Tribe("tribe_1", "Boosted Tribe", "gemma2:2b", 60, 10, "#fb923c")
+    boosted_tribe.created_objects = [{"name": "x", "category": "expedition_boost", "kind": "item"}]
+    exp2 = _expedition(boosted_tribe)
+    sim2._advance_one_expedition(boosted_tribe, exp2)
+    boosted_distance = math.hypot(exp2["pos"][0] - 60, exp2["pos"][1] - 10)
+
+    assert boosted_distance > plain_distance
+
+
 def test_successful_defense_awards_loot_scaled_by_raider_strength():
     """Explicit request: "the repelling Tribe better get some good rewards from
     that. it's huge for them!" -- a successful defense used to yield only pride."""
@@ -7567,6 +7627,44 @@ async def test_step_triggers_game_over_and_unloads_models_when_all_tribes_die():
 
 
 @run_async
+async def test_step_triggers_game_over_when_one_tribe_conquers_every_rival():
+    """War and World Domination era's real victory condition: exactly one
+    tribe remains in sim.tribes, having gotten there via at least one real
+    conquest (Simulation._merge_tribes physically removes the loser), not
+    just because every rival happened to die of unrelated hazards."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    tribes = list(sim.tribes.values())
+    winner, loser = tribes[0], tribes[1]
+    sim._merge_tribes(winner, loser)
+    assert len(sim.tribes) == 1  # confirms the merge really happened before stepping
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
+        await sim.step()
+
+    assert sim.game_over is True
+    assert sim.status == "GAME OVER"
+    assert sim.game_over_reason == "world_domination"
+    assert "OVERSEER LOG" in sim.game_over_summary
+    assert loser.name in sim.game_over_summary
+    assert mock_unload.await_count == 1
+
+
+@run_async
+async def test_step_does_not_trigger_world_domination_for_an_ordinary_solo_tribe():
+    """A lone tribe that never conquered anyone (e.g. the only one ever added
+    this run) shouldn't be treated as having "won" -- conquests_won stays 0
+    for a tribe that was simply always alone."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    assert len(sim.tribes) == 1
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
+        await sim.step()
+
+    assert sim.game_over is False
+
+
+@run_async
 async def test_step_triggers_game_over_when_every_living_tribe_hits_the_era_ceiling():
     """Explicit request: "we are missing 'the end'" -- a real run spent 400+
     cycles, over half its total length, stepping with nothing left to
@@ -7610,7 +7708,7 @@ def test_game_over_summary_names_each_tribes_final_standing():
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.era = "cosmic_post_human"
+    tribe.era = "war_and_world_domination_era"
     tribe.population = 40
     tribe.max_population = 90
     tribe.chiefs_elected = 3
@@ -7623,7 +7721,7 @@ def test_game_over_summary_names_each_tribes_final_standing():
     assert "Peak population 90" in summary
     assert "final population 40" in summary
     assert "Raid Breaker" in summary
-    assert "Cosmic Post-Human" in summary
+    assert "War and World Domination" in summary
 
 
 def test_game_over_summary_names_an_extinct_tribes_cause():

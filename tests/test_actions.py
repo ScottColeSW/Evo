@@ -1457,6 +1457,244 @@ def test_use_item_is_a_no_op_with_no_items():
     assert (tribe.wood, tribe.stone) == (wood_before, stone_before)
 
 
+def test_build_object_creator_places_a_real_building():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = config.OBJECT_CREATOR_WOOD_COST
+    tribe.stone = config.OBJECT_CREATOR_STONE_COST
+
+    result = ACTION_REGISTRY["BUILD_OBJECT_CREATOR"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.object_creator_built is True
+    assert tribe.wood == 0
+    assert tribe.stone == 0
+    assert any(b["type"] == "object_creator" for b in tribe.buildings)
+    assert any(t["name"] == "Visionary" for t in tribe.trophies)
+    assert "Object Creator" in result
+
+    # One-time -- a second attempt is a no-op even with resources restocked.
+    tribe.wood = config.OBJECT_CREATOR_WOOD_COST
+    tribe.stone = config.OBJECT_CREATOR_STONE_COST
+    assert ACTION_REGISTRY["BUILD_OBJECT_CREATOR"](sim, tribe, "plains", _NO_TARGET) is None
+
+
+def test_create_item_requires_the_object_creator_and_grants_a_bounded_effect():
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = config.CREATE_ITEM_WOOD_COST
+    tribe.stone = config.CREATE_ITEM_STONE_COST
+
+    # No Object Creator built yet.
+    assert ACTION_REGISTRY["CREATE_ITEM"](sim, tribe, "plains", _NO_TARGET) is None
+
+    tribe.object_creator_built = True
+    with mock.patch("backend.actions.random.choice", return_value=config.CREATED_OBJECT_NAMES[0]):
+        result = ACTION_REGISTRY["CREATE_ITEM"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.wood == 0
+    assert tribe.stone == 0
+    assert len(tribe.created_objects) == 1
+    created = tribe.created_objects[0]
+    assert created["name"] == config.CREATED_OBJECT_NAMES[0]
+    assert created["kind"] == "item"
+    # Round-robin, not a hidden roll: the very first creation always gets the
+    # first category in the menu.
+    assert created["category"] == config.CREATED_OBJECT_CATEGORIES[0]
+    assert any(t["name"] == "Inventor" for t in tribe.trophies)
+    assert created["name"] in result
+
+
+def test_create_item_categories_cycle_round_robin_not_randomly():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.object_creator_built = True
+    n = len(config.CREATED_OBJECT_CATEGORIES)
+    for i in range(n + 2):
+        tribe.wood = config.CREATE_ITEM_WOOD_COST
+        tribe.stone = config.CREATE_ITEM_STONE_COST
+        ACTION_REGISTRY["CREATE_ITEM"](sim, tribe, "plains", _NO_TARGET)
+        assert tribe.created_objects[i]["category"] == config.CREATED_OBJECT_CATEGORIES[i % n]
+
+
+def test_create_item_population_boost_grants_population_immediately():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.object_creator_built = True
+    boost_index = config.CREATED_OBJECT_CATEGORIES.index("population_boost")
+    # Pre-fill created_objects so the next creation's round-robin index lands
+    # exactly on population_boost, rather than depending on menu order.
+    tribe.created_objects = [{"name": "x", "category": "gather_boost", "kind": "item"}] * boost_index
+    tribe.wood = config.CREATE_ITEM_WOOD_COST
+    tribe.stone = config.CREATE_ITEM_STONE_COST
+    population_before = tribe.population
+
+    result = ACTION_REGISTRY["CREATE_ITEM"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.population == population_before + config.CREATED_OBJECT_POPULATION_BONUS
+    assert "new people" in result
+
+
+def test_create_useful_structure_places_a_real_building():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.object_creator_built = True
+    tribe.wood = config.CREATE_USEFUL_STRUCTURE_WOOD_COST
+    tribe.stone = config.CREATE_USEFUL_STRUCTURE_STONE_COST
+
+    result = ACTION_REGISTRY["CREATE_USEFUL_STRUCTURE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.wood == 0
+    assert tribe.stone == 0
+    assert len(tribe.created_objects) == 1
+    assert tribe.created_objects[0]["kind"] == "structure"
+    assert any(b["type"] == "created_structure" for b in tribe.buildings)
+    assert "built" in result
+
+
+def test_created_object_gather_boost_stacks_into_food_multiplier():
+    from backend.actions import _food_multiplier
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    baseline = _food_multiplier(tribe)
+    tribe.created_objects = [
+        {"name": "a", "category": "gather_boost", "kind": "item"},
+        {"name": "b", "category": "gather_boost", "kind": "item"},
+    ]
+    boosted = _food_multiplier(tribe)
+
+    # Two stacked gather_boost objects, additive per config.CREATED_OBJECT_MAGNITUDE.
+    from backend import config
+
+    assert boosted == baseline * (1 + 2 * config.CREATED_OBJECT_MAGNITUDE)
+
+
+def test_created_object_combat_boost_stacks_into_an_ordinary_raid_too():
+    """_created_object_bonus's combat_boost effect applies to RAID's own win
+    chance, not just DECLARE_CONQUEST -- see actions.py._raid's comment.
+    Two independent sims (rather than one attacker raiding twice) since a
+    failed raid itself costs the attacker population, which would otherwise
+    change the win-chance math for the second attempt."""
+    from unittest import mock
+
+    from backend import config
+
+    roll = 0.53  # just above the unboosted 50/50 split
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Rival Tribe", "gemma2:2b", 51, 50, "#fb923c")
+    attacker.population = 10
+    defender.population = 10
+    sim.tribes = {attacker.id: attacker, defender.id: defender}
+    with mock.patch("backend.actions.random.random", return_value=roll):
+        ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 50))
+    assert attacker.raids_won == 0
+
+    sim2 = _bare_simulation()
+    boosted_attacker = Tribe("tribe_2", "Boosted Tribe", "gemma2:2b", 50, 50, "#4ade80")
+    boosted_defender = Tribe("tribe_3", "Rival Tribe", "gemma2:2b", 51, 50, "#fb923c")
+    boosted_attacker.population = 10
+    boosted_defender.population = 10
+    boosted_attacker.created_objects = [{"name": "x", "category": "combat_boost", "kind": "item"}]
+    sim2.tribes = {boosted_attacker.id: boosted_attacker, boosted_defender.id: boosted_defender}
+    # effective_population = 10 * 1.2 = 12, win chance = 12/22 ~= 0.545 > roll.
+    boosted_chance = (10 * (1 + config.CREATED_OBJECT_MAGNITUDE)) / (10 * (1 + config.CREATED_OBJECT_MAGNITUDE) + 10)
+    assert 0.5 < roll < boosted_chance
+    with mock.patch("backend.actions.random.random", return_value=roll):
+        ACTION_REGISTRY["RAID"](sim2, boosted_attacker, "plains", (51, 50))
+    assert boosted_attacker.raids_won == 1
+
+
+def test_created_object_celebration_discount_lowers_celebration_cost():
+    from backend.simulation import _celebration_cost
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 100
+    baseline = _celebration_cost(tribe)
+
+    tribe.created_objects = [{"name": "x", "category": "celebration_discount", "kind": "item"}]
+    discounted = _celebration_cost(tribe)
+
+    from backend import config
+
+    assert discounted == max(0, round(baseline * (1 - config.CREATED_OBJECT_MAGNITUDE)))
+    assert discounted < baseline
+
+
+def test_declare_conquest_win_absorbs_the_rival_outright():
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Strong Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Weak Tribe", "gemma2:2b", 51, 50, "#fb923c")
+    attacker.population = 100
+    defender.population = 5
+    attacker.wood = config.DECLARE_CONQUEST_WOOD_COST
+    attacker.stone = config.DECLARE_CONQUEST_STONE_COST
+    sim.tribes = {attacker.id: attacker, defender.id: defender}
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # guarantees the win roll
+        result = ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
+
+    assert defender.id not in sim.tribes  # fully absorbed, not just weakened
+    assert attacker.conquests_won == 1
+    assert "Weak Tribe" in attacker.conquered_tribe_names
+    assert "conquest" in result.lower()
+
+
+def test_declare_conquest_loss_costs_more_than_an_ordinary_raid_failure():
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Weak Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Strong Tribe", "gemma2:2b", 51, 50, "#fb923c")
+    attacker.population = 5
+    defender.population = 100
+    attacker.wood = config.DECLARE_CONQUEST_WOOD_COST
+    attacker.stone = config.DECLARE_CONQUEST_STONE_COST
+    sim.tribes = {attacker.id: attacker, defender.id: defender}
+    population_before = attacker.population
+
+    with mock.patch("backend.actions.random.random", return_value=0.999):  # guarantees the loss roll
+        result = ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
+
+    assert attacker.population == population_before - config.DECLARE_CONQUEST_FAILURE_POPULATION_LOSS
+    assert defender.id in sim.tribes  # still around, not absorbed
+    assert "failed" in result.lower()
+
+
+def test_declare_conquest_finds_no_rival_returns_a_note_not_a_crash():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = config.DECLARE_CONQUEST_WOOD_COST
+    tribe.stone = config.DECLARE_CONQUEST_STONE_COST
+    sim.tribes = {tribe.id: tribe}
+
+    result = ACTION_REGISTRY["DECLARE_CONQUEST"](sim, tribe, "plains", (90, 90))
+
+    assert "no rival" in result.lower()
+
+
 def test_trade_exchanges_unique_resources_too():
     """Explicit request confirms the original "Mine & unique resource" design
     gap: "maybe some hunters want a Tannery and they can trade furs too." Trade
