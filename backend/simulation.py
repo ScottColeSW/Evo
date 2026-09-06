@@ -75,13 +75,23 @@ from .world import (
 # still solid plains, 21.1 tiles clear of the nearest coastline (the map's
 # geometry doesn't leave room for the full 25 once the lake-distance and
 # edge-clearance constraints are both satisfied here), and at least 20 tiles
-# from every other spawn. (48, 21) unaffected -- it sits near the mountains,
-# nowhere close to the lake's new southwest reach.
+# from every other spawn.
+#
+# Slot 0 ("Tribe 1") moved too: "the scout is too close for a fair takeoff."
+# The old (48, 21) cleared the west/east/south coastlines comfortably but had
+# only 15.2 tiles of north clearance -- well under SCOUT_PATROL_DISTANCE=25,
+# so any northward-leaning heading in the rotation sweep launched a scout
+# straight toward the coast band instead of a real, comparable patrol. (67,
+# 31), confirmed computationally, clears all four coastlines by 25+ tiles
+# (a genuinely fair takeoff in every direction), the literal grid edge by 31,
+# the volcano by ~57, stays solid plains, sits 12.5 tiles from real water
+# (well within a single expedition's reach), and 27.7+ tiles from every
+# other spawn.
 # Slots 2/3 are untouched fallbacks for a 3rd/4th tribe -- their spacing
 # against the new slot 0/1 positions is tighter than the original four-corner
 # layout, a direct result of pulling 0/1 toward the coast, but all four remain
 # distinct, non-clustered starting points.
-SPAWN_POINTS = [(48, 21), (64, 70), (50, 55), (40, 37)]
+SPAWN_POINTS = [(67, 31), (64, 70), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 
 # See _prepare_turn's own use of this -- every one-time structure with a single
