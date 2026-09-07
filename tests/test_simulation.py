@@ -2816,6 +2816,69 @@ def test_prepare_turn_mentions_an_expedition_already_in_the_field():
     assert "Still in the field" in request["prompt"]
 
 
+def test_field_report_summarizes_by_kind_once_past_the_detail_threshold():
+    """Explicit request: "I am concerned about excess chatter... a lot of
+    players on the board." A real prompt reconstructed from a live run (7
+    concurrent expeditions) named every single party in one unbounded
+    run-on sentence -- removing the per-kind dispatch cap (a separate,
+    correct fix) made reaching config.FIELD_REPORT_DETAIL_THRESHOLD more
+    common, not less. Below it, full per-party detail; at or above it (with
+    real headroom left, not near the capacity ceiling), a kind+count
+    summary instead."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.population = 1000  # plenty of expedition_capacity headroom
+    tribe.expeditions = [
+        {
+            "pos": [tribe.x, tribe.y], "origin": [tribe.x, tribe.y], "target": [tribe.x + 10, tribe.y],
+            "day": 1, "phase": "outbound" if i % 2 else "returning", "found": None, "terrain_report": None,
+            "food_gathered": 0, "water_gathered": 0,
+            "lead_scout": f"Scout{i}", "determination": 0.5, "max_days": 9, "path": [],
+            "kind": "scout",
+        }
+        for i in range(config.FIELD_REPORT_DETAIL_THRESHOLD + 2)
+    ]
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    prompt = request["prompt"]
+    assert "Still in the field" in prompt
+    assert "parties in the field" in prompt
+    assert "scouting" in prompt
+    assert "Scout0" not in prompt  # no individual named once summarized
+
+
+def test_field_report_shows_full_detail_right_at_the_capacity_ceiling():
+    """Even with many parties out, full per-party detail still shows once the
+    tribe is actually at its expedition_capacity ceiling -- knowing exactly
+    who's about to come home is a real decision input (is waiting worth it)
+    that a bare count can't answer."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.population = 8  # expedition_capacity floors at MAX_CONCURRENT_EXPEDITIONS
+    capacity = 3  # config.MAX_CONCURRENT_EXPEDITIONS as of this test
+    tribe.expeditions = [
+        {
+            "pos": [tribe.x, tribe.y], "origin": [tribe.x, tribe.y], "target": [tribe.x + 10, tribe.y],
+            "day": 1, "phase": "outbound", "found": None, "terrain_report": None,
+            "food_gathered": 0, "water_gathered": 0,
+            "lead_scout": f"Scout{i}", "determination": 0.5, "max_days": 9, "path": [],
+            "kind": "scout",
+        }
+        for i in range(capacity)
+    ]
+    assert len(tribe.expeditions) >= config.FIELD_REPORT_DETAIL_THRESHOLD  # otherwise this isn't testing the ceiling exception
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Scout0" in request["prompt"]  # full detail, not a summary
+    assert "No one left to send out until one returns." in request["prompt"]
+
+
 def test_expedition_in_the_field_names_its_actual_target_coordinate():
     """Bug report: "2 scouts going same direction still." The field report
     used to name who was out and what day/phase they were on, but never where
@@ -2834,7 +2897,7 @@ def test_expedition_in_the_field_names_its_actual_target_coordinate():
 
     assert "headed toward (70,30)" in request["prompt"]
     assert "Test Scout" in request["prompt"]
-    assert "You could send out 1 more at once" in request["prompt"]
+    assert "You could send out 2 more at once" in request["prompt"]  # capacity floor is 3, one party already out
     assert "day 1" in request["prompt"]
 
 

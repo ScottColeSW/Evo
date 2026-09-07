@@ -3220,14 +3220,38 @@ class Simulation:
             # who was out and what day/phase they were on, but never where
             # they were actually headed -- a second SCOUT call had no way to
             # tell it would just be covering the same ground again.
-            party_word = {"scout": "scouts", "hunt": "a hunting party"}
-            reports = "; ".join(
-                f"{party_word.get(exp.get('kind'), 'a party')} led by {exp['lead_scout']} "
-                f"(day {exp['day']}, {exp['phase']}, headed toward "
-                f"({exp['target'][0]},{exp['target'][1]}))"
-                for exp in tribe.expeditions
-            )
+            party_word = {"scout": "scouts", "hunt": "a hunting party", "explore": "an exploration party"}
             slots_left = expedition_capacity(tribe) - len(tribe.expeditions)
+            # Explicit request: "I am concerned about excess chatter... a lot
+            # of players on the board." Naming every single party in one
+            # unbounded run-on sentence got real (a live prompt with 7 parties
+            # named individually, close to MAX_CONCURRENT_EXPEDITIONS_CEILING)
+            # once removing the per-kind dispatch cap made reaching that
+            # ceiling routine, not rare. Below config.
+            # FIELD_REPORT_DETAIL_THRESHOLD, full per-party detail is cheap and
+            # still worth showing whole; at or above it, a kind+count summary
+            # instead -- except right at the capacity ceiling (slots_left <=
+            # 0), where knowing exactly who's about to come home is a real
+            # decision input (is waiting one more cycle worth it), so full
+            # detail always shows there regardless of the count.
+            if len(tribe.expeditions) < config.FIELD_REPORT_DETAIL_THRESHOLD or slots_left <= 0:
+                reports = "; ".join(
+                    f"{party_word.get(exp.get('kind'), 'a party')} led by {exp['lead_scout']} "
+                    f"(day {exp['day']}, {exp['phase']}, headed toward "
+                    f"({exp['target'][0]},{exp['target'][1]}))"
+                    for exp in tribe.expeditions
+                )
+            else:
+                kind_counts: dict[str, int] = {}
+                for exp in tribe.expeditions:
+                    kind_counts[exp.get("kind", "party")] = kind_counts.get(exp.get("kind", "party"), 0) + 1
+                kind_word = {"scout": "scouting", "hunt": "hunting", "explore": "exploring"}
+                kind_summary = ", ".join(
+                    f"{count} {kind_word.get(kind, kind)}" for kind, count in kind_counts.items()
+                )
+                returning = sum(1 for exp in tribe.expeditions if exp["phase"] == "returning")
+                returning_note = f" -- {returning} already heading home" if returning else ""
+                reports = f"{len(tribe.expeditions)} parties in the field ({kind_summary}){returning_note}"
             capacity_note = (
                 " No one left to send out until one returns."
                 if slots_left <= 0

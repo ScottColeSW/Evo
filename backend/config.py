@@ -1644,6 +1644,22 @@ EXPEDITION_SLOT_POPULATION_DIVISOR = 5
 # genuine ceiling now caps expedition_capacity()'s per-capita growth.
 MAX_CONCURRENT_EXPEDITIONS_CEILING = 8
 
+# Explicit request: "I am concerned about excess chatter... a lot of players
+# on the board." A real prompt reconstructed from a live run (population 329,
+# 7 concurrent expeditions -- MAX_CONCURRENT_EXPEDITIONS_CEILING's own ceiling
+# of 8 was already close) showed the "Still in the field" fact naming every
+# single party in one run-on sentence, one clause each, with no limit -- and
+# removing the per-kind dispatch cap (2026-09-07, a separate, correct fix for
+# tribes getting artificially stuck at one party) makes reaching this ceiling
+# more common, not less. Below this many parties, full per-party detail (who,
+# what day, headed where) is cheap and still worth showing whole. At or above
+# it, Simulation._prepare_turn switches to a kind+count summary instead --
+# except right at the capacity ceiling itself, where knowing exactly who's
+# about to come home is a real decision input (whether waiting one more cycle
+# is worth it), so full detail always shows there regardless of this
+# threshold.
+FIELD_REPORT_DETAIL_THRESHOLD = 3
+
 # actions._labor_multiplier() lets a larger tribe gather/hunt/forage more per action --
 # upkeep (_apply_upkeep) already scales with population, but yield from GATHER_WOOD/
 # STONE/WATER/FOOD and HUNT_DEER never did, so a bigger tribe was strictly worse off
