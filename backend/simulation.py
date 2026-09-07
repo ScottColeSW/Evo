@@ -812,6 +812,15 @@ class Tribe:
         # future expedition (Simulation._advance_one_expedition), the same shape a
         # well-worn trail already grants.
         self.road_built = False
+        # wellbeing.py's esteem tier (config.ESTEEM_POINTS_PER_TOLL_ROAD): counts
+        # real completed toll roads, incremented once per Simulation.
+        # _celebrate_road_complete (itself cooldown-gated to one per tribe per
+        # config.CELEBRATION_COOLDOWN_CYCLES -- see that function's own comment
+        # on why, after a live run saw ~40 tiles evolve and celebrate in a
+        # single cycle) -- a reasonable proxy for "one whole toll road"
+        # milestone, since individual tile evolution has no other natural
+        # "this route is done" boundary to count against.
+        self.toll_roads_completed = 0
         # See actions.py._build_dock -- one-way, gated on general settling.
         # Boosts every future CATCH_FISH catch.
         self.dock_built = False
@@ -1090,6 +1099,7 @@ class Tribe:
             "fortress_built": self.fortress_built,
             "castle_built": self.castle_built,
             "road_built": self.road_built,
+            "toll_roads_completed": self.toll_roads_completed,
             "dock_built": self.dock_built,
             "sawmill_built": self.sawmill_built,
             "quarry_built": self.quarry_built,
@@ -5027,6 +5037,7 @@ class Simulation:
         trade) are unchanged; this is the moment they become real, not new
         mechanics on top of them."""
         tribe.last_celebration_cycle = self.cycle
+        tribe.toll_roads_completed += 1
         spent = _celebration_cost(tribe)
         tribe.food -= spent
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)

@@ -70,8 +70,22 @@ def compute_wellbeing(tribe, wall_fraction: float) -> dict:
     # (a broadcast is this tribe's own cultural voice, however small a signal).
     belonging = min(1.0, tribe.trades_completed / 3) * 0.7 + (0.3 if tribe.last_broadcast else 0.0)
 
-    # Esteem: trophies are the sim's only earned-recognition mechanic.
-    esteem = min(1.0, len(tribe.trophies) / 5)
+    # Esteem: explicit request ("Esteem is scaled wrong") -- trophies alone
+    # (min(1.0, count/5)) treated every distinction the same, so a tribe with
+    # five minor trophies read identically to one that raised a real
+    # monument. A weighted point total instead: a trophy is common and worth
+    # little on its own (config.ESTEEM_POINTS_PER_TROPHY); a completed toll
+    # road, Keep, or Castle is a substantial, much rarer undertaking and
+    # scores accordingly. See config.ESTEEM_POINTS_PER_SPACE_STATION's own
+    # comment -- banked for a future structure this project doesn't have yet,
+    # not read here (tribe has no such attribute to read).
+    esteem_points = (
+        len(tribe.trophies) * config.ESTEEM_POINTS_PER_TROPHY
+        + tribe.toll_roads_completed * config.ESTEEM_POINTS_PER_TOLL_ROAD
+        + (config.ESTEEM_POINTS_PER_KEEP if tribe.keep_built else 0)
+        + (config.ESTEEM_POINTS_PER_CASTLE if tribe.castle_built else 0)
+    )
+    esteem = min(1.0, esteem_points / config.ESTEEM_SCORE_REFERENCE)
 
     # Self-Actualization: era progression plus, once a city is founded, how much of
     # it has actually been built out -- real placed buildings now (backend/

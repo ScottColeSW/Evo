@@ -84,14 +84,49 @@ def test_belonging_tier_reflects_trade_contact_and_ever_having_broadcast():
     assert traded["tiers"]["belonging"] == 1.0
 
 
-def test_esteem_tier_scales_with_trophy_count_and_caps_at_one():
+def test_esteem_tier_scales_with_trophy_count():
+    """Explicit request: "Esteem is scaled wrong" -- trophies alone used to be
+    able to cap this tier at 1.0 (min(1.0, count/5)), treating a handful of
+    minor distinctions the same as a real monument. Trophies still move the
+    needle (config.ESTEEM_POINTS_PER_TROPHY), just nowhere near enough on
+    their own to max it out anymore -- see test_esteem_tier_weighs_real_
+    achievements_above_trophies below for the rest of the formula."""
     few = compute_wellbeing(_tribe(trophies=[{"name": "First Fire", "chief": "x", "cycle": 1}]), wall_fraction=0.0)
     many = compute_wellbeing(
         _tribe(trophies=[{"name": str(i), "chief": "x", "cycle": 1} for i in range(10)]), wall_fraction=0.0
     )
 
     assert 0.0 < few["tiers"]["esteem"] < many["tiers"]["esteem"]
-    assert many["tiers"]["esteem"] == 1.0
+    assert many["tiers"]["esteem"] < 1.0
+
+
+def test_esteem_tier_weighs_real_achievements_above_trophies():
+    """A completed toll road, Keep, or Castle is a substantial, much rarer
+    undertaking than an ordinary trophy and should move esteem far more --
+    config.ESTEEM_POINTS_PER_TOLL_ROAD/_KEEP/_CASTLE. A tribe with all three
+    plus a real trophy count should comfortably max this tier out, unlike
+    trophies alone. Point counts computed from the real config constants
+    (not hardcoded) so this can't silently stop testing anything if those
+    get retuned later -- see config.ESTEEM_SCORE_REFERENCE's own comment on
+    why it'll likely need that."""
+    from backend import config
+
+    trophy_count, toll_roads = 10, 15
+    decorated = _tribe(
+        trophies=[{"name": str(i), "chief": "x", "cycle": 1} for i in range(trophy_count)],
+        toll_roads_completed=toll_roads, keep_built=True, castle_built=True,
+    )
+    points = (
+        trophy_count * config.ESTEEM_POINTS_PER_TROPHY
+        + toll_roads * config.ESTEEM_POINTS_PER_TOLL_ROAD
+        + config.ESTEEM_POINTS_PER_KEEP
+        + config.ESTEEM_POINTS_PER_CASTLE
+    )
+    assert points >= config.ESTEEM_SCORE_REFERENCE  # sanity: this combo should genuinely max the tier
+
+    result = compute_wellbeing(decorated, wall_fraction=0.0)
+
+    assert result["tiers"]["esteem"] == 1.0
 
 
 def test_self_actualization_tier_rises_with_era_and_city_growth():
@@ -137,11 +172,16 @@ def test_focus_is_the_lowest_unmet_tier_bottom_up_not_just_the_lowest_score():
 
 
 def test_focus_is_self_actualization_once_every_lower_tier_is_satisfied():
+    """Esteem now needs real achievements, not just a handful of trophies, to
+    clear TIER_SATISFIED_THRESHOLD -- see test_esteem_tier_weighs_real_
+    achievements_above_trophies. keep_built/castle_built here are what
+    actually satisfy it; the trophy count alone no longer would."""
     tribe = _tribe(
         food=40, water=30,
         has_ever_settled=True, raids_defended=5,
         trades_completed=3, last_broadcast="KRA-ZUL",
         trophies=[{"name": str(i), "chief": "x", "cycle": 1} for i in range(5)],
+        toll_roads_completed=5, keep_built=True, castle_built=True,
         era="primitive_dawn", founded_city=False,
     )
 

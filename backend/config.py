@@ -521,6 +521,29 @@ FISHERY_SUPPLY_BONUS_MULTIPLIER = 1.5
 # replacing the old fixed MAX_CITY_BUILDINGS=6 ceiling now that building count has
 # no hard cap.
 SELF_ACTUALIZATION_BUILDING_REFERENCE = 15
+# Explicit request: "Esteem is scaled wrong" -- trophies alone (min(1.0, count/5))
+# didn't distinguish a tribe that just won a minor distinction from one that
+# raised a real monument. A weighted point total instead, one line per real
+# achievement -- a trophy is common and worth little on its own; a completed
+# Keep or Castle is a substantial, rare undertaking and worth much more.
+# ESTEEM_POINTS_PER_SPACE_STATION is a placeholder for a real building this
+# project doesn't have yet (a future rockets/interplanetary-exploration era,
+# per an explicit "harder to get to rockets or a new map, not impossible, but
+# a real climb" design goal) -- the number is banked now, at the user's own
+# specified value, so nothing needs renumbering once that content exists, but
+# nothing currently sets tribe.space_stations_built or reads this constant.
+ESTEEM_POINTS_PER_TROPHY = 1
+ESTEEM_POINTS_PER_TOLL_ROAD = 5
+ESTEEM_POINTS_PER_KEEP = 10
+ESTEEM_POINTS_PER_CASTLE = 20
+ESTEEM_POINTS_PER_SPACE_STATION = 50  # not wired to anything yet -- see comment above
+# Matches FAME_SCORE_REFERENCE's own value/reasoning below: high enough that
+# esteem keeps climbing across a whole run instead of saturating on the first
+# few trophies, low enough that a tribe that actually raises real monuments
+# (not just trophies) can still reach it before the run ends. Will likely need
+# retuning once Space Station (or any other high-value future structure)
+# actually exists and real runs show where tribes land.
+ESTEEM_SCORE_REFERENCE = 100
 
 # Egg-gathering/flock genetics (backend/actions.py GATHER_EGGS, Simulation._resolve_hatch,
 # backend/genetics.py hatch()): gated the same as farming (settled + real water access) --
