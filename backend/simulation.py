@@ -1171,6 +1171,123 @@ class Tribe:
         }
 
 
+# (tribe.name, label) pairs, in the order the ending card lists them -- one-off
+# structures a tribe either has or doesn't, checked directly off the same boolean
+# flags every BUILD_* action already sets (see Tribe.__init__), not anything
+# tallied fresh here. Long Houses/Warehouses/wall rings are counted separately in
+# _final_build_summary since those are repeatable, not one-off.
+_ONE_OFF_STRUCTURE_FLAGS: tuple[tuple[str, str], ...] = (
+    ("sawmill_built", "Sawmill"), ("quarry_built", "Quarry"), ("dock_built", "Dock"),
+    ("fishery_built", "Fishery"), ("kitchen_built", "Kitchen"), ("tannery_built", "Tannery"),
+    ("mine_built", "Mine"), ("forge_built", "Forge"), ("keep_built", "Keep"),
+    ("fortress_built", "Fortress"), ("castle_built", "Castle"), ("road_built", "Road"),
+    ("hatchery_built", "Hatchery"), ("bath_house_built", "Bath House"),
+    ("library_built", "Library"), ("well_built", "Well"),
+    ("object_creator_built", "Object Creator"),
+)
+
+
+def _final_build_summary(tribe: "Tribe") -> str:
+    """What a tribe actually ended the run having built -- see
+    Simulation._generate_game_over_summary's own docstring for the live report
+    this answers ("did they ever build a Castle/Object Creator" was previously
+    unanswerable once a run ended). Reads existing one-way flags/counts only,
+    the same data the sidebar and to_dict() already expose; nothing new is
+    computed here."""
+    parts = []
+    if tribe.wall_rings:
+        parts.append(f"{len(tribe.wall_rings)} wall ring(s)")
+    if tribe.long_houses_built:
+        parts.append(f"{tribe.long_houses_built} Long House(s)")
+    parts.extend(label for flag, label in _ONE_OFF_STRUCTURE_FLAGS if getattr(tribe, flag, False))
+    if tribe.warehouses_built:
+        parts.append(f"{tribe.warehouses_built} Warehouse(s)")
+    return ", ".join(parts) if parts else "no permanent structures"
+
+
+def _conquest_record_summary(tribe: "Tribe") -> str | None:
+    """War and World Domination era's one real action, DECLARE_CONQUEST (see
+    actions.py._declare_conquest), only ever showed up in the ending card as a
+    reached *era* -- a win merges the loser away entirely (a separate
+    game_over_reason, "world_domination"), so a run that ended some other way
+    (era_ceiling, manual_quit) gave no way to tell "this tribe never tried"
+    from "tried and lost." tribe.combat_record already tracks both an
+    attacker's own "Conquest" tally and a defender's "Conquest Defense" one
+    (actions.py._record_combat) -- this just reads it back. Returns None (no
+    trailing sentence at all) when neither ever happened AND the tribe never
+    even reached the era DECLARE_CONQUEST requires -- a hollow "0 attempts"
+    line would be noise for the vastly more common case of a run that stopped
+    long before then. A tribe that DID reach War and World Domination but
+    still shows no activity here gets an explicit "reached it and never
+    attempted conquest" instead of the same silence, since that's exactly the
+    "did War even happen" ambiguity this was written to resolve."""
+    attack = tribe.combat_record.get("Conquest", {})
+    defense = tribe.combat_record.get("Conquest Defense", {})
+    won, lost = attack.get("won", 0), attack.get("lost", 0)
+    held, fell = defense.get("won", 0), defense.get("lost", 0)
+    if not (won or lost or held or fell):
+        if tribe.era == "war_and_world_domination_era":
+            return "Reached War and World Domination but never attempted or faced DECLARE_CONQUEST"
+        return None
+    bits = []
+    if won or lost:
+        bits.append(f"declared conquest {won + lost} time(s) ({won} won, {lost} lost)")
+    if held or fell:
+        bits.append(f"was the target of conquest {held + fell} time(s) ({held} held, {fell} fell)")
+    return "; ".join(bits).capitalize()
+
+
+def _append_expedition_path_point(exp: dict, x: int, y: int) -> None:
+    """See config.EXPEDITION_PATH_MAX_POINTS's own comment -- a pure
+    visualization breadcrumb (backend logic never reads this), capped so a
+    months-long push doesn't grow the websocket payload/board_history.db row
+    forever. Simply stops recording past the cap rather than a sliding
+    window, so the frontend's incremental Path2D cache (path.length grew by
+    exactly one) never has a reason to fall back to a full rebuild."""
+    if len(exp["path"]) < config.EXPEDITION_PATH_MAX_POINTS:
+        exp["path"].append([x, y])
+
+
+def _livestock_surplus_threshold(tribe: "Tribe") -> int:
+    """How large tribe.eggs/tribe.flock can grow before Simulation.
+    _advance_livestock_feast starts auto-eating the surplus -- see config.
+    LIVESTOCK_SURPLUS_THRESHOLD's own comment. Scales with population the same
+    max(floor, population-scaled) shape actions.expedition_capacity already
+    uses, so a large tribe can sustain a genuinely larger flock instead of one
+    permanently capped at the same dozen regardless of size. Sent to the
+    frontend via Tribe.to_dict() rather than recomputed there, so the
+    "surplus feasted on" display can never drift from what actually happened
+    server-side."""
+    return max(config.LIVESTOCK_SURPLUS_THRESHOLD, tribe.population // config.LIVESTOCK_SURPLUS_POPULATION_DIVISOR)
+
+
+def _era_resource_amount(tribe: "Tribe", resource: str) -> int:
+    """Reads one of an Era's requires_resources/advancement_cost entries off a
+    tribe. wood/stone/water/food are real Tribe attributes (getattr handles
+    them); a named unique resource like "Fur" or "Orosite Ore" (mines/
+    tannery -- see world.UNIQUE_RESOURCE_BY_BIOME, actions.py._build_tannery)
+    only ever lives in tribe.unique_resources, a plain dict, so getattr alone
+    would silently always read 0 for those and no era could ever actually gate
+    on them. hasattr is the dispatch: every core resource is a real attribute
+    Tribe.__init__ always sets, so it's never confused with a unique_resources
+    key even though some of those (\"Serpent's Gold\") aren't valid Python
+    identifiers -- getattr/setattr both accept arbitrary strings regardless."""
+    if hasattr(tribe, resource):
+        return getattr(tribe, resource)
+    return tribe.unique_resources.get(resource, 0)
+
+
+def _spend_era_resource(tribe: "Tribe", resource: str, amount: int) -> None:
+    """The spending half of _era_resource_amount's dispatch -- same
+    core-attribute-vs-unique_resources split, floored at 0 either way (a core
+    resource attribute is never allowed negative elsewhere in this codebase,
+    and a unique_resources entry shouldn't become the sole exception)."""
+    if hasattr(tribe, resource):
+        setattr(tribe, resource, max(0, getattr(tribe, resource) - amount))
+    else:
+        tribe.unique_resources[resource] = max(0, tribe.unique_resources.get(resource, 0) - amount)
+
+
 class Simulation:
     def __init__(
         self, tribe_configs: list[dict], ollama_url: str = config.OLLAMA_URL,
