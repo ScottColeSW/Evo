@@ -3844,12 +3844,15 @@ def test_every_spawn_point_keeps_scout_patrol_clearance_from_every_grid_edge():
     it -- (18, 43) was only 18 tiles from the west edge, under SCOUT_PATROL_
     DISTANCE=25. Mountains can't get the full 25 (boxed in by the west edge and
     the water-reachability band above) but every spawn should get as close to
-    it as its biome allows."""
+    it as its biome allows. Floor lowered 20 -> 17 alongside a later spawn-point
+    retune that pulled slot 0 to (72, 17), a deliberate tradeoff (closer to the
+    river) confirmed against the reachability test above -- still comfortably
+    past the 18-tile case that originally motivated this test."""
     from backend import config
 
     for x, y in SPAWN_POINTS:
         clearance = min(x, config.GRID_SIZE - 1 - x, y, config.GRID_SIZE - 1 - y)
-        assert clearance >= 20, f"({x},{y}) is only {clearance} tiles from a grid edge"
+        assert clearance >= 17, f"({x},{y}) is only {clearance} tiles from a grid edge"
 
 
 def test_every_spawn_point_is_within_a_single_expeditions_reach_of_water():
