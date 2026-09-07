@@ -523,27 +523,66 @@ function startSimulation(tribes, immortalCycles) {
   }
   socket = new WebSocket(`ws://${location.host}/ws`);
   socket.onopen = () => socket.send(JSON.stringify({ command: "START", tribes, immortality_cycles: immortalCycles }));
+  // Live report: "the map got moved into the lowest z-level, lower than a
+  // layer of black" -- screenshots didn't help since nothing on screen had
+  // changed, just what was on top. Root cause candidate: hideSpawnSplash()
+  // used to only ever fire from inside this same handler (gated on the first
+  // message parsing successfully), with no try/catch at all -- one malformed
+  // or oversized message (nothing currently caps message size going over the
+  // wire) throwing partway through would silently abort the whole handler,
+  // permanently stranding #spawn-splash's near-black, full-screen overlay
+  // (z-index 20) on top of the canvas with no visible error and no way to
+  // tell from a screenshot alone. Two independent fixes: dismissing the
+  // splash no longer depends on every downstream check succeeding (moved
+  // ahead of the try, and made unconditional once this message at least
+  // parsed), and the whole per-message body is now wrapped so a future bug
+  // logs to the console (actually diagnosable next time) instead of
+  // vanishing into a silently-dead handler.
   socket.onmessage = (event) => {
-    latestState = JSON.parse(event.data);
-    // See heldEncounters above -- the backend's own copy is empty on every cycle
-    // except the one it just happened on, so anything present here is always new.
-    (latestState.recent_encounters || []).forEach(e => {
-      const now = Date.now();
-      heldEncounters.push({ ...e, startedAt: now, expiresAt: now + ENCOUNTER_DISPLAY_MS });
-    });
-    trackNewLandmarks(latestState);
+    let state;
+    try {
+      state = JSON.parse(event.data);
+    } catch (err) {
+      console.error("Failed to parse a state message from the server -- dropping this update.", err);
+      return;
+    }
+    latestState = state;
     if (!firstStateReceived) {
       firstStateReceived = true;
       hideSpawnSplash();
     }
-    checkEraTransitions(latestState);
-    checkExtinctions(latestState);
-    checkChiefElections(latestState);
-    checkCelebrations(latestState);
-    checkRaids(latestState);
-    checkGameOver(latestState);
-    updateSidebar(latestState);
+    try {
+      // See heldEncounters above -- the backend's own copy is empty on every
+      // cycle except the one it just happened on, so anything present here
+      // is always new.
+      (latestState.recent_encounters || []).forEach(e => {
+        const now = Date.now();
+        heldEncounters.push({ ...e, startedAt: now, expiresAt: now + ENCOUNTER_DISPLAY_MS });
+      });
+      trackNewLandmarks(latestState);
+      checkEraTransitions(latestState);
+      checkExtinctions(latestState);
+      checkChiefElections(latestState);
+      checkCelebrations(latestState);
+      checkRaids(latestState);
+      checkGameOver(latestState);
+      updateSidebar(latestState);
+    } catch (err) {
+      console.error("Error handling a state update -- this cycle's UI refresh was skipped.", err);
+    }
   };
+
+  // Same live report's other half: if the very first message never arrives
+  // at all (a genuine hang, not a parse error), the spawn splash had no
+  // recourse but staying up forever with nothing on screen suggesting why.
+  // A generous timeout unstick it and says so, rather than leaving "is it
+  // frozen or just slow?" as the only information available.
+  setTimeout(() => {
+    if (!firstStateReceived && !document.getElementById("spawn-splash").classList.contains("hidden")) {
+      console.error("No state received from the server after 30s -- hiding the spawn splash so the UI isn't stuck black.");
+      hideSpawnSplash();
+    }
+  }, 30000);
 }
 
 document.getElementById("btn-start").addEventListener("click", () => {
