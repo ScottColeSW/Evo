@@ -73,14 +73,74 @@
   @keyframes spawn-spin { to { transform: rotate(360deg); } }
   #spawn-splash .spawn-text { color: #c7d2fe; font-size: 13px; font-family: monospace; letter-spacing: 0.3px; }
 
-  #game-over-splash { position: absolute; inset: 0; background: rgba(9,9,13,0.97); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; z-index: 25; border-radius: 4px; padding: 24px; }
+  /* Live report: "The End screen is super drab, only tight text. no narrative,
+     no interpretation and summary and odd proclamation... nor model stats
+     (like in Dominion)... needs some pretty formatting (game bling)." Full
+     redesign, referencing the sibling Dominion project's own results screen
+     (src/dominion/web/stats.html) for the shape -- a gradient title, a
+     headline verdict, and a grid of per-tribe "player cards" -- adapted to
+     this app's own existing dark/indigo/amber palette (stat-card, era-banner)
+     rather than pasting Dominion's purple/gold in wholesale. Built straight
+     from state.tribes (already-live data: era, population, trophies, combat
+     record, buildings), not by re-parsing the plain-text game_over_summary
+     string -- that string is still shown too (the "OVERSEER LOG" the backend
+     actually wrote), just as a quoted transcript under the cards, not the
+     whole screen. */
+  /* position:fixed (not absolute) deliberately: #game-over-splash lives inside
+     #canvas-container, which is sized to the canvas's own bounded aspect
+     ratio (resizeCanvas()), not the full window -- the old, much smaller
+     splash fit fine within that box, but this one needs real room for a
+     scrollable card grid. Fixed covers the whole viewport regardless of how
+     small the canvas box itself is. */
+  #game-over-splash { position: fixed; inset: 0; background: radial-gradient(circle at 50% 0%, #1e1b3a 0%, rgba(9,9,13,0.98) 55%); display: flex; flex-direction: column; align-items: center; z-index: 100; border-radius: 4px; padding: 32px 24px 24px; overflow-y: auto; }
   #game-over-splash.hidden { display: none; }
-  #game-over-splash .game-over-title { color: #fde68a; font-size: 20px; font-weight: bold; letter-spacing: 1px; }
-  #game-over-splash .game-over-summary { color: #c7d2fe; font-size: 12px; font-family: monospace; line-height: 1.6; white-space: pre-wrap; max-width: 520px; max-height: 60%; overflow-y: auto; background: rgba(0,0,0,0.3); border: 1px solid #2a2a3a; border-radius: 6px; padding: 14px 16px; margin: 0; }
-  #game-over-splash .game-over-actions { display: flex; gap: 12px; }
-  #game-over-splash .game-over-actions button { padding: 10px 22px; font-size: 13px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; }
+  #game-over-splash .go-wrap { width: 100%; max-width: 900px; margin: auto 0; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+  #game-over-splash .game-over-title {
+    font-size: 30px; font-weight: 800; letter-spacing: 3px; text-align: center;
+    background: linear-gradient(90deg, #fbbf24, #fff6d8, #fbbf24);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 40px rgba(251,191,36,0.35); margin: 0;
+  }
+  #game-over-splash .go-subtitle { color: #93a0c7; letter-spacing: 1.5px; font-size: 12px; text-transform: uppercase; margin-top: -10px; }
+  #game-over-splash .go-verdict {
+    width: 100%; box-sizing: border-box; background: linear-gradient(180deg, #24204a, #191633);
+    border: 1px solid #4338ca; border-radius: 12px; padding: 16px 22px; text-align: center;
+    color: #e0e7ff; font-size: 14px; line-height: 1.5; box-shadow: 0 0 30px rgba(67,56,202,0.25);
+  }
+  #game-over-splash .go-verdict b { color: #fde68a; }
+  #game-over-splash .go-cards { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  #game-over-splash .go-card {
+    background: linear-gradient(180deg, #201f30, #17161f); border: 1px solid #33324a; border-left-width: 5px;
+    border-radius: 12px; padding: 16px 18px; position: relative; overflow: hidden; text-align: left;
+  }
+  #game-over-splash .go-card.extinct { opacity: 0.6; filter: grayscale(0.5); }
+  #game-over-splash .go-card::before {
+    content: ""; position: absolute; top: -40%; right: -30%; width: 140px; height: 140px;
+    background: radial-gradient(circle, rgba(251,191,36,0.14), transparent 70%); pointer-events: none;
+  }
+  #game-over-splash .go-card .go-name { font-size: 15px; font-weight: 700; color: #fde68a; letter-spacing: 0.3px; }
+  #game-over-splash .go-card .go-model { font-size: 10px; color: #8a8aa0; background: #2a2a3a; padding: 1px 7px; border-radius: 8px; display: inline-block; margin-top: 3px; }
+  #game-over-splash .go-card .go-status { font-size: 10px; margin-top: 6px; letter-spacing: 0.4px; text-transform: uppercase; }
+  #game-over-splash .go-card .go-status.surviving { color: #6ee7b7; }
+  #game-over-splash .go-card .go-status.extinct { color: #f87171; }
+  #game-over-splash .go-card .go-era-pill { font-size: 10px; background: #2a2a3a; color: #a5b4fc; padding: 2px 8px; border-radius: 10px; display: inline-block; margin-top: 8px; }
+  #game-over-splash .go-card .go-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin-top: 12px; }
+  #game-over-splash .go-card .go-stat .v { font-size: 15px; font-weight: 700; color: #e2e2e7; }
+  #game-over-splash .go-card .go-stat .l { font-size: 9px; color: #7c7c94; letter-spacing: 0.4px; text-transform: uppercase; }
+  #game-over-splash .go-card .go-trophies { margin-top: 10px; font-size: 10px; color: #c7c7d1; line-height: 1.5; }
+  #game-over-splash .go-card .go-trophies b { color: #fbbf24; }
+  #game-over-splash .go-card .go-build-icons { margin-top: 8px; font-size: 15px; line-height: 1.8; letter-spacing: 3px; }
+  #game-over-splash .go-card .go-combat { margin-top: 8px; font-size: 10px; color: #93c5fd; }
+  #game-over-splash details.go-log { width: 100%; box-sizing: border-box; color: #93a0c7; font-size: 11px; }
+  #game-over-splash details.go-log summary { cursor: pointer; letter-spacing: 0.5px; text-transform: uppercase; padding: 4px 0; }
+  #game-over-splash details.go-log summary:hover { color: #c7d2fe; }
+  #game-over-splash .game-over-summary { color: #c7d2fe; font-size: 12px; font-family: monospace; line-height: 1.6; white-space: pre-wrap; max-width: 100%; background: rgba(0,0,0,0.3); border: 1px solid #2a2a3a; border-radius: 6px; padding: 14px 16px; margin: 8px 0 0; }
+  #game-over-splash .game-over-actions { display: flex; gap: 12px; margin-top: 4px; }
+  #game-over-splash .game-over-actions button { padding: 10px 26px; font-size: 13px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; letter-spacing: 0.5px; }
   #btn-try-again { background: #4338ca; color: #e0e7ff; }
+  #btn-try-again:hover { background: #4f46e5; }
   #btn-game-over-quit { background: #7f1d1d; color: #fecaca; }
+  #btn-game-over-quit:hover { background: #991b1b; }
 
   #icon-key { position: absolute; top: 12px; right: 12px; width: 240px; max-height: calc(100% - 24px); background: rgba(17,17,17,0.95); border: 2px solid #2a2a3a; border-radius: 6px; z-index: 15; display: flex; flex-direction: column; }
   #icon-key.hidden { display: none; }
@@ -230,11 +290,19 @@
            either every tribe going extinct or every survivor hitting the era
            ceiling (Simulation._trigger_game_over/_generate_game_over_summary). -->
       <div id="game-over-splash" class="hidden">
-        <div class="game-over-title" id="game-over-title">SIMULATION COMPLETE</div>
-        <pre class="game-over-summary" id="game-over-summary"></pre>
-        <div class="game-over-actions">
-          <button id="btn-try-again">TRY AGAIN</button>
-          <button id="btn-game-over-quit">QUIT</button>
+        <div class="go-wrap">
+          <div class="game-over-title" id="game-over-title">SIMULATION COMPLETE</div>
+          <div class="go-subtitle" id="game-over-subtitle"></div>
+          <div class="go-verdict" id="game-over-verdict"></div>
+          <div class="go-cards" id="game-over-cards"></div>
+          <details class="go-log">
+            <summary>Full Overseer Log</summary>
+            <pre class="game-over-summary" id="game-over-summary"></pre>
+          </details>
+          <div class="game-over-actions">
+            <button id="btn-try-again">TRY AGAIN</button>
+            <button id="btn-game-over-quit">QUIT</button>
+          </div>
         </div>
       </div>
       <canvas id="simCanvas"></canvas>
@@ -509,9 +577,91 @@ const GAME_OVER_TITLES = {
   manual_quit: "RUN STOPPED",
 };
 
+const GAME_OVER_SUBTITLES = {
+  extinction: "Every population observed has ceased to exist",
+  world_domination: "A single civilization now accounts for the entire observed population",
+  era_ceiling: "Every surviving population has exhausted the known stages of development",
+  manual_quit: "Observation ended by operator request",
+};
+
+// A compact icon-only readout for the end-screen cards -- same emoji the
+// sidebar's own building list already uses (see the big per-tribe panel
+// builder above) so a structure reads the same way everywhere in this app,
+// just without that panel's full sentence-per-building verbosity (there's no
+// room for it in a card grid, and the end screen is a retrospective, not a
+// live status board).
+const GO_BUILDING_ICONS = [
+  ["castle_built", "🏯"], ["fortress_built", "🏰"], ["keep_built", "🏯"],
+  ["object_creator_built", "🛠️"], ["forge_built", "🔨"], ["mine_built", "💎"],
+  ["road_built", "🛣️"], ["dock_built", "⚓"], ["fishery_built", "🐟"],
+  ["sawmill_built", "🪵"], ["quarry_built", "⛏️"], ["kitchen_built", "🍲"],
+  ["tannery_built", "🦫"], ["hatchery_built", "🐣"], ["bath_house_built", "🛁"],
+  ["library_built", "📚"], ["well_built", "💧"],
+];
+
+function goBuildingIcons(t) {
+  const icons = GO_BUILDING_ICONS.filter(([flag]) => t[flag]).map(([, icon]) => icon);
+  if (t.wall_rings && t.wall_rings.length) icons.unshift("🧱".repeat(Math.min(3, t.wall_rings.length)));
+  if (t.long_houses_built) icons.push("🏠".repeat(Math.min(3, t.long_houses_built)));
+  return icons.join(" ");
+}
+
+function goCombatLine(t) {
+  const record = t.combat_record || {};
+  const kinds = Object.keys(record);
+  if (!kinds.length) return "";
+  const parts = kinds.map(k => `${escapeHtml(k)} ${record[k].won || 0}-${record[k].lost || 0}`);
+  return `⚔️ ${parts.join(" · ")}`;
+}
+
+// Pulls the backend's own closing "Analysis: ..." sentence (Simulation.
+// _generate_game_over_summary's real, data-derived verdict -- who led, by
+// what measure, at what cycle) out of the plain-text log instead of
+// re-deriving a second version of the same judgment client-side.
+function goVerdictText(state) {
+  const summary = state.game_over_summary || "";
+  const match = summary.match(/Analysis:[^\n]*/);
+  return match ? match[0] : summary.split("\n")[0] || "";
+}
+
+const GAME_OVER_VERDICT_ICONS = { extinction: "💀", world_domination: "👑", era_ceiling: "🏛️", manual_quit: "⏸️" };
+
 function showGameOverSplash(state) {
-  document.getElementById("game-over-title").textContent = GAME_OVER_TITLES[state.game_over_reason] || "SIMULATION COMPLETE";
+  const reason = state.game_over_reason;
+  document.getElementById("game-over-title").textContent = GAME_OVER_TITLES[reason] || "SIMULATION COMPLETE";
+  document.getElementById("game-over-subtitle").textContent = GAME_OVER_SUBTITLES[reason] || "";
+  document.getElementById("game-over-verdict").innerHTML =
+    `${GAME_OVER_VERDICT_ICONS[reason] || "📜"} ${escapeHtml(goVerdictText(state)).replace(/^Analysis:\s*/, "")}`;
   document.getElementById("game-over-summary").textContent = state.game_over_summary || "";
+
+  const tribes = Object.values(state.tribes || {});
+  document.getElementById("game-over-cards").innerHTML = tribes.map(t => {
+    const trophyNames = (t.trophies || []).map(x => x.name);
+    const trophyLine = trophyNames.length
+      ? `<b>${trophyNames.length}</b> earned: ${trophyNames.slice(0, 6).map(escapeHtml).join(", ")}${trophyNames.length > 6 ? "…" : ""}`
+      : "none recorded";
+    const combat = goCombatLine(t);
+    const buildIcons = goBuildingIcons(t);
+    return `
+      <div class="go-card ${t.extinct ? "extinct" : ""}" style="border-left-color:${t.color}">
+        <div class="go-name">${escapeHtml(t.name)}${t.settlement_name ? ` &middot; ${escapeHtml(t.settlement_name)}` : ""}</div>
+        <div class="go-model">${escapeHtml(t.model)}</div>
+        <div class="go-status ${t.extinct ? "extinct" : "surviving"}">
+          ${t.extinct ? `☠ Extinct${t.extinction_cause ? " — " + escapeHtml(t.extinction_cause) : ""}` : "✓ Surviving"}
+        </div>
+        <div class="go-era-pill">${escapeHtml(t.era_label || t.era || "")}</div>
+        <div class="go-stat-grid">
+          <div class="go-stat"><div class="v">${t.max_population ?? t.population ?? 0}</div><div class="l">Peak Population</div></div>
+          <div class="go-stat"><div class="v">${t.population ?? 0}</div><div class="l">Final Population</div></div>
+          <div class="go-stat"><div class="v">${t.chiefs_elected ?? 0}</div><div class="l">Chiefs Elected</div></div>
+          <div class="go-stat"><div class="v">${Math.round(t.fame ?? 0)}</div><div class="l">Fame</div></div>
+        </div>
+        ${buildIcons ? `<div class="go-build-icons">${buildIcons}</div>` : ""}
+        <div class="go-trophies">🏆 ${trophyLine}</div>
+        ${combat ? `<div class="go-combat">${combat}</div>` : ""}
+      </div>`;
+  }).join("");
+
   document.getElementById("game-over-splash").classList.remove("hidden");
 }
 
