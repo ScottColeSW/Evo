@@ -1140,7 +1140,17 @@ def _declare_conquest(sim, tribe, biome, target):
     population-share win chance as RAID (boosted by a combat_boost created
     object, same as RAID itself now gets), but a much steeper population
     cost on failure, since this is a full campaign, not a raiding party's
-    hit-and-run."""
+    hit-and-run.
+
+    TODO (design, not yet scoped): confirmed via real run data that this has
+    never fired even once across every recorded run -- "War and World
+    Domination"'s one signature action sits completely unused. Working
+    theory (2026-09-07): it's an isolated, all-or-nothing gamble with nothing
+    feeding into it -- no real military to visibly build up first (Forge
+    items, Keep/Fortress/Castle, a trained-warriors stat), so there's nothing
+    for this to be the payoff of. A real Military branch was floated as the
+    fix; deferred pending its own design pass, not folded into this session's
+    other fixes."""
     tx, ty = target
     defender = None
     for other in sim.tribes.values():
