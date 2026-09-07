@@ -296,6 +296,47 @@ UPKEEP_POPULATION_DIVISOR = 10  # cost per tick = max(1, population // this)
 # food cost per growth tick, not free), just inside the range tribes actually reach.
 POPULATION_GROWTH_FOOD_THRESHOLD = 25
 POPULATION_GROWTH_FOOD_COST = 8
+# Explicit request: "much bigger populations going to war" -- growth used to be a
+# flat +1/cycle regardless of tribe size (confirmed against real run data: every
+# model tested grew at ~1 population/cycle, no exceptions), which made a
+# late-era population requirement a pure real-time tax with nothing to actually
+# play around -- reaching population 1500 at that flat rate would mean ~1500
+# additional cycles, several hours of continued Ollama inference for no new
+# decisions. Growth now scales with the tribe's own current size (same shape
+# actions.expedition_capacity already uses for a different stat), so a small
+# tribe grows at essentially today's pace (population 8 // 20 still floors to
+# the same +1) while a large one compounds -- population 1500 is reached in
+# roughly 111 cycles instead of ~1500, real growth still gated behind the same
+# food surplus, just no longer flat once a civilization is actually large.
+POPULATION_GROWTH_SCALE_DIVISOR = 20
+# Explicit follow-up: "can we use an actual population growth model based on
+# Well-Being?" -- the scaled base above only ever reflected raw tribe size, with
+# nothing to say about whether that population is actually thriving. wellbeing.
+# compute_wellbeing's physiological tier (food/water buffer -- already computed
+# every turn, already reaches the tribe's own prompt as a fact) is a real,
+# already-tracked signal for exactly that.
+#
+# Live bug, confirmed against a real run: this used to average all five Maslow
+# tiers with a floor (so growth could slow but never truly stop) -- esteem/
+# self_actualization (trophies, era progress) have nothing to do with feeding
+# more mouths, and kept the average propped up even while physiological sat at
+# 0.0, so a tribe in total, sustained famine still grew at ~90% of full speed.
+# Confirmed live: population 129 -> 10,835 in ~110 cycles while food never
+# recovered -- a floored multiplier on a population-proportional base can only
+# ever slow down, never reach zero, so it's unbounded by construction no
+# matter how low the floor is. Keyed on physiological alone now, no floor: a
+# real, sustained famine brings growth to an honest zero, same as every other
+# food-gated system here already can. See Simulation._grow_population's own
+# docstring for the full trace. Not a replacement for the population-scaled
+# base above (self_actualization used to be part of why a pure wellbeing-only
+# model risked a struggling tribe never reaching a late population target at
+# all -- moot now that it's physiological-only, but the scaled base is still
+# what lets a THRIVING tribe's growth compound with its own size) -- a
+# multiplier on it instead. A perfectly-fed tribe (physiological == 1.0) grows
+# at base_growth * this multiplier -- kept above 1x so a genuinely thriving
+# tribe still grows faster than the old flat +1/cycle ever did, not just
+# avoids the famine case above.
+POPULATION_GROWTH_WELLBEING_MAX_MULTIPLIER = 2.0
 # Explicit request: "we should not put a cap on population" -- live runs tonight
 # showed multiple tribes actually reaching the old cap (80) and sitting there,
 # which was the whole point of removing it rather than just raising the number.

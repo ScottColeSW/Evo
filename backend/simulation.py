@@ -4809,9 +4809,44 @@ class Simulation:
         self._lose_population(tribe, config.DEHYDRATION_POPULATION_LOSS, cause="thirst")
 
     def _grow_population(self, tribe: Tribe) -> None:
+        """Explicit request: "much bigger populations going to war" without the
+        real-time cost a flat +1/cycle would impose at that scale (confirmed
+        against real run data: every model tested grew at ~1/cycle, no
+        exceptions -- see config.POPULATION_GROWTH_SCALE_DIVISOR's own comment).
+        Growth is population-scaled (a real demographic curve, not a raised
+        flat rate) times a Well-Being factor -- a thriving tribe grows faster
+        than a merely large one, not just a bigger one.
+
+        Live bug, confirmed against a real run: an earlier version averaged all
+        five Maslow tiers (wellbeing.TIER_LABELS) into that factor, floored so
+        growth could slow but never truly stop. esteem/self_actualization
+        (trophies, era progress) have nothing to do with whether a tribe can
+        feed more mouths, and kept propping the average up even while
+        physiological (the actual food/water tier) sat at 0.0 -- a tribe in
+        total, sustained famine still grew at ~90% of full speed, because 1.0
+        esteem + 0.24 self_actualization masked a dead physiological score in
+        the average. Compounding on a population-proportional base that can
+        only ever slow down, never reach zero, is unbounded by construction --
+        confirmed live: population 129 -> 10,835 in ~110 cycles while food
+        never recovered. Keyed on physiological alone now (the tier that
+        actually measures food/water security -- wellbeing.compute_wellbeing's
+        own buffer_cycles formula), with no floor: a real, sustained famine can
+        and must bring growth to an honest zero, the same way it already can
+        for every other food-gated system here. A well-fed tribe still grows
+        faster than the old flat rate ever did (POPULATION_GROWTH_WELLBEING_
+        MAX_MULTIPLIER > 1), it just isn't propped up by unrelated achievements
+        anymore. tribe.wellbeing is whatever _prepare_turn last computed
+        (compute_wellbeing runs every turn already); an empty dict (the very
+        first cycle, before any turn has run yet) reads as a neutral 0.5
+        rather than crashing or silently zeroing growth out before the
+        simulation has even really started."""
         if tribe.food > config.POPULATION_GROWTH_FOOD_THRESHOLD and tribe.population < config.POPULATION_GROWTH_CAP:
-            tribe.population += 1
-            tribe.food -= config.POPULATION_GROWTH_FOOD_COST
+            base_growth = max(1, tribe.population // config.POPULATION_GROWTH_SCALE_DIVISOR)
+            physiological = tribe.wellbeing.get("tiers", {}).get("physiological", 0.5)
+            growth = round(base_growth * physiological * config.POPULATION_GROWTH_WELLBEING_MAX_MULTIPLIER)
+            if growth > 0:
+                tribe.population += growth
+                tribe.food -= min(tribe.food, config.POPULATION_GROWTH_FOOD_COST * growth)
         tribe.max_population = max(tribe.max_population, tribe.population)
 
     def _advance_era_if_ready(self, tribe: Tribe) -> None:

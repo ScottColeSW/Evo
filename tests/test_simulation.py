@@ -6386,6 +6386,93 @@ def test_population_does_not_grow_below_the_food_threshold():
     assert tribe.population == 8
 
 
+def test_population_growth_scales_with_tribe_size():
+    """Explicit request: "much bigger populations going to war" without the
+    real-time cost a flat +1/cycle would impose at that scale -- see config.
+    POPULATION_GROWTH_SCALE_DIVISOR's own comment. No wellbeing computed yet
+    (defaults to a neutral 0.5 physiological, multiplier exactly 1.0 at
+    POPULATION_GROWTH_WELLBEING_MAX_MULTIPLIER=2.0) isolates the
+    population-scaling half of the formula from the Well-Being half below."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 200
+    tribe.food = config.POPULATION_GROWTH_FOOD_THRESHOLD + 1000
+
+    sim._grow_population(tribe)
+
+    assert tribe.population == 210  # +10 = 200 // POPULATION_GROWTH_SCALE_DIVISOR (20), neutral wellbeing
+
+
+def test_population_growth_is_faster_for_a_thriving_tribe_than_a_struggling_one():
+    """The other half of the same formula: a tribe with a maxed-out
+    physiological score grows faster than one at the neutral 0.5 default, at
+    the same population -- a real demographic story (thriving vs. merely
+    large), not just a bigger log curve."""
+    sim = _bare_simulation()
+    thriving = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    thriving.population = 200
+    thriving.food = 1000
+    thriving.wellbeing = {"tiers": {"physiological": 1.0}}
+
+    neutral = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 60, 60, "#fb923c")
+    neutral.population = 200
+    neutral.food = 1000
+    # No wellbeing set -- defaults to physiological=0.5, the same baseline
+    # test_population_growth_scales_with_tribe_size exercises directly.
+
+    sim._grow_population(thriving)
+    sim._grow_population(neutral)
+
+    assert thriving.population - 200 > neutral.population - 200
+
+
+def test_population_growth_is_zero_during_a_real_sustained_famine():
+    """Regression test for a live-confirmed runaway: an earlier version
+    averaged all five Maslow tiers into the growth multiplier with a floor, so
+    esteem/self_actualization (trophies, era progress -- unrelated to feeding
+    anyone) kept the average propped up even while physiological sat at 0.0.
+    A tribe in total, sustained famine still grew at ~90% of full speed,
+    compounding population 129 -> 10,835 in ~110 cycles while food never
+    recovered, because a floored multiplier on a population-proportional base
+    can only ever slow down, never actually reach zero. Keyed on physiological
+    alone now, with no floor: a real famine must be able to bring growth to an
+    honest zero, the same way every other food-gated system here already can."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 1000  # large enough that the old averaged formula would still add dozens/cycle
+    tribe.food = 1000
+    # A tribe with plenty of trophies and deep era progress, but literally no
+    # food/water buffer left -- exactly the live scenario that produced the
+    # runaway (esteem 1.0, self_actualization 0.24, physiological 0.0).
+    tribe.wellbeing = {"tiers": {
+        "physiological": 0.0, "safety": 0.5, "belonging": 0.3, "esteem": 1.0, "self_actualization": 0.24,
+    }}
+
+    sim._grow_population(tribe)
+
+    assert tribe.population == 1000  # zero growth, not just slowed
+
+
+def test_population_growth_food_cost_never_goes_negative_on_a_large_jump():
+    """A large population-scaled growth jump (real at high population) spending
+    a flat per-person food cost could previously have driven food deeply
+    negative in one tick if the tribe didn't actually have that much banked --
+    capped at whatever food is actually on hand instead."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 2000  # growth alone would cost far more food than banked
+    tribe.food = config.POPULATION_GROWTH_FOOD_THRESHOLD + 1
+
+    sim._grow_population(tribe)
+
+    assert tribe.food == 0
+    assert tribe.population > 2000  # growth still happened, just didn't drive food negative
+
+
 def test_population_growth_threshold_is_reachable_by_realistic_sustained_play():
     """Regression test: the original threshold (food > 80, costing 30) was verified
     live to be unreachable -- a real 79-cycle run under realistic mixed play never got
