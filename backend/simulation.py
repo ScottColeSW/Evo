@@ -5019,13 +5019,33 @@ class Simulation:
         that just tipped it over) and turns it into a real, one-time celebration
         for whichever tribe actually owns this tile (World.road_owner -- the
         first tribe to ever walk it, not necessarily whoever's walking it right
-        now that pushed it over). Called after every World.wear_trail site."""
+        now that pushed it over). Called after every World.wear_trail site.
+
+        Live report: a heavily-used, long route can have many tiles' crossing
+        counts cross ROAD_EVOLVE_CROSSINGS within the same cycle (a full
+        expedition leg wears every tile it passes through in one go -- see
+        World.wear_trail's own callers) -- confirmed against real run data,
+        ~40 separate tiles evolving in a single cycle, each its own full
+        _celebrate_road_complete call. _celebrate_road_complete's cost is a
+        FRACTION of current food (_celebration_cost), so any one of those looks
+        harmless alone, but ~40 in the same cycle compounds into spending
+        nearly the whole stockpile in one tick regardless of how much passive
+        income (fishing, farming, whatever) the tribe actually has -- the same
+        "uncapped feast on every single one would drain food faster than
+        [income] produces it" risk _advance_farming's own harvest-celebration
+        call already guards against with this identical cooldown check, that
+        this one was simply never given. The road still evolves (World.trails'
+        own state, above) and every OTHER tile that crossed this same cycle
+        still becomes a real toll road -- only the repeated narrated feast is
+        throttled to one per cooldown window, not the underlying mechanic."""
         entry = self.world.trails.get((x, y))
         if entry is None or entry.get("crossings", 0) != config.ROAD_EVOLVE_CROSSINGS + 1:
             return
         owner_id = entry.get("owner")
         owner = self.tribes.get(owner_id) if owner_id else None
         if owner is None or owner.extinct:
+            return
+        if self.cycle - owner.last_celebration_cycle < config.CELEBRATION_COOLDOWN_CYCLES:
             return
         self._celebrate_road_complete(owner, x, y)
 

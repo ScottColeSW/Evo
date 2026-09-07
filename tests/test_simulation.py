@@ -6345,6 +6345,35 @@ def test_check_road_evolution_only_fires_once_per_tile():
     assert tribe.food == food_after_first  # no second celebration/spend
 
 
+def test_check_road_evolution_only_celebrates_once_per_cooldown_across_many_tiles():
+    """Live report: a real run showed ~40 separate tiles along one heavily-used
+    route all cross ROAD_EVOLVE_CROSSINGS within the same cycle (a full
+    expedition leg wears every tile it passes through at once -- see World.
+    wear_trail's own callers), each firing its own full _celebrate_road_complete
+    -- food (114) got spent down to 4 in that single cycle purely from ~40
+    stacked feasts, each one a real fraction of whatever food remained
+    (_celebration_cost), regardless of how much passive income the tribe
+    actually had. Every OTHER recurring celebration trigger in this file
+    (_advance_farming's harvest, for one) already gates on this same
+    CELEBRATION_COOLDOWN_CYCLES check -- this one just never had it."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.food = 114
+
+    many_tiles = [(x, 34) for x in range(12, 52)]  # 40 distinct tiles, same cycle
+    for tx, ty in many_tiles:
+        for _ in range(config.ROAD_EVOLVE_CROSSINGS + 1):
+            sim.world.wear_trail(tx, ty, 0.01, tribe_id=tribe.id)
+        sim._check_road_evolution(tx, ty)
+
+    celebrations = sum(1 for e in tribe.history if "celebrates a real road" in e)
+    assert celebrations == 1
+    assert tribe.food > 50  # one real feast's worth spent, nowhere near the ~40-stacked wipeout
+
+
 def test_check_road_evolution_ignores_a_tribe_with_no_recorded_owner():
     """Defensive: an unowned trail tile (owner=None, shouldn't really happen
     once crossings clear the threshold, but wear_trail's owner param is
