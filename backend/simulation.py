@@ -3500,7 +3500,21 @@ class Simulation:
         perspective)." Built entirely from data already on hand (final tribe
         stats, trophies, chief lineage) -- no extra model call, this reads as
         an observer's report on what happened, not another in-fiction voice
-        the tribes themselves might use."""
+        the tribes themselves might use.
+
+        Live report, after a run reached War and World Domination without
+        either tribe conquering the other: the card said which era each tribe
+        reached and nothing else about what actually happened there -- no
+        final build (so "did they ever build a Castle/Object Creator" was
+        unanswerable after the fact) and no record of whether DECLARE_CONQUEST
+        (that era's one real action -- see actions.py._declare_conquest) was
+        ever attempted, only whether it *succeeded* (a separate reason,
+        "world_domination", triggered only by an actual merge). A reader
+        watching the final standing had no way to tell "nobody ever tried"
+        from "tried and lost." Both gaps are filled from data already tracked
+        (tribe.buildings' own boolean flags, tribe.combat_record's "Conquest"/
+        "Conquest Defense" entries -- see actions.py._record_combat) rather
+        than anything new being computed here."""
         lines = []
         if reason == "extinction":
             lines.append("OVERSEER LOG: Every observed population has ceased to exist.")
@@ -3524,8 +3538,12 @@ class Simulation:
             lines.append(
                 f"-- {tribe.name} ({tribe.model}): {status}{cause_note}. Reached {era_label}. "
                 f"Peak population {tribe.max_population}, final population {tribe.population}. "
-                f"Chiefs elected: {tribe.chiefs_elected}. Distinctions: {trophy_names}."
+                f"Chiefs elected: {tribe.chiefs_elected}. Distinctions: {trophy_names}. "
+                f"Final build: {_final_build_summary(tribe)}."
             )
+            conquest_note = _conquest_record_summary(tribe)
+            if conquest_note:
+                lines[-1] += f" {conquest_note}."
         living = [t for t in self.tribes.values() if not t.extinct]
         if reason == "world_domination" and living:
             victor = living[0]

@@ -8233,6 +8233,87 @@ def test_game_over_summary_names_each_tribes_final_standing():
     assert "War and World Domination" in summary
 
 
+def test_game_over_summary_lists_the_final_build():
+    """Live report: the ending card said which era a tribe reached but nothing
+    about what it actually built -- "did they ever build a Castle/Object
+    Creator" was unanswerable once the run was over. Final build is read
+    straight off the same one-way flags/counts every BUILD_* action already
+    sets, nothing new computed for this."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.castle_built = True
+    tribe.object_creator_built = True
+    tribe.long_houses_built = 3
+    tribe.wall_rings = [{"tier": 0}, {"tier": 1}]
+    sim.tribes = {"tribe_0": tribe}
+
+    summary = sim._generate_game_over_summary("era_ceiling")
+
+    assert "Final build:" in summary
+    assert "Castle" in summary
+    assert "Object Creator" in summary
+    assert "3 Long House(s)" in summary
+    assert "2 wall ring(s)" in summary
+
+
+def test_game_over_summary_notes_no_permanent_structures_when_none_were_built():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+
+    summary = sim._generate_game_over_summary("extinction")
+
+    assert "Final build: no permanent structures" in summary
+
+
+def test_game_over_summary_reports_conquest_attempts_won_and_lost():
+    """War and World Domination era's one real action, DECLARE_CONQUEST, only
+    ever showed up as a reached era -- a win triggers a separate
+    "world_domination" ending entirely (the loser is merged away), so a run
+    that ended some other way gave no way to tell "never tried" from "tried
+    and lost." Read back from tribe.combat_record (actions.py._record_combat),
+    the same W/L tally the sidebar already shows live."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.combat_record = {"Conquest": {"won": 1, "lost": 2}, "Conquest Defense": {"won": 3, "lost": 0}}
+    sim.tribes = {"tribe_0": tribe}
+
+    summary = sim._generate_game_over_summary("era_ceiling")
+
+    assert "Declared conquest 3 time(s) (1 won, 2 lost)" in summary
+    assert "was the target of conquest 3 time(s) (3 held, 0 fell)" in summary
+
+
+def test_game_over_summary_omits_conquest_note_when_never_attempted():
+    """The vastly more common case -- a run that stopped well short of War
+    and World Domination -- should get no hollow "0 attempts" sentence at
+    all, not a line stating the obvious."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+
+    summary = sim._generate_game_over_summary("era_ceiling")
+
+    assert "conquest" not in summary.lower()
+
+
+def test_game_over_summary_flags_a_war_era_tribe_that_never_declared_conquest():
+    """Live report: a run reached War and World Domination with neither tribe
+    conquering the other, and the ending card gave no way to tell whether War
+    actually happened (DECLARE_CONQUEST tried and lost) or nobody ever fired
+    it. Unlike the more common "never reached this era" case above, silence
+    here would still be the exact ambiguity being fixed -- so a tribe that
+    DID reach the era gets called out explicitly instead."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.era = "war_and_world_domination_era"
+    sim.tribes = {"tribe_0": tribe}
+
+    summary = sim._generate_game_over_summary("era_ceiling")
+
+    assert "never attempted or faced DECLARE_CONQUEST" in summary
+
+
 def test_game_over_summary_names_an_extinct_tribes_cause():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
