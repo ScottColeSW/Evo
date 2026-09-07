@@ -3110,7 +3110,6 @@ function landmarkCounts(t) {
 // same numbers the lines below report rather than a vaguer "mastered" label.
 const MINE_YIELD_PER_CYCLE = 5;
 const CROP_HARVEST_YIELD_PER_PLOT = 15; // mirrors backend/config.py's CROP_HARVEST_YIELD
-const LIVESTOCK_SURPLUS_THRESHOLD = 12; // mirrors backend/config.py's LIVESTOCK_SURPLUS_THRESHOLD
 const TANNERY_YIELD_PER_CYCLE = 4;
 // Mirrors backend/config.py's STORAGE_CAP_BASE/WAREHOUSE_STORAGE_BONUS_PER_BUILDING
 // -- explicit request, after a live run showed unbounded hoarding (200+ wood while
@@ -3240,15 +3239,21 @@ function farmingPanel(t) {
     if (justHatched) {
       parts.push(`🥚 An egg just hatched! — ${escapeHtml(last.trait)} (flock now ${t.flock})`);
     } else {
-      const surplusNote = t.flock > LIVESTOCK_SURPLUS_THRESHOLD ? " · surplus feasted on" : "";
+      // livestock_surplus_threshold comes straight from the backend (Tribe.
+      // to_dict, backend/simulation.py's _livestock_surplus_threshold) --
+      // population-scaled, not a fixed dozen, so this can never drift from
+      // what _advance_livestock_feast actually did server-side.
+      const surplusThreshold = t.livestock_surplus_threshold ?? 12;
+      const surplusNote = t.flock > surplusThreshold ? " · surplus feasted on" : "";
       parts.push(`🐔 Flock — ${t.flock}${last ? ` · latest: ${escapeHtml(last.trait)}` : ""}${surplusNote}`);
     }
   }
   if (t.eggs > 0) {
     // Explicit request: "we aren't showing counts on either [eggs or flock]"
     // -- a real, separate stockpile from flock (Simulation._advance_flock_eggs),
-    // eaten off automatically past LIVESTOCK_SURPLUS_THRESHOLD (a dozen).
-    parts.push(`🥚 Eggs in store — ${t.eggs}${t.eggs > LIVESTOCK_SURPLUS_THRESHOLD ? " · surplus feasted on" : ""}`);
+    // eaten off automatically past the tribe's own scaled surplus threshold.
+    const eggsSurplusThreshold = t.livestock_surplus_threshold ?? 12;
+    parts.push(`🥚 Eggs in store — ${t.eggs}${t.eggs > eggsSurplusThreshold ? " · surplus feasted on" : ""}`);
   }
   if (t.hatchery_built) parts.push("🐣 Hatchery — the flock hatches on its own much more reliably");
   if (t.bath_house_built) parts.push("🛁 Bath House — daily food and water consumption reduced");

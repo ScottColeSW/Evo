@@ -7551,6 +7551,54 @@ def test_advance_livestock_feast_does_nothing_below_the_surplus_threshold():
     assert tribe.food == 0
 
 
+def test_livestock_surplus_threshold_scales_with_population():
+    """Live report: "crazy villagers" eating the whole flock/every egg past a
+    flat dozen regardless of tribe size -- LIVESTOCK_SURPLUS_THRESHOLD is now
+    a floor (still exactly a dozen for a small tribe), not a fixed ceiling,
+    same max(floor, population-scaled) shape actions.expedition_capacity
+    already uses for a different stat."""
+    from backend.simulation import _livestock_surplus_threshold
+
+    small = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    small.population = 8
+    assert _livestock_surplus_threshold(small) == 12  # unchanged for a small tribe
+
+    large = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 60, 60, "#fb923c")
+    large.population = 500
+    assert _livestock_surplus_threshold(large) == 50  # 500 // LIVESTOCK_SURPLUS_POPULATION_DIVISOR (10)
+
+
+def test_advance_livestock_feast_lets_a_large_tribe_keep_a_bigger_flock():
+    """A tribe big enough that its scaled threshold clears the old flat dozen
+    keeps its whole flock/eggs below that real threshold instead of being
+    feasted down to 12 regardless of size."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 500  # scaled threshold: 50
+    tribe.eggs = 40
+    tribe.flock = 40
+    tribe.food = 0
+
+    sim._advance_livestock_feast(tribe)
+
+    assert tribe.eggs == 40  # below the scaled threshold -- nothing eaten
+    assert tribe.flock == 40
+    assert tribe.food == 0
+    assert tribe.eggs > config.LIVESTOCK_SURPLUS_THRESHOLD  # genuinely past the old flat dozen
+
+
+def test_to_dict_includes_the_real_livestock_surplus_threshold():
+    """The frontend reads this straight off the wire (no local mirror of the
+    formula) so its "surplus feasted on" display can never drift from what
+    _advance_livestock_feast actually did server-side."""
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 500
+
+    assert tribe.to_dict()["livestock_surplus_threshold"] == 50
+
+
 def test_celebrate_settling_fires_once_a_tribe_settles_near_real_water():
     """Explicit request: settling somewhere for good deserves its own celebration,
     not just whatever unrelated surplus/discovery celebration happens to fire next."""

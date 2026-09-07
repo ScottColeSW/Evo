@@ -613,7 +613,19 @@ WELL_STONE_COST = 20
 WELL_SUPPLY_BONUS_MULTIPLIER = 1.5
 
 EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR = 5  # 1 egg per 5 flock members per cycle
+# Live report: "crazy villagers" eating the whole flock/every egg the moment
+# either crossed a dozen -- this was a flat cap regardless of tribe size, tuned
+# back when population sat around 20-50 (a dozen was a real fraction of that).
+# It never got revisited once population scaling changed elsewhere (expedition
+# capacity, upkeep, growth all already scale with population -- this was the
+# one that didn't), so a tribe of any size was still permanently capped at the
+# same dozen, converting all real herd growth into an immediate meal instead of
+# a bigger, more valuable flock. LIVESTOCK_SURPLUS_THRESHOLD is now the floor
+# (still exactly "a dozen" for a small tribe), not the ceiling -- see
+# Simulation._livestock_surplus_threshold, same max(floor, population-scaled)
+# shape actions.expedition_capacity already uses for a different stat.
 LIVESTOCK_SURPLUS_THRESHOLD = 12
+LIVESTOCK_SURPLUS_POPULATION_DIVISOR = 10
 EGG_FEAST_FOOD_VALUE = 2  # food per surplus egg eaten
 FLOCK_FEAST_FOOD_VALUE = 8  # food per surplus flock member eaten
 

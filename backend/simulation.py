@@ -1124,6 +1124,7 @@ class Tribe:
             "last_harvest_cycle": self.last_harvest_cycle,
             "flock": self.flock,
             "eggs": self.eggs,
+            "livestock_surplus_threshold": _livestock_surplus_threshold(self),
             "hatchery_built": self.hatchery_built,
             "boat_built": self.boat_built,
             "bath_house_built": self.bath_house_built,
@@ -5335,15 +5336,17 @@ class Simulation:
 
     def _advance_livestock_feast(self, tribe: Tribe) -> None:
         """See config.LIVESTOCK_SURPLUS_THRESHOLD's own comment -- once eggs or
-        flock grow past a dozen, the surplus is automatically eaten as food each
-        cycle rather than piling up forever with no payoff."""
-        if tribe.eggs > config.LIVESTOCK_SURPLUS_THRESHOLD:
-            surplus = tribe.eggs - config.LIVESTOCK_SURPLUS_THRESHOLD
-            tribe.eggs = config.LIVESTOCK_SURPLUS_THRESHOLD
+        flock grow past the tribe's own scaled threshold, the surplus is
+        automatically eaten as food each cycle rather than piling up forever
+        with no payoff."""
+        threshold = _livestock_surplus_threshold(tribe)
+        if tribe.eggs > threshold:
+            surplus = tribe.eggs - threshold
+            tribe.eggs = threshold
             self._capped_add(tribe, "food", surplus * config.EGG_FEAST_FOOD_VALUE)
-        if tribe.flock > config.LIVESTOCK_SURPLUS_THRESHOLD:
-            surplus = tribe.flock - config.LIVESTOCK_SURPLUS_THRESHOLD
-            tribe.flock = config.LIVESTOCK_SURPLUS_THRESHOLD
+        if tribe.flock > threshold:
+            surplus = tribe.flock - threshold
+            tribe.flock = threshold
             self._capped_add(tribe, "food", surplus * config.FLOCK_FEAST_FOOD_VALUE)
 
     def _advance_city_founding(self, tribe: Tribe) -> None:
