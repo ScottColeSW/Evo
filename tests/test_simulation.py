@@ -1911,6 +1911,8 @@ def test_affordability_gate_hides_every_registered_action_below_its_own_cost():
     for action in AFFORDABILITY_CHECKS:
         if action in ("BREED", "CONSTRUCT_WALL"):
             continue  # covered separately below -- CONSTRUCT_WALL needs a real section set up first
+        if action in ("SCOUT", "HUNTING_PARTY", "EXPLORATION_PARTY"):
+            continue  # gated on expedition_capacity, not wood/stone -- see the dedicated test below
         assert action not in ctx["available_actions"], f"{action} should be hidden at wood=stone=0"
 
     # BREED specifically: plenty of wood/stone, food/water short of its cost but
@@ -1920,6 +1922,50 @@ def test_affordability_gate_hides_every_registered_action_below_its_own_cost():
     _, ctx = sim._prepare_turn(tribe)
     assert tribe.food_crisis_active is False and tribe.water_crisis_active is False
     assert "BREED" not in ctx["available_actions"]
+
+
+def test_affordability_gate_hides_expedition_actions_once_capacity_is_full():
+    """Live report: "I keep seeing 'send hunting party'" -- confirmed against a
+    real run: SCOUT and HUNTING_PARTY were each chosen and rejected with "no
+    one left to send" roughly three out of four times (SCOUT 305/403,
+    HUNTING_PARTY 253/325, across both tribes in that run). Neither was ever
+    hidden the way every other guaranteed no-op in this table already is --
+    expedition_capacity(tribe) is a hard, always-known ceiling once every slot
+    is filled, exactly the same class of dangling menu option
+    AFFORDABILITY_CHECKS exists to close."""
+    from backend.actions import expedition_capacity
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.era = "monolithic_era"
+    tribe.expeditions = [
+        {"kind": "scout", "pos": [tribe.x, tribe.y], "day": 0, "phase": "outbound",
+         "lead_scout": f"Scout{i}", "max_days": 5, "path": [[tribe.x, tribe.y]],
+         "target": [tribe.x, tribe.y], "found": None, "terrain_report": None,
+         "food_gathered": 0, "water_gathered": 0}
+        for i in range(expedition_capacity(tribe))
+    ]
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "SCOUT" not in ctx["available_actions"]
+    assert "HUNTING_PARTY" not in ctx["available_actions"]
+    assert "EXPLORATION_PARTY" not in ctx["available_actions"]
+
+
+def test_affordability_gate_shows_expedition_actions_with_real_capacity_left():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.era = "monolithic_era"
+    tribe.expeditions = []
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "SCOUT" in ctx["available_actions"]
+    assert "HUNTING_PARTY" in ctx["available_actions"]
+    assert "EXPLORATION_PARTY" in ctx["available_actions"]
 
 
 def test_affordability_gate_hides_a_buildable_action_once_territory_has_no_room():

@@ -383,6 +383,18 @@ AFFORDABILITY_CHECKS = {
     "DECLARE_CONQUEST": lambda t, w: (
         t.wood >= config.DECLARE_CONQUEST_WOOD_COST and t.stone >= config.DECLARE_CONQUEST_STONE_COST
     ),
+    # Live report: "I keep seeing 'send hunting party'" -- confirmed against a
+    # real run: SCOUT and HUNTING_PARTY were each chosen and rejected with "no
+    # one left to send" roughly three times out of four (SCOUT 305/403,
+    # HUNTING_PARTY 253/325, across both tribes). expedition_capacity(tribe) is
+    # a hard, always-known ceiling (unlike a resource cost, which the model
+    # could at least try to remedy) -- the exact "guaranteed no-op dangling in
+    # the menu" class this whole table exists to close, just never extended to
+    # expedition dispatch. EXPLORATION_PARTY gets the same treatment for
+    # consistency even though it was rejected far less often (8/49) in this run.
+    "SCOUT": lambda t, w: expedition_capacity(t) - len(t.expeditions) > 0,
+    "HUNTING_PARTY": lambda t, w: expedition_capacity(t) - len(t.expeditions) > 0,
+    "EXPLORATION_PARTY": lambda t, w: expedition_capacity(t) - len(t.expeditions) > 0,
 }
 
 
