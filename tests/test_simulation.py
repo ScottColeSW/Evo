@@ -600,8 +600,13 @@ def test_interpolated_path_is_a_single_point_when_already_there():
 def test_advance_resource_trails_wears_a_route_to_each_locked_in_site():
     """Explicit request: "if they have found a Quarry, Mine, Stand of Trees to
     Harvest, these are collectables that must be fetched and so trails/roads
-    to them should be established naturally.\""""
+    to them should be established naturally." Only fires on a real day
+    boundary now (see test_advance_resource_trails_only_wears_once_per_real_day
+    below) -- sim.cycle here is a multiple of DAY_LENGTH_CYCLES."""
+    from backend import config
+
     sim = _bare_simulation()
+    sim.cycle = config.DAY_LENGTH_CYCLES
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.quarry_site = (52, 50)
 
@@ -611,6 +616,33 @@ def test_advance_resource_trails_wears_a_route_to_each_locked_in_site():
     assert (51, 50) in sim.world.trails
     assert (52, 50) in sim.world.trails
     assert sim.world.trails[(52, 50)]["owner"] == tribe.id
+
+
+def test_advance_resource_trails_only_wears_once_per_real_day():
+    """Live bug, confirmed against a real run: this used to wear every tile on
+    a site's supply route every single cycle, unconditionally -- since the
+    route never changes, every tile got incremented in perfect lockstep
+    forever, so they all crossed ROAD_EVOLVE_CROSSINGS on the exact same
+    cycle (~40 tiles evolving, and celebrating, at once). "Once per real day
+    is good enough" -- gated the same way a settled scout's own movement
+    already is."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.quarry_site = (52, 50)
+
+    for cycle in range(1, config.DAY_LENGTH_CYCLES):
+        sim.cycle = cycle
+        sim._advance_resource_trails(tribe)
+
+    assert sim.world.trails == {}  # never a real day boundary in that range
+
+    sim.cycle = config.DAY_LENGTH_CYCLES
+    sim._advance_resource_trails(tribe)
+
+    assert (52, 50) in sim.world.trails
+    assert sim.world.trails[(52, 50)]["crossings"] == 1  # exactly one day's worth, not one per cycle
 
 
 def test_advance_resource_trails_does_nothing_without_any_locked_in_sites():

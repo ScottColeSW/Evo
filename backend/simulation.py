@@ -5205,10 +5205,23 @@ class Simulation:
         (see their own docstrings -- built at the settlement, working
         passively from then on), so nothing else would ever wear a path to the
         real site each one actually draws from. This does that automatically,
-        once per cycle, the same wear_trail mechanic RELOCATE/SCOUT already
-        use along the straight line between the settlement and each site --
-        heavily-used routes eventually evolve into real toll roads themselves
-        (see world.is_toll_road), exactly like any other trail would."""
+        the same wear_trail mechanic RELOCATE/SCOUT already use along the
+        straight line between the settlement and each site -- heavily-used
+        routes eventually evolve into real toll roads themselves (see world.
+        is_toll_road), exactly like any other trail would.
+
+        Live bug, confirmed against a real run: this used to wear every tile
+        on the route every single cycle, unconditionally -- since the route
+        never changes, every one of its tiles got incremented in perfect
+        lockstep forever, so they all crossed ROAD_EVOLVE_CROSSINGS on the
+        exact same cycle (~40 tiles evolving, and celebrating, at once).
+        "Once per real day is good enough" -- gated the same way a settled
+        scout's own movement already is (self.cycle % DAY_LENGTH_CYCLES), so
+        a route still wears in gradually over a site's operational life (the
+        original intent) without every tile marching in identical lockstep
+        every single cycle."""
+        if self.cycle % config.DAY_LENGTH_CYCLES != 0:
+            return
         for site in (tribe.lumber_site, tribe.quarry_site, tribe.mine_site, tribe.tannery_site):
             if site is None:
                 continue
