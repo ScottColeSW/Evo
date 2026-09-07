@@ -106,8 +106,14 @@ def _labor_multiplier(population: int) -> float:
     or 30 people stood behind it, against a food/water cost that only ever grew.
     POPULATION_YIELD_BASELINE matches Tribe.__init__'s own starting population, so this
     never scales a tribe at or below starting size down -- only ever rewards growth
-    past it."""
-    return max(1.0, population / config.POPULATION_YIELD_BASELINE)
+    past it.
+
+    See config.LABOR_MULTIPLIER_CAP's own comment -- capped the same way
+    FARM_LABOR_MULTIPLIER_CAP already caps farm harvests, and for the same
+    reason: uncapped, this produced single-action windfalls (1,854 food from
+    one HUNT_DEER at population 3232) large enough to spike wellbeing's
+    physiological tier and reopen population growth during a real famine."""
+    return min(config.LABOR_MULTIPLIER_CAP, max(1.0, population / config.POPULATION_YIELD_BASELINE))
 
 
 def _harvest(sim, tribe, resource_key, base_yield, biome):

@@ -810,10 +810,22 @@ MATERIAL_SURPLUS_THRESHOLD = 50
 # What happens when upkeep can't be paid -- someone dies, and the ground remembers it.
 # Magnitude matches the other hazard deaths (wolf attack, drowning) so any death reliably
 # clears the -0.35 dread threshold in ancestral_matrix.py, not just repeated ones.
-STARVATION_POPULATION_LOSS = 1
+#
+# Live bug, confirmed against a real run: this was the one population-linked
+# constant in the whole project that never got the population-scaling
+# treatment everything else did (upkeep, _labor_multiplier, expedition
+# capacity, livestock surplus threshold all scale with tribe size). A tribe of
+# 3232, in near-total sustained famine (physiological 0.01-0.03) the entire
+# back half of a real run, kept growing 3-7/cycle from windfall-spike growth
+# (see LABOR_MULTIPLIER_CAP's own comment) while every "starvation claimed
+# lives" event cost it exactly -1 regardless -- a flat death toll that could
+# never meaningfully offset a population-proportional growth spike once a
+# tribe is this large. Simulation._scaled_population_loss applies the same
+# max(floor, population // divisor) shape _livestock_surplus_threshold already
+# uses -- still exactly 1 for a small tribe, a real deterrent for a large one.
+POPULATION_LOSS_DIVISOR = 50
 STARVATION_TRAUMA_MAGNITUDE = -0.4
 STARVATION_TRAUMA_RADIUS = 5
-DEHYDRATION_POPULATION_LOSS = 1
 DEHYDRATION_TRAUMA_MAGNITUDE = -0.4
 DEHYDRATION_TRAUMA_RADIUS = 5
 
@@ -1700,6 +1712,20 @@ FIELD_REPORT_DETAIL_THRESHOLD = 3
 # Tribe.__init__'s own starting population, so a tribe at or below starting size sees no
 # change at all -- this only ever rewards growth past it, never penalizes a small tribe.
 POPULATION_YIELD_BASELINE = 8
+# Live bug, confirmed against a real run: _labor_multiplier was left uncapped
+# here even after FARM_LABOR_MULTIPLIER_CAP closed the identical problem for
+# farm harvests -- a single HUNT_DEER at population 3232 (multiplier 404x)
+# generated 1,854 raw food in one action, briefly spiking tribe.food (and
+# therefore wellbeing's physiological tier) far above what upkeep would
+# otherwise sustain. That transient spike was enough to reopen population
+# growth (Simulation._grow_population) even during what should have been a
+# real, sustained famine -- the tribe's own daily gathering summaries showed
+# growth spikes of 50-167 population in the same run this was traced against.
+# Same cap value as farming's own fix, for the same reason: still a real,
+# meaningful reward for a bigger tribe (up to POPULATION_YIELD_BASELINE * this
+# = population 40) without the windfall becoming large enough on its own to
+# swing wellbeing.
+LABOR_MULTIPLIER_CAP = 5.0
 
 # Every expedition's lead scout gets a procedurally-generated determination trait (see
 # actions.py._generate_scout) that shifts their own personal give-up point by up to

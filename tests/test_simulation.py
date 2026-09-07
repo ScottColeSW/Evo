@@ -7955,6 +7955,54 @@ def test_unpaid_water_upkeep_causes_dehydration():
     assert "DREAD" in sim.trauma.bias_string(50, 50)
 
 
+def test_starvation_loss_scales_with_population():
+    """Live bug, confirmed against a real run: this used to be a flat -1
+    regardless of tribe size -- the one population-linked constant in the
+    whole project that never got the same population-scaling treatment
+    upkeep/_labor_multiplier/expedition_capacity/livestock threshold already
+    have. A tribe of 3232, in real sustained famine, kept growing 3-7/cycle
+    from windfall-spike growth while every starvation event cost it exactly
+    1 -- a flat toll that could never meaningfully offset a population-
+    proportional growth spike at that scale."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 3232
+    tribe.food = 0
+    tribe.water = 1000  # isolate starvation from a simultaneous dehydration loss
+
+    sim._apply_upkeep(tribe)
+
+    assert tribe.population == 3232 - (3232 // config.POPULATION_LOSS_DIVISOR)
+
+
+def test_dehydration_loss_scales_with_population():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 3232
+    tribe.food = 1000  # isolate dehydration from a simultaneous starvation loss
+    tribe.water = 0
+
+    sim._apply_upkeep(tribe)
+
+    assert tribe.population == 3232 - (3232 // config.POPULATION_LOSS_DIVISOR)
+
+
+def test_starvation_loss_still_floors_at_one_for_a_small_tribe():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    tribe.food = 0
+    tribe.water = 1000
+
+    sim._apply_upkeep(tribe)
+
+    assert tribe.population == 9  # unchanged from the old flat -1 at this scale
+
+
 def test_starvation_can_cause_real_extinction():
     """The old behavior floored population at 1 forever (a permanent "walking dead"
     state); a tribe can now actually go extinct."""

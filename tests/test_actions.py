@@ -181,6 +181,38 @@ def test_gather_wood_below_the_cap_is_unaffected():
     assert "DREAD" not in sim.trauma.bias_string(50, 50)  # no waste, no punishment
 
 
+def test_labor_multiplier_is_capped_for_a_large_population():
+    """Live bug, confirmed against a real run: uncapped, a single HUNT_DEER at
+    population 3232 (multiplier 404x) generated 1,854 raw food in one action --
+    large enough to briefly spike wellbeing's physiological tier and reopen
+    population growth during what should have been a real, sustained famine.
+    Same fix shape as FARM_LABOR_MULTIPLIER_CAP already applies to farm
+    harvests specifically -- this closes the identical gap for every other
+    consumer (GATHER_WOOD/STONE/WATER/FOOD, HUNT_DEER, GATHER_ORE, CONSTRUCT_
+    WALL progress)."""
+    from backend.actions import _labor_multiplier
+    from backend import config
+
+    assert _labor_multiplier(3232) == config.LABOR_MULTIPLIER_CAP
+    # Still real, meaningful scaling below the cap -- this isn't a flat 1.0.
+    assert _labor_multiplier(config.POPULATION_YIELD_BASELINE * 2) == 2.0
+
+
+def test_hunt_deer_yield_is_capped_for_a_large_population():
+    from unittest import mock
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 3232
+    tribe.food = 0
+
+    with mock.patch("backend.actions.random.random", return_value=0.99):  # 0.99 clears HUNT_HAZARD_CHANCE (0.12)
+        ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "forest", _NO_TARGET)  # forest's own game multiplier is 1.0
+
+    assert tribe.food == round(15 * config.LABOR_MULTIPLIER_CAP)
+
+
 def test_build_warehouse_is_repeatable_and_raises_the_storage_cap():
     from backend.actions import _storage_cap
     from backend import config

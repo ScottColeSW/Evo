@@ -1284,6 +1284,15 @@ def _livestock_surplus_threshold(tribe: "Tribe") -> int:
     return max(config.LIVESTOCK_SURPLUS_THRESHOLD, tribe.population // config.LIVESTOCK_SURPLUS_POPULATION_DIVISOR)
 
 
+def _scaled_population_loss(tribe: "Tribe") -> int:
+    """Starvation/dehydration's per-event death toll -- see config.
+    POPULATION_LOSS_DIVISOR's own comment. Same max(floor, population-scaled)
+    shape _livestock_surplus_threshold/expedition_capacity already use: still
+    exactly 1 for a small tribe (unchanged from the old flat constant), a real
+    deterrent for a large one."""
+    return max(1, tribe.population // config.POPULATION_LOSS_DIVISOR)
+
+
 def _era_resource_amount(tribe: "Tribe", resource: str) -> int:
     """Reads one of an Era's requires_resources/advancement_cost entries off a
     tribe. wood/stone/water/food are real Tribe attributes (getattr handles
@@ -4874,14 +4883,14 @@ class Simulation:
         self.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.STARVATION_TRAUMA_MAGNITUDE, config.STARVATION_TRAUMA_RADIUS
         )
-        self._lose_population(tribe, config.STARVATION_POPULATION_LOSS, cause="starvation")
+        self._lose_population(tribe, _scaled_population_loss(tribe), cause="starvation")
 
     def _dehydrate(self, tribe: Tribe) -> None:
         tribe.history.append("thirst claimed lives")
         self.trauma.radiate_event_wave(
             tribe.x, tribe.y, config.DEHYDRATION_TRAUMA_MAGNITUDE, config.DEHYDRATION_TRAUMA_RADIUS
         )
-        self._lose_population(tribe, config.DEHYDRATION_POPULATION_LOSS, cause="thirst")
+        self._lose_population(tribe, _scaled_population_loss(tribe), cause="thirst")
 
     def _grow_population(self, tribe: Tribe) -> None:
         """Explicit request: "much bigger populations going to war" without the
