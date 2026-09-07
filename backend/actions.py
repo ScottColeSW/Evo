@@ -1807,7 +1807,16 @@ def _strike_raider_camp(sim, tribe, biome, target):
     )
     if random.random() < win_chance:
         tribe.raider_sightings.remove(camp)
-        looted = round(tribe.food * config.STRIKE_RAIDER_CAMP_LOOT_FRACTION)
+        # Live bug, same shape as Simulation._resolve_raider_attack's own fix:
+        # this used to setattr a fraction of the tribe's OWN current food
+        # directly, bypassing the storage cap -- not loot recovered from the
+        # camp, just an uncapped compound multiplier on the tribe's own
+        # stockpile every time this is won. Capped the same way _add_capped
+        # caps every other resource gain (inlined here rather than reusing
+        # _add_capped itself, since that returns a narration string/None, not
+        # the amount actually added -- this action's own return line needs the
+        # real number, the same reason Simulation._capped_add exists).
+        looted = max(0, min(round(tribe.food * config.STRIKE_RAIDER_CAMP_LOOT_FRACTION), _storage_cap(tribe) - tribe.food))
         tribe.food += looted
         sim.trauma.radiate_event_wave(camp[0], camp[1], config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
         sim.recent_encounters.append({

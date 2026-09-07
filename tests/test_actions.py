@@ -3037,6 +3037,27 @@ def test_strike_raider_camp_success_removes_the_sighting_and_loots_food():
     assert "PRIDE" in sim.trauma.bias_string(60, 60)
 
 
+def test_strike_raider_camp_loot_is_capped_by_storage():
+    """Same bug shape as Simulation._resolve_raider_attack's own fix: this used
+    to setattr a fraction of the tribe's OWN current food directly, bypassing
+    the storage cap -- not loot recovered from the camp, an uncapped compound
+    multiplier on the tribe's own stockpile every time this is won. A tribe
+    already at its storage cap must not grow past it just by winning a strike."""
+    from unittest import mock
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.raider_sightings = [(60, 60)]
+    tribe.food = config.STORAGE_CAP_BASE  # already at the cap
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # forces a win
+        note = ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](sim, tribe, "plains", (60, 60))
+
+    assert tribe.food == config.STORAGE_CAP_BASE
+    assert "0 food recovered" in note
+
+
 def test_strike_raider_camp_failure_costs_population_and_leaves_sighting_intact():
     from unittest import mock
 

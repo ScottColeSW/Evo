@@ -4942,6 +4942,48 @@ def test_raider_attack_successful_defense_radiates_pride_and_increments_raids_de
     assert any(t["name"] == "Raid Breaker" for t in tribe.trophies)
 
 
+def test_raider_attack_successful_defense_loot_is_capped_by_storage():
+    """Live bug, confirmed against a real run: this used to setattr a fraction
+    of the tribe's OWN current stockpile directly, bypassing the storage cap --
+    not loot recovered from the raiders, an uncapped compound multiplier on the
+    tribe's own resources every time this fires. Confirmed live: a tribe's wood
+    went 14,948 -> 159,935 over ~270 cycles in exact x1.2 steps (RAIDER_DEFEAT_
+    LOOT_FRACTION=0.2 at raider_strength=1.0), entirely from repeated passive
+    defenses -- that tribe never issued a single RAID action. A tribe already
+    sitting at (or near) its storage cap must not be able to grow past it just
+    by repelling raiders."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 1000  # maxes raider_strength (RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE)
+    cap = config.STORAGE_CAP_BASE
+    tribe.wood = tribe.stone = tribe.food = cap  # already at the cap
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):  # defense holds
+        sim._resolve_raider_attack(tribe)
+
+    assert tribe.wood == cap
+    assert tribe.stone == cap
+    assert tribe.food == cap
+
+
+def test_raider_attack_successful_defense_loot_still_grants_real_gain_below_cap():
+    """The fix above must not turn this into a pure no-op below the cap -- a
+    tribe with real room to grow still gets a real, if now-bounded, gain."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 1000
+    tribe.wood = tribe.stone = tribe.food = 100
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._resolve_raider_attack(tribe)
+
+    assert tribe.wood > 100
+    assert tribe.stone > 100
+    assert tribe.food > 100
+
+
 def test_created_object_defense_boost_raises_raider_defense_chance():
     """Object Creator era's defense_boost effect -- see actions.py._created_object_bonus
     -- stacks additively onto _resolve_raider_attack's defense_chance, same as the

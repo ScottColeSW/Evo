@@ -4737,12 +4737,24 @@ class Simulation:
             tribe.raids_defended += 1
             _record_combat(tribe, "Home Defense", "won")
             self._award_trophy(tribe, "Raid Breaker")
+            # Live bug, confirmed against a real run: this used to setattr the
+            # requested amount directly, bypassing _capped_add entirely -- since
+            # the requested amount is itself a fraction of the tribe's OWN
+            # current stockpile, that's not "loot recovered from the raiders" at
+            # all, it's a flat compound multiplier on the tribe's own resources
+            # with no ceiling. Confirmed live: a tribe's wood went 14,948 ->
+            # 159,935 over ~270 cycles in exact x1.2 steps (RAIDER_DEFEAT_LOOT_
+            # FRACTION=0.2 at raider_strength=1.0, i.e. every successful defense
+            # once population passed RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE),
+            # entirely passive -- that tribe never issued a single RAID action.
+            # Routing through _capped_add closes it the same way every other
+            # resource gain in this project already respects _storage_cap.
             looted = {
-                resource: round(getattr(tribe, resource) * config.RAIDER_DEFEAT_LOOT_FRACTION * raider_strength)
+                resource: self._capped_add(
+                    tribe, resource, round(getattr(tribe, resource) * config.RAIDER_DEFEAT_LOOT_FRACTION * raider_strength)
+                )
                 for resource in ("wood", "stone", "food")
             }
-            for resource, amount in looted.items():
-                setattr(tribe, resource, getattr(tribe, resource) + amount)
             self.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
             loot_note = f" -- {looted['food']} food, {looted['wood']} wood, and {looted['stone']} stone recovered from what they left behind"
             note = f"raiders were spotted approaching camp and repelled{loot_note}"
