@@ -143,24 +143,24 @@ def expedition_capacity(tribe) -> int:
 def _expedition_dispatch_blocked(tribe, kind: str) -> str | None:
     """Shared dispatch gate for SCOUT/EXPLORATION_PARTY/HUNTING_PARTY -- returns
     a real in-fiction reason the party can't go out this cycle, or None if it
-    can. Live bug report: "it was still extremely slow... it's best they can
-    only send 1 type of each at a time." expedition_capacity(tribe) alone
-    could still let a tribe stack several of the SAME kind (e.g. three
-    HUNTING_PARTYs) at once, which is most of what made the board feel
-    flooded and slow. Each kind is now capped at one live party at a time, on
-    top of the existing overall ceiling -- a tribe can still have one of each
-    kind out together, just never two racing each other."""
+    can.
+
+    Explicit correction (2026-09-07): "Each Tribe can always send a max of 3
+    Orders out. They can all be the same if they want. I think we have
+    stopped that incorrectly." A per-kind cap of one live party at a time
+    (added for an earlier, different live bug report -- the board feeling
+    "flooded" from stacking several of the same kind at once) was
+    unconditionally forcing kind *diversity*: a tribe could never have, say,
+    three scouts out together even with real capacity to spare, which read
+    live as scouts being permanently "stuck" at one no matter what the tribe
+    actually wanted. expedition_capacity(tribe) alone is the real limit
+    again -- any mix, including three of the same kind, is fine as long as
+    the total stays under it."""
     if len(tribe.expeditions) >= expedition_capacity(tribe):
         fields = ", ".join(
             f"{e['lead_scout']} (day {e['day']}/{e['max_days']}, {e['phase']})" for e in tribe.expeditions
         )
         return f"no one left to send -- every party is already out: {fields}"
-    same_kind = next((e for e in tribe.expeditions if e.get("kind") == kind), None)
-    if same_kind is not None:
-        return (
-            f"{same_kind['lead_scout']}'s party is already out on this same kind of expedition "
-            f"(day {same_kind['day']}/{same_kind['max_days']}, {same_kind['phase']}) -- only one at a time"
-        )
     return None
 
 

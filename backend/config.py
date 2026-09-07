@@ -1610,7 +1610,7 @@ EXPEDITION_SPEED = 10
 # split: movement now happens every cycle regardless of settlement, only the
 # per-cycle distance and the once-a-day bookkeeping -- day count, "daily"
 # food/water/wood/stone gains, hunting rolls -- differ by settlement status).
-SETTLED_EXPEDITION_SPEED = 1
+SETTLED_EXPEDITION_SPEED = 12
 # Raised 3 -> 5 (explicit request, same conversation that diagnosed a tribe
 # dying of thirst before ever founding): "give the Scout a 5 day start. They
 # are not penalized if they come back late, the Tribe is, given someone
@@ -1618,14 +1618,14 @@ SETTLED_EXPEDITION_SPEED = 1
 # scratch -- more patience per dispatch costs the scout nothing and gives a
 # real search more room to actually find water before the tribe's own
 # survival clock runs out.
-EXPEDITION_MAX_DAYS = 5
+EXPEDITION_MAX_DAYS = 10
 
 # A tribe could previously only ever have one party (scouting or hunting) in the field
 # at a time -- a chief with real people to spare had no way to send out more than a
 # single expedition regardless of population. Capped rather than unlimited: nothing
 # currently deducts population to launch a party, so an uncapped tribe could spam
 # expeditions for free.
-MAX_CONCURRENT_EXPEDITIONS = 2
+MAX_CONCURRENT_EXPEDITIONS = 3
 
 # actions.expedition_capacity() lets a larger tribe spare more search parties at once --
 # MAX_CONCURRENT_EXPEDITIONS above is only ever the floor now, not a hard ceiling. A
