@@ -6554,6 +6554,14 @@ def test_check_road_evolution_ignores_a_tribe_with_no_recorded_owner():
 
 
 def test_population_grows_once_food_clears_the_threshold():
+    """population=8 with no wellbeing computed yet (tribe.wellbeing defaults to
+    {} -- see Tribe.__init__) reads as a neutral 0.5 physiological
+    (_grow_population's own fallback) times POPULATION_GROWTH_WELLBEING_
+    MAX_MULTIPLIER (2.0) = 1.0, and 8 // POPULATION_GROWTH_SCALE_DIVISOR
+    floors to 0 but is itself floored at 1 -- both together still land on
+    exactly +1, the original flat rate, for a tribe this small. See
+    test_population_growth_scales_with_tribe_size/_is_faster_for_a_thriving_
+    tribe below for the new behavior at real scale."""
     from backend import config
 
     sim = _bare_simulation()
