@@ -1488,6 +1488,39 @@ STRIKE_RAIDER_CAMP_MAX_WIN_CHANCE = 0.85
 STRIKE_RAIDER_CAMP_POPULATION_LOSS_ON_FAILURE = 1
 STRIKE_RAIDER_CAMP_LOOT_FRACTION = 0.15  # of the tribe's own food, representing recovered supplies
 
+# Explicit request: "a full population frenzy repelling all Raiders from the
+# Territory Boundary... bigger population scales up the loot and pop. gained" --
+# a proactive alternative to just waiting for _resolve_raider_attack's passive
+# defense once tribe.raiders_approaching is set. Win-chance shape mirrors
+# STRIKE_RAIDER_CAMP's own population-scaled formula (a higher base/ceiling here,
+# since "the whole population" committing is a stronger showing than an ordinary
+# strike party), not RAID's ratio-based one -- an approaching raider party has no
+# simulated population of its own to compare against, same reasoning
+# STRIKE_RAIDER_CAMP's own comment already gives.
+EXPEL_RAIDERS_BASE_WIN_CHANCE = 0.6
+EXPEL_RAIDERS_WIN_CHANCE_POPULATION_BONUS_PER_10 = 0.03
+EXPEL_RAIDERS_MAX_WIN_CHANCE = 0.9
+# On a win: new resources and people, not just recovered losses -- the raiders'
+# own plunder and stragglers, scaled by the tribe's own size the same way
+# RAID's absorbed-population and _resolve_raider_attack's raider_strength both
+# already scale with population.
+EXPEL_RAIDERS_LOOT_PER_POPULATION = 0.6
+EXPEL_RAIDERS_POPULATION_GAIN_FRACTION = 0.03
+# Explicit follow-up ("if they lose, they lose but redouble their efforts in
+# the same turn... if they have to try again, populations are lost and the
+# gains reduce"): a failed wave doesn't end the action -- anger fuels an
+# immediate retry, up to this many total waves in one action call, each still
+# a real cost (population lost, a RAID_STEAL_FRACTION-sized cut of resources)
+# so retrying is never free, and the eventual reward shrinks per wave it took.
+# Bounded rather than unbounded so a truly overwhelming raiding force (or a
+# tribe unlucky enough to keep failing) can't loop forever in one action --
+# the passive approach/defense (_advance_raider_approach) is still there as a
+# fallback if every wave here fails.
+EXPEL_RAIDERS_MAX_WAVES = 3
+EXPEL_RAIDERS_POPULATION_LOSS_PER_FAILED_WAVE = 2
+EXPEL_RAIDERS_REWARD_REDUCTION_PER_WAVE = 0.35
+EXPEL_RAIDERS_MIN_REWARD_MULTIPLIER = 0.2
+
 # A tribe can only overhear another tribe's broadcast (and therefore only converge on
 # shared vocabulary with them) within this Euclidean distance -- previously broadcasts
 # were audible map-wide regardless of distance, which gave away free information and

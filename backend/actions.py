@@ -1817,6 +1817,86 @@ def _strike_raider_camp(sim, tribe, biome, target):
     return f"the strike on the raider camp at {camp} failed -- they escaped into the wilds"
 
 
+def _expel_raiders_from_territory(sim, tribe, biome, target):
+    """A proactive, whole-tribe alternative to just waiting for
+    Simulation._resolve_raider_attack's passive defense once raiders are
+    already inbound (tribe.raiders_approaching) -- "a full population frenzy
+    repelling all Raiders from the Territory Boundary." Win chance is
+    population-scaled like STRIKE_RAIDER_CAMP's own (an approaching raider
+    party has no simulated population of its own to compare against, same
+    reasoning that function's comment already gives), just with a higher
+    base/ceiling since committing the whole population is a stronger showing
+    than an ordinary strike party.
+
+    Explicit follow-up: "if they lose, they lose but redouble their efforts in
+    the same turn... if they have to try again, populations are lost and the
+    gains reduce." A failed wave doesn't end the action outright -- anger
+    fuels an immediate retry, up to config.EXPEL_RAIDERS_MAX_WAVES total in
+    this one call, each wave still a real cost (population lost, a
+    RAID_STEAL_FRACTION-sized cut of resources, same shape RAID's own failure
+    branch uses) so retrying is never free, and the eventual reward shrinks
+    each wave it took to actually win. Bounded rather than unbounded so an
+    overwhelming force can't loop forever in one action -- if every wave here
+    fails (or the tribe goes extinct partway through), tribe.raiders_approaching
+    is left exactly as it was, falling back to the existing passive countdown/
+    defense rather than inventing a second failure outcome for the same
+    threat.
+
+    A win doesn't just clear the threat -- the raiders are "cast elsewhere on
+    the map," reusing the exact relocate-after-ambush mechanic an expedition's
+    own raider encounter already has (Simulation._relocate_raider_sighting_
+    after_ambush), so they become a real, later-strikeable STRIKE_RAIDER_CAMP
+    target instead of vanishing without a trace."""
+    approach = tribe.raiders_approaching
+    if approach is None:
+        return "no raiders are currently approaching the territory to expel"
+
+    ax, ay = approach["x"], approach["y"]
+    reward_multiplier = 1.0
+    for wave in range(1, config.EXPEL_RAIDERS_MAX_WAVES + 1):
+        win_chance = min(
+            config.EXPEL_RAIDERS_MAX_WIN_CHANCE,
+            config.EXPEL_RAIDERS_BASE_WIN_CHANCE
+            + (tribe.population // 10) * config.EXPEL_RAIDERS_WIN_CHANCE_POPULATION_BONUS_PER_10,
+        )
+        if random.random() < win_chance:
+            tribe.raiders_approaching = None
+            gained_food = max(1, round(tribe.population * config.EXPEL_RAIDERS_LOOT_PER_POPULATION * reward_multiplier))
+            gained_population = max(1, round(tribe.population * config.EXPEL_RAIDERS_POPULATION_GAIN_FRACTION * reward_multiplier))
+            tribe.food += gained_food
+            tribe.population += gained_population
+            tribe.max_population = max(tribe.max_population, tribe.population)
+            sim._relocate_raider_sighting_after_ambush(tribe, ax, ay)
+            sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
+            sim.recent_encounters.append({
+                "x": ax, "y": ay, "kind": "raider_attack",
+                "label": "Raiders expelled", "outcome": "repelled",
+            })
+            _record_combat(tribe, "Expel Raiders", "won")
+            wave_note = "" if wave == 1 else f" after {wave} furious waves of resistance"
+            return (
+                f"the tribe rises as one and drives the raiders from the territory boundary{wave_note} -- "
+                f"{gained_food} food seized and {gained_population} routed raiders join the tribe"
+            )
+
+        sim._lose_population(tribe, config.EXPEL_RAIDERS_POPULATION_LOSS_PER_FAILED_WAVE, cause="expel_raiders_failed")
+        _record_combat(tribe, "Expel Raiders", "lost")
+        if tribe.extinct:
+            return "the frenzied defense collapses entirely -- nothing left to expel with"
+        for resource in ("wood", "stone", "food"):
+            stolen = round(getattr(tribe, resource) * config.RAID_STEAL_FRACTION)
+            setattr(tribe, resource, getattr(tribe, resource) - stolen)
+        sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
+        reward_multiplier = max(
+            config.EXPEL_RAIDERS_MIN_REWARD_MULTIPLIER, reward_multiplier - config.EXPEL_RAIDERS_REWARD_REDUCTION_PER_WAVE
+        )
+
+    return (
+        f"wave after wave, the frenzy can't break them after {config.EXPEL_RAIDERS_MAX_WAVES} attempts -- "
+        "battered, the tribe falls back to defend the camp instead"
+    )
+
+
 def _record_trade(tribe, resource: str, given: int = 0, received: int = 0) -> None:
     """Shared by every trade path (_execute_trade, _trade_with_minor_settlement)
     -- explicit request: sidebar boxes for "an elastic and running total of
@@ -2116,6 +2196,7 @@ ACTION_REGISTRY = {
     "BREED": _breed,
     "RAID": _raid,
     "STRIKE_RAIDER_CAMP": _strike_raider_camp,
+    "EXPEL_RAIDERS_FROM_TERRITORY": _expel_raiders_from_territory,
     "TRADE": _trade,
     "DECLARE_ALLIANCE": _declare_alliance,
     "DECLARE_WAR": _declare_war,
@@ -2176,6 +2257,7 @@ ACTION_DESCRIPTIONS = {
     "BREED": "Your chief and whoever currently holds a trophy start a family together, costing food and water and growing your population by one child if it succeeds. Does nothing if fewer than two named individuals (a chief plus at least one trophy-holder) exist yet, or if food/water can't cover the cost.",
     "RAID": "Attempt to raid a rival tribe if one is near target_vector. A win steals some of their stockpile but still costs you people; a loss costs you more. An unaffiliated minor settlement near target_vector is a much safer alternative -- no people of its own, so a raid there always succeeds with no risk, though it can only be raided a few times before it's exhausted and needs time to recover. Does nothing if neither is there.",
     "STRIKE_RAIDER_CAMP": "Attack a raider camp your scouts have already found (see your raider sighting reports) -- only possible once you know where one is. Success destroys it and recovers some food; failure costs a life and leaves the camp standing.",
+    "EXPEL_RAIDERS_FROM_TERRITORY": "Turn the whole population out to drive off raiders currently approaching (only possible while raiders are actually inbound). A win seizes real plunder and wins over stragglers, scaled by your own population -- and the raiders are cast off elsewhere, not gone for good. A loss costs people and supplies, but doesn't end the fight: anger fuels an immediate second and third wave in the same breath, each cheaper in reward and costlier in lives than the last.",
     "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. An unaffiliated minor settlement near target_vector can also be traded with -- smaller and one-sided (nothing is given up), but it never depletes the way raiding one does. Does nothing if neither is there.",
     "DECLARE_ALLIANCE": "Declare a lasting alliance with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember, not a one-time exchange. Also ends a war you'd previously declared with that same rival. Does nothing if no rival tribe exists.",
     "DECLARE_WAR": "Declare a lasting state of war with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember. Does not attack them directly (see RAID for that); this only sets how the two tribes now stand. Does nothing if no rival tribe exists, or if already at war with them.",

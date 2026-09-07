@@ -3084,6 +3084,152 @@ def test_strike_raider_camp_unlocked_only_from_tribal_synapse():
     assert "STRIKE_RAIDER_CAMP" in unlocked_actions_through("tribal_synapse")
 
 
+def test_expel_raiders_fails_with_no_raiders_currently_approaching():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.raiders_approaching = None
+
+    note = ACTION_REGISTRY["EXPEL_RAIDERS_FROM_TERRITORY"](sim, tribe, "plains", (60, 60))
+
+    assert "no raiders" in note
+
+
+def test_expel_raiders_success_clears_approach_and_grants_loot_and_population():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.raiders_approaching = {"start_x": 58, "start_y": 50, "x": 58, "y": 50, "cycles_left": 5, "total_cycles": 8}
+    tribe.population = 100
+    tribe.food = 50
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # forces a win on the first wave
+        note = ACTION_REGISTRY["EXPEL_RAIDERS_FROM_TERRITORY"](sim, tribe, "plains", (0, 0))
+
+    assert "drives the raiders from the territory boundary" in note
+    assert tribe.raiders_approaching is None
+    assert tribe.food > 50
+    assert tribe.population > 100
+    assert "PRIDE" in sim.trauma.bias_string(50, 50)
+
+
+def test_expel_raiders_win_cast_elsewhere_creates_a_new_strikeable_sighting():
+    """Explicit request: raiders routed here are "cast elsewhere on the map,"
+    not just gone -- reuses the same relocate-after-ambush mechanic an
+    expedition's own raider encounter already has, so STRIKE_RAIDER_CAMP can
+    follow up on them later."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.raiders_approaching = {"start_x": 58, "start_y": 50, "x": 58, "y": 50, "cycles_left": 5, "total_cycles": 8}
+    tribe.population = 100
+    tribe.raider_sightings = []
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        ACTION_REGISTRY["EXPEL_RAIDERS_FROM_TERRITORY"](sim, tribe, "plains", (0, 0))
+
+    assert (58, 50) not in tribe.raider_sightings  # the old spot itself isn't the new camp
+    assert len(tribe.raider_sightings) == 1  # relocated nearby instead of vanishing
+
+
+def test_expel_raiders_failed_wave_costs_population_and_resources_but_leaves_approach_intact():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.raiders_approaching = {"start_x": 58, "start_y": 50, "x": 58, "y": 50, "cycles_left": 5, "total_cycles": 8}
+    tribe.population = 100
+    tribe.wood = 100
+
+    with mock.patch("backend.actions.random.random", return_value=0.999):  # forces every wave to fail
+        note = ACTION_REGISTRY["EXPEL_RAIDERS_FROM_TERRITORY"](sim, tribe, "plains", (0, 0))
+
+    assert "can't break them" in note
+    assert tribe.population < 100
+    assert tribe.wood < 100
+    # Every wave failed -- falls back to the existing passive approach/defense
+    # rather than inventing a second failure outcome for the same threat.
+    assert tribe.raiders_approaching is not None
+
+
+def test_expel_raiders_retries_immediately_on_a_failed_wave_with_reduced_eventual_reward():
+    """Explicit request: "if they lose, they lose but redouble their efforts in
+    the same turn... if they have to try again, populations are lost and the
+    gains reduce." A single action call keeps fighting through failed waves
+    instead of stopping at the first loss, and the eventual reward shrinks the
+    more waves it took."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.raiders_approaching = {"start_x": 58, "start_y": 50, "x": 58, "y": 50, "cycles_left": 5, "total_cycles": 8}
+    tribe.population = 200  # plenty of buffer to survive a couple of failed waves
+    tribe.food = 50
+
+    # Fails wave 1 (a roll of 0.9 clears no plausible win chance), then wins wave 2.
+    rolls = iter([0.9, 0.0])
+    with mock.patch("backend.actions.random.random", side_effect=lambda: next(rolls)):
+        note = ACTION_REGISTRY["EXPEL_RAIDERS_FROM_TERRITORY"](sim, tribe, "plains", (0, 0))
+
+    assert "after 2 furious waves of resistance" in note
+    assert tribe.raiders_approaching is None
+    # Reward reflects EXPEL_RAIDERS_REWARD_REDUCTION_PER_WAVE having reduced the
+    # multiplier once (one failed wave) before the win on wave 2.
+    reduced_multiplier = 1.0 - config.EXPEL_RAIDERS_REWARD_REDUCTION_PER_WAVE
+    population_after_loss = 200 - config.EXPEL_RAIDERS_POPULATION_LOSS_PER_FAILED_WAVE
+    expected_gain = max(1, round(population_after_loss * config.EXPEL_RAIDERS_POPULATION_GAIN_FRACTION * reduced_multiplier))
+    assert tribe.population == population_after_loss + expected_gain
+
+
+def test_expel_raiders_win_chance_scales_with_population():
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    low = Tribe("tribe_0", "Small Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    low.raiders_approaching = {"start_x": 58, "start_y": 50, "x": 58, "y": 50, "cycles_left": 5, "total_cycles": 8}
+    low.population = 8  # below the population//10 bonus threshold, but survives 3 failed waves
+    high = Tribe("tribe_1", "Big Tribe", "gemma2:2b", 50, 50, "#f97316")
+    high.raiders_approaching = {"start_x": 58, "start_y": 50, "x": 58, "y": 50, "cycles_left": 5, "total_cycles": 8}
+    high.population = 500  # capped at EXPEL_RAIDERS_MAX_WIN_CHANCE
+
+    # A roll that clears the capped high-population chance but not the low one
+    # on any single wave (every wave uses the same population-derived chance).
+    roll = config.EXPEL_RAIDERS_MAX_WIN_CHANCE - 0.001
+    with mock.patch("backend.actions.random.random", return_value=roll):
+        low_note = ACTION_REGISTRY["EXPEL_RAIDERS_FROM_TERRITORY"](sim, low, "plains", (0, 0))
+        high_note = ACTION_REGISTRY["EXPEL_RAIDERS_FROM_TERRITORY"](sim, high, "plains", (0, 0))
+
+    assert "can't break them" in low_note
+    assert "drives the raiders" in high_note
+
+
+def test_expel_raiders_extinction_mid_frenzy_ends_the_action_cleanly():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.raiders_approaching = {"start_x": 58, "start_y": 50, "x": 58, "y": 50, "cycles_left": 5, "total_cycles": 8}
+    tribe.population = 1  # a single failed wave wipes this tribe out
+
+    with mock.patch("backend.actions.random.random", return_value=0.999):  # forces a loss
+        note = ACTION_REGISTRY["EXPEL_RAIDERS_FROM_TERRITORY"](sim, tribe, "plains", (0, 0))
+
+    assert "collapses entirely" in note
+    assert tribe.extinct is True
+
+
+def test_expel_raiders_unlocked_only_from_tribal_synapse():
+    from backend.eras import unlocked_actions_through
+
+    assert "EXPEL_RAIDERS_FROM_TERRITORY" not in unlocked_actions_through("primitive_dawn")
+    assert "EXPEL_RAIDERS_FROM_TERRITORY" in unlocked_actions_through("tribal_synapse")
+
+
 def test_cook_food_unlocked_from_primitive_dawn():
     """Explicit request: "this can happen early." COOK_FOOD is no longer gated to a
     later era at all -- its real prerequisites (a proven hunt and a proven fire) are
