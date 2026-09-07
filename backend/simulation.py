@@ -91,8 +91,16 @@ from .world import (
 # against the new slot 0/1 positions is tighter than the original four-corner
 # layout, a direct result of pulling 0/1 toward the coast, but all four remain
 # distinct, non-clustered starting points.
-SPAWN_POINTS = [(67, 31), (64, 70), (50, 55), (40, 37)]
+SPAWN_POINTS = [(72, 17), (54, 70), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
+# Design intent, not just "whichever body is closest": Tribe 1 settles the
+# river, Tribe 2 the lake -- each gets a distinct natural-barrier wall ring
+# (city_layout._is_natural_barrier) against a different water feature instead
+# of two tribes converging on the same one. Passed to Tribe.
+# seed_scout_heading_toward_water per spawn slot (Simulation.__init__); slots
+# 2/3 have no assigned preference yet (untouched 3rd/4th-tribe fallback), so
+# they keep searching for either.
+SPAWN_WATER_TARGET_KINDS = [("river",), ("lake",)]
 
 # See _prepare_turn's own use of this -- every one-time structure with a single
 # boolean "already built" flag is retired from a tribe's available_actions the
@@ -698,16 +706,18 @@ class Tribe:
         except ValueError:
             tribe_index = 0
         stagger = tribe_index * config.SCOUT_ROTATION_TRIBE_STAGGER_STEPS
-        # Explicit request ("make the Scout from Tribe 2 go West first"): SPAWN_
-        # POINTS[1] sits east of every water body on the map (see that constant's
-        # own comment), so the generic stagger formula's angle for tribe_index=1
-        # (135 + 12*7 = 219 degrees, northwest-ish) isn't the useful direction here
-        # -- override just this one slot's starting index to 4 (135 + 12*4 = 183
-        # degrees, squarely in _compass_direction's "west" bucket) so its opening
-        # SCOUT heads toward where the water actually is instead of away from it.
-        # Every other tribe keeps the generic formula.
-        if tribe_index == 1:
-            stagger = 4
+        # A per-tribe hardcoded override used to live here ("make the Scout from
+        # Tribe 2 go West first"), pointing spawn slot 1's opening heading at a
+        # fixed compass direction on the theory that water always sits west of
+        # it. That's a fact about one specific map layout baked into code --
+        # live testing while retuning SPAWN_POINTS showed Tribe 2's scout
+        # reliably NOT finding water that way while Tribe 1's generic-formula
+        # heading did, every single run. seed_scout_heading_toward_water below
+        # replaces it with a real per-run lookup (Landscape.nearest_water) once
+        # a world exists to ask, so this stays correct across spawn-point
+        # changes instead of silently going stale again. The generic formula
+        # above is still the fallback for construction without a world (most
+        # of this project's own tests build a bare Tribe directly).
         self.scout_rotation_index = stagger
         # See actions.py._exploration_party -- its own separate rotating heading
         # (offset from SCOUT's own sweep) so the two don't retrace each other's
@@ -981,6 +991,43 @@ class Tribe:
         # needs a world.constructions lookup only Simulation has access to.
         self.wellbeing: dict = {}
 
+    def seed_scout_heading_toward_water(self, world, kinds=("river", "lake")) -> None:
+        """Replaces the generic tribe_index*stagger guess (set in __init__) with
+        a heading aimed at this tribe's own real nearest fresh water, once a
+        world actually exists to ask (Simulation.__init__, right after spawning
+        each tribe -- never called by the many tests that build a bare Tribe with
+        no world at all, which is exactly why __init__ still needs its own
+        formula-only fallback). Reuses Landscape.nearest_water the same one-time,
+        whole-grid way leadership election already does for its water_needed
+        fact -- cheap on a 100x100 grid, and legitimate here for the same reason:
+        aiming a search, not handing over the water's coordinates outright the
+        way the old leadership fact used to.
+
+        `kinds` narrows which water this tribe should actually aim for --
+        Simulation.__init__ passes a single kind per spawn slot (design intent:
+        Tribe 1 settles the river, Tribe 2 the lake) rather than "whichever body
+        is closest," so two tribes near the same stretch of coastline don't both
+        make for the same one. Defaults to either, for any slot with no assigned
+        preference.
+
+        Snaps the real angle to the nearest step on SCOUT's own rotation grid
+        (SCOUT_ROTATION_START_ANGLE_DEGREES + STEP*index) rather than using the
+        raw angle directly, so every later dispatch's sweep (scout_rotation_index
+        += 1 per real dispatch) still lands on the same fixed set of headings
+        this tribe would otherwise have used -- only the starting point changes,
+        not the rest of the rotation's shape."""
+        water = world.nearest_water(self.x, self.y, kinds=kinds)
+        if water is None or tuple(water) == (self.x, self.y):
+            return  # nothing to aim at, or already standing on it -- leave the generic stagger
+        wx, wy = water
+        angle_degrees = math.degrees(math.atan2(wy - self.y, wx - self.x)) % 360
+        steps_per_full_rotation = round(360 / config.SCOUT_ROTATION_STEP_DEGREES)
+        step = round(
+            (angle_degrees - config.SCOUT_ROTATION_START_ANGLE_DEGREES) / config.SCOUT_ROTATION_STEP_DEGREES
+        ) % steps_per_full_rotation
+        self.scout_rotation_index = step
+        self.explore_rotation_index = step
+
     def to_dict(self) -> dict:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
         survival_warning, _ = survival_bias_string(
@@ -1163,6 +1210,10 @@ class Simulation:
                 x, y = SPAWN_POINTS[i % len(SPAWN_POINTS)]
             tid = f"tribe_{i}"
             self.tribes[tid] = Tribe(tid, cfg["name"], cfg["model"], x, y, COLORS[i % len(COLORS)], self.event_log)
+            if i < len(SPAWN_WATER_TARGET_KINDS):
+                self.tribes[tid].seed_scout_heading_toward_water(self.world, kinds=SPAWN_WATER_TARGET_KINDS[i])
+            else:
+                self.tribes[tid].seed_scout_heading_toward_water(self.world)
         # Neutral, non-AI raid/trade targets (backend/actions.py._raid/_trade) --
         # see config.MINOR_SETTLEMENT_COUNT's own comment for the full design note.
         self.minor_settlements: list[dict] = []
@@ -1558,6 +1609,10 @@ class Simulation:
             x, y = SPAWN_POINTS[index % len(SPAWN_POINTS)]
         color = COLORS[index % len(COLORS)]
         tribe = Tribe(tid, name, model, x, y, color, self.event_log)
+        if index < len(SPAWN_WATER_TARGET_KINDS):
+            tribe.seed_scout_heading_toward_water(self.world, kinds=SPAWN_WATER_TARGET_KINDS[index])
+        else:
+            tribe.seed_scout_heading_toward_water(self.world)
 
         guard = HardwareVRAMBoundaryGuard(self.client.base_url, config.VRAM_LIMIT_GB)
         ok, warning = await guard.verify_vram_safety_margin(model)

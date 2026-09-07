@@ -1,3 +1,4 @@
+import math
 from unittest import mock
 
 from backend.actions import GAME_SPECIES_BY_BIOME
@@ -3871,6 +3872,68 @@ def test_every_spawn_point_is_within_a_single_expeditions_reach_of_water():
         nx, ny = land.nearest_water(x, y, kinds=("river", "lake"))
         dist = ((nx - x) ** 2 + (ny - y) ** 2) ** 0.5
         assert dist <= max_reach, f"({x},{y}) is {dist:.1f} tiles from water, beyond a {max_reach}-tile expedition"
+
+
+def test_seed_scout_heading_toward_water_honors_the_requested_kind():
+    """Regression test: Tribe.__init__ used to hardcode spawn slot 1's opening
+    heading at a fixed compass direction ("make the Scout from Tribe 2 go West
+    first"), on the assumption that water always sits west of that one spawn
+    point. Live testing while retuning SPAWN_POINTS showed Tribe 2's scout
+    reliably missing water that way while Tribe 1's generic-formula heading
+    found it, every run -- the hardcoded fact had gone stale. This checks the
+    real mechanism against real map geometry instead of a snapshot of today's
+    coordinates, so it can't go stale the same way: the resulting
+    scout_rotation_index must land on whatever step actually points toward the
+    requested water kind, recomputed here rather than hardcoded.
+
+    (44, 60) is deliberately a point where a lake is genuinely closer than any
+    river (real map geometry) -- if `kinds` weren't actually filtering (i.e.
+    this silently fell back to "closest water of any kind"), asking for the
+    river here would still return the lake's own heading instead."""
+    from backend import config
+    from backend.world import Landscape
+
+    land = Landscape(100)
+    x, y = 44, 60
+    nearest_lake = land.nearest_water(x, y, kinds=("lake",))
+    nearest_river = land.nearest_water(x, y, kinds=("river",))
+    assert nearest_lake != nearest_river  # otherwise this point can't tell `kinds` apart
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", x, y, "#c084fc")
+    tribe.seed_scout_heading_toward_water(land, kinds=("river",))
+
+    rx, ry = nearest_river
+    expected_angle = math.degrees(math.atan2(ry - y, rx - x)) % 360
+    steps_per_rotation = round(360 / config.SCOUT_ROTATION_STEP_DEGREES)
+    expected_step = round(
+        (expected_angle - config.SCOUT_ROTATION_START_ANGLE_DEGREES) / config.SCOUT_ROTATION_STEP_DEGREES
+    ) % steps_per_rotation
+    assert tribe.scout_rotation_index == expected_step
+    assert tribe.explore_rotation_index == expected_step
+
+
+def test_simulation_init_points_tribe_1_at_the_river_and_tribe_2_at_the_lake():
+    """Design intent (see SPAWN_WATER_TARGET_KINDS): Tribe 1 settles the river,
+    Tribe 2 the lake -- each gets its own natural-barrier wall ring instead of
+    both converging on the same water. Reads each tribe's actual spawn (x, y)
+    back off the constructed Simulation rather than hardcoding SPAWN_POINTS
+    values, so this stays valid across further spawn-point retuning."""
+    from backend import config
+    from backend.simulation import SPAWN_WATER_TARGET_KINDS
+    from backend.world import Landscape
+
+    sim = Simulation([{"name": "Tribe 1", "model": "gemma2:2b"}, {"name": "Tribe 2", "model": "gemma2:2b"}])
+    land = Landscape(100)
+
+    for i, kind in enumerate(SPAWN_WATER_TARGET_KINDS[:2]):
+        tribe = sim.tribes[f"tribe_{i}"]
+        wx, wy = land.nearest_water(tribe.x, tribe.y, kinds=kind)
+        expected_angle = math.degrees(math.atan2(wy - tribe.y, wx - tribe.x)) % 360
+        steps_per_rotation = round(360 / config.SCOUT_ROTATION_STEP_DEGREES)
+        expected_step = round(
+            (expected_angle - config.SCOUT_ROTATION_START_ANGLE_DEGREES) / config.SCOUT_ROTATION_STEP_DEGREES
+        ) % steps_per_rotation
+        assert tribe.scout_rotation_index == expected_step
 
 
 def test_water_bringer_trophy_is_awarded_to_the_current_chief_on_reaching_river():

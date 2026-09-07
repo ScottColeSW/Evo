@@ -2488,13 +2488,13 @@ def test_second_tribes_opening_scout_heads_a_different_way_than_the_first():
     heading_0 = _compass_direction(target_0[0] - 50, target_0[1] - 50)
     heading_1 = _compass_direction(target_1[0] - 50, target_1[1] - 50)
     assert heading_0 != heading_1
-    # tribe_1 (spawn slot 1, "Tribe 2") gets a special-cased starting stagger of 4
-    # instead of the generic tribe_index*SCOUT_ROTATION_TRIBE_STAGGER_STEPS -- see
-    # Tribe.__init__'s own comment ("make the Scout from Tribe 2 go West first"):
-    # that spawn sits east of every water body on the map, so its generic
-    # northwest-ish opening heading wasn't useful. +1: _scout advances the index
-    # by one step after every real dispatch.
-    assert tribe_1.scout_rotation_index == 4 + 1
+    # A bare Tribe() (no Simulation, no world -- as here) only ever gets the
+    # generic tribe_index*SCOUT_ROTATION_TRIBE_STAGGER_STEPS formula; the
+    # water-aware override (Tribe.seed_scout_heading_toward_water, called by
+    # Simulation.__init__ once a world exists to ask) is covered separately in
+    # test_simulation.py. +1: _scout advances the index by one step after
+    # every real dispatch.
+    assert tribe_1.scout_rotation_index == config.SCOUT_ROTATION_TRIBE_STAGGER_STEPS + 1
 
 
 def test_scout_rotation_ignores_target_vector_entirely():
