@@ -44,12 +44,14 @@ def test_population_and_resource_requirements_never_decrease_up_the_ladder():
         assert current.requires_population >= previous.requires_population
 
 
-def test_final_era_sits_at_the_population_ceiling():
-    # config.POPULATION_GROWTH_CAP is infinite now (explicit request: "we should
-    # not put a cap on population"), so this is just the same real, concrete
-    # 80-population threshold every top-tier era has used historically, not an
-    # enforced hard cap.
-    assert ERAS[-1].requires_population == 80
+def test_final_era_sits_at_a_real_concrete_population_threshold():
+    # config.POPULATION_GROWTH_CAP is infinite (explicit request: "we should not
+    # put a cap on population"), so this is a real, concrete threshold, not an
+    # enforced hard cap. Raised 80 -> 1500 (2026-09-07, "much bigger populations
+    # going to war"), reachable in practice now that population growth itself
+    # scales with tribe size and Well-Being instead of a flat +1/cycle -- see
+    # config.POPULATION_GROWTH_SCALE_DIVISOR's own comment.
+    assert ERAS[-1].requires_population == 1500
 
 
 def test_object_creator_and_war_domination_eras_replaced_the_old_empty_slots():

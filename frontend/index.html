@@ -647,8 +647,12 @@ function renderEraLadder(state) {
   ladder.innerHTML = rows.map(t => {
     const popDone = t.population >= t.next_era.requires_population;
     const popLine = `Pop ${t.population}/${t.next_era.requires_population}${popDone ? " ✓" : ""}`;
+    // Same core-attribute-vs-unique_resources split as backend/simulation.py's
+    // _era_resource_amount -- wood/stone/water/food are real top-level fields,
+    // but a named resource like "Fur" only ever lives in t.unique_resources, so
+    // t[res] alone would silently always read 0 for those.
     const resourceLines = Object.entries(t.next_era.requires_resources).map(([res, need]) => {
-      const have = t[res] ?? 0;
+      const have = (res in t) ? t[res] : (t.unique_resources || {})[res] ?? 0;
       const done = have >= need;
       return `${RESOURCE_ICON[res] || res} ${have}/${need}${done ? " ✓" : ""}`;
     });

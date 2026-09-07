@@ -117,7 +117,12 @@ ERAS: tuple[Era, ...] = (
     Era(
         key="tribal_synapse",
         label="Tribal Synapse",
-        requires_population=20,
+        # Explicit request (2026-09-07): "much bigger populations going to war,"
+        # reachable in practice now that population growth itself scales with
+        # tribe size and Well-Being (config.POPULATION_GROWTH_SCALE_DIVISOR/
+        # _WELLBEING_FLOOR) instead of a flat +1/cycle -- raised 20 -> 50 without
+        # the real-time cost that would have meant under the old flat rate.
+        requires_population=50,
         # Wood used to be spent on advancing (advancement_cost below) without ever
         # being required beforehand -- a tribe with 0 wood could still advance, it
         # just floored at 0 instead of actually paying the cost. Real requirement now,
@@ -129,7 +134,7 @@ ERAS: tuple[Era, ...] = (
         requires_resources={"water": 40, "stone": 40, "wood": 40, "food": 40},
         advancement_cost={"wood": 30, "stone": 30, "water": 20, "food": 20},
         unlocks_actions=(
-            "CONSTRUCT_WALL", "EXPAND_TERRITORY", "STRIKE_RAIDER_CAMP",
+            "CONSTRUCT_WALL", "EXPAND_TERRITORY", "STRIKE_RAIDER_CAMP", "EXPEL_RAIDERS_FROM_TERRITORY",
             "BUILD_LONG_HOUSE", "DECLARE_ALLIANCE", "DECLARE_WAR", "BUILD_DOCK", "BUILD_FISHERY",
             "BUILD_SAWMILL", "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_MOAT", "BUILD_KEEP", "BUILD_TANNERY",
             "BUILD_WAREHOUSE", "BUILD_HATCHERY", "BUILD_BATH_HOUSE",
@@ -140,9 +145,17 @@ ERAS: tuple[Era, ...] = (
     Era(
         key="monolithic_era",
         label="Monolithic Era",
-        requires_population=40,
-        requires_resources={"water": 60, "stone": 30, "wood": 50},
-        advancement_cost={"wood": 40, "stone": 40, "water": 40},
+        requires_population=200,  # see tribal_synapse's own comment on the 2026-09-07 rescale
+        # Fur (Tannery/Mine -- actions.py._build_tannery, world.
+        # UNIQUE_RESOURCE_BY_BIOME) is the first requires_resources entry that
+        # isn't a core Tribe attribute -- see simulation.py._era_resource_amount/
+        # _spend_era_resource, added the same pass specifically so this works
+        # (getattr/setattr alone would have silently always read/spent 0 against
+        # tribe.unique_resources). Tannery yields TANNERY_YIELD_PER_CYCLE (4)
+        # Fur/cycle once built, so 20 is a handful of cycles, not a bottleneck --
+        # population is the real pacing lever at this tier, not Fur.
+        requires_resources={"water": 65, "stone": 65, "wood": 65, "Fur": 20},
+        advancement_cost={"wood": 45, "stone": 45, "water": 45, "Fur": 15},
         unlocks_actions=(
             "BUILD_FORTRESS", "BUILD_CASTLE", "BUILD_ROAD", "BUILD_MINE",
             "BUILD_FORGE", "FORGE_ITEM", "USE_ITEM", "GATHER_ORE",
@@ -168,18 +181,18 @@ ERAS: tuple[Era, ...] = (
     Era(
         key="object_creator_era",
         label="Object Creator Era",
-        requires_population=60,
-        requires_resources={"water": 80, "stone": 60, "wood": 70},
-        advancement_cost={"wood": 50, "stone": 50, "water": 50},
+        requires_population=800,  # see tribal_synapse's own comment on the 2026-09-07 rescale
+        requires_resources={"water": 100, "stone": 100, "wood": 100, "Fur": 50},
+        advancement_cost={"wood": 70, "stone": 70, "water": 70, "Fur": 35},
         unlocks_actions=("BUILD_OBJECT_CREATOR", "CREATE_ITEM", "CREATE_USEFUL_STRUCTURE"),
         announcement="{tribe} enters the Object Creator Era -- they can build anything they can imagine!",
     ),
     Era(
         key="war_and_world_domination_era",
         label="War and World Domination",
-        requires_population=80,  # config.POPULATION_GROWTH_CAP -- the hard ceiling
-        requires_resources={"water": 120, "stone": 100, "wood": 110},
-        advancement_cost={"wood": 70, "stone": 70, "water": 70},
+        requires_population=1500,  # see tribal_synapse's own comment on the 2026-09-07 rescale
+        requires_resources={"water": 125, "stone": 125, "wood": 125, "Fur": 100},
+        advancement_cost={"wood": 90, "stone": 90, "water": 90, "Fur": 70},
         unlocks_actions=("DECLARE_CONQUEST",),
         announcement="{tribe} enters the age of War and World Domination!",
     ),

@@ -2357,7 +2357,7 @@ def test_era_progress_fact_names_the_specific_shortfalls():
     request, _ctx = sim._prepare_turn(tribe)
 
     assert "To reach Tribal Synapse, still short on:" in request["prompt"]
-    assert "population 15/20" in request["prompt"]
+    assert "population 15/50" in request["prompt"]
     assert "water 10/40" in request["prompt"]
     assert "wood 5/40" in request["prompt"]
     assert "stone" not in request["prompt"].split("To reach Tribal Synapse, still short on:")[1].split(".")[0]
@@ -6084,7 +6084,7 @@ def test_era_advances_once_population_and_resources_are_met():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.era = "cognitive_horizon"  # one step below tribal_synapse
-    tribe.population = 20
+    tribe.population = 50
     tribe.water = 40
     tribe.stone = 40
     tribe.wood = 50
@@ -6124,12 +6124,12 @@ def test_completed_research_discounts_the_next_eras_threshold_and_cost():
     shaves a fraction off the next era's population/resource thresholds and its
     advancement cost -- a real, compounding way research "boosts growth", not a
     flat stat bump. 5 research * 4% = 20% off cognitive_horizon -> tribal_synapse's
-    stock 20 population / 40 resources / 30-30-20-20 advancement cost."""
+    stock 50 population / 40 resources / 30-30-20-20 advancement cost."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.era = "cognitive_horizon"
     tribe.research_completed = 5  # 20% discount
-    tribe.population = 16  # below the undiscounted 20, meets the discounted 16
+    tribe.population = 40  # below the undiscounted 50, meets the discounted 40
     tribe.water = tribe.stone = tribe.wood = tribe.food = 32  # below undiscounted 40, meets discounted 32
 
     sim._advance_era_if_ready(tribe)
@@ -6153,7 +6153,7 @@ def test_research_discount_never_makes_advancement_free():
 
     assert config.INNOVATION_ERA_DISCOUNT_CAP < 1.0
     floor = 1 - config.INNOVATION_ERA_DISCOUNT_CAP
-    tribe.population = round(20 * floor)
+    tribe.population = round(50 * floor)
     tribe.water = tribe.stone = tribe.wood = tribe.food = round(40 * floor)
 
     sim._advance_era_if_ready(tribe)
@@ -6187,6 +6187,52 @@ def test_era_does_not_advance_without_meeting_resource_requirements():
     sim._advance_era_if_ready(tribe)
 
     assert tribe.era == "primitive_dawn"
+
+
+def test_era_resource_amount_reads_a_core_attribute():
+    from backend.simulation import _era_resource_amount
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 42
+
+    assert _era_resource_amount(tribe, "wood") == 42
+
+
+def test_era_resource_amount_reads_a_unique_resource():
+    """Fur (Tannery/Mine -- actions.py._build_tannery, world.
+    UNIQUE_RESOURCE_BY_BIOME) only ever lives in tribe.unique_resources, a
+    plain dict, never as a real Tribe attribute -- getattr(tribe, "Fur", 0)
+    alone would silently always read 0, which would make any era requirement
+    naming it permanently impossible to clear."""
+    from backend.simulation import _era_resource_amount
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.unique_resources["Fur"] = 15
+
+    assert _era_resource_amount(tribe, "Fur") == 15
+    assert _era_resource_amount(tribe, "Orosite Ore") == 0  # never banked any -- reads 0, not an error
+
+
+def test_spend_era_resource_floors_a_core_attribute_at_zero():
+    from backend.simulation import _spend_era_resource
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 10
+
+    _spend_era_resource(tribe, "wood", 30)
+
+    assert tribe.wood == 0
+
+
+def test_spend_era_resource_floors_a_unique_resource_at_zero():
+    from backend.simulation import _spend_era_resource
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.unique_resources["Fur"] = 5
+
+    _spend_era_resource(tribe, "Fur", 30)
+
+    assert tribe.unique_resources["Fur"] == 0
 
 
 def test_to_dict_computes_housing_capacity_from_long_houses_built():
@@ -8159,10 +8205,11 @@ def test_reaching_monolithic_era_marks_city_founding_eligible_but_not_yet_founde
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.era = "tribal_synapse"
-    tribe.population = 40
-    tribe.water = 60
-    tribe.stone = 40
-    tribe.wood = 50
+    tribe.population = 200
+    tribe.water = 65
+    tribe.stone = 65
+    tribe.wood = 65
+    tribe.unique_resources["Fur"] = 20
 
     sim._advance_era_if_ready(tribe)
 

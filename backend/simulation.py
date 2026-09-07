@@ -1649,7 +1649,7 @@ class Simulation:
             if tribe.population < nxt.requires_population:
                 gaps.append(f"population {tribe.population}/{nxt.requires_population}")
             for resource, minimum in nxt.requires_resources.items():
-                have = getattr(tribe, resource, 0)
+                have = _era_resource_amount(tribe, resource)
                 if have < minimum:
                     gaps.append(f"{resource} {have}/{minimum}")
             if gaps:
@@ -2208,7 +2208,7 @@ class Simulation:
             if tribe.population < nxt.requires_population:
                 gaps.append(f"population {tribe.population}/{nxt.requires_population}")
             for resource, minimum in nxt.requires_resources.items():
-                have = getattr(tribe, resource, 0)
+                have = _era_resource_amount(tribe, resource)
                 if have < minimum:
                     gaps.append(f"{resource} {have}/{minimum}")
             if gaps:
@@ -4831,12 +4831,12 @@ class Simulation:
         if tribe.population < round(nxt.requires_population * (1 - discount)):
             return
         for resource, minimum in nxt.requires_resources.items():
-            if getattr(tribe, resource, 0) < round(minimum * (1 - discount)):
+            if _era_resource_amount(tribe, resource) < round(minimum * (1 - discount)):
                 return
 
         for resource, amount in nxt.advancement_cost.items():
             discounted = round(amount * (1 - discount))
-            setattr(tribe, resource, max(0, getattr(tribe, resource) - discounted))
+            _spend_era_resource(tribe, resource, discounted)
         tribe.era = nxt.key
         tribe.history.append(nxt.announcement.format(tribe=tribe.name))
         if nxt.founds_city:
