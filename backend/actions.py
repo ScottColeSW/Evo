@@ -1651,13 +1651,26 @@ def _raid_minor_settlement(sim, tribe, settlement):
     advanced logic like battle... stealing only.' A raid here always succeeds, at
     no population risk, unlike raiding a real rival tribe. Only 3 uses
     (config.MINOR_SETTLEMENT_MAX_RAIDS) before it's exhausted and needs to
-    respawn (Simulation._advance_minor_settlements)."""
+    respawn (Simulation._advance_minor_settlements).
+
+    Live-bug-adjacent finding, not yet confirmed to have fired in a real run
+    but a real structural risk: a settlement respawns holding an exact copy of
+    whichever tribe currently has the highest population (Simulation.
+    _biggest_tribe_snapshot). If the biggest tribe is the one doing the
+    raiding, it's raiding a mirror of its own stockpile -- and this addition
+    used to setattr the stolen amount directly, bypassing the storage cap, the
+    same gap Simulation._resolve_raider_attack's own fix just closed. Capped
+    here the same way: the settlement still loses the full stolen amount (a
+    real, permanent loss toward its own depletion), but only what actually
+    fits under the tribe's own _storage_cap lands in its stockpile."""
     looted = {}
     for resource in ("wood", "stone", "food", "water"):
         stolen = round(settlement[resource] * config.MINOR_SETTLEMENT_RAID_STEAL_FRACTION)
         settlement[resource] -= stolen
-        setattr(tribe, resource, getattr(tribe, resource) + stolen)
-        looted[resource] = stolen
+        current = getattr(tribe, resource)
+        gained = max(0, min(stolen, _storage_cap(tribe) - current))
+        setattr(tribe, resource, current + gained)
+        looted[resource] = gained
     settlement["raids_remaining"] -= 1
     if settlement["raids_remaining"] <= 0:
         settlement["depleted_at_cycle"] = sim.cycle
@@ -2016,14 +2029,22 @@ def _trade_with_minor_settlement(sim, tribe, settlement):
     occurrence.' Smaller and safer than a raid (MINOR_SETTLEMENT_TRADE_FRACTION <<
     MINOR_SETTLEMENT_RAID_STEAL_FRACTION) and doesn't touch raids_remaining -- there's
     no one on the other side to actually negotiate with or give anything back, so
-    this is a one-way, guaranteed-safe take, not a real two-way exchange."""
+    this is a one-way, guaranteed-safe take, not a real two-way exchange.
+
+    Same storage-cap fix as _raid_minor_settlement's own -- a settlement is
+    seeded from whichever tribe is currently biggest (Simulation.
+    _biggest_tribe_snapshot), and since this never depletes the way raiding
+    does, it's a repeatable enough channel that the receiving side's own
+    _storage_cap must actually hold."""
     gained = {}
     for resource in ("wood", "stone", "food", "water"):
         taken = round(settlement[resource] * config.MINOR_SETTLEMENT_TRADE_FRACTION)
         settlement[resource] -= taken
-        setattr(tribe, resource, getattr(tribe, resource) + taken)
-        gained[resource] = taken
-        _record_trade(tribe, resource, received=taken)  # one-way -- nothing given up
+        current = getattr(tribe, resource)
+        received = max(0, min(taken, _storage_cap(tribe) - current))
+        setattr(tribe, resource, current + received)
+        gained[resource] = received
+        _record_trade(tribe, resource, received=received)  # one-way -- nothing given up
     tribe.trades_completed += 1
     if tribe.trades_completed == 1:
         sim._award_trophy(tribe, "First Contact")

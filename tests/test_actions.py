@@ -2790,6 +2790,32 @@ def test_raid_always_succeeds_against_a_nearby_minor_settlement():
     assert "raided an outlying settlement" in result
 
 
+def test_raid_minor_settlement_loot_is_capped_by_storage():
+    """A settlement respawns holding an exact copy of whichever tribe is
+    currently biggest (Simulation._biggest_tribe_snapshot) -- if that's the
+    tribe doing the raiding, it's raiding a mirror of its own stockpile. This
+    used to setattr the stolen amount directly, bypassing the storage cap, the
+    same gap Simulation._resolve_raider_attack's own fix closed. The
+    settlement should still lose the full stolen amount (a real, permanent
+    loss toward its own depletion) even though the tribe itself can't exceed
+    its cap."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.wood = config.STORAGE_CAP_BASE  # already at the cap
+    settlement = _minor_settlement(x=10, y=10)
+    settlement["wood"] = 100000  # mirrors an enormous "biggest tribe" stockpile
+    sim.minor_settlements = [settlement]
+
+    ACTION_REGISTRY["RAID"](sim, tribe, "plains", (10, 10))
+
+    assert tribe.wood == config.STORAGE_CAP_BASE
+    stolen = round(100000 * config.MINOR_SETTLEMENT_RAID_STEAL_FRACTION)
+    assert settlement["wood"] == 100000 - stolen  # settlement's own loss is unaffected
+
+
 def test_minor_settlement_is_depleted_after_max_raids_and_stops_being_a_target():
     from backend import config
 
@@ -2807,6 +2833,27 @@ def test_minor_settlement_is_depleted_after_max_raids_and_stops_being_a_target()
     # Depleted -- no longer found as a raid target until it respawns.
     note = ACTION_REGISTRY["RAID"](sim, tribe, "plains", (10, 10))
     assert "no rival" in note
+
+
+def test_trade_with_minor_settlement_gain_is_capped_by_storage():
+    """Same fix as _raid_minor_settlement's own -- this repeatable, never-
+    depleting channel used to setattr the gained amount directly, bypassing
+    the storage cap."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.wood = config.STORAGE_CAP_BASE
+    settlement = _minor_settlement(x=10, y=10)
+    settlement["wood"] = 100000
+    sim.minor_settlements = [settlement]
+
+    ACTION_REGISTRY["TRADE"](sim, tribe, "plains", (10, 10))
+
+    assert tribe.wood == config.STORAGE_CAP_BASE
+    taken = round(100000 * config.MINOR_SETTLEMENT_TRADE_FRACTION)
+    assert settlement["wood"] == 100000 - taken
 
 
 def test_trade_with_a_minor_settlement_is_smaller_and_does_not_deplete_it():
