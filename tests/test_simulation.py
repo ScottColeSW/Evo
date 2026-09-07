@@ -3762,6 +3762,28 @@ def test_expedition_records_every_tile_it_walks_as_a_breadcrumb_path():
     assert tribe.expeditions[0]["path"][-1] == tribe.expeditions[0]["pos"]
 
 
+def test_expedition_path_stops_growing_past_the_configured_cap():
+    """Explicit request: "we need to ensure we are not overloading the browser,
+    are being efficient with communications." exp["path"] is a pure
+    visualization breadcrumb (backend logic reads terrain_checkpoints/target,
+    never this) that used to grow by one point every single cycle an
+    expedition was out, forever -- resent over the websocket and stored in
+    board_history.db in full, every tick, for the party's entire remaining
+    lifetime. Now capped at config.EXPEDITION_PATH_MAX_POINTS: simply stops
+    recording new points past the cap (not a sliding FIFO window), so the
+    frontend's incremental Path2D cache (path.length grew by exactly one)
+    never sees a reason to fall back to a full rebuild."""
+    from backend import config
+    from backend.simulation import _append_expedition_path_point
+
+    exp = {"path": [[0, 0]]}
+    for i in range(1, config.EXPEDITION_PATH_MAX_POINTS + 20):
+        _append_expedition_path_point(exp, i, i)
+
+    assert len(exp["path"]) == config.EXPEDITION_PATH_MAX_POINTS
+    assert exp["path"][-1] == [config.EXPEDITION_PATH_MAX_POINTS - 1, config.EXPEDITION_PATH_MAX_POINTS - 1]
+
+
 def test_expedition_wears_a_trail_on_the_tile_it_moves_into():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
@@ -3778,6 +3800,54 @@ def test_expedition_wears_a_trail_on_the_tile_it_moves_into():
     landed = tuple(tribe.expeditions[0]["pos"])
     assert sim.world.trails.get(landed)["wear"] == config.TRAIL_WEAR_PER_PASS
     assert sim.world.trails.get(landed)["color"] == tribe.color
+
+
+def test_wear_trail_for_expedition_does_not_double_count_a_tile_it_already_crossed():
+    """Explicit correction: "they do not get more than 1 wear per move on
+    their way, if they double back, it does not count as another wearing
+    down." World.wear_trail's own `crossings` counter increments once per
+    call with no dedup at all -- fine for a genuinely different traveler,
+    wrong for the same expedition re-crossing its own earlier ground (a
+    boxed-in bounce, or a pushed-onward leg that retraces itself). Without
+    this, one expedition's own back-and-forth could rack up crossings fast
+    enough to evolve a tile into a toll road on the strength of a single
+    party's repeated passes, not genuinely distinct usage."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    exp = {"path": [], "worn_tiles": set()}
+
+    sim._wear_trail_for_expedition(exp, tribe, 12, 34)
+    sim._wear_trail_for_expedition(exp, tribe, 12, 34)  # doubling back onto the same tile
+    sim._wear_trail_for_expedition(exp, tribe, 12, 34)
+
+    assert sim.world.trails[(12, 34)]["crossings"] == 1
+
+
+def test_wear_trail_for_expedition_still_wears_a_genuinely_new_tile():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    exp = {"path": [], "worn_tiles": set()}
+
+    sim._wear_trail_for_expedition(exp, tribe, 12, 34)
+    sim._wear_trail_for_expedition(exp, tribe, 13, 34)
+
+    assert sim.world.trails[(12, 34)]["crossings"] == 1
+    assert sim.world.trails[(13, 34)]["crossings"] == 1
+
+
+def test_wear_trail_for_expedition_lets_a_different_expedition_wear_the_same_tile():
+    """The dedup is scoped to one expedition's own exp["worn_tiles"], not the
+    tile globally -- a different party (or a genuinely separate later trip)
+    passing through the same ground is still a real, distinct crossing."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    first_trip = {"path": [], "worn_tiles": set()}
+    second_trip = {"path": [], "worn_tiles": set()}
+
+    sim._wear_trail_for_expedition(first_trip, tribe, 12, 34)
+    sim._wear_trail_for_expedition(second_trip, tribe, 12, 34)
+
+    assert sim.world.trails[(12, 34)]["crossings"] == 2
 
 
 def test_expedition_outbound_marks_the_tribe_map():

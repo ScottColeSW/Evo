@@ -3756,11 +3756,10 @@ class Simulation:
                 base_speed *= config.TOLL_ROAD_SPEED_MULTIPLIER
             nx, ny = physics.terrain_aware_step(px, py, tx, ty, base_speed=base_speed, has_boat=tribe.boat_built)
             nx, ny = self._resolve_toll(tribe, px, py, nx, ny)
-            self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
+            self._wear_trail_for_expedition(exp, tribe, nx, ny)
             mark_visited_sector(tribe, nx, ny)
-            self._check_road_evolution(nx, ny)
             exp["pos"] = [nx, ny]
-            exp["path"].append([nx, ny])
+            _append_expedition_path_point(exp, nx, ny)
             # Explicit correction: "the volcano is a Hazard they will die if they
             # go there." Unlike the river's drowning risk (only ever checked on
             # the outbound leg inside the water-sensing branch below, since a
@@ -3967,11 +3966,10 @@ class Simulation:
                 base_speed *= config.TOLL_ROAD_SPEED_MULTIPLIER
             nx, ny = physics.terrain_aware_step(px, py, ox, oy, base_speed=base_speed, has_boat=tribe.boat_built)
             nx, ny = self._resolve_toll(tribe, px, py, nx, ny)
-            self.world.wear_trail(nx, ny, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
+            self._wear_trail_for_expedition(exp, tribe, nx, ny)
             mark_visited_sector(tribe, nx, ny)
-            self._check_road_evolution(nx, ny)
             exp["pos"] = [nx, ny]
-            exp["path"].append([nx, ny])
+            _append_expedition_path_point(exp, nx, ny)
             if is_new_day:
                 exp["food_gathered"] += config.EXPEDITION_RETURN_DAILY_FOOD
                 if not self._is_settled_near_water(tribe):  # see the matching outbound-leg comment above
@@ -5009,6 +5007,31 @@ class Simulation:
                 parent_a, parent_b = pair
                 tribe.pending_birth = {"parent_a": parent_a, "parent_b": parent_b}
                 tribe.history.append(f"amid the celebration, {parent_a} and {parent_b} decide to start a family together")
+
+    def _wear_trail_for_expedition(self, exp: dict, tribe: Tribe, x: int, y: int) -> None:
+        """World.wear_trail's own `crossings` counter (config.ROAD_EVOLVE_
+        CROSSINGS/_check_road_evolution) increments once per call with no
+        dedup at all -- fine for "a different traveler passed through," wrong
+        for "the same expedition already wore this exact tile earlier in this
+        same trip." Explicit correction: "they do not get more than 1 wear
+        per move on their way, if they double back, it does not count as
+        another wearing down." A party that bounces off a boxed-in edge, or a
+        pushed-onward leg that re-crosses its own earlier ground, shouldn't
+        rack up crossings faster than genuinely distinct travelers would --
+        that's what let a route no other tribe had used yet as heavily as
+        the crossing count implied evolve into a toll road on the strength of
+        one party's own back-and-forth. exp["worn_tiles"] is this one
+        expedition's own scoped memory (kept off exp["path"], which is capped
+        for wire/storage size and would silently stop tracking on a very long
+        trip) -- a fresh expedition starts with none, and a genuinely later,
+        separate trip (even by the same scout) wears normally again."""
+        worn = exp.setdefault("worn_tiles", set())
+        key = (x, y)
+        if key in worn:
+            return
+        worn.add(key)
+        self.world.wear_trail(x, y, config.TRAIL_WEAR_PER_PASS, tribe.color, tribe.id)
+        self._check_road_evolution(x, y)
 
     def _check_road_evolution(self, x: int, y: int) -> None:
         """Explicit request: "a road will be similar [to the wall] but a big

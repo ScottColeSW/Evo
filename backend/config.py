@@ -1519,6 +1519,28 @@ RIVAL_DISTANT_SIGHTING_RADIUS = 70
 # zero: a trail, once worn, is permanent infrastructure -- it only ever gets more worn
 # (and faster) with reuse, never fades on its own.
 TRAIL_WEAR_PER_PASS = 0.03
+# Explicit request: "we need to ensure we are not overloading the browser, are
+# being efficient with communications." exp["path"] is a pure visualization
+# breadcrumb (backend game logic reads terrain_checkpoints/target, never this
+# -- see Simulation._discover_sites_along_route) that grows by one point every
+# single cycle an expedition is out, with no cap -- and a party can now
+# legitimately stay out for hundreds of cycles (EXPEDITION_MAX_DAYS raised,
+# and a search is no longer allowed to give up from day count alone). Every
+# point ever walked was still being resent over the websocket in full, every
+# tick, for that party's entire remaining lifetime, and stored the same way in
+# every board_history.db snapshot. The frontend's own per-frame redraw cost
+# was already fixed to be O(1) regardless of length (a cached, incrementally-
+# extended Path2D) -- this caps the underlying data those points come from,
+# so a months-long push doesn't also mean an ever-growing wire payload and
+# database row. Simply stops recording new points past this length rather
+# than a sliding window (dropping the oldest to make room): a plain list
+# append staying under a fixed cap is exactly the shape the frontend's
+# path.length-grew-by-one incremental cache already expects -- a FIFO window
+# would make length stop changing once full, forcing that cache back to a
+# full rebuild every single tick forever, the exact per-frame cost this was
+# built to avoid in the first place. A visually static tail past ~150 tiles
+# already walked is a reasonable tradeoff for a trip that long.
+EXPEDITION_PATH_MAX_POINTS = 150
 TRAIL_DECAY_PER_CYCLE = 0.0
 MAX_TRAIL_BONUS_SPEED = 3  # added to MOVEMENT_SPEED/EXPEDITION_SPEED at full wear
 
