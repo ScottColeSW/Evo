@@ -1937,10 +1937,39 @@ function drawExpedition(t, tribeId, exp, expIndex) {
   // Update the reveal tracker for this one expedition before drawing -- keyed per
   // tribe+slot since a tribe can now have more than one party out at once, each with
   // its own breadcrumb line revealing independently.
+  //
+  // Perf fix ("overloading the browser" on a long trip): this used to rebuild the
+  // WHOLE fixed portion of the line from raw tile coordinates on every single
+  // animation frame (60/sec), even though the backend only ever appends one new
+  // point per simulation cycle (every few real seconds of inference time). A trip
+  // that runs for hundreds of cycles -- now common since EXPEDITION_MAX_DAYS no
+  // longer cuts a search short on day count alone -- turned into hundreds of
+  // points rebuilt tens of thousands of times a minute for that one expedition
+  // alone, times however many a tribe has out at once. reveal.fixedPath is now a
+  // cached Path2D extended by exactly one segment when the path actually grows by
+  // one (the overwhelmingly common case), instead of rebuilt from scratch --
+  // O(1) per frame again, same rendered line.
   let reveal = expeditionPathReveal[revealKey];
   if (!reveal || path.length !== reveal.length) {
     const grewByOne = reveal && path.length === reveal.length + 1;
-    reveal = { length: path.length, revealFrame: grewByOne ? animFrame : animFrame - PATH_REVEAL_FRAMES };
+    if (grewByOne && reveal.fixedPath) {
+      const [px, py] = path[path.length - 2]; // the point that just became "fixed"
+      reveal.fixedPath.lineTo(px * TILE + TILE / 2, py * TILE + TILE / 2);
+    } else {
+      // First time drawing this expedition, or anything other than a plain
+      // one-point append (a fresh dispatch reusing this reveal slot, say) --
+      // rebuild the cache once from scratch.
+      const fixedPath = new Path2D();
+      for (let i = 0; i < path.length - 1; i++) {
+        const [px, py] = path[i];
+        const x = px * TILE + TILE / 2, y = py * TILE + TILE / 2;
+        if (i === 0) fixedPath.moveTo(x, y); else fixedPath.lineTo(x, y);
+      }
+      reveal = reveal || {};
+      reveal.fixedPath = fixedPath;
+    }
+    reveal.length = path.length;
+    reveal.revealFrame = grewByOne ? animFrame : animFrame - PATH_REVEAL_FRAMES;
     expeditionPathReveal[revealKey] = reveal;
   }
 
@@ -1951,22 +1980,18 @@ function drawExpedition(t, tribeId, exp, expIndex) {
   // segment eases in toward the new point instead of snapping there instantly.
   if (path.length > 1) {
     const revealFrac = Math.min(1, (animFrame - reveal.revealFrame) / PATH_REVEAL_FRAMES);
-    const fixedCount = path.length - 1; // all segments except the newest are drawn in full
     ctx.save();
     ctx.strokeStyle = expColor;
     ctx.globalAlpha = 0.6;
     ctx.setLineDash([3, 3]);
     ctx.lineWidth = Math.max(1, TILE * 0.12);
-    ctx.beginPath();
-    for (let i = 0; i < fixedCount; i++) {
-      const [px, py] = path[i];
-      const x = px * TILE + TILE / 2, y = py * TILE + TILE / 2;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
+    ctx.stroke(reveal.fixedPath);
     const [lastX, lastY] = path[path.length - 2];
     const [newX, newY] = path[path.length - 1];
     const easedX = lastX + (newX - lastX) * revealFrac;
     const easedY = lastY + (newY - lastY) * revealFrac;
+    ctx.beginPath();
+    ctx.moveTo(lastX * TILE + TILE / 2, lastY * TILE + TILE / 2);
     ctx.lineTo(easedX * TILE + TILE / 2, easedY * TILE + TILE / 2);
     ctx.stroke();
     ctx.restore();
