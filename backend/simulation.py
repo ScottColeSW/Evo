@@ -3961,6 +3961,19 @@ class Simulation:
                 # target-equals-position exclusion matters for a hunt/scout that's
                 # deliberately working right where it already stands (target == origin)
                 # -- that's arrival, not being boxed in, and has its own handling below.
+                #
+                # Live report ("hard time with expeditions 'looking' stuck... turn them
+                # around right away, so we don't see this hanging on the edge of the
+                # board for so long"): turning the phase to "returning" here already
+                # happens the instant the game notices, but a settled scout otherwise
+                # only re-checks its position once every DAY_LENGTH_CYCLES (20) cycles
+                # (see is_new_day above) -- without pushing_onward, the newly-returning
+                # party would sit at that same boxed-in tile doing nothing for up to 20
+                # more cycles before its first step home. Reusing the same flag the
+                # patrol-push mechanic already uses for exactly this "resume full pace
+                # for the rest of the trip" purpose (see this function's own docstring
+                # comment above), so the walk home actually starts moving next cycle.
+                exp["pushing_onward"] = True
                 exp["phase"] = "returning"
                 tribe.history.append(f"{scout}'s party can go no further this way and turns back after {exp['day']} days")
                 return False

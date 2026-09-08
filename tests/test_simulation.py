@@ -3329,6 +3329,48 @@ def test_expedition_gives_up_when_its_target_is_the_literal_grid_edge():
     assert any("can go no further" in entry for entry in tribe.history)
 
 
+def test_boxed_in_give_up_lets_a_settled_expedition_start_walking_home_immediately():
+    """Live report ("hard time with expeditions 'looking' stuck... turn them around
+    right away, so we don't see this hanging on the edge of the board for so long"):
+    the boxed-in give-up above already flips phase to "returning" the instant it's
+    detected, but a SETTLED tribe's expedition otherwise only re-checks its position
+    once every DAY_LENGTH_CYCLES (20) cycles (see is_new_day) -- without also setting
+    pushing_onward, the newly-returning party would sit at the same boxed-in tile doing
+    nothing until the next day boundary, which is exactly the "hanging at the edge"
+    symptom reported. Neither test above exercises this since both use a tribe that
+    never settled (has_ever_settled defaults False, which already means every cycle
+    counts as a new day regardless)."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 86, 40, "#c084fc")
+    tribe.has_ever_settled = True
+    sim.cycle = 5  # deliberately not a multiple of DAY_LENGTH_CYCLES
+    tribe.expeditions = [{
+        "pos": [86, 40], "origin": [50, 40], "target": [99, 40],
+        "day": 5, "phase": "outbound", "found": None, "terrain_report": "forest",
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
+    }]
+
+    with mock.patch("backend.simulation.random.random", return_value=1.0):
+        sim._advance_one_expedition(tribe, tribe.expeditions[0])
+
+    assert tribe.expeditions[0]["phase"] == "returning"
+    assert tribe.expeditions[0]["pushing_onward"] is True
+
+    # Next cycle is still not a day boundary -- without pushing_onward this call would
+    # have been a no-op (settled + not is_new_day); with it, the party actually steps
+    # toward home right away instead of sitting at the boxed-in tile for up to 20 more
+    # cycles.
+    sim.cycle += 1
+    pos_before = list(tribe.expeditions[0]["pos"])
+    with mock.patch("backend.simulation.random.random", return_value=1.0):
+        sim._advance_one_expedition(tribe, tribe.expeditions[0])
+
+    assert tribe.expeditions[0]["pos"] != pos_before
+
+
 def test_returning_expedition_gives_up_when_physically_boxed_in_on_the_way_home():
     """Live bug report ("Scouts, after settlement, are doing weird things"):
     confirmed via board_history.db -- a settled tribe's scout got stuck at a
