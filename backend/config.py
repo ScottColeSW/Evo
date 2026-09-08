@@ -652,7 +652,21 @@ EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR = 5  # 1 egg per 5 flock members per cycle
 # Simulation._livestock_surplus_threshold, same max(floor, population-scaled)
 # shape actions.expedition_capacity already uses for a different stat.
 LIVESTOCK_SURPLUS_THRESHOLD = 12
-LIVESTOCK_SURPLUS_POPULATION_DIVISOR = 10
+# Live report ("eggs and fowl aren't contributing like they should"): confirmed
+# via a live run (run_20260908_112524) -- both tribes' eggs sat exactly at their
+# own threshold (164/164 and 190/190), trimmed back to it every time they poked
+# over, and flock itself (21-22) was nowhere near its own threshold and never
+# could be. //10 made the threshold outrun what the mechanic can actually
+# produce: flock only grows +1 per successful natural hatch (FLOCK_NATURAL_
+# HATCH_CHANCE, 15%/cycle) and actively shrinks under food pressure, so it
+# can't keep pace with a threshold scaling linearly with population -- at
+# population 5000 that's a threshold of 500 against a flock that realistically
+# tops out in the 20s-40s, making FLOCK_FEAST_FOOD_VALUE's payoff (4x eggs')
+# functionally dead past a few hundred population, most of the game. //100 is
+# a 10x gentler curve -- population 5000 now yields a threshold of 50, within
+# reach of a real flock/eggs stockpile, while a large tribe still gets a real
+# ceiling above the flat floor, the original point of this scaling.
+LIVESTOCK_SURPLUS_POPULATION_DIVISOR = 100
 EGG_FEAST_FOOD_VALUE = 2  # food per surplus egg eaten
 FLOCK_FEAST_FOOD_VALUE = 8  # food per surplus flock member eaten
 

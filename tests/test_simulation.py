@@ -7921,8 +7921,8 @@ def test_livestock_surplus_threshold_scales_with_population():
     assert _livestock_surplus_threshold(small) == 12  # unchanged for a small tribe
 
     large = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 60, 60, "#fb923c")
-    large.population = 500
-    assert _livestock_surplus_threshold(large) == 50  # 500 // LIVESTOCK_SURPLUS_POPULATION_DIVISOR (10)
+    large.population = 2000
+    assert _livestock_surplus_threshold(large) == 20  # 2000 // LIVESTOCK_SURPLUS_POPULATION_DIVISOR (100)
 
 
 def test_advance_livestock_feast_lets_a_large_tribe_keep_a_bigger_flock():
@@ -7933,7 +7933,7 @@ def test_advance_livestock_feast_lets_a_large_tribe_keep_a_bigger_flock():
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.population = 500  # scaled threshold: 50
+    tribe.population = 6000  # scaled threshold: 60
     tribe.eggs = 40
     tribe.flock = 40
     tribe.food = 0
@@ -7951,9 +7951,9 @@ def test_to_dict_includes_the_real_livestock_surplus_threshold():
     formula) so its "surplus feasted on" display can never drift from what
     _advance_livestock_feast actually did server-side."""
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.population = 500
+    tribe.population = 2000
 
-    assert tribe.to_dict()["livestock_surplus_threshold"] == 50
+    assert tribe.to_dict()["livestock_surplus_threshold"] == 20
 
 
 def test_celebrate_settling_fires_once_a_tribe_settles_near_real_water():
