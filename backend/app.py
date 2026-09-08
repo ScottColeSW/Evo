@@ -126,13 +126,31 @@ async def _tick_session(ws: web.WebSocketResponse, session: dict) -> None:
     sim = session.get("sim")
     if sim is None:
         return
+    # Live-bug-adjacent finding: this used to be one try/except around the whole
+    # tick, "connection may have dropped between the tick starting and finishing"
+    # -- but that same bare except was also silently swallowing genuine
+    # simulation-logic crashes (confirmed: config.NIGHT_CYCLE_REVIEWER_MODEL
+    # pointing at a model that was never pulled crashed _run_night_cycle every
+    # NIGHT_CYCLE_EVERY_N_CYCLES for the life of this project, invisibly -- the
+    # whole tick, including record_board_state, silently never happened that
+    # cycle, was never logged, and looked identical to an ordinary dropped
+    # connection). Split in two: a real sim.step()/snapshot/record failure is
+    # printed (server_err.log, same convention as this app's own launcher
+    # already redirects to) instead of vanishing; only the actual send -- the
+    # one step that can legitimately fail just because a viewer's tab closed
+    # mid-tick -- stays silently swallowed.
     try:
         await sim.step()
         snapshot = sim.snapshot()
         record_board_state(sim.run_id, sim.cycle, snapshot)
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        return
+    try:
         await ws.send_str(json.dumps(snapshot))
     except Exception:
-        pass  # connection may have dropped between the tick starting and finishing
+        pass  # connection may have dropped between the tick finishing and the send
 
 
 async def broadcast_loop(app: web.Application) -> None:
