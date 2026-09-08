@@ -7227,6 +7227,71 @@ def test_advance_water_supply_uses_the_ordinary_formula_below_the_security_thres
     assert tribe.water == 10 + round(upkeep * config.SETTLED_WATER_SUPPLY_MULTIPLIER)
 
 
+def test_advance_food_supply_tops_to_the_storage_cap_with_kitchen_and_fishery():
+    """Explicit request: "let them have Infinity if they Build a Kitchen and
+    have either a Fishery or a Farm." Same permanent-mastery shape as water's
+    own security fix -- see Simulation._advance_water_supply's docstring."""
+    from backend.actions import _storage_cap
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.kitchen_built = True
+    tribe.fishery_built = True
+    tribe.food = 5
+
+    sim._advance_food_supply(tribe)
+
+    assert tribe.food == _storage_cap(tribe)
+
+
+def test_advance_food_supply_tops_to_the_storage_cap_with_kitchen_and_a_proven_farm():
+    """last_harvest_cycle (not the live farm_plots count) is the proof -- a plot
+    withering shouldn't flicker this back off once real food mastery is proven."""
+    from backend.actions import _storage_cap
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.kitchen_built = True
+    tribe.fishery_built = False
+    tribe.farm_plots = 0  # the plot that earned this could since have withered
+    tribe.last_harvest_cycle = 12
+    tribe.food = 5
+
+    sim._advance_food_supply(tribe)
+
+    assert tribe.food == _storage_cap(tribe)
+
+
+def test_advance_food_supply_does_nothing_without_a_kitchen():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.kitchen_built = False
+    tribe.fishery_built = True
+    tribe.last_harvest_cycle = 12
+    tribe.food = 5
+
+    sim._advance_food_supply(tribe)
+
+    assert tribe.food == 5
+
+
+def test_advance_food_supply_does_nothing_with_a_kitchen_but_no_proven_food_source():
+    """A Kitchen alone isn't food mastery -- it has to be paired with a real,
+    proven passive source (Fishery or an actual harvest), not just built on
+    its own."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.kitchen_built = True
+    tribe.fishery_built = False
+    tribe.farm_plots = 0
+    tribe.last_harvest_cycle = 0
+    tribe.food = 5
+
+    sim._advance_food_supply(tribe)
+
+    assert tribe.food == 5
+
+
 def test_advance_water_supply_does_nothing_before_settling():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # forest, not settled
     tribe = sim.tribes["tribe_0"]

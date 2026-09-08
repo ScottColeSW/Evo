@@ -824,6 +824,16 @@ function waterDisplay(t) {
   return (t.confirmed_water_sites || []).length >= WATER_SECURITY_SITE_THRESHOLD ? "∞" : t.water;
 }
 
+// Same treatment, food's own qualification: "let them have Infinity if they
+// Build a Kitchen and have either a Fishery or a Farm." Mirrors Simulation.
+// _advance_food_supply's real condition exactly -- last_harvest_cycle (not
+// the live farm_plots count) is the proof a farm has ever actually paid off,
+// since a plot withering shouldn't flicker this back off.
+function foodDisplay(t) {
+  const secure = t.kitchen_built && (t.fishery_built || t.last_harvest_cycle > 0);
+  return secure ? "∞" : t.food;
+}
+
 // Explicit request: "The Forge isn't recognizing all the different types of
 // Ore so it's stockpiling yet, we do not have it on the resources icon/count
 // line in the sidebar, which we should." Ore was never a dedicated field --
@@ -3825,7 +3835,7 @@ function updateSidebar(state) {
           </div>
           <div class="resources">
             (${t.x}, ${t.y}) · ${t.model} · Pop ${t.population}<br>
-            🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${t.food} &nbsp;💧 ${waterDisplay(t)}
+            🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${foodDisplay(t)} &nbsp;💧 ${waterDisplay(t)}
             ${oreLine(t)}
             ${furLine(t)}
             ${t.chief_name ? `<br><span class="chief-line">👑 ${t.chief_name}${t.library_built ? "" : ` — ${t.chief_philosophy}`}</span>` : ""}

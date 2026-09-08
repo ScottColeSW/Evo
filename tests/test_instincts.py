@@ -99,6 +99,26 @@ def test_water_secure_does_not_suppress_a_real_food_crisis():
     assert critical is True
 
 
+def test_food_secure_suppresses_the_hunger_warning_even_at_zero_food():
+    """Explicit request: "let them have Infinity if they Build a Kitchen and
+    have either a Fishery or a Farm." Same guarantee as water_secure -- once
+    Simulation._advance_food_supply is topping food to the storage cap every
+    cycle for real, a hunger warning here would flatly contradict "off the
+    management board for good.\""""
+    text, critical = survival_bias_string(food=0, water=50, population=SMALL_TRIBE, food_secure=True)
+    assert "starving" not in text
+    assert critical is False
+
+
+def test_food_secure_does_not_suppress_a_real_water_crisis():
+    """food_secure only ever silences the hunger half -- a genuine thirst
+    crisis is still a genuine thirst crisis regardless of food security."""
+    text, critical = survival_bias_string(food=0, water=1, population=SMALL_TRIBE, food_secure=True)
+    assert "starving" not in text
+    assert "thirst" in text
+    assert critical is True
+
+
 def test_thresholds_scale_with_population_not_a_flat_stockpile_number():
     """The whole point of this design: the same absolute stockpile means something
     different depending on how many people it has to feed. food=5 is comfortably above

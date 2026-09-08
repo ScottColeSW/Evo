@@ -1100,6 +1100,7 @@ class Tribe:
         survival_warning, _ = survival_bias_string(
             self.food, self.water, self.population, self.fishing_learned, self.cooking_learned,
             water_secure=len(self.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD,
+            food_secure=self.kitchen_built and (self.fishery_built or self.last_harvest_cycle > 0),
         )
         nxt = next_era(self.era)
         next_era_info = None
@@ -1714,6 +1715,7 @@ class Simulation:
         survival_bias, _critical = survival_bias_string(
             tribe.food, tribe.water, tribe.population, tribe.fishing_learned, tribe.cooking_learned,
             water_secure=len(tribe.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD,
+            food_secure=tribe.kitchen_built and (tribe.fishery_built or tribe.last_harvest_cycle > 0),
         )
         if survival_bias:
             lines.append(survival_bias)
@@ -1940,6 +1942,7 @@ class Simulation:
             # income before the drain lets a cycle's own income actually cover that
             # same cycle's own upkeep instead of only the next one's.
             self._advance_water_supply(tribe)
+            self._advance_food_supply(tribe)
             self._advance_fish_supply(tribe)
             self._advance_farming(tribe)
             self._apply_upkeep(tribe)
@@ -2415,6 +2418,7 @@ class Simulation:
         survival_bias, survival_critical = survival_bias_string(
             tribe.food, tribe.water, tribe.population, tribe.fishing_learned, tribe.cooking_learned,
             water_secure=len(tribe.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD,
+            food_secure=tribe.kitchen_built and (tribe.fishery_built or tribe.last_harvest_cycle > 0),
         )
         # NUDGE (2026-08-31, explicit request: "the warnings do not mention settling
         # as an alternative to low water"). A tribe already sitting on a chronic water
@@ -5473,6 +5477,24 @@ class Simulation:
             self._capped_add(
                 tribe, "water", round((upkeep + farm_draw) * config.SETTLED_WATER_SUPPLY_MULTIPLIER * well_bonus)
             )
+
+    def _advance_food_supply(self, tribe: Tribe) -> None:
+        """Food's counterpart to _advance_water_supply's water-security branch above
+        -- see that one's own docstring for the live report this pattern is built
+        from. Explicit request: "let them have Infinity if they Build a Kitchen and
+        have either a Fishery or a Farm." A Kitchen alone already multiplies every
+        future forage/hunt/catch nine-fold (see BUILD_KITCHEN's own description) --
+        paired with a genuinely proven, passive food source (a Fishery's steady
+        daily catch, or at least one real harvest ever actually brought in), that's
+        real, permanent food mastery, not just a lucky stockpile. tribe.
+        last_harvest_cycle (not the live farm_plots count) is the proof: a plot can
+        wither and later regrow, but "this tribe has successfully farmed before"
+        never un-happens -- the same permanent-proof shape _prepare_turn's own
+        diversification_note already uses for has_farm. kitchen_built/fishery_built
+        are themselves already permanent (nothing in this project ever un-builds a
+        structure), so the whole condition only ever turns on, never off."""
+        if tribe.kitchen_built and (tribe.fishery_built or tribe.last_harvest_cycle > 0):
+            tribe.food = _storage_cap(tribe)
 
     def _advance_fish_supply(self, tribe: Tribe) -> None:
         """Once fishing is learned (the first successful CATCH_FISH), food flows in

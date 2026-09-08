@@ -12,7 +12,8 @@ from . import config
 
 def survival_bias_string(
     food: int, water: int, population: int,
-    fishing_learned: bool = False, cooking_learned: bool = False, water_secure: bool = False,
+    fishing_learned: bool = False, cooking_learned: bool = False,
+    water_secure: bool = False, food_secure: bool = False,
 ) -> tuple[str, bool]:
     """Returns (bias_text, is_critical). is_critical raises inference temperature the
     same way ancestral dread does -- panic should read as less predictable model
@@ -31,7 +32,9 @@ def survival_bias_string(
     Simulation._advance_water_supply) means water is always topped to the storage
     cap every cycle from here on -- a real thirst warning could still fire off pure
     numeric coincidence right after the threshold is crossed without this, which
-    would flatly contradict "off the management board for good.\""""
+    would flatly contradict "off the management board for good." food_secure
+    (a Kitchen plus a proven Fishery or farm harvest, see Simulation.
+    _advance_food_supply) is the same guarantee for the hunger half."""
     upkeep = max(1, population // config.UPKEEP_POPULATION_DIVISOR)
     urgent: list[str] = []
     critical = False
@@ -53,7 +56,9 @@ def survival_bias_string(
     # just this one crisis. Only mentioned once fishing_learned/cooking_learned are
     # actually false, so a tribe that's already mastered them doesn't get told to
     # go learn something it already knows.
-    if food <= upkeep * config.HUNGER_CRITICAL_CYCLES_LEFT:
+    if food_secure:
+        pass
+    elif food <= upkeep * config.HUNGER_CRITICAL_CYCLES_LEFT:
         message = "Your people are starving -- gather food, send a hunting party"
         message += ", or try fishing now." if not fishing_learned else " now."
         if not cooking_learned:
