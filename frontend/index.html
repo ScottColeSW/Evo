@@ -1881,6 +1881,7 @@ function drawTribeIndividuals(tribeId, t) {
   pendingSpeechBubbles.push(() => drawTribeSpeechBubble(t, centerX, centerY, topClearance, isNight));
 
   (t.expeditions || []).forEach((exp, i) => drawExpedition(t, tribeId, exp, i));
+  if (t.battalion_patrol) drawBattalionPatrol(t, tribeId, t.battalion_patrol);
 }
 
 // Extracted from drawTribeIndividuals -- see pendingSpeechBubbles' own comment for why
@@ -2095,6 +2096,49 @@ function drawExpedition(t, tribeId, exp, expIndex) {
   ctx.fillStyle = expColor;
   ctx.fillText(line1, boxLeft + 2, fy + r + 11);
   ctx.fillText(line2, boxLeft + 2, fy + r + 22);
+}
+
+// Military branch step 4 (backend/simulation.py Simulation._advance_battalion_patrol,
+// plan file valiant-forging-falcon.md) -- explicit request: "I do want to add it as a
+// visual player on the board not just a passthru I won't see immediately." Kept
+// deliberately simpler than drawExpedition above (no breadcrumb path -- the patrol
+// isn't in tribe.expeditions and its state dict carries no "path" list): a single
+// diamond marker at the patrol's live position, a small bob so it reads as a moving
+// unit rather than a static icon, and a one-line status tag so "patrolling" vs.
+// "returning" vs. actively closing on a raider camp is legible without opening the
+// sidebar.
+function drawBattalionPatrol(t, tribeId, patrol) {
+  const fx = patrol.pos[0] * TILE + TILE / 2, fy = patrol.pos[1] * TILE + TILE / 2;
+  const seed = stringSeed(`${tribeId}:battalion`);
+  const bob = Math.sin(animFrame * 0.05 + hashUnit(seed) * Math.PI * 2) * 3;
+  const size = Math.max(4, TILE * 0.32);
+
+  ctx.save();
+  ctx.translate(fx, fy + bob);
+  ctx.beginPath();
+  ctx.moveTo(0, -size);
+  ctx.lineTo(size * 0.75, 0);
+  ctx.lineTo(0, size);
+  ctx.lineTo(-size * 0.75, 0);
+  ctx.closePath();
+  ctx.fillStyle = t.color;
+  ctx.globalAlpha = 0.9;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = "rgba(15,15,21,0.9)";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.restore();
+
+  const phaseLabel = patrol.phase === "returning" ? "returning home" : patrol.target ? "closing on raiders" : "on patrol";
+  const line = `⚔️ Battalion ${phaseLabel}`;
+  ctx.font = "9px monospace";
+  const w = ctx.measureText(line).width;
+  const boxLeft = clampTagX(fx, w + 4);
+  ctx.fillStyle = "rgba(15,15,21,0.85)";
+  ctx.fillRect(boxLeft, fy + size + 4, w + 4, 12);
+  ctx.fillStyle = t.color;
+  ctx.fillText(line, boxLeft + 2, fy + size + 13);
 }
 
 // Worn trails (backend/world.py's Landscape.trails) -- the inverse of depletion, so a

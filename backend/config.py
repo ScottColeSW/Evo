@@ -859,6 +859,29 @@ BATTALION_CAPACITY_PER_BARRACKS = 20
 BATTALION_TRAINING_PER_ACTION_BASE = 5
 BATTALION_TRAINING_FOOD_COST_PER_SOLDIER = 2
 
+# Military branch, step 4: the autonomous patrol -- explicit request, "I do
+# want to add it as a visual player on the board not just a passthru." A
+# real, moving entity (Simulation._advance_battalion_patrol, tribe.
+# battalion_patrol), not a hidden formula tweak -- kept entirely separate
+# from tribe.expeditions (a Battalion isn't chief-dispatched and must never
+# compete with SCOUT/HUNTING_PARTY for expedition_capacity's own limited
+# slots). Explicit follow-up: "they can patrol for a set number of cycles,
+# then go back to training. Cooldown for 3 whole days" -- a real cycle, not a
+# standing-forever presence: BATTALION_PATROL_DURATION_DAYS out, then
+# BATTALION_PATROL_COOLDOWN_DAYS resting/training (tribe.
+# battalion_cooldown_until_cycle) before the next patrol can start.
+# "cooldown on patrol, training has its own controls" -- this cooldown only
+# ever gates a new patrol from starting; TRAIN_BATTALION's own affordability
+# gate (BATTALION_TRAINING_FOOD_COST_PER_SOLDIER etc. above) is completely
+# separate and untouched by this.
+BATTALION_PATROL_DURATION_DAYS = 1
+BATTALION_PATROL_COOLDOWN_DAYS = 3
+# Moves every cycle while patrolling, not gated to once-per-day the way a
+# settled expedition's own movement is -- a 1-day patrol duration would only
+# ever take a single step under that gating, nowhere near enough to reach a
+# real target. Same baseline as EXPEDITION_SPEED.
+BATTALION_PATROL_SPEED = 10
+
 # BREED (backend/actions.py._breed, backend/breeding.py). Was free (0/0) -- the two
 # real eligible windows watched in an early session both landed inside a full
 # starvation death spiral (0 food/water), so a positive cost would have blocked BREED

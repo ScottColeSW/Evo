@@ -7434,6 +7434,128 @@ def test_advance_stone_supply_is_capped_by_storage():
     assert tribe.stone == _storage_cap(tribe)
 
 
+def test_advance_battalion_patrol_does_nothing_without_a_battalion():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.battalion_size = 0
+
+    sim._advance_battalion_patrol(tribe)
+
+    assert tribe.battalion_patrol is None
+
+
+def test_advance_battalion_patrol_launches_automatically_when_a_battalion_is_trained():
+    """Explicit request: "they will also actively patrol and take on Raiders...
+    no further action needed" -- no chief action dispatches this, a trained
+    Battalion goes out on its own."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.battalion_size = 20
+    tribe.raider_sightings = []
+
+    sim._advance_battalion_patrol(tribe)
+
+    assert tribe.battalion_patrol is not None
+    assert tribe.battalion_patrol["pos"] == [50, 50]
+    assert tribe.battalion_patrol["phase"] == "patrolling"
+    assert "marches out on patrol" in tribe.history[-1]
+
+
+def test_advance_battalion_patrol_does_not_relaunch_during_cooldown():
+    """Explicit request: "Cooldown for 3 whole days" -- gates a new patrol from
+    starting, distinct from TRAIN_BATTALION's own separate controls."""
+    sim = _bare_simulation()
+    sim.cycle = 5
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.battalion_size = 20
+    tribe.battalion_cooldown_until_cycle = 10
+
+    sim._advance_battalion_patrol(tribe)
+
+    assert tribe.battalion_patrol is None
+
+
+def test_advance_battalion_patrol_moves_toward_a_known_raider_camp():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.battalion_size = 20
+    tribe.raider_sightings = [(60, 50)]
+
+    with mock.patch("backend.physics.terrain_aware_step", return_value=(55, 50)):
+        sim._advance_battalion_patrol(tribe)
+
+    assert tribe.battalion_patrol["pos"] == [55, 50]
+    assert tribe.battalion_patrol["target"] == [60, 50]
+
+
+def test_advance_battalion_patrol_engages_a_raider_camp_it_reaches():
+    """Reuses ACTION_REGISTRY["STRIKE_RAIDER_CAMP"] directly rather than
+    duplicating its win-chance/loot logic -- see the method's own docstring."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.battalion_size = 20
+    tribe.raider_sightings = [(50, 50)]  # already on top of the camp
+    tribe.population = 50
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        sim._advance_battalion_patrol(tribe)
+
+    assert tribe.raider_sightings == []
+    assert "destroyed" in tribe.history[-1]
+    assert tribe.battalion_patrol["target"] is None
+
+
+def test_advance_battalion_patrol_returns_home_after_its_duration_expires():
+    """Explicit request: "they can patrol for a set number of cycles, then go
+    back to training." """
+    from backend import config
+
+    sim = _bare_simulation()
+    sim.cycle = 100
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.battalion_size = 20
+    tribe.raider_sightings = []
+    tribe.battalion_patrol = {
+        "pos": [70, 70],
+        "phase": "patrolling",
+        "started_cycle": 100 - config.BATTALION_PATROL_DURATION_DAYS * config.DAY_LENGTH_CYCLES,
+        "target": None,
+    }
+
+    with mock.patch("backend.physics.terrain_aware_step", return_value=(65, 65)):
+        sim._advance_battalion_patrol(tribe)
+
+    assert tribe.battalion_patrol["phase"] == "returning"
+    assert tribe.battalion_patrol["pos"] == [65, 65]
+
+
+def test_advance_battalion_patrol_starts_cooldown_once_home():
+    """Explicit follow-up: "cooldown on patrol, training has its own controls" --
+    only patrol launches are gated by this, set the moment the Battalion is
+    actually back inside its own territory."""
+    from backend import config
+
+    sim = _bare_simulation()
+    sim.cycle = 200
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.battalion_size = 20
+    tribe.battalion_patrol = {"pos": [52, 50], "phase": "returning", "started_cycle": 180, "target": None}
+
+    with mock.patch("backend.physics.terrain_aware_step", return_value=(50, 50)):
+        sim._advance_battalion_patrol(tribe)
+
+    assert tribe.battalion_patrol is None
+    assert tribe.battalion_cooldown_until_cycle == 200 + config.BATTALION_PATROL_COOLDOWN_DAYS * config.DAY_LENGTH_CYCLES
+    assert "returns from patrol" in tribe.history[-1]
+
+
 def test_advance_water_supply_does_nothing_before_settling():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # forest, not settled
     tribe = sim.tribes["tribe_0"]

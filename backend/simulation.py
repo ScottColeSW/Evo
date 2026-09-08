@@ -941,6 +941,22 @@ class Tribe:
         # BATTALION_CAPACITY_PER_BARRACKS * barracks_built the same way a
         # wall section's own progress builds up over several actions.
         self.battalion_size = 0
+        # Military branch, step 4 (Simulation._advance_battalion_patrol) --
+        # deliberately NOT stored in self.expeditions: a Battalion patrol is
+        # autonomous (never chief-dispatched) and must never compete with
+        # SCOUT/HUNTING_PARTY/etc. for expedition_capacity's own limited
+        # slots. None when no battalion is out patrolling; while patrolling,
+        # a dict: {"pos": (x, y), "phase": "patrolling"|"returning",
+        # "started_cycle": int, "target": (x, y) | None} -- "target" is a
+        # raider_sightings location currently being closed on, None while
+        # idly holding near territory_center.
+        self.battalion_patrol: dict | None = None
+        # Explicit request: "Cooldown for 3 whole days" -- gates only the
+        # *start* of a new patrol (config.BATTALION_PATROL_COOLDOWN_DAYS
+        # after the previous one ends); TRAIN_BATTALION has its own
+        # separate affordability gate untouched by this ("training has its
+        # own controls"). 0 means no patrol has ever run yet.
+        self.battalion_cooldown_until_cycle = 0
         # See actions.py._build_road -- one-way. Adds a flat speed bonus to every
         # future expedition (Simulation._advance_one_expedition), the same shape a
         # well-worn trail already grants.
@@ -1234,6 +1250,7 @@ class Tribe:
             "castle_built": self.castle_built,
             "barracks_built": self.barracks_built,
             "battalion_size": self.battalion_size,
+            "battalion_patrol": self.battalion_patrol,
             "road_built": self.road_built,
             "toll_roads_completed": self.toll_roads_completed,
             "dock_built": self.dock_built,
@@ -2026,6 +2043,7 @@ class Simulation:
             self._apply_upkeep(tribe)
             self._check_raider_attack(tribe)
             self._advance_raider_approach(tribe)
+            self._advance_battalion_patrol(tribe)
             self._grow_population(tribe)
             self._advance_era_if_ready(tribe)
             if not tribe.settlement_name and not tribe.pending_settlement_naming and self._is_settled_near_water(tribe):
@@ -5618,6 +5636,83 @@ class Simulation:
         not an arbitrary extra hurdle."""
         if _is_stone_secure(tribe):
             self._capped_add(tribe, "stone", config.STONE_SECURITY_DAILY_INCOME)
+
+    def _advance_battalion_patrol(self, tribe: Tribe) -> None:
+        """Military branch step 4 (plan file valiant-forging-falcon.md) -- explicit
+        request: "start implementing the autonomous patrol behavior... I do want to
+        add it as a visual player on the board not just a passthru I won't see
+        immediately." A trained Battalion (tribe.battalion_size > 0) that isn't
+        currently out and isn't on cooldown launches a patrol on its own -- no chief
+        action required, matching the original brainstorm ("they will also actively
+        patrol and take on Raiders"). tribe.battalion_patrol is a real, moving dict
+        (not tribe.expeditions -- a Battalion is never chief-dispatched and must
+        never compete with SCOUT/HUNTING_PARTY for expedition_capacity's own limited
+        slots), so the frontend can render it like any other on-map entity.
+
+        Explicit follow-up: "they can patrol for a set number of cycles, then go
+        back to training. Cooldown for 3 whole days" -- BATTALION_PATROL_DURATION_DAYS
+        out, then home, then BATTALION_PATROL_COOLDOWN_DAYS resting before the next
+        patrol can launch. "cooldown on patrol, training has its own controls" --
+        this cooldown only ever blocks a new patrol from *starting*; TRAIN_BATTALION
+        is untouched by it.
+
+        Scoped to raiders only ("Other Threats is just raiders, keep it simple for
+        now") -- minor settlements have no per-tribe discovery tracking to check
+        against (see actions.py._find_minor_settlement), so autonomous raiding of
+        those is explicitly out of this step. Reuses ACTION_REGISTRY[
+        "STRIKE_RAIDER_CAMP"] directly once the patrol reaches a known
+        raider_sightings location rather than duplicating that action's own
+        win-chance/loot logic -- unlike a chief-issued action it doesn't append its
+        own tribe.history line, so this method appends one either way."""
+        if tribe.battalion_size <= 0 or tribe.territory_center is None:
+            return
+
+        patrol = tribe.battalion_patrol
+        if patrol is None:
+            if self.cycle < tribe.battalion_cooldown_until_cycle:
+                return
+            cx, cy = tribe.territory_center
+            patrol = {"pos": [cx, cy], "phase": "patrolling", "started_cycle": self.cycle, "target": None}
+            tribe.battalion_patrol = patrol
+            tribe.history.append(f"{tribe.name}'s Battalion of {tribe.battalion_size} marches out on patrol")
+
+        duration_cycles = config.BATTALION_PATROL_DURATION_DAYS * config.DAY_LENGTH_CYCLES
+        if patrol["phase"] == "patrolling" and self.cycle - patrol["started_cycle"] >= duration_cycles:
+            patrol["phase"] = "returning"
+            patrol["target"] = None
+
+        px, py = patrol["pos"]
+        cx, cy = tribe.territory_center
+
+        if patrol["phase"] == "returning":
+            nx, ny = physics.terrain_aware_step(px, py, cx, cy, base_speed=config.BATTALION_PATROL_SPEED)
+            patrol["pos"] = [nx, ny]
+            if (nx, ny) == (cx, cy):
+                tribe.battalion_patrol = None
+                tribe.battalion_cooldown_until_cycle = (
+                    self.cycle + config.BATTALION_PATROL_COOLDOWN_DAYS * config.DAY_LENGTH_CYCLES
+                )
+                tribe.history.append(f"{tribe.name}'s Battalion returns from patrol to train again")
+            return
+
+        target = patrol.get("target")
+        if target is None and tribe.raider_sightings:
+            target = min(tribe.raider_sightings, key=lambda s: (s[0] - px) ** 2 + (s[1] - py) ** 2)
+            patrol["target"] = list(target)
+
+        if target is None:
+            return
+
+        tx, ty = target
+        if (px, py) == (tx, ty):
+            if tuple(target) in tribe.raider_sightings:
+                result = ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](self, tribe, biome_at(px, py), target)
+                if result:
+                    tribe.history.append(f"{tribe.name}'s Battalion patrol {result}")
+            patrol["target"] = None
+        else:
+            nx, ny = physics.terrain_aware_step(px, py, tx, ty, base_speed=config.BATTALION_PATROL_SPEED)
+            patrol["pos"] = [nx, ny]
 
     def _advance_fish_supply(self, tribe: Tribe) -> None:
         """Once fishing is learned (the first successful CATCH_FISH), food flows in
