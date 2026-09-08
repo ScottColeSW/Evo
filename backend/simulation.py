@@ -211,9 +211,18 @@ def _is_wood_secure(tribe) -> bool:
 
 
 def _is_stone_secure(tribe) -> bool:
-    """Stone's own version of _is_wood_secure -- a Quarry plus a real,
-    discovered-and-in-use stone site. See Simulation._advance_stone_supply."""
-    return tribe.quarry_built and tribe.quarry_site is not None
+    """Stone's own bar, set higher than wood's by explicit request: a Quarry
+    alone isn't enough -- real stone mastery means a Mine too. BUILD_MINE
+    already requires quarry_built as its own prerequisite (see AFFORDABILITY_
+    CHECKS), so checking both here is belt-and-suspenders, not two independent
+    facts -- but stated explicitly to match the request and to stay correct
+    even if BUILD_MINE's own prerequisites ever change. A Mine also already
+    requires a real discovered mine_sites entry to build in the first place
+    (see actions._build_mine), so this still carries the same "a genuinely
+    discovered, real resource site" spirit Sawmill/Timber Grove's own
+    lumber_site check has, just via the Mine's site instead of the Quarry's.
+    See Simulation._advance_stone_supply."""
+    return tribe.quarry_built and tribe.mine_built
 
 
 def _wall_next_afford_cost(tribe) -> tuple[int, int] | None:
@@ -5567,11 +5576,10 @@ class Simulation:
 
     def _advance_stone_supply(self, tribe: Tribe) -> None:
         """Stone's own version of _advance_wood_supply above -- same reasoning,
-        same shape, a Quarry standing in for the Sawmill and a discovered
-        quarry_site standing in for a Timber Grove. tribe.quarry_site (singular,
-        set the moment BUILD_QUARRY succeeds with at least one quarry_sites
-        entry already known -- see actions._build_quarry) is exactly
-        "discovered and using" a real stone-rich site."""
+        same shape, but a higher bar by explicit request: real stone mastery
+        needs a Quarry AND a Mine, not a Quarry alone. See _is_stone_secure's
+        own docstring for why that's still one real, earned achievement and
+        not an arbitrary extra hurdle."""
         if _is_stone_secure(tribe):
             self._capped_add(tribe, "stone", config.STONE_SECURITY_DAILY_INCOME)
 

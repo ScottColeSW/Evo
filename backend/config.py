@@ -1367,9 +1367,9 @@ QUARRY_WOOD_COST = 15
 QUARRY_STONE_COST = 30
 QUARRY_STONE_MULTIPLIER = 3
 
-# Stone's own version of WOOD_SECURITY_DAILY_INCOME above -- same reasoning,
-# same shape, a Quarry standing in for the Sawmill and a discovered quarry_site
-# standing in for a Timber Grove. See Simulation._advance_stone_supply.
+# Stone's own version of WOOD_SECURITY_DAILY_INCOME above -- same amount, but
+# a higher bar by explicit request: a Quarry alone isn't enough for real stone
+# mastery, a Mine is required too. See Simulation._is_stone_secure.
 STONE_SECURITY_DAILY_INCOME = 10
 
 # BUILD_WAREHOUSE + storage caps (backend/actions.py): explicit request, after a

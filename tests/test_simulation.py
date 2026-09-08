@@ -7378,16 +7378,16 @@ def test_advance_wood_supply_is_capped_by_storage():
     assert tribe.wood == _storage_cap(tribe)  # no overflow past the cap
 
 
-def test_advance_stone_supply_flows_in_with_a_quarry_and_a_stone_site():
-    """Stone's own version of wood security -- see
-    test_advance_wood_supply_flows_in_with_a_sawmill_and_a_timber_grove and
-    Simulation._advance_stone_supply's own docstring."""
+def test_advance_stone_supply_flows_in_with_a_quarry_and_a_mine():
+    """Stone's own bar, set higher than wood's by explicit request: "For Stone
+    to unlock like this I think they have to have a Quarry and a Mine."
+    See Simulation._is_stone_secure's own docstring."""
     from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.quarry_built = True
-    tribe.quarry_site = (10, 10)
+    tribe.mine_built = True
     tribe.stone = 5
 
     sim._advance_stone_supply(tribe)
@@ -7399,7 +7399,7 @@ def test_advance_stone_supply_does_nothing_without_a_quarry():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.quarry_built = False
-    tribe.quarry_site = (10, 10)
+    tribe.mine_built = True
     tribe.stone = 5
 
     sim._advance_stone_supply(tribe)
@@ -7407,11 +7407,12 @@ def test_advance_stone_supply_does_nothing_without_a_quarry():
     assert tribe.stone == 5
 
 
-def test_advance_stone_supply_does_nothing_without_a_discovered_stone_site():
+def test_advance_stone_supply_does_nothing_with_a_quarry_but_no_mine():
+    """A Quarry alone isn't real stone mastery -- a Mine is required too."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.quarry_built = True
-    tribe.quarry_site = None
+    tribe.mine_built = False
     tribe.stone = 5
 
     sim._advance_stone_supply(tribe)
@@ -7425,7 +7426,7 @@ def test_advance_stone_supply_is_capped_by_storage():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.quarry_built = True
-    tribe.quarry_site = (10, 10)
+    tribe.mine_built = True
     tribe.stone = _storage_cap(tribe)
 
     sim._advance_stone_supply(tribe)
