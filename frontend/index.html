@@ -362,6 +362,7 @@
           <div class="icon-key-row"><span class="icon-key-icon">🏚️</span> Raidable minor settlement</div>
           <div class="icon-key-row"><span class="icon-key-icon">💀</span> Extinct tribe</div>
           <div class="icon-key-row"><span class="icon-key-icon">🌋</span> Volcano — deadly ground, real risk of loss</div>
+          <div class="icon-key-row"><span class="icon-key-icon">⚠️</span> Known danger (hazard landmark — no one has to die here again)</div>
 
           <div class="icon-key-section">Movement</div>
           <div class="icon-key-row"><span class="icon-key-swatch icon-key-swatch-dot"></span> A tribe's own people (tribe color)</div>
@@ -908,6 +909,23 @@ function renderLibrary(state) {
         </div>`;
     });
 
+  // Live report: the raw per-party expedition lines (day, position, foraged)
+  // that used to run several deep on every Tribes card, moved here -- see
+  // expeditionSummaryLine's own comment above for the "in/out" line that
+  // replaced them on the card itself.
+  const expeditionRows = Object.values(state.tribes || {})
+    .filter(t => (t.expeditions || []).length)
+    .map(t => {
+      const lines = t.expeditions.map(exp =>
+        `<span class="chief-line">${exp.kind === "hunt" ? "🏹" : "🧭"} ${escapeHtml(exp.lead_scout)}'s ${exp.kind === "hunt" ? "hunting party" : "party"} ${exp.phase}, day ${exp.day} at (${exp.pos[0]},${exp.pos[1]})${expeditionResourceLine(exp)}</span>`
+      );
+      return `
+        <div class="lineage-row" style="border-left-color:${t.color}">
+          <span class="lineage-tribe">${escapeHtml(t.name)}</span><br>
+          ${lines.join("<br>")}
+        </div>`;
+    });
+
   const entries = [];
   Object.values(state.tribes || {}).forEach(t => {
     (t.library_entries || []).forEach(e => entries.push({
@@ -922,11 +940,11 @@ function renderLibrary(state) {
       \u{1F4DA} ${escapeHtml(e.summary)}
     </div>`);
 
-  if (dossiers.length === 0 && entryRows.length === 0) {
+  if (dossiers.length === 0 && expeditionRows.length === 0 && entryRows.length === 0) {
     panel.innerHTML = `<div class="empty-hint">No library stands yet -- build one, then RESEARCH to start recording what's been lived through.</div>`;
     return;
   }
-  panel.innerHTML = dossiers.join("") + entryRows.join("");
+  panel.innerHTML = expeditionRows.join("") + dossiers.join("") + entryRows.join("");
 }
 
 /* ---------- Scoreboard: cross-run benchmark (backend/scoreboard.py) ---------- */
@@ -2094,6 +2112,15 @@ const LANDMARK_TYPES = [
   // Hall marker (drawSettlementMarker) and the sidebar's founded_city badge --
   // a moai reads clearly as "a notable monument," not a building.
   ["landmarks", "\u{1F5FF}", [0, -0.7], "Landmark"], // moai statue, top-center
+  // Live report: "Foraging is supposed to include all so-far-discovered items
+  // they find." tribe.hazard_landmarks (_landmark_hazard, this session's
+  // hazard redesign) was already being populated for real -- it just never
+  // got wired into this list, so a party's discovered dangers (Ashen Scar,
+  // Widow's Reach, ...) never actually showed up as a durable marker like
+  // every other discovery type does. Warning-triangle, not the skull used for
+  // an actual hazard_death encounter -- a landmark here means "known danger,"
+  // not "someone died here."
+  ["hazard_landmarks", "\u{26A0}\u{FE0F}", [-0.55, -0.7], "Danger"],
 ];
 
 // Explicit request: "we have to name the 'discovery' when it is celebrated so
@@ -2122,7 +2149,7 @@ function trackNewLandmarks(state) {
         currentList.forEach(entry => {
           const [x, y] = coordsOf(entry);
           if (!prevSet.has(`${x},${y}`)) {
-            const entryLabel = entry && (entry.type || entry.resource) ? (entry.type || entry.resource) : label;
+            const entryLabel = entry && (entry.type || entry.resource || entry.name) ? (entry.type || entry.resource || entry.name) : label;
             newLandmarks.push({ x, y, label: entryLabel, color: t.color, expiresAt: Date.now() + LANDMARK_HIGHLIGHT_MS });
           }
         });
@@ -2193,7 +2220,7 @@ function drawLandmarks() {
       // handle both without needing every list to share one shape.
       (t[field] || []).forEach(entry => {
         const [x, y] = Array.isArray(entry) ? entry : [entry.x, entry.y];
-        const entryLabel = entry && (entry.type || entry.resource) ? (entry.type || entry.resource) : label;
+        const entryLabel = entry && (entry.type || entry.resource || entry.name) ? (entry.type || entry.resource || entry.name) : label;
         const cx = x * TILE + TILE / 2 + ox * TILE;
         const cy = y * TILE + TILE / 2 + oy * TILE;
         const r = Math.max(8, TILE * 0.55);
@@ -3293,6 +3320,23 @@ function settlementLine(t) {
   return isCamped(t) ? "🏕️ camped" : "🚶 nomadic (unfarmable ground)";
 }
 
+// Live report: "The area that lists [one line per expedition, day/position/
+// foraged for every party at once] ... Was supposed to be a summary line or
+// in/out, informative on the Tribes tab, the raw data we have here can go
+// into the Library." Same "too much raw detail for the glanceable card" shape
+// renderLibrary's dossiers/birth-ledger move already solved once -- the Tribes
+// card now shows just a one-line in/out count; the full per-party detail
+// (day, position, foraged) moved to the Library tab (see expeditionRows in
+// renderLibrary below).
+function expeditionSummaryLine(t) {
+  const exps = t.expeditions || [];
+  if (!exps.length) return "";
+  const outbound = exps.filter(e => e.phase === "outbound").length;
+  const returning = exps.length - outbound;
+  const bits = [outbound && `${outbound} out`, returning && `${returning} returning`].filter(Boolean).join(", ");
+  return `<br><span class="chief-line">🧭 ${exps.length} part${exps.length === 1 ? "y" : "ies"} afield -- ${bits}</span>`;
+}
+
 // Live report: example lines like "🍖25 💧0 foraged" always showed food/water
 // even at zero, and never showed wood/stone an EXPLORATION_PARTY actually
 // carried home (Simulation._advance_exploration_party_outbound) -- "bring
@@ -3321,6 +3365,12 @@ function landmarkCounts(t) {
     ["🐾", (t.wildlife_sites || []).length],
     ["⛏️", (t.quarry_sites || []).length],
     ["\u{2694}\u{FE0F}", (t.raider_sightings || []).length],
+    // Live report: "Foraging is supposed to include all so-far-discovered
+    // items they find" -- tribe.hazard_landmarks (real, populated data since
+    // this session's hazard redesign) was missing from this tally even though
+    // every other discovery type is counted here.
+    ["\u{26A0}\u{FE0F}", (t.hazard_landmarks || []).length],
+    ["\u{1F5FF}", (t.landmarks || []).length],
   ].filter(([, n]) => n > 0).map(([icon, n]) => `${icon}${n}`);
   return counts.length ? " · " + counts.join(" ") : "";
 }
@@ -3745,7 +3795,7 @@ function updateSidebar(state) {
             ${oreLine(t)}
             ${furLine(t)}
             ${t.chief_name ? `<br><span class="chief-line">👑 ${t.chief_name}${t.library_built ? "" : ` — ${t.chief_philosophy}`}</span>` : ""}
-            ${(t.expeditions || []).map(exp => `<br><span class="chief-line">${exp.kind === "hunt" ? "🏹" : "🧭"} ${exp.lead_scout}'s ${exp.kind === "hunt" ? "hunting party" : "party"} ${exp.phase}, day ${exp.day} at (${exp.pos[0]},${exp.pos[1]})${expeditionResourceLine(exp)}</span>`).join("")}
+            ${expeditionSummaryLine(t)}
             ${(t.trophies && t.trophies.length) ? `<br><span class="chief-line">🏆 ${t.trophies.map(tr => tr.name).join(", ")}</span>` : ""}
             <br><span class="intel-line">${settlementLine(t)}${landmarkCounts(t)}</span>
             ${t.history && t.history.length ? `<br><span class="intel-line">🧠 ${formatChiefDecision(t.history[t.history.length - 1])}</span>` : ""}
