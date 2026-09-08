@@ -3315,6 +3315,25 @@ class Simulation:
                 "value (USE_ITEM) or handed over in a future trade."
             )
 
+        # Military branch, step 1 (plan file valiant-forging-falcon.md) -- explicit
+        # eligibility nudge, added 2026-09-08 after a live run showed the exact
+        # "isolated gamble, nothing feeding into it" pattern the original
+        # DECLARE_CONQUEST TODO already named, one step earlier than expected:
+        # confirmed via board_history.db that an individual had 9 personally-
+        # credited trophies (WARRIOR_TROPHY_THRESHOLD is 3) for many days straight
+        # across a 38-day run, and NAME_WARRIOR was never chosen even once -- the
+        # entire Military branch stayed permanently unreachable behind it. Same
+        # "nudge harder once a real gate is met" shape COOK_FOOD/CONSTRUCT_WALL's
+        # own nudges above already use.
+        if "NAME_WARRIOR" in available_actions:
+            candidate = _eligible_warrior_candidate(tribe)
+            if candidate is not None:
+                visible_entities.append(
+                    f"{candidate} has earned {config.WARRIOR_TROPHY_THRESHOLD} or more personal trophies -- "
+                    "NAME_WARRIOR would appoint them Warrior, letting them lead a Battalion once a Barracks "
+                    "is built and soldiers are trained."
+                )
+
         # Military branch, step 7 (plan file valiant-forging-falcon.md): "The Chief
         # has to actually be able to reach DECLARE_CONQUEST -- not just mechanically
         # possible, but visible... an eligibility nudge once it's genuinely a good

@@ -4448,6 +4448,44 @@ def test_all_confirmed_sites_are_remembered_not_just_the_most_recent_three():
     assert "confirmed stone-rich area at (8,8)" in entities
 
 
+def test_prepare_turn_nudges_name_warrior_once_a_candidate_clears_the_threshold():
+    """Live-run finding, 2026-09-08: a 38-day run showed an individual with 9
+    personally-credited trophies and NAME_WARRIOR still never chosen even
+    once -- the same "isolated gamble, nothing feeding into it" pattern the
+    original DECLARE_CONQUEST TODO already named, one step earlier than
+    expected. Same "nudge harder once a real gate is met" shape COOK_FOOD's
+    own nudge already uses. This nudge lives in _prepare_turn (available_actions
+    is computed there), not _build_visible_entities -- needs a real Simulation,
+    same as the other _prepare_turn tests above."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.has_ever_settled = True  # NAME_WARRIOR is filtered out of available_actions pre-settlement
+    sim._found_territory(tribe)
+    tribe.trophies = [
+        {"name": "First Hunt", "chief": "Tala", "cycle": 1},
+        {"name": "Master Pathfinder", "chief": "Tala", "cycle": 2},
+        {"name": "Angler", "chief": "Tala", "cycle": 3},
+    ]
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Tala" in request["prompt"]
+    assert "NAME_WARRIOR" in request["prompt"]
+
+
+def test_prepare_turn_has_no_name_warrior_nudge_without_an_eligible_candidate():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "NAME_WARRIOR would appoint" not in request["prompt"]
+
+
 def test_visible_entities_names_might_comparison_against_a_nearby_rival():
     """Military branch, step 7: "a real Might fact in the prompt... the same
     way population, wellbeing, and era-gap already are." Only shown once
