@@ -4152,24 +4152,42 @@ class Simulation:
                 # expedition succeeded -- the trip cost real time either way, so it isn't
                 # a total loss on a failed search. The findings themselves only become
                 # real, actionable knowledge for the tribe at this exact moment.
-                food_home = round(exp["food_gathered"] * _food_multiplier(tribe))
-                tribe.food += food_home
-                tribe.water += exp["water_gathered"]
+                #
+                # Live report ("Water warnings shouldn't be firing -- never run out once
+                # settled"): traced to these four lines adding straight to tribe.food/
+                # water/wood/stone with no _capped_add, the one uncapped hole in an
+                # otherwise fully-capped storage system. _capped_add's own math (cap -
+                # current, floored at 0) means once ANY of these pushes a resource even
+                # slightly over its storage cap, every later *capped* addition -- the
+                # passive settled-water/fish/farm income this whole safety net exists for
+                # -- silently adds zero forever, with nothing telling the tribe why, until
+                # consumption alone drags the stockpile back under the cap. Confirmed live
+                # (run_20260908_103409): a 3400+ population tribe's water sat flat-to-
+                # declining for 25+ cycles despite _advance_water_supply's own formula
+                # computing a large enough passive grant every cycle that it should have
+                # been climbing fast.
+                food_gained = round(exp["food_gathered"] * _food_multiplier(tribe))
+                food_home = self._capped_add(tribe, "food", food_gained)
+                water_home = self._capped_add(tribe, "water", exp["water_gathered"])
                 scout = exp["lead_scout"]
                 forage_note = f"bringing back {food_home} food"
+                if food_home < food_gained:
+                    forage_note += f" ({food_gained - food_home} more spoiled -- stores already full)"
                 # water_gathered never accrues once _is_settled_near_water is true (see
                 # the matching outbound/returning-leg gate above) -- omit it from the
                 # note entirely rather than always reporting a flat "0 water".
-                if exp["water_gathered"]:
-                    forage_note += f" and {exp['water_gathered']} water foraged along the way"
+                if water_home:
+                    forage_note += f" and {water_home} water foraged along the way"
+                elif exp["water_gathered"]:
+                    forage_note += " foraged along the way (water stores already full)"
                 else:
                     forage_note += " foraged along the way"
                 # Only EXPLORATION_PARTY ever populates these -- see actions.py.
                 # _exploration_party. .get(..., 0) leaves scout/hunt/trade untouched.
-                wood_home, stone_home = exp.get("wood_gathered", 0), exp.get("stone_gathered", 0)
-                if wood_home or stone_home:
-                    tribe.wood += wood_home
-                    tribe.stone += stone_home
+                wood_gained, stone_gained = exp.get("wood_gathered", 0), exp.get("stone_gathered", 0)
+                if wood_gained or stone_gained:
+                    wood_home = self._capped_add(tribe, "wood", wood_gained)
+                    stone_home = self._capped_add(tribe, "stone", stone_gained)
                     forage_note += f", {wood_home} wood and {stone_home} stone"
                 recipient = f"Chief {tribe.chief_name}" if tribe.chief_name else "the tribe"
 
@@ -4783,18 +4801,24 @@ class Simulation:
         base_caught = exp.get("food_caught", 0)
         if base_caught and tribe.tannery_built:
             base_caught += config.TANNERY_MEAT_BONUS_PER_HUNT
-        caught = round(base_caught * _food_multiplier(tribe))
-        if caught:
-            tribe.food += caught
+        caught_gained = round(base_caught * _food_multiplier(tribe))
+        if caught_gained:
+            # See the matching fix/comment on the general homecoming branch above --
+            # this was the same uncapped tribe.food += pattern, just in the hunt-
+            # specific report path.
+            caught = self._capped_add(tribe, "food", caught_gained)
             tribe.expeditions_succeeded += 1
             tribe.hunt_successes += 1
             tribe.hunt_ever_succeeded = True  # see actions.py._cook_food's own prerequisite
             if tribe.hunt_successes == config.MILESTONE_HUNT_SUCCESSES:
                 self._award_trophy(tribe, "Master Hunter", individual=scout)
             self._check_custom_awards(tribe, "hunting", individual=scout)
+            caught_note = f"{caught} food caught"
+            if caught < caught_gained:
+                caught_note += f" ({caught_gained - caught} more spoiled -- stores already full)"
             tribe.history.append(
                 f"{scout}'s hunting party is home and gives {recipient} a full report: "
-                f"{caught} food caught, {forage_note}"
+                f"{caught_note}, {forage_note}"
             )
         else:
             tribe.history.append(
@@ -5987,10 +6011,14 @@ class Simulation:
         # outlasting others through unrelated hazard deaths.
         attacker.conquests_won += 1
         attacker.conquered_tribe_names.append(defender.name)
-        attacker.wood += defender.wood
-        attacker.stone += defender.stone
-        attacker.food += defender.food
-        attacker.water += defender.water
+        # Same uncapped-mutation bug as the expedition-homecoming fix above, just
+        # for the rarer whole-tribe-absorption path -- routed through _capped_add
+        # so a big merge can't silently blow past the attacker's own storage cap
+        # and disable its passive income (settled water/fish/farm) from then on.
+        self._capped_add(attacker, "wood", defender.wood)
+        self._capped_add(attacker, "stone", defender.stone)
+        self._capped_add(attacker, "food", defender.food)
+        self._capped_add(attacker, "water", defender.water)
         attacker.population += defender.population
         defender.population = 0
         attacker.max_population = max(attacker.max_population, attacker.population)
