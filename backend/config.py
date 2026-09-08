@@ -1351,6 +1351,18 @@ DOCK_FISH_CATCH_BONUS_FRACTION = 0.5
 SAWMILL_WOOD_COST = 30
 SAWMILL_STONE_COST = 15
 SAWMILL_WOOD_MULTIPLIER = 6
+
+# Explicit request: "if they Build a Sawmill... and have discovered and are
+# using a Timber Grove to get wood, they can have the treatment" -- the same
+# permanent-mastery idea as water/food's own security fixes, softened by
+# explicit design choice (see Simulation._advance_wood_supply's own
+# docstring): unlike food/water, wood has no automatic per-cycle drain to
+# guard against, so a real passive income (same shape MINE_YIELD_PER_CYCLE/
+# TANNERY_YIELD_PER_CYCLE already use for their own resource) instead of
+# "always topped to the cap" -- large enough to feel like real security
+# without making every future building free outright. Runs every cycle, the
+# same cadence fish/mine/tannery's own passive income already use.
+WOOD_SECURITY_DAILY_INCOME = 10
 QUARRY_WOOD_COST = 15
 QUARRY_STONE_COST = 30
 QUARRY_STONE_MULTIPLIER = 3

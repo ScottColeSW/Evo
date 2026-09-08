@@ -203,6 +203,13 @@ def _is_water_secure(tribe) -> bool:
     return len(tribe.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD
 
 
+def _is_wood_secure(tribe) -> bool:
+    """A Sawmill plus a real, discovered-and-in-use Timber Grove -- see
+    Simulation._advance_wood_supply's own docstring. Module-level for the same
+    shared-definition reason as _is_food_secure/_is_water_secure above."""
+    return tribe.sawmill_built and tribe.lumber_site is not None
+
+
 def _wall_next_afford_cost(tribe) -> tuple[int, int] | None:
     target = city_layout.next_wall_work_section(tribe)
     if target is None:
@@ -1961,6 +1968,7 @@ class Simulation:
             # same cycle's own upkeep instead of only the next one's.
             self._advance_water_supply(tribe)
             self._advance_food_supply(tribe)
+            self._advance_wood_supply(tribe)
             self._advance_fish_supply(tribe)
             self._advance_farming(tribe)
             self._apply_upkeep(tribe)
@@ -5525,6 +5533,30 @@ class Simulation:
         structure), so the whole condition only ever turns on, never off."""
         if _is_food_secure(tribe):
             tribe.food = _storage_cap(tribe)
+
+    def _advance_wood_supply(self, tribe: Tribe) -> None:
+        """Wood's own version of the "real achievement, real security" idea
+        food/water just got -- explicit request: "if they Build a Sawmill...
+        and have discovered and are using a Timber Grove to get wood, they can
+        have the treatment." Deliberately softer than food/water's own "always
+        topped to the storage cap," by explicit design choice: unlike food/
+        water, wood has no automatic per-cycle drain to guard against -- nothing
+        dies of a wood shortage -- so topping it to the cap every cycle
+        regardless of spending would make every future building free forever, a
+        much bigger change than "never starve." A real, generous passive income
+        instead, the same shape config.MINE_YIELD_PER_CYCLE/
+        TANNERY_YIELD_PER_CYCLE already use for their own resource, just at
+        wood's own larger scale -- genuinely solves the "wood starved at scale"
+        problem this whole fix is a response to, without erasing the building
+        economy outright.
+
+        tribe.lumber_site (singular, set the moment BUILD_SAWMILL succeeds with
+        at least one lumber_sites entry already known -- see
+        actions._build_sawmill) is exactly "discovered and using a Timber
+        Grove": the real site Simulation._advance_resource_trails already wears
+        a path to."""
+        if _is_wood_secure(tribe):
+            self._capped_add(tribe, "wood", config.WOOD_SECURITY_DAILY_INCOME)
 
     def _advance_fish_supply(self, tribe: Tribe) -> None:
         """Once fishing is learned (the first successful CATCH_FISH), food flows in

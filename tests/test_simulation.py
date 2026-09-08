@@ -7318,6 +7318,66 @@ def test_advance_food_supply_does_nothing_with_a_kitchen_but_no_proven_food_sour
     assert tribe.food == 5
 
 
+def test_advance_wood_supply_flows_in_with_a_sawmill_and_a_timber_grove():
+    """Explicit request: "if they Build a Sawmill... and have discovered and
+    are using a Timber Grove to get wood, they can have the treatment."
+    Deliberately a real passive income, not "topped to the cap" like food/
+    water's own security -- see the function's own docstring for why."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.sawmill_built = True
+    tribe.lumber_site = (10, 10)
+    tribe.wood = 5
+
+    sim._advance_wood_supply(tribe)
+
+    assert tribe.wood == 5 + config.WOOD_SECURITY_DAILY_INCOME
+
+
+def test_advance_wood_supply_does_nothing_without_a_sawmill():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.sawmill_built = False
+    tribe.lumber_site = (10, 10)
+    tribe.wood = 5
+
+    sim._advance_wood_supply(tribe)
+
+    assert tribe.wood == 5
+
+
+def test_advance_wood_supply_does_nothing_without_a_discovered_timber_grove():
+    """A Sawmill alone isn't wood mastery -- BUILD_SAWMILL no longer requires a
+    scouted lumber site to build (see its own docstring), so a tribe can have
+    one without ever having found a real Timber Grove to draw from."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.sawmill_built = True
+    tribe.lumber_site = None
+    tribe.wood = 5
+
+    sim._advance_wood_supply(tribe)
+
+    assert tribe.wood == 5
+
+
+def test_advance_wood_supply_is_capped_by_storage():
+    from backend import config
+    from backend.actions import _storage_cap
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.sawmill_built = True
+    tribe.lumber_site = (10, 10)
+    tribe.wood = _storage_cap(tribe)
+
+    sim._advance_wood_supply(tribe)
+
+    assert tribe.wood == _storage_cap(tribe)  # no overflow past the cap
+
+
 def test_advance_water_supply_does_nothing_before_settling():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # forest, not settled
     tribe = sim.tribes["tribe_0"]
