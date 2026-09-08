@@ -225,6 +225,41 @@ magnitude was measured first.
 - Push after committing — standing authorization for this repo across
   sessions; no need to re-ask.
 
+## Second Opinion convention
+
+When you would have made a materially different implementation choice than
+the one directed or accepted (algorithm, data structure, library,
+decomposition), record it at that location:
+
+```
+// SECOND-OPINION(agent, YYYY-MM-DD): <the alternative you preferred and
+// why, in one or two sentences>
+```
+
+`agent` is the model name (e.g. `Sonnet 5`), not "Claude" generically — this
+repo gets worked by different sessions/models over time, and knowing which
+one dissented matters for weighing it later.
+
+Rules:
+- Silence by default. If your choice matched, write nothing.
+- Only material divergences. Style preferences do not qualify.
+- One annotation per fork. Do not relitigate.
+- Never delete an existing SECOND-OPINION annotation. If circumstances
+  change, append an update beneath it.
+
+This exists for the middle tier between "worth an AskUserQuestion interrupt"
+and "not worth mentioning at all" — a real disagreement you're choosing not
+to block on, but that should stay on the record rather than evaporate the
+moment you comply.
+
+**House-cleaning**: these are a write-only convention unless someone
+actually revisits them. At the start of a session likely to touch a file
+that has one, or whenever doing a broader review pass, `grep -rn
+"SECOND-OPINION" --include=*.py .` and check each hit: has the situation
+that prompted it since changed (fixed elsewhere, requirement gone), does it
+still apply, or is it worth raising with the user now that more context
+exists. Update or leave it — never delete outright, per the rule above.
+
 ## Where prior context lives
 
 - **`C:\Users\scott\.claude\projects\...\memory\MEMORY.md`** — the index
