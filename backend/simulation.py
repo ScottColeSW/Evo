@@ -195,6 +195,51 @@ def _wall_next_afford_cost(tribe) -> tuple[int, int] | None:
     return round(config.WALL_WOOD_COST_TOTAL * added / 100), round(config.WALL_STONE_COST_TOTAL * added / 100)
 
 
+def _warehouse_capacity_note(tribe: "Tribe") -> str:
+    """Live trace finding (run_20260908_082234): a tribe that grew past population
+    1600 on the original STORAGE_CAP_BASE of 150 (never having built a warehouse)
+    spent 70+ cycles oscillating between 0 food and a harvest overflowing back out --
+    "the farm plots yield a harvest -- 0 food gathered in (stores nearly full, 225
+    wasted)" repeating every cycle or two, real waste, not a one-off. 178 dispatched
+    turns across that same run never once chose BUILD_WAREHOUSE. Same "real, computed
+    fact, not a scripted directive" shape as _prepare_turn's diversification_note --
+    population outgrowing the cap is true and checkable the moment it happens, well
+    before the boom-bust actually starts costing anything.
+
+    A standalone function (unlike diversification_note's own inline block) so an A/B
+    test can monkeypatch it off for a baseline run without touching real game
+    mechanics -- see scripts/ab_test_growth_facts.py."""
+    if tribe.warehouses_built == 0 and tribe.population >= config.STORAGE_CAP_BASE:
+        return (
+            f"Population ({tribe.population}) has already outgrown the storage cap "
+            f"({config.STORAGE_CAP_BASE} of any one resource, with no warehouse built yet) -- a "
+            "harvest that arrives faster than it's spent overflows and is lost for good. Building "
+            "a warehouse raises that ceiling for good."
+        )
+    return ""
+
+
+def _wall_expansion_note(tribe: "Tribe") -> str:
+    """Same live trace as _warehouse_capacity_note: EXPAND_TERRITORY (the only way to
+    ever unlock a wall section) was affordable in 32 of 174 snapshots for that tribe
+    and chosen zero times in 178 turns -- not a resource gate, a real prioritization
+    gap. Long houses, kitchens, and libraries all sit locked behind a wall ring that
+    never gets its first section unlocked, so this door staying shut quietly caps the
+    entire rest of the tech tree, not just defense. Standalone for the same A/B
+    monkeypatch reason as _warehouse_capacity_note above."""
+    if (
+        tribe.wall_rings and not any(sec["unlocked"] for sec in tribe.wall_rings[0]["sections"])
+        and tribe.wood >= config.TERRITORY_EXPANSION_WOOD_COST
+        and tribe.stone >= config.TERRITORY_EXPANSION_STONE_COST
+    ):
+        return (
+            "No wall section has ever been unlocked, even though there's enough wood and stone on "
+            "hand right now to expand territory and unlock the first one -- EXPAND_TERRITORY is "
+            "what opens that door, and long houses, a kitchen, and a library all wait behind it."
+        )
+    return ""
+
+
 def _can_afford_construct_wall(tribe, world) -> bool:
     # Live bug ("Walls didn't unlock for some reason and they wasted cycles"):
     # this used to return True here on the theory that letting the action's
@@ -3184,6 +3229,11 @@ class Simulation:
                 "food source is its own risk that fishing would reduce."
             )
 
+        # See _warehouse_capacity_note/_wall_expansion_note's own docstrings (top of
+        # this file) for the live trace evidence behind both.
+        warehouse_note = _warehouse_capacity_note(tribe)
+        wall_note = _wall_expansion_note(tribe)
+
         if tribe.fishing_learned:
             visible_entities.append(
                 "Fishing has been mastered here -- food now flows in on its own each cycle, on top of "
@@ -3304,10 +3354,10 @@ class Simulation:
             "visible_entities": visible_entities,
             "journey_note": journey_note,
             # Combined into one growth-tier slot (see prompts.py's GROWTH IMPERATIVE
-            # LAYER): both are the same category of "not urgent, but real" pressure,
-            # and both need the same salience fix era_gap_note already proved out --
-            # a fact buried in the generic list gets ignored even when it's true.
-            "growth_note": " ".join(n for n in (era_gap_note, diversification_note) if n),
+            # LAYER): all four are the same category of "not urgent, but real" pressure,
+            # and all need the same salience fix era_gap_note already proved out -- a
+            # fact buried in the generic list gets ignored even when it's true.
+            "growth_note": " ".join(n for n in (era_gap_note, diversification_note, warehouse_note, wall_note) if n),
         }
         # See wellbeing.compute_wellbeing -- a slower-moving, five-tier read on the
         # tribe's overall condition, distinct from the moment-to-moment survival_bias
