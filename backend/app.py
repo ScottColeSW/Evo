@@ -85,6 +85,11 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                     )
             elif command == "TOGGLE_PAUSE" and session["sim"] is not None:
                 session["sim"].toggle_pause()
+                # Immediate feedback instead of waiting up to TICK_SECONDS for the
+                # next broadcast tick -- also what makes it safe for _tick_session to
+                # skip a paused sim entirely below (see its own comment) without the
+                # frontend's pause indicator ever going stale.
+                await ws.send_str(json.dumps(session["sim"].snapshot()))
             elif command == "ADD_TRIBE" and session["sim"] is not None:
                 name = data.get("name") or "New Tribe"
                 model = data.get("model")
@@ -125,6 +130,17 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
 async def _tick_session(ws: web.WebSocketResponse, session: dict) -> None:
     sim = session.get("sim")
     if sim is None:
+        return
+    # Live report: "the game is paused but it sure seems to be working the drive...
+    # is there something hitting the disc in Pause mode?" -- confirmed: sim.step()
+    # itself already no-ops while paused (returns before self.cycle even
+    # increments), but this function used to keep computing a fresh snapshot and
+    # writing it to board_history.db every tick regardless, forever, for a cycle
+    # number that was never actually changing. TOGGLE_PAUSE above now sends one
+    # immediate snapshot the moment the state actually flips, so skipping every
+    # tick entirely while paused doesn't leave the frontend's pause indicator
+    # stale -- there's simply nothing left to record or broadcast until unpaused.
+    if sim.paused:
         return
     # Live-bug-adjacent finding: this used to be one try/except around the whole
     # tick, "connection may have dropped between the tick starting and finishing"

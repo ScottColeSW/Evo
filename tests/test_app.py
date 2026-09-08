@@ -41,8 +41,28 @@ async def test_tick_session_returns_immediately_when_there_is_no_sim():
 
 
 @run_async
+async def test_tick_session_does_nothing_while_paused():
+    """Live report: "the game is paused but it sure seems to be working the
+    drive... is there something hitting the disc in Pause mode?" sim.step()
+    itself already no-ops while paused, but this function used to keep
+    computing a snapshot and writing it to board_history.db every tick anyway,
+    for a cycle number that was never actually changing."""
+    sim = mock.Mock()
+    sim.paused = True
+    sim.step = mock.AsyncMock()
+
+    with mock.patch("backend.app.record_board_state") as record:
+        await _tick_session(mock.AsyncMock(), {"sim": sim})
+
+    sim.step.assert_not_called()
+    sim.snapshot.assert_not_called()
+    record.assert_not_called()
+
+
+@run_async
 async def test_tick_session_sends_the_snapshot_on_a_normal_tick():
     sim = mock.Mock()
+    sim.paused = False
     sim.step = mock.AsyncMock()
     sim.snapshot.return_value = {"cycle": 5}
     sim.run_id, sim.cycle = "run_x", 5
@@ -67,6 +87,7 @@ async def test_tick_session_logs_and_never_sends_when_sim_step_itself_fails():
     snapshot to send -- and must not propagate out of _tick_session (the
     broadcast loop calling this ticks every other session too)."""
     sim = mock.Mock()
+    sim.paused = False
     sim.step = mock.AsyncMock(side_effect=RuntimeError("boom"))
     ws = mock.AsyncMock()
 
@@ -83,6 +104,7 @@ async def test_tick_session_still_swallows_a_send_failure_after_a_successful_tic
     """The one case this bare except is actually for -- a viewer's connection
     drops between the tick finishing and the send going out."""
     sim = mock.Mock()
+    sim.paused = False
     sim.step = mock.AsyncMock()
     sim.snapshot.return_value = {"cycle": 1}
     sim.run_id, sim.cycle = "run_x", 1
