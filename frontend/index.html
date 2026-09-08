@@ -2281,8 +2281,8 @@ function drawLandmarks() {
 // Explicit request: "a visual on how much land they have staked out... its
 // expansion dynamically as they grow." 2026-09-02 redesign: real territory now --
 // t.territory_center/t.territory_radius (backend/simulation.py._found_territory,
-// actions._expand_territory), granted the moment a tribe first settles and grown one
-// EXPAND_TERRITORY call at a time, not an invented radius derived from a building count.
+// actions._expand_wall_territory), granted the moment a tribe first settles and grown
+// one CONSTRUCT_WALL call at a time, not an invented radius derived from a building count.
 function drawTerritory(t) {
   if (!t.territory_center) return;
   const cx = t.territory_center[0] * TILE + TILE / 2;
@@ -2338,7 +2338,7 @@ function drawSettlementMarker(t) {
 // tile drawn as a fixed-size collar around the settlement marker. Each section
 // draws at its own real (x, y, w, h) tile rect, styled by what it actually is:
 // a natural barrier (terrain, always "built"), locked (not yet unlocked by
-// EXPAND_TERRITORY), under construction (progress < 100), or complete/reinforced.
+// CONSTRUCT_WALL), under construction (progress < 100), or complete/reinforced.
 // Stone gray at tier 0 (freshly built), warming toward bronze then gold as
 // reinforcement tiers stack -- indices beyond WALL_MAX_LAYERS never occur,
 // but the array is clamped to just in case.
@@ -3405,8 +3405,8 @@ function fishSupplyPerCycle(t) {
 // its tier reaches this cap (backend/city_layout.py.ring_fully_reinforced).
 const WALL_MAX_LAYERS = 2;
 
-// Mirrors backend/eras.py's ERAS order exactly -- CONSTRUCT_WALL/EXPAND_TERRITORY
-// only unlock at "tribal_synapse", but tribe.wall_rings (Simulation._found_territory)
+// Mirrors backend/eras.py's ERAS order exactly -- CONSTRUCT_WALL
+// only unlocks at "tribal_synapse", but tribe.wall_rings (Simulation._found_territory)
 // gets created the instant a tribe first settles, completely independent of era.
 // Live report: "it has the wrong description of the Wall" -- the Establishments
 // panel was showing real wall progress ("0/7 sections built") for a tribe still in

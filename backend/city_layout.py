@@ -28,7 +28,7 @@ def _is_natural_barrier(world, x: int, y: int, w: int, h: int) -> bool:
 
 def build_ring(world, center: tuple[int, int], ring_index: int) -> dict:
     """Computes one ring's full geometry, called once, lazily, the moment it's first
-    needed (ring 0 at founding; ring i>0 the first time EXPAND_TERRITORY opens it).
+    needed (ring 0 at founding; ring i>0 the first time CONSTRUCT_WALL opens it).
     Takes the center directly (not a tribe) so Simulation._choose_territory_center
     can probe candidate centers before committing to tribe.territory_center."""
     radius = config.WALL_RING_RADIUS_STEP * (ring_index + 1)
@@ -64,9 +64,9 @@ def cap_natural_barriers(sections: list[dict]) -> None:
     (config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS): Simulation.
     _choose_territory_center already enforces this for ring 0 by searching
     for a low-water center before founding, but every later ring -- opened
-    by EXPAND_TERRITORY at the SAME fixed center (it can't move once
-    buildings are already anchored to it) but a larger radius -- was never
-    checked at all. Confirmed live: a ring 1 built this way came out with 5
+    by CONSTRUCT_WALL's expansion fallback at the SAME fixed center (it can't
+    move once buildings are already anchored to it) but a larger radius --
+    was never checked at all. Confirmed live: a ring 1 built this way came out with 5
     of its 8 sections as free water barriers, essentially an unearned wall.
     Since the center can't move for an existing ring, any natural barrier
     beyond the cap is converted back into a real, buildable section here
@@ -109,7 +109,7 @@ def ring_fully_reinforced(ring: dict) -> bool:
 
 
 def next_unlockable_section(tribe) -> tuple[int, int] | None:
-    """(ring_index, section_index) of the next section EXPAND_TERRITORY should
+    """(ring_index, section_index) of the next section CONSTRUCT_WALL should
     unlock: the first not-yet-unlocked, non-natural section in fixed order across
     existing rings. None if every existing ring is fully unlocked (a new ring must
     be built via build_ring before there's anything left to unlock)."""

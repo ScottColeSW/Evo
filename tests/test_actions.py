@@ -33,9 +33,9 @@ def _settle(sim, tribe):
 
 
 def _unlock_all_ring0_sections(sim, tribe):
-    """Directly unlocks every section of the first wall ring, bypassing the real
-    EXPAND_TERRITORY action loop -- EXPAND_TERRITORY's own unlock-one-section-per-
-    call behavior is covered directly by its own tests; most other tests just need
+    """Directly unlocks every section of the first wall ring, bypassing CONSTRUCT_
+    WALL's own real unlock-one-section-per-call loop (actions._expand_wall_territory)
+    -- that behavior is covered directly by its own tests; most other tests just need
     "every section is available to build," not to re-exercise that sequence."""
     for sec in tribe.wall_rings[0]["sections"]:
         sec["unlocked"] = True
@@ -299,39 +299,6 @@ def test_construct_wall_no_op_when_cannot_afford_the_proportional_cost():
     ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
 
     assert tribe.wall_rings[0]["sections"][0]["progress"] == 0
-
-
-def test_construct_wall_no_op_when_nothing_is_unlocked():
-    """A freshly founded territory starts with every non-natural section locked --
-    EXPAND_TERRITORY must unlock at least one before CONSTRUCT_WALL has anything to
-    do (see actions._expand_territory's own tests)."""
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    _settle(sim, tribe)
-    tribe.wood = 100
-    tribe.stone = 100
-
-    result = ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
-
-    assert result is not None and "unlocked" in result
-    assert (tribe.wood, tribe.stone) == (100, 100)
-
-
-def test_construct_wall_is_a_no_op_once_complete():
-    from backend import config
-
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    _settle(sim, tribe)
-    _complete_ring0(sim, tribe, tier=config.WALL_MAX_LAYERS)  # every ring-0 section fully built and maxed
-    tribe.wood = 100
-    tribe.stone = 100
-    wood_before, stone_before = tribe.wood, tribe.stone
-
-    result = ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
-
-    assert "EXPAND_TERRITORY" in result  # every ring-0 section is done -- nudge toward the next one
-    assert (tribe.wood, tribe.stone) == (wood_before, stone_before)
 
 
 def test_construct_wall_engages_commitment_lock_while_a_section_is_incomplete():
@@ -697,21 +664,6 @@ def test_wall_can_be_reinforced_with_a_second_layer_once_complete():
     assert tribe.wall_rings[ring_i]["sections"][sec_i]["tier"] == config.WALL_MAX_LAYERS
 
 
-def test_wall_reinforcement_stops_at_the_layer_cap():
-    from backend import config
-
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    _settle(sim, tribe)
-    _complete_ring0(sim, tribe, tier=config.WALL_MAX_LAYERS)
-    tribe.wood = 1000
-    tribe.stone = 1000
-    wood_before, stone_before = tribe.wood, tribe.stone
-
-    assert "EXPAND_TERRITORY" in ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
-    assert (tribe.wood, tribe.stone) == (wood_before, stone_before)
-
-
 def test_build_moat_requires_wall_fully_reinforced():
     from backend import config
 
@@ -761,23 +713,29 @@ def test_build_road_is_a_no_op_once_already_built():
     assert tribe.wood == wood_before
 
 
-def test_expand_territory_no_op_without_any_territory_yet():
+def test_construct_wall_no_op_without_any_territory_yet():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.wood = 200
     tribe.stone = 200
 
-    assert ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET) is None
+    assert ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET) is None
 
 
-def test_expand_territory_unlocks_one_section_without_moving_the_radius_yet():
-    """Live-run correction: "Wall Sections are being rendered on screen as a
-    box around the settlement instead of portions of Wall being placed just
-    inside the Territory dotted outline." territory_radius (what drawTerritory
-    actually draws) used to grow by its own separately-scaled increment on
-    every call, independent of the wall ring's real geometry -- now it only
-    ever moves when a whole new ring is actually created (see the test below),
-    not when a call merely unlocks one more section within the current ring."""
+def test_construct_wall_unlocks_the_first_section_when_nothing_is_unlocked_yet():
+    """2026-09-08 merge (explicit request, after two independent live traces found a
+    small model essentially never sequenced CONSTRUCT_WALL and a separate
+    EXPAND_TERRITORY action correctly): CONSTRUCT_WALL now IS the whole wall
+    pipeline -- called against a freshly founded territory with nothing unlocked
+    yet, it unlocks the first section itself instead of rejecting and waiting for a
+    different action to be chosen. See actions._construct_wall's own docstring.
+
+    Live-run correction: "Wall Sections are being rendered on screen as a box
+    around the settlement instead of portions of Wall being placed just inside the
+    Territory dotted outline." territory_radius (what drawTerritory actually
+    draws) only ever moves when a whole new ring is actually created (see the
+    ring-opening test below), not when a call merely unlocks one more section
+    within the current ring."""
     from backend import config
 
     sim = _bare_simulation()
@@ -787,16 +745,17 @@ def test_expand_territory_unlocks_one_section_without_moving_the_radius_yet():
     tribe.stone = 200
     unlocked_before = sum(1 for s in tribe.wall_rings[0]["sections"] if s["unlocked"])
 
-    result = ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
+    result = ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
 
     assert tribe.territory_radius == config.WALL_RING_RADIUS_STEP  # unchanged -- still ring 0
     unlocked_after = sum(1 for s in tribe.wall_rings[0]["sections"] if s["unlocked"])
     assert unlocked_after == unlocked_before + 1
     assert any(t["name"] == "Territory Expander" for t in tribe.trophies)
     assert "territory expands" in result
+    assert (tribe.wood, tribe.stone) == (200 - config.TERRITORY_EXPANSION_WOOD_COST, 200 - config.TERRITORY_EXPANSION_STONE_COST)
 
 
-def test_expand_territory_no_op_when_unaffordable():
+def test_construct_wall_no_op_when_expansion_is_unaffordable():
     from backend import config
 
     sim = _bare_simulation()
@@ -805,11 +764,18 @@ def test_expand_territory_no_op_when_unaffordable():
     tribe.wood = config.TERRITORY_EXPANSION_WOOD_COST - 1
     tribe.stone = config.TERRITORY_EXPANSION_STONE_COST
 
-    assert ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET) is None
+    assert ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET) is None
 
 
-def test_expand_territory_requires_current_ring_fully_reinforced_before_opening_next():
-    from backend import config
+def test_expand_wall_territory_helper_requires_ring_fully_reinforced_before_opening_next():
+    """Exercises actions._expand_wall_territory directly rather than through
+    CONSTRUCT_WALL/ACTION_REGISTRY -- this exact state (every section unlocked, not
+    yet reinforced) is normally unreachable through CONSTRUCT_WALL post-merge,
+    since city_layout.next_wall_work_section would already have found one of these
+    same sections needing progress and returned it before ever falling through to
+    the expansion helper. Kept as a direct, defensive test of the helper's own
+    guard rather than deleted, since the guard itself is still worth having."""
+    from backend import actions, config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
@@ -818,13 +784,13 @@ def test_expand_territory_requires_current_ring_fully_reinforced_before_opening_
     tribe.wood = 200
     tribe.stone = 200
 
-    result = ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
+    result = actions._expand_wall_territory(sim, tribe)
 
     assert result is not None and "fully reinforced" in result
     assert len(tribe.wall_rings) == 1
 
 
-def test_expand_territory_opens_a_new_ring_once_the_current_one_is_maxed():
+def test_construct_wall_opens_a_new_ring_once_the_current_one_is_maxed():
     from backend import config
 
     sim = _bare_simulation()
@@ -834,7 +800,7 @@ def test_expand_territory_opens_a_new_ring_once_the_current_one_is_maxed():
     tribe.wood = 200
     tribe.stone = 200
 
-    result = ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
+    result = ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
 
     assert len(tribe.wall_rings) == 2
     assert tribe.wall_rings[1]["radius"] > tribe.wall_rings[0]["radius"]
@@ -844,7 +810,7 @@ def test_expand_territory_opens_a_new_ring_once_the_current_one_is_maxed():
     assert "territory expands" in result
 
 
-def test_expand_territory_caps_natural_barriers_on_a_newly_opened_ring():
+def test_construct_wall_caps_natural_barriers_on_a_newly_opened_ring():
     """Live bug report: "the final locked Territory ring is not backing away
     from natural barriers. They are only allowed 1 natural barrier at most
     ever." Simulation._choose_territory_center only searches for a good
@@ -853,7 +819,7 @@ def test_expand_territory_caps_natural_barriers_on_a_newly_opened_ring():
     live: one such ring came out with 5 of 8 sections as free water. Forces
     every section of the newly-opened ring to read as a natural barrier (via
     monkeypatching the terrain check, not real map geometry) to prove
-    _expand_territory itself enforces the cap, not just city_layout.build_ring."""
+    _expand_wall_territory itself enforces the cap, not just city_layout.build_ring."""
     from unittest import mock
 
     from backend import city_layout, config
@@ -865,17 +831,17 @@ def test_expand_territory_caps_natural_barriers_on_a_newly_opened_ring():
     tribe.wood = tribe.stone = 200
 
     with mock.patch("backend.city_layout._is_natural_barrier", return_value=True):
-        ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
+        ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
 
     assert len(tribe.wall_rings) == 2
     barrier_count = sum(1 for s in tribe.wall_rings[1]["sections"] if s["natural_barrier"])
     assert barrier_count == config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS
 
 
-def test_expand_territory_refuses_a_ring_past_the_cap():
+def test_construct_wall_refuses_a_ring_past_the_cap():
     """Explicit request: "2 rings is enough. they will have to build outside
     the walls once they hit that point." A no-op fail-closed guard --
-    Simulation._prepare_turn already retires EXPAND_TERRITORY from the menu
+    Simulation._prepare_turn already retires CONSTRUCT_WALL from the menu
     once config.MAX_WALL_RINGS is reached, but this covers the action itself
     refusing too, in case that menu retirement is ever bypassed."""
     from backend import config
@@ -886,13 +852,14 @@ def test_expand_territory_refuses_a_ring_past_the_cap():
     assert config.MAX_WALL_RINGS == 2
     _complete_ring0(sim, tribe, tier=config.WALL_MAX_LAYERS)
     tribe.wood = tribe.stone = 1000
-    ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET)  # opens ring 1
+    ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)  # opens ring 1
     assert len(tribe.wall_rings) == 2
     for sec in tribe.wall_rings[1]["sections"]:
         sec["unlocked"] = True
+        sec["progress"] = 100
         sec["tier"] = config.WALL_MAX_LAYERS
 
-    result = ACTION_REGISTRY["EXPAND_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
+    result = ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
 
     assert result is None
     assert len(tribe.wall_rings) == 2  # no third ring opened

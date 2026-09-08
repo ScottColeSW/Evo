@@ -464,11 +464,12 @@ WALL_RING_RADIUS_STEP = SETTLEMENT_WATER_TERRITORY_RADIUS * TERRITORY_FOUNDING_R
 
 # Explicit request (2026-09-06): "we need to eliminate a 3 ring and begin to
 # reinforce them with Concrete... 2 rings is enough. they will have to build
-# outside the walls once they hit that point." EXPAND_TERRITORY used to open a
+# outside the walls once they hit that point." Wall expansion (CONSTRUCT_WALL's
+# expansion fallback since the 2026-09-08 EXPAND_TERRITORY merge) used to open a
 # whole new ring, unconditionally, every time the outermost was fully
 # reinforced -- no ceiling beyond raw land availability, confirmed live (a
 # real run built well past 2). Once a tribe already has this many rings, all
-# fully reinforced, EXPAND_TERRITORY retires from the choice set for good, the
+# fully reinforced, CONSTRUCT_WALL retires from the choice set for good, the
 # same one-way "generalist narrows once its job is done" shape BUILD_FIRE/
 # COOK_FOOD already use -- a real ceiling instead of an unbounded ratchet.
 MAX_WALL_RINGS = 2
@@ -483,9 +484,10 @@ MAX_WALL_RINGS = 2
 # somewhere less water-dominated.
 TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS = 1
 
-# EXPAND_TERRITORY unlocks exactly one new wall section per call, in fixed compass
-# order -- "expansion must be done for each wall section," no exception for ring 0.
-# tribe.territory_radius (see actions._expand_territory) is always derived as
+# CONSTRUCT_WALL's expansion fallback unlocks exactly one new wall section per
+# call, in fixed compass order -- "expansion must be done for each wall section,"
+# no exception for ring 0.
+# tribe.territory_radius (see actions._expand_wall_territory) is always derived as
 # WALL_RING_RADIUS_STEP * (ring count) -- explicit correction after live data showed
 # it drifting far past the wall's own real geometry when it used to grow by its own
 # separately-scaled increment every call instead.
@@ -1288,9 +1290,10 @@ ROAD_WOOD_COST = 30
 ROAD_STONE_COST = 15
 ROAD_SPEED_BONUS = 2
 
-# EXPAND_TERRITORY (backend/actions.py._expand_territory): grows the tribe's real
-# territory_radius (see TERRITORY_FOUNDING_REGION above) and unlocks the next wall
-# section in fixed compass order -- one call per section, no exception for ring 0.
+# CONSTRUCT_WALL's expansion fallback (backend/actions.py._expand_wall_territory):
+# grows the tribe's real territory_radius (see TERRITORY_FOUNDING_REGION above) and
+# unlocks the next wall section in fixed compass order -- one call per section, no
+# exception for ring 0.
 TERRITORY_EXPANSION_WOOD_COST = 60
 TERRITORY_EXPANSION_STONE_COST = 60
 

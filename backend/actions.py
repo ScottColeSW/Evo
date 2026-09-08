@@ -345,10 +345,23 @@ def _construct_wall(sim, tribe, biome, target):
     next_wall_work_section picks whichever section needs work next -- unfinished
     construction anywhere, across every ring, before any reinforcement -- so this
     action always has a clear, single real target without the tribe needing to
-    reason about which section that is."""
+    reason about which section that is.
+
+    2026-09-08 merge (explicit request, after two independent live traces found the
+    same failure): CONSTRUCT_WALL and EXPAND_TERRITORY used to be separate actions,
+    and a small model reliably never sequenced them correctly -- one tribe called
+    CONSTRUCT_WALL 100+ times against a ring with nothing unlocked (see the old
+    _can_afford_construct_wall comment, still on record below at
+    _expand_wall_territory), and EXPAND_TERRITORY itself sat affordable and alone on
+    the menu across two separate A/B tests and got picked in roughly 1 of 8 runs.
+    Two different fact-based nudges toward "pick the other one" already existed and
+    neither worked. CONSTRUCT_WALL now IS the whole wall pipeline: work whichever
+    section needs it, and when nothing does, unlock the next one (or open a new ring)
+    automatically -- the model only ever has one decision to make ("build the wall"),
+    not two dependent ones."""
     target_section = city_layout.next_wall_work_section(tribe)
     if target_section is None:
-        return "no wall section is currently unlocked and incomplete -- EXPAND_TERRITORY unlocks the next one"
+        return _expand_wall_territory(sim, tribe)
     ring_i, sec_i = target_section
     section = tribe.wall_rings[ring_i]["sections"][sec_i]
 
@@ -561,13 +574,24 @@ def _build_road(sim, tribe, biome, target):
     return "a road is built -- every future expedition will travel faster from here on"
 
 
-def _expand_territory(sim, tribe, biome, target):
-    """2026-09-02 redesign: unlocks exactly one new wall section per call, in
+def _expand_wall_territory(sim, tribe):
+    """The other half of CONSTRUCT_WALL's merged pipeline (see its own docstring) --
+    called only as a fallback once city_layout.next_wall_work_section finds nothing
+    left to build or reinforce. Unlocks exactly one new wall section per call, in
     fixed compass order -- "expansion must be done for each wall section," no
     exception for ring 0. Once every section in the outermost ring is both
     unlocked and fully reinforced, the next call opens a whole new ring
     further out instead (backend/city_layout.build_ring) -- no limit on ring
     count beyond land availability.
+
+    Until 2026-09-08 this was its own top-level action (EXPAND_TERRITORY),
+    invokable independent of wall-progress state -- the "ring must be fully
+    reinforced" branch below dates from that era and is normally unreachable now
+    that _construct_wall only ever calls this once next_wall_work_section has
+    already confirmed every unlocked section is both built and maxed (which
+    already implies full reinforcement). Left in as a defensive guard rather than
+    removed -- see tests/test_actions.py's own direct test of this function for
+    why it's still worth keeping.
 
     Live-run correction: "Wall Sections are being rendered on screen as a box
     around the settlement instead of portions of Wall being placed just inside
@@ -594,7 +618,7 @@ def _expand_territory(sim, tribe, biome, target):
         if not city_layout.ring_fully_reinforced(tribe.wall_rings[-1]):
             return "the outermost wall ring must be fully reinforced before territory can expand further"
         # See config.MAX_WALL_RINGS's own comment -- a real ceiling, not an
-        # unbounded ratchet. Simulation._prepare_turn retires EXPAND_TERRITORY
+        # unbounded ratchet. Simulation._prepare_turn retires CONSTRUCT_WALL
         # from the choice set once this is hit, so reaching this branch at all
         # would mean the menu itself let a stale choice through; fail closed
         # rather than open a ring past the intended cap.
@@ -2208,7 +2232,6 @@ ACTION_REGISTRY = {
     "BUILD_LONG_HOUSE": _build_long_house,
     "BUILD_CASTLE": _build_castle,
     "BUILD_ROAD": _build_road,
-    "EXPAND_TERRITORY": _expand_territory,
     "BUILD_DOCK": _build_dock,
     "BUILD_FISHERY": _build_fishery,
     "BUILD_SAWMILL": _build_sawmill,
@@ -2265,11 +2288,10 @@ ACTION_DESCRIPTIONS = {
     "HUNT_DEER": "Attempt to harvest food at your current tile -- forest has the most game, plains and river tiles some, mountains and ocean almost none. Small risk of losing a hunter to a wolf pack, most likely in forest.",
     "BUILD_FIRE": "Build a fire at your current tile using stored wood. Does nothing if one is already built here.",
     "COOK_FOOD": "Learn to cook -- only possible once you've successfully hunted or foraged, and successfully built a fire, at some point. A one-time skill, usable anywhere from then on: every future forage, hunt, or catch brings home three times as much food, and every future celebration feast costs less.",
-    "CONSTRUCT_WALL": "Work on a wall at your current tile using stored wood and stone -- a real defensive structure built up over several turns, not finished in one. Each turn spent on it adds real progress (more so with more people to put to the work), and a more complete wall meaningfully improves your odds of defending against a raider attack. Does nothing further once complete.",
+    "CONSTRUCT_WALL": "Work on your wall using stored wood and stone -- a real defensive structure built up over several turns, not finished in one. Automatically does whatever the wall needs next: unlocks a new section if none is currently open, continues an unlocked section's progress (more per turn with more people to put to the work), reinforces a completed section with another tier, or -- once a whole ring is fully built and reinforced -- opens a brand new ring further out. A more complete wall meaningfully improves your odds of defending against a raider attack. Repeatable; does nothing further once maxed out.",
     "BUILD_LONG_HOUSE": "Build a long house at your current tile using stored wood and stone -- only possible once your wall is fully complete. Repeatable as population grows: real, lasting shelter for the tribe, one house at a time.",
     "BUILD_CASTLE": "Build a castle at your current tile using stored wood and stone -- only possible once a fortress stands and enough long houses have been built. A one-time, permanent structure that adds real defense on top of whatever your wall already provides.",
     "BUILD_ROAD": "Build a road at your current tile using stored wood and stone. A one-time, permanent improvement: every future scouting party, hunting party, or exploration party you send out travels faster from then on.",
-    "EXPAND_TERRITORY": "Grow your settlement's real owned territory using stored wood and stone, unlocking the next wall section to build. Repeatable -- once a whole wall ring is fully unlocked and reinforced, this opens a brand new ring further out instead.",
     "BUILD_DOCK": "Build a dock at your current tile using stored wood -- only possible once the tribe has settled here and has already learned to fish (a real successful catch). A one-time, permanent structure: every future fish caught here pays out more from then on.",
     "BUILD_FISHERY": "Build a fishery using stored wood and stone -- only possible once a dock already stands. A one-time, permanent structure: the settlement's passive daily fish supply flows in even more steadily from then on.",
     "BUILD_SAWMILL": "Build a sawmill using stored wood and stone -- only possible once wood has actually been gathered here at least once. A one-time, permanent structure at your settlement: every future load of gathered wood is worth three times as much from then on.",

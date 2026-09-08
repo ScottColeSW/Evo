@@ -219,46 +219,41 @@ def _warehouse_capacity_note(tribe: "Tribe") -> str:
     return ""
 
 
-def _wall_expansion_note(tribe: "Tribe") -> str:
-    """Same live trace as _warehouse_capacity_note: EXPAND_TERRITORY (the only way to
-    ever unlock a wall section) was affordable in 32 of 174 snapshots for that tribe
-    and chosen zero times in 178 turns -- not a resource gate, a real prioritization
-    gap. Long houses, kitchens, and libraries all sit locked behind a wall ring that
-    never gets its first section unlocked, so this door staying shut quietly caps the
-    entire rest of the tech tree, not just defense. Standalone for the same A/B
-    monkeypatch reason as _warehouse_capacity_note above."""
-    if (
-        tribe.wall_rings and not any(sec["unlocked"] for sec in tribe.wall_rings[0]["sections"])
-        and tribe.wood >= config.TERRITORY_EXPANSION_WOOD_COST
-        and tribe.stone >= config.TERRITORY_EXPANSION_STONE_COST
-    ):
-        return (
-            "No wall section has ever been unlocked, even though there's enough wood and stone on "
-            "hand right now to expand territory and unlock the first one -- EXPAND_TERRITORY is "
-            "what opens that door, and long houses, a kitchen, and a library all wait behind it."
-        )
-    return ""
-
 
 def _can_afford_construct_wall(tribe, world) -> bool:
     # Live bug ("Walls didn't unlock for some reason and they wasted cycles"):
     # this used to return True here on the theory that letting the action's
-    # own "nothing to build" message surface would redirect the tribe to
-    # EXPAND_TERRITORY -- confirmed live it does not: one tribe chose
-    # CONSTRUCT_WALL well over 100 times in a row against a ring with zero
-    # sections ever unlocked, the message never once causing it to pick
-    # EXPAND_TERRITORY instead. cost is None here in two cases -- nothing is
-    # currently unlocked to work on, or the wall is genuinely complete and
-    # maxed out -- and CONSTRUCT_WALL is a guaranteed no-op in both, so it's
-    # hidden the same way every other satisfied/blocked one-off action in
-    # this table already is. The _prepare_turn nudge above (see "EXPAND_
-    # TERRITORY unlocks the next one") now carries the "what to do instead"
-    # fact that used to live only in this action's own rejection message.
+    # own "nothing to build" message surface would redirect the tribe to a
+    # separate EXPAND_TERRITORY action -- confirmed live it does not: one
+    # tribe chose CONSTRUCT_WALL well over 100 times in a row against a ring
+    # with zero sections ever unlocked, the message never once causing it to
+    # pick EXPAND_TERRITORY instead. A second, independent live trace found
+    # the same failure from the other side: EXPAND_TERRITORY itself sat
+    # affordable and alone on the menu and still got picked in roughly 1 of 8
+    # real test runs. 2026-09-08: rather than a third attempt at nudging the
+    # model toward the "other" action, CONSTRUCT_WALL and EXPAND_TERRITORY
+    # were merged into one action (see actions._construct_wall's own
+    # docstring) -- there's no longer a second action to redirect to, so this
+    # only needs to ask "is there ANY next wall-related step (progress,
+    # reinforce, unlock, or open a new ring) the tribe can actually afford
+    # right now," same "hide the guaranteed no-op" shape every other entry in
+    # this table already uses.
     cost = _wall_next_afford_cost(tribe)
-    if cost is None:
+    if cost is not None:
+        wood_cost, stone_cost = cost
+        return tribe.wood >= wood_cost and tribe.stone >= stone_cost
+    if not tribe.wall_rings:
         return False
-    wood_cost, stone_cost = cost
-    return tribe.wood >= wood_cost and tribe.stone >= stone_cost
+    if tribe.wood < config.TERRITORY_EXPANSION_WOOD_COST or tribe.stone < config.TERRITORY_EXPANSION_STONE_COST:
+        return False
+    if city_layout.next_unlockable_section(tribe) is not None:
+        return True
+    # Nothing left to unlock in any existing ring -- next_wall_work_section
+    # already being None (we're only here because it was) guarantees every
+    # unlocked section is both built and maxed, which in turn guarantees the
+    # outermost ring is fully reinforced -- so the only thing left to check is
+    # whether there's room for one more ring under the cap.
+    return len(tribe.wall_rings) < config.MAX_WALL_RINGS
 
 
 def _can_place(tribe, world, building_type: str) -> bool:
@@ -389,7 +384,6 @@ AFFORDABILITY_CHECKS = {
         and _can_place(t, w, "forge")
     ),
     "BUILD_ROAD": lambda t, w: t.wood >= config.ROAD_WOOD_COST and t.stone >= config.ROAD_STONE_COST,
-    "EXPAND_TERRITORY": lambda t, w: t.wood >= config.TERRITORY_EXPANSION_WOOD_COST and t.stone >= config.TERRITORY_EXPANSION_STONE_COST,
     "PLANT_CROP": lambda t, w: (
         t.farm_plots < config.MAX_FARM_PLOTS and t.wood >= config.PLANT_CROP_WOOD_COST
         and _can_place(t, w, "farm_plot")
@@ -980,7 +974,7 @@ class Tribe:
         # _advance_water_supply's passive income exists (settled_near_water) -- see
         # Simulation._prepare_turn.
         self.watering_retired = False
-        # Same one-way retirement shape, for EXPAND_TERRITORY once config.
+        # Same one-way retirement shape, for CONSTRUCT_WALL once config.
         # MAX_WALL_RINGS is reached and fully reinforced -- see
         # Simulation._prepare_turn.
         self.walls_complete = False
@@ -2652,10 +2646,12 @@ class Simulation:
             available_actions = [a for a in available_actions if a != "GATHER_FOOD"]
 
         # Explicit request ("2 rings is enough. they will have to build outside
-        # the walls once they hit that point"): EXPAND_TERRITORY retires the
+        # the walls once they hit that point"): the wall pipeline retires the
         # same one-way way GATHER_FOOD/GATHER_WATER do above, once config.
         # MAX_WALL_RINGS is reached and the outermost ring is fully reinforced
         # -- a real ceiling instead of an unbounded ratchet on ring count.
+        # Named CONSTRUCT_WALL below (not EXPAND_TERRITORY) since 2026-09-08 --
+        # see actions._construct_wall's own docstring for the merge.
         if (
             not tribe.walls_complete
             and len(tribe.wall_rings) >= config.MAX_WALL_RINGS
@@ -2664,11 +2660,11 @@ class Simulation:
             tribe.walls_complete = True
             tribe.history.append(
                 f"\U0001f4dc {tribe.name}'s walls are complete at {len(tribe.wall_rings)} rings -- "
-                "EXPAND_TERRITORY is retired now that the settlement has reached its full defensive size; "
+                "CONSTRUCT_WALL is retired now that the settlement has reached its full defensive size; "
                 "future building spreads out beyond the walls"
             )
         if tribe.walls_complete:
-            available_actions = [a for a in available_actions if a != "EXPAND_TERRITORY"]
+            available_actions = [a for a in available_actions if a != "CONSTRUCT_WALL"]
 
         # Explicit request ("i know you can see they kept try to build a dock when
         # they already had one"): every other one-time structure with a single
@@ -2968,12 +2964,10 @@ class Simulation:
         ring0 = tribe.wall_rings[0] if tribe.wall_rings else None
         ring0_reinforced = bool(ring0) and city_layout.ring_fully_reinforced(ring0)
 
-        # Checks era-unlock, not "CONSTRUCT_WALL in available_actions" -- since
-        # _can_afford_construct_wall now hides the action whenever nothing is
-        # unlocked to build (see its own comment), that membership test would
-        # go False exactly during the state these nudges most need to explain,
-        # silencing the "EXPAND_TERRITORY unlocks the next one" fact right when
-        # it matters most.
+        # Checks era-unlock, not "CONSTRUCT_WALL in available_actions" -- the
+        # membership test still goes False whenever nothing is currently
+        # affordable (see _can_afford_construct_wall), which is exactly the
+        # state these nudges most need to explain.
         if "CONSTRUCT_WALL" in unlocked_actions_through(tribe.era):
             # NUDGE (2026-09-01, explicit request: live logs showed the chief
             # repeatedly choosing BUILD_LONG_HOUSE against a wall that wasn't
@@ -3023,26 +3017,27 @@ class Simulation:
                 # Live bug ("Walls didn't unlock for some reason and they wasted
                 # cycles"): confirmed via board_history -- a tribe called
                 # CONSTRUCT_WALL well over 100 times against a ring with zero
-                # sections ever unlocked, since _can_afford_construct_wall used
-                # to keep it in the menu anyway ("let the action's own message
-                # surface instead") and that message alone never once redirected
-                # either tribe to EXPAND_TERRITORY, the same "a fact doesn't
-                # reliably redirect a small model" pattern documented elsewhere
-                # in this file. CONSTRUCT_WALL is now hidden from the menu
-                # entirely whenever nothing is unlocked (see
-                # _can_afford_construct_wall) -- this states plainly, every
-                # cycle it's true, that EXPAND_TERRITORY is the actual next step.
+                # sections ever unlocked, and a separate EXPAND_TERRITORY action
+                # that would have unlocked one never once got picked instead,
+                # across two independent live traces -- the same "a fact doesn't
+                # reliably redirect a small model to a DIFFERENT action" pattern
+                # documented elsewhere in this file. 2026-09-08: rather than a
+                # third nudge attempt, CONSTRUCT_WALL and EXPAND_TERRITORY were
+                # merged into one action (see actions._construct_wall) -- the
+                # tribe no longer needs to be told which action unlocks what,
+                # since there's only one action left to pick. These lines are now
+                # purely informational (how much of the ring is real progress).
                 if unlocked_count < real_total and built >= unlocked_count:
                     if unlocked_count == 0:
                         visible_entities.append(
-                            f"The settlement's first wall ring has no section unlocked yet -- EXPAND_TERRITORY "
-                            f"unlocks the first one before CONSTRUCT_WALL has anything to build{natural_note}."
+                            f"The settlement's first wall ring has no section unlocked yet -- CONSTRUCT_WALL "
+                            f"unlocks the first one automatically{natural_note}."
                         )
                     else:
                         visible_entities.append(
                             f"The settlement's first wall ring has {built}/{real_total} real sections built, and "
-                            f"every unlocked section is complete -- EXPAND_TERRITORY unlocks the next "
-                            f"one{natural_note}."
+                            f"every unlocked section is complete -- CONSTRUCT_WALL unlocks the next "
+                            f"one automatically{natural_note}."
                         )
                 else:
                     visible_entities.append(
@@ -3229,10 +3224,12 @@ class Simulation:
                 "food source is its own risk that fishing would reduce."
             )
 
-        # See _warehouse_capacity_note/_wall_expansion_note's own docstrings (top of
-        # this file) for the live trace evidence behind both.
+        # See _warehouse_capacity_note's own docstring (top of this file) for the
+        # live trace evidence behind it. Its sibling _wall_expansion_note (same
+        # trace, the EXPAND_TERRITORY side) was retired 2026-09-08 once
+        # CONSTRUCT_WALL/EXPAND_TERRITORY were merged into one action -- there's no
+        # longer a second action to nudge the model toward picking.
         warehouse_note = _warehouse_capacity_note(tribe)
-        wall_note = _wall_expansion_note(tribe)
 
         if tribe.fishing_learned:
             visible_entities.append(
@@ -3354,10 +3351,10 @@ class Simulation:
             "visible_entities": visible_entities,
             "journey_note": journey_note,
             # Combined into one growth-tier slot (see prompts.py's GROWTH IMPERATIVE
-            # LAYER): all four are the same category of "not urgent, but real" pressure,
+            # LAYER): all three are the same category of "not urgent, but real" pressure,
             # and all need the same salience fix era_gap_note already proved out -- a
             # fact buried in the generic list gets ignored even when it's true.
-            "growth_note": " ".join(n for n in (era_gap_note, diversification_note, warehouse_note, wall_note) if n),
+            "growth_note": " ".join(n for n in (era_gap_note, diversification_note, warehouse_note) if n),
         }
         # See wellbeing.compute_wellbeing -- a slower-moving, five-tier read on the
         # tribe's overall condition, distinct from the moment-to-moment survival_bias

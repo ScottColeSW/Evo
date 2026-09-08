@@ -1604,7 +1604,7 @@ def test_survival_crisis_filters_menu_to_survival_actions_only():
 
     assert tribe.food_crisis_active is True
     assert "BUILD_LONG_HOUSE" not in ctx["available_actions"]
-    assert "EXPAND_TERRITORY" not in ctx["available_actions"]
+    assert "CONSTRUCT_WALL" not in ctx["available_actions"]
     assert "RELOCATE" not in ctx["available_actions"]  # has its own food/water cost
     assert "GATHER_FOOD" in ctx["available_actions"]
     assert "HUNT_DEER" in ctx["available_actions"]
@@ -1793,7 +1793,6 @@ def test_wall_commitment_narrows_the_menu_to_wall_and_survival_actions():
     assert "GATHER_WOOD" in ctx["available_actions"]
     assert "GATHER_STONE" in ctx["available_actions"]
     assert "BUILD_LONG_HOUSE" not in ctx["available_actions"]
-    assert "EXPAND_TERRITORY" not in ctx["available_actions"]
     assert set(ctx["available_actions"]) <= WALL_LOCK_ACTIONS
     assert "has to be finished before anything else" in request["prompt"]
 
@@ -2037,19 +2036,13 @@ def test_affordability_gate_hides_construct_wall_when_the_next_section_is_unaffo
     assert "CONSTRUCT_WALL" in ctx["available_actions"]
 
 
-def test_affordability_gate_hides_construct_wall_when_nothing_is_unlocked_to_build():
-    """Live bug ("Walls didn't unlock for some reason and they wasted
-    cycles"): confirmed via board_history.db -- a tribe called CONSTRUCT_WALL
-    well over 100 times in a row against a ring with zero sections ever
-    unlocked, because this used to return True here on the theory that the
-    action's own "no wall section is currently unlocked" rejection message
-    would redirect the tribe to EXPAND_TERRITORY instead. It never did, not
-    once, across either tribe's whole run -- the same "a stated fact doesn't
-    reliably redirect a small model" pattern documented elsewhere in this
-    file. No unlocked, unfinished (or reinforceable) section at all is a
-    guaranteed no-op exactly like an unaffordable one, so it's hidden the
-    same way now; the era-gated nudge (see test_no_wall_started_yet_nudges_
-    toward_construct_wall) is what actually states the fact instead."""
+def test_affordability_gate_hides_construct_wall_when_no_territory_exists_yet():
+    """No wall_rings at all (not even ring 0) is a real, structural no-op --
+    CONSTRUCT_WALL has nothing to work on, unlock, or expand until a territory
+    exists in the first place (see _found_territory). Distinct from "a ring
+    exists but nothing is unlocked yet," which used to also hide CONSTRUCT_WALL
+    (see test_construct_wall_unlocks_the_first_section_when_nothing_is_unlocked_yet
+    for why that specific case no longer does, post-2026-09-08 merge)."""
     from backend import config
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
@@ -2057,12 +2050,43 @@ def test_affordability_gate_hides_construct_wall_when_nothing_is_unlocked_to_bui
     tribe.has_ever_settled = True
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"
-    tribe.wood = tribe.stone = 200  # plenty -- isolates the "nothing unlocked" case from cost
+    tribe.wood = tribe.stone = 200  # plenty -- isolates the "no territory" case from cost
     tribe.wall_rings = []  # nothing built yet -- not a cost issue
 
     _, ctx = sim._prepare_turn(tribe)
 
     assert "CONSTRUCT_WALL" not in ctx["available_actions"]
+
+
+def test_affordability_gate_shows_construct_wall_when_a_ring_exists_with_nothing_unlocked():
+    """The actual regression test for the live bug ("Walls didn't unlock for some
+    reason and they wasted cycles"): confirmed via board_history.db -- a tribe
+    called CONSTRUCT_WALL well over 100 times in a row against a ring with zero
+    sections ever unlocked, on the theory that its own rejection message would
+    redirect the tribe to a separate EXPAND_TERRITORY action. It never did, not
+    once, across either tribe's whole run. A second, independent live trace found
+    the same failure from the other side: EXPAND_TERRITORY itself sat affordable
+    and alone on the menu and still got picked in roughly 1 of 8 real test runs.
+    2026-09-08: CONSTRUCT_WALL and EXPAND_TERRITORY were merged into one action
+    (see actions._construct_wall) instead of trying a third nudge -- a ring that
+    exists with nothing unlocked is no longer a guaranteed no-op, since
+    CONSTRUCT_WALL now unlocks the first section itself. See
+    test_construct_wall_unlocks_the_first_section_when_nothing_is_unlocked_yet
+    (tests/test_actions.py) for the action-level proof; this is the menu-level
+    half -- CONSTRUCT_WALL must actually be OFFERED for that to ever get chosen."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"
+    tribe.wood = tribe.stone = 200  # plenty to afford the expansion cost
+    sim._found_territory(tribe)  # ring 0 exists, zero sections unlocked -- the real bug's exact state
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "CONSTRUCT_WALL" in ctx["available_actions"]
 
 
 def test_affordability_gate_hides_forge_item_once_the_item_storage_cap_is_reached():
@@ -7493,11 +7517,11 @@ def test_gather_water_stays_available_before_settling_near_water():
     assert tribe.watering_retired is False
 
 
-def test_expand_territory_retires_once_max_wall_rings_are_reached():
+def test_construct_wall_retires_once_max_wall_rings_are_reached():
     """Explicit request: "2 rings is enough. they will have to build outside
     the walls once they hit that point." config.MAX_WALL_RINGS rings, all
-    fully reinforced, retires EXPAND_TERRITORY the same one-way way GATHER_
-    FOOD/GATHER_WATER retire above."""
+    fully built and reinforced, retires CONSTRUCT_WALL the same one-way way
+    GATHER_FOOD/GATHER_WATER retire above."""
     from backend import config, city_layout
 
     sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
@@ -7512,18 +7536,19 @@ def test_expand_territory_retires_once_max_wall_rings_are_reached():
     for ring in tribe.wall_rings:
         for sec in ring["sections"]:
             sec["unlocked"] = True
+            sec["progress"] = 100
             sec["tier"] = config.WALL_MAX_LAYERS
 
     request, ctx = sim._prepare_turn(tribe)
 
-    assert "EXPAND_TERRITORY" not in ctx["available_actions"]
+    assert "CONSTRUCT_WALL" not in ctx["available_actions"]
     assert tribe.walls_complete is True
     assert any("walls are complete" in e for e in tribe.history)
 
 
-def test_expand_territory_stays_available_below_the_wall_ring_cap():
-    """Companion to the test above: a single fully-reinforced ring, one below
-    config.MAX_WALL_RINGS, still leaves EXPAND_TERRITORY on the table -- the
+def test_construct_wall_stays_available_below_the_wall_ring_cap():
+    """Companion to the test above: a single fully-built-and-reinforced ring, one
+    below config.MAX_WALL_RINGS, still leaves CONSTRUCT_WALL on the table -- the
     cap is on ring count, not on any one ring being finished."""
     from backend import config, city_layout
 
@@ -7538,11 +7563,12 @@ def test_expand_territory_stays_available_below_the_wall_ring_cap():
     tribe.wall_rings = [city_layout.build_ring(sim.world, tribe.territory_center, 0)]
     for sec in tribe.wall_rings[0]["sections"]:
         sec["unlocked"] = True
+        sec["progress"] = 100
         sec["tier"] = config.WALL_MAX_LAYERS
 
     _, ctx = sim._prepare_turn(tribe)
 
-    assert "EXPAND_TERRITORY" in ctx["available_actions"]
+    assert "CONSTRUCT_WALL" in ctx["available_actions"]
     assert tribe.walls_complete is False
 
 
@@ -7629,6 +7655,52 @@ def test_diversification_note_absent_once_both_are_proven():
 
     assert "no crop has ever been planted" not in request["prompt"]
     assert "fishing has never been tried" not in request["prompt"]
+
+
+def test_warehouse_note_fires_once_population_outgrows_the_storage_cap():
+    """Live trace finding (run_20260908_082234): a tribe that grew past population
+    1600 with no warehouse ever built spent 70+ cycles oscillating between 0 food
+    and a harvest overflowing back out of an unraised storage cap."""
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.population = config.STORAGE_CAP_BASE
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "already outgrown the storage cap" in request["prompt"]
+
+
+def test_warehouse_note_absent_once_a_warehouse_is_built():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.population = config.STORAGE_CAP_BASE
+    tribe.warehouses_built = 1
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "already outgrown the storage cap" not in request["prompt"]
+
+
+def test_warehouse_note_absent_below_the_population_threshold():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.population = config.STORAGE_CAP_BASE - 1
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "already outgrown the storage cap" not in request["prompt"]
 
 
 def test_settled_near_water_fact_mentions_passive_water_supply():
