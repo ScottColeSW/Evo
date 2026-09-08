@@ -210,6 +210,12 @@ def _is_wood_secure(tribe) -> bool:
     return tribe.sawmill_built and tribe.lumber_site is not None
 
 
+def _is_stone_secure(tribe) -> bool:
+    """Stone's own version of _is_wood_secure -- a Quarry plus a real,
+    discovered-and-in-use stone site. See Simulation._advance_stone_supply."""
+    return tribe.quarry_built and tribe.quarry_site is not None
+
+
 def _wall_next_afford_cost(tribe) -> tuple[int, int] | None:
     target = city_layout.next_wall_work_section(tribe)
     if target is None:
@@ -1969,6 +1975,7 @@ class Simulation:
             self._advance_water_supply(tribe)
             self._advance_food_supply(tribe)
             self._advance_wood_supply(tribe)
+            self._advance_stone_supply(tribe)
             self._advance_fish_supply(tribe)
             self._advance_farming(tribe)
             self._apply_upkeep(tribe)
@@ -5557,6 +5564,16 @@ class Simulation:
         a path to."""
         if _is_wood_secure(tribe):
             self._capped_add(tribe, "wood", config.WOOD_SECURITY_DAILY_INCOME)
+
+    def _advance_stone_supply(self, tribe: Tribe) -> None:
+        """Stone's own version of _advance_wood_supply above -- same reasoning,
+        same shape, a Quarry standing in for the Sawmill and a discovered
+        quarry_site standing in for a Timber Grove. tribe.quarry_site (singular,
+        set the moment BUILD_QUARRY succeeds with at least one quarry_sites
+        entry already known -- see actions._build_quarry) is exactly
+        "discovered and using" a real stone-rich site."""
+        if _is_stone_secure(tribe):
+            self._capped_add(tribe, "stone", config.STONE_SECURITY_DAILY_INCOME)
 
     def _advance_fish_supply(self, tribe: Tribe) -> None:
         """Once fishing is learned (the first successful CATCH_FISH), food flows in

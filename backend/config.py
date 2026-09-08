@@ -1367,6 +1367,11 @@ QUARRY_WOOD_COST = 15
 QUARRY_STONE_COST = 30
 QUARRY_STONE_MULTIPLIER = 3
 
+# Stone's own version of WOOD_SECURITY_DAILY_INCOME above -- same reasoning,
+# same shape, a Quarry standing in for the Sawmill and a discovered quarry_site
+# standing in for a Timber Grove. See Simulation._advance_stone_supply.
+STONE_SECURITY_DAILY_INCOME = 10
+
 # BUILD_WAREHOUSE + storage caps (backend/actions.py): explicit request, after a
 # live run showed Forest Tribe pile wood up to 200+ while permanently starved on
 # stone -- unlimited storage meant nothing ever pushed a tribe to reconsider what
