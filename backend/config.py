@@ -845,6 +845,20 @@ BARRACKS_WOOD_COST = 25
 BARRACKS_STONE_COST = 25
 BATTALION_CAPACITY_PER_BARRACKS = 20
 
+# Military branch, step 3: TRAIN_BATTALION. Staged, like CONSTRUCT_WALL --
+# "built up over several turns, more with more people" -- rather than a
+# one-shot flip; a standing force materializing in one action reads as too
+# cheap. Reuses actions._labor_multiplier the same way CONSTRUCT_WALL's own
+# progress-per-action does, so a larger tribe trains faster. At the starting
+# population (labor multiplier 1.0), one action trains ~5 soldiers -- a full
+# single-Barracks capacity (20) in ~4 actions, matching how many actions
+# CONSTRUCT_WALL's own base value takes to finish one section. Costs real
+# food per soldier trained (feeding real people, the same "a real resource
+# cost, not just wood/stone" shape BREED already uses), not wood/stone --
+# Barracks itself already paid the building cost.
+BATTALION_TRAINING_PER_ACTION_BASE = 5
+BATTALION_TRAINING_FOOD_COST_PER_SOLDIER = 2
+
 # BREED (backend/actions.py._breed, backend/breeding.py). Was free (0/0) -- the two
 # real eligible windows watched in an early session both landed inside a full
 # starvation death spiral (0 food/water), so a positive cost would have blocked BREED

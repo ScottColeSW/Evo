@@ -340,6 +340,127 @@ def test_can_afford_build_barracks_matches_the_action_itself():
     assert AFFORDABILITY_CHECKS["BUILD_BARRACKS"](tribe, sim.world) is True
 
 
+def test_train_battalion_does_nothing_without_a_warrior():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.warrior_name = None
+    tribe.barracks_built = 1
+    tribe.food = 200
+
+    result = ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
+
+    assert result is None
+    assert tribe.battalion_size == 0
+
+
+def test_train_battalion_does_nothing_without_a_barracks():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.warrior_name = "BriMir"
+    tribe.barracks_built = 0
+    tribe.food = 200
+
+    result = ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
+
+    assert result is None
+    assert tribe.battalion_size == 0
+
+
+def test_train_battalion_trains_real_soldiers_and_costs_food():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.warrior_name = "BriMir"
+    tribe.barracks_built = 1
+    tribe.population = config.POPULATION_YIELD_BASELINE  # labor multiplier 1.0
+    tribe.food = 200
+    food_before = tribe.food
+
+    result = ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.battalion_size == config.BATTALION_TRAINING_PER_ACTION_BASE
+    assert tribe.food == food_before - round(config.BATTALION_TRAINING_FOOD_COST_PER_SOLDIER * tribe.battalion_size)
+    assert "BriMir" in result
+    assert f"{tribe.battalion_size}/{config.BATTALION_CAPACITY_PER_BARRACKS}" in result
+
+
+def test_train_battalion_stops_at_capacity_and_announces_full_strength():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.warrior_name = "BriMir"
+    tribe.barracks_built = 1
+    tribe.population = config.POPULATION_YIELD_BASELINE
+    tribe.food = 1000
+    capacity = config.BATTALION_CAPACITY_PER_BARRACKS * tribe.barracks_built
+
+    result = None
+    for _ in range(50):  # plenty of calls to guarantee reaching the cap
+        result = ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
+        if tribe.battalion_size >= capacity:
+            break
+
+    assert tribe.battalion_size == capacity
+    assert "full strength" in result
+
+    # No further growth past capacity, even with plenty of food left.
+    food_before = tribe.food
+    assert ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.battalion_size == capacity
+    assert tribe.food == food_before
+
+
+def test_train_battalion_no_op_when_cannot_afford_the_food_cost():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.warrior_name = "BriMir"
+    tribe.barracks_built = 1
+    tribe.population = config.POPULATION_YIELD_BASELINE
+    tribe.food = config.BATTALION_TRAINING_FOOD_COST_PER_SOLDIER - 1  # short of even one soldier
+
+    result = ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
+
+    assert result is None
+    assert tribe.battalion_size == 0
+
+
+def test_larger_population_trains_battalion_faster():
+    from backend import config
+
+    sim = _bare_simulation()
+    small = Tribe("tribe_0", "Small Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    small.warrior_name, small.barracks_built, small.population, small.food = "BriMir", 5, 8, 1000
+    big = Tribe("tribe_1", "Big Tribe", "gemma2:2b", 60, 60, "#f97316")
+    big.warrior_name, big.barracks_built, big.population, big.food = "TalOra", 5, 4000, 1000
+
+    ACTION_REGISTRY["TRAIN_BATTALION"](sim, small, "plains", _NO_TARGET)
+    ACTION_REGISTRY["TRAIN_BATTALION"](sim, big, "plains", _NO_TARGET)
+
+    assert big.battalion_size > small.battalion_size
+
+
+def test_can_afford_train_battalion_matches_the_action_itself():
+    from backend.simulation import AFFORDABILITY_CHECKS
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 200
+
+    assert AFFORDABILITY_CHECKS["TRAIN_BATTALION"](tribe, sim.world) is False  # no Warrior/Barracks yet
+
+    tribe.warrior_name = "BriMir"
+    tribe.barracks_built = 1
+    assert AFFORDABILITY_CHECKS["TRAIN_BATTALION"](tribe, sim.world) is True
+
+    tribe.battalion_size = config.BATTALION_CAPACITY_PER_BARRACKS
+    assert AFFORDABILITY_CHECKS["TRAIN_BATTALION"](tribe, sim.world) is False  # already at capacity
+
+
 def test_second_fire_at_the_same_tile_costs_nothing_and_gains_no_pride():
     """Regression test: a real 8-cycle live run showed a model spamming BUILD_FIRE at
     the same tile every cycle, each one radiating more ancestral pride at zero

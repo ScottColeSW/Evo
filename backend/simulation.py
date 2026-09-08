@@ -408,6 +408,15 @@ AFFORDABILITY_CHECKS = {
         t.keep_built and t.wood >= config.BARRACKS_WOOD_COST and t.stone >= config.BARRACKS_STONE_COST
         and _can_place(t, w, "barracks")
     ),
+    # Military branch, step 3 (plan file valiant-forging-falcon.md) -- hides
+    # the guaranteed no-ops (no Warrior/Barracks yet, already at capacity, or
+    # can't afford even one soldier's food cost) the same way every other
+    # entry in this table already does.
+    "TRAIN_BATTALION": lambda t, w: (
+        t.warrior_name is not None and t.barracks_built > 0
+        and t.battalion_size < config.BATTALION_CAPACITY_PER_BARRACKS * t.barracks_built
+        and t.food >= config.BATTALION_TRAINING_FOOD_COST_PER_SOLDIER
+    ),
     "BUILD_KEEP": lambda t, w: (
         t.long_houses_built >= config.KEEP_LONG_HOUSES_REQUIRED
         and t.wood >= config.KEEP_WOOD_COST and t.stone >= config.KEEP_STONE_COST
@@ -927,6 +936,11 @@ class Tribe:
         # one raises how large a Battalion can ever be trained
         # (config.BATTALION_CAPACITY_PER_BARRACKS per Barracks).
         self.barracks_built = 0
+        # Military branch, step 3 (actions.TRAIN_BATTALION) -- current
+        # trained headcount, staged up toward config.
+        # BATTALION_CAPACITY_PER_BARRACKS * barracks_built the same way a
+        # wall section's own progress builds up over several actions.
+        self.battalion_size = 0
         # See actions.py._build_road -- one-way. Adds a flat speed bonus to every
         # future expedition (Simulation._advance_one_expedition), the same shape a
         # well-worn trail already grants.
@@ -1219,6 +1233,7 @@ class Tribe:
             "fortress_built": self.fortress_built,
             "castle_built": self.castle_built,
             "barracks_built": self.barracks_built,
+            "battalion_size": self.battalion_size,
             "road_built": self.road_built,
             "toll_roads_completed": self.toll_roads_completed,
             "dock_built": self.dock_built,

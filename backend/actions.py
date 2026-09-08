@@ -812,6 +812,36 @@ def _build_barracks(sim, tribe, biome, target):
     return f"a barracks rises -- a Battalion can grow to {capacity} strong once a Warrior trains one"
 
 
+def _train_battalion(sim, tribe, biome, target):
+    """Military branch, step 3 (plan file valiant-forging-falcon.md): staged
+    like CONSTRUCT_WALL -- "built up over several turns, more with more
+    people" -- rather than a one-shot flip. Reuses _labor_multiplier the same
+    way CONSTRUCT_WALL's own progress-per-action does, so a larger tribe
+    trains faster. Costs real food per soldier (feeding real people), not
+    wood/stone -- BUILD_BARRACKS already paid the building cost. No
+    commitment lock the way CONSTRUCT_WALL has (see its own docstring) --
+    that exists for a specific documented live bug this hasn't hit; closer in
+    spirit to EXPAND_TERRITORY's own uncommitted "invest again whenever
+    ready" shape."""
+    if tribe.warrior_name is None or tribe.barracks_built <= 0:
+        return None
+    capacity = config.BATTALION_CAPACITY_PER_BARRACKS * tribe.barracks_built
+    if tribe.battalion_size >= capacity:
+        return None
+    added = min(
+        capacity - tribe.battalion_size,
+        round(config.BATTALION_TRAINING_PER_ACTION_BASE * _labor_multiplier(tribe.population)),
+    )
+    food_cost = round(config.BATTALION_TRAINING_FOOD_COST_PER_SOLDIER * added)
+    if tribe.food < food_cost:
+        return None
+    tribe.food -= food_cost
+    tribe.battalion_size += added
+    if tribe.battalion_size >= capacity:
+        return f"the Battalion reaches full strength at {tribe.battalion_size}, trained and ready under {tribe.warrior_name}"
+    return f"the Battalion trains further under {tribe.warrior_name} -- {tribe.battalion_size}/{capacity} strong"
+
+
 def _build_kitchen(sim, tribe, biome, target):
     """Explicit follow-up: "we might have to let them build a kitchen which
     improves cooked food to excellent food yielding 3 per cooked item." Only
@@ -2362,6 +2392,7 @@ ACTION_REGISTRY = {
     "BUILD_WELL": _build_well,
     "BUILD_WAREHOUSE": _build_warehouse,
     "BUILD_BARRACKS": _build_barracks,
+    "TRAIN_BATTALION": _train_battalion,
     "BUILD_FORGE": _build_forge,
     "FORGE_ITEM": _forge_item,
     "USE_ITEM": _use_item,
@@ -2424,6 +2455,7 @@ ACTION_DESCRIPTIONS = {
     "BUILD_WELL": "Build a well using stored wood and stone -- no prerequisite beyond being settled. A one-time, permanent structure at your settlement: the tribe's daily passive water supply flows in faster from then on.",
     "BUILD_WAREHOUSE": "Build a warehouse using stored wood and stone. Raises how much of every resource can be stored at once -- gathering more than storage allows is wasted. Repeatable: each one raises the limit further.",
     "BUILD_BARRACKS": "Build a barracks using stored wood and stone -- only possible once a Keep stands. Repeatable: each one raises how large a Battalion can ever be trained. Real housing for a standing military, the first building of the Military branch.",
+    "TRAIN_BATTALION": "Train soldiers for your Battalion, led by your Warrior -- only possible once a Warrior is named and a Barracks stands. Costs food, not wood/stone. Built up over several turns like a wall section, not finished in one -- more people trains faster. Repeatable up to your Barracks' own capacity.",
     "BUILD_FORGE": "Build a forge using stored wood and stone -- only possible once a mine stands and at least one unit of its ore is already in stock. A one-time, permanent structure: from then on, ore can be worked into real tools, weapons, and inventions.",
     "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. No durability to track: each item just carries a flat value, usable later or given away in a trade.",
     "USE_ITEM": "Redeem your oldest crafted item for its stored value, converted into wood and stone. Does nothing if you have no items.",
