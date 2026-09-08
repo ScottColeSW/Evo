@@ -785,6 +785,33 @@ def _build_warehouse(sim, tribe, biome, target):
     return f"a warehouse rises -- storage capacity grows to {_storage_cap(tribe)} per resource"
 
 
+def _build_barracks(sim, tribe, biome, target):
+    """Military branch, step 2 (plan file valiant-forging-falcon.md): real
+    housing for a trained Battalion, not a symbolic building -- repeatable,
+    the same "each one raises a real cap" shape _build_warehouse already uses
+    for storage, rather than a population-fraction formula. How large an army
+    a tribe can ever field stays visibly tied to something it actually built.
+    Gated on tribe.keep_built, not just affordability -- continues the
+    existing Wall -> Long House -> Keep -> Fortress/Castle defensive ladder
+    rather than sitting unconnected to it (Barracks branches off Keep, the
+    same way Fortress/Castle do)."""
+    if not tribe.keep_built:
+        return None
+    if tribe.wood < config.BARRACKS_WOOD_COST or tribe.stone < config.BARRACKS_STONE_COST:
+        return None
+    slot = architect.find_free_slot(sim.world, tribe, "barracks")
+    if slot is None:
+        return None
+    tribe.wood -= config.BARRACKS_WOOD_COST
+    tribe.stone -= config.BARRACKS_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["barracks"]
+    architect.record_building(tribe, "barracks", slot[0], slot[1], w, h, sim.cycle)
+    tribe.barracks_built += 1
+    sim._award_trophy(tribe, "Drillmaster")
+    capacity = config.BATTALION_CAPACITY_PER_BARRACKS * tribe.barracks_built
+    return f"a barracks rises -- a Battalion can grow to {capacity} strong once a Warrior trains one"
+
+
 def _build_kitchen(sim, tribe, biome, target):
     """Explicit follow-up: "we might have to let them build a kitchen which
     improves cooked food to excellent food yielding 3 per cooked item." Only
@@ -2334,6 +2361,7 @@ ACTION_REGISTRY = {
     "RESEARCH": _research,
     "BUILD_WELL": _build_well,
     "BUILD_WAREHOUSE": _build_warehouse,
+    "BUILD_BARRACKS": _build_barracks,
     "BUILD_FORGE": _build_forge,
     "FORGE_ITEM": _forge_item,
     "USE_ITEM": _use_item,
@@ -2395,6 +2423,7 @@ ACTION_DESCRIPTIONS = {
     "RESEARCH": "Study the tribe's own remembered history at the library, using a little stored wood -- only possible once a library stands. Distills what's been lived through into a permanent Library entry, and permanently shortens the path to the next era a little further. Repeatable.",
     "BUILD_WELL": "Build a well using stored wood and stone -- no prerequisite beyond being settled. A one-time, permanent structure at your settlement: the tribe's daily passive water supply flows in faster from then on.",
     "BUILD_WAREHOUSE": "Build a warehouse using stored wood and stone. Raises how much of every resource can be stored at once -- gathering more than storage allows is wasted. Repeatable: each one raises the limit further.",
+    "BUILD_BARRACKS": "Build a barracks using stored wood and stone -- only possible once a Keep stands. Repeatable: each one raises how large a Battalion can ever be trained. Real housing for a standing military, the first building of the Military branch.",
     "BUILD_FORGE": "Build a forge using stored wood and stone -- only possible once a mine stands and at least one unit of its ore is already in stock. A one-time, permanent structure: from then on, ore can be worked into real tools, weapons, and inventions.",
     "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. No durability to track: each item just carries a flat value, usable later or given away in a trade.",
     "USE_ITEM": "Redeem your oldest crafted item for its stored value, converted into wood and stone. Does nothing if you have no items.",

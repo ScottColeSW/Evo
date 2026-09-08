@@ -401,6 +401,13 @@ AFFORDABILITY_CHECKS = {
         t.wood >= config.WAREHOUSE_WOOD_COST and t.stone >= config.WAREHOUSE_STONE_COST
         and _can_place(t, w, "warehouse")
     ),
+    # Military branch, step 2 (plan file valiant-forging-falcon.md) -- real
+    # prerequisite (Keep) AND cost checked together, same shape BUILD_SAWMILL/
+    # BUILD_QUARRY/BUILD_TANNERY already use.
+    "BUILD_BARRACKS": lambda t, w: (
+        t.keep_built and t.wood >= config.BARRACKS_WOOD_COST and t.stone >= config.BARRACKS_STONE_COST
+        and _can_place(t, w, "barracks")
+    ),
     "BUILD_KEEP": lambda t, w: (
         t.long_houses_built >= config.KEEP_LONG_HOUSES_REQUIRED
         and t.wood >= config.KEEP_WOOD_COST and t.stone >= config.KEEP_STONE_COST
@@ -915,6 +922,11 @@ class Tribe:
         self.keep_built = False
         self.fortress_built = False
         self.castle_built = False
+        # Military branch, step 2 (plan file valiant-forging-falcon.md,
+        # actions.BUILD_BARRACKS) -- repeatable, like warehouses_built: each
+        # one raises how large a Battalion can ever be trained
+        # (config.BATTALION_CAPACITY_PER_BARRACKS per Barracks).
+        self.barracks_built = 0
         # See actions.py._build_road -- one-way. Adds a flat speed bonus to every
         # future expedition (Simulation._advance_one_expedition), the same shape a
         # well-worn trail already grants.
@@ -1206,6 +1218,7 @@ class Tribe:
             "keep_built": self.keep_built,
             "fortress_built": self.fortress_built,
             "castle_built": self.castle_built,
+            "barracks_built": self.barracks_built,
             "road_built": self.road_built,
             "toll_roads_completed": self.toll_roads_completed,
             "dock_built": self.dock_built,

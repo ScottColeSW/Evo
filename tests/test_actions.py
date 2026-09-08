@@ -274,6 +274,72 @@ def test_build_warehouse_no_op_when_cannot_afford_it():
     assert tribe.warehouses_built == 0
 
 
+def test_build_barracks_is_repeatable_and_raises_battalion_capacity():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.keep_built = True
+    tribe.wood = config.BARRACKS_WOOD_COST * 3
+    tribe.stone = config.BARRACKS_STONE_COST * 3
+
+    result = ACTION_REGISTRY["BUILD_BARRACKS"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.barracks_built == 1
+    assert f"{config.BATTALION_CAPACITY_PER_BARRACKS}" in result
+    assert "barracks rises" in result
+
+    ACTION_REGISTRY["BUILD_BARRACKS"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.barracks_built == 2
+
+
+def test_build_barracks_requires_a_keep_first():
+    """Military branch, step 2 (plan file valiant-forging-falcon.md):
+    Barracks branches off Keep, continuing the existing defensive ladder,
+    rather than being reachable on affordability alone."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.keep_built = False
+    tribe.wood = config.BARRACKS_WOOD_COST * 3
+    tribe.stone = config.BARRACKS_STONE_COST * 3
+
+    assert ACTION_REGISTRY["BUILD_BARRACKS"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.barracks_built == 0
+
+
+def test_build_barracks_no_op_when_cannot_afford_it():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.keep_built = True
+    tribe.wood = config.BARRACKS_WOOD_COST - 1
+    tribe.stone = config.BARRACKS_STONE_COST
+
+    assert ACTION_REGISTRY["BUILD_BARRACKS"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.barracks_built == 0
+
+
+def test_can_afford_build_barracks_matches_the_action_itself():
+    from backend.simulation import AFFORDABILITY_CHECKS
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = config.BARRACKS_WOOD_COST
+    tribe.stone = config.BARRACKS_STONE_COST
+
+    assert AFFORDABILITY_CHECKS["BUILD_BARRACKS"](tribe, sim.world) is False  # no Keep yet
+
+    tribe.keep_built = True
+    assert AFFORDABILITY_CHECKS["BUILD_BARRACKS"](tribe, sim.world) is True
+
+
 def test_second_fire_at_the_same_tile_costs_nothing_and_gains_no_pride():
     """Regression test: a real 8-cycle live run showed a model spamming BUILD_FIRE at
     the same tile every cycle, each one radiating more ancestral pride at zero

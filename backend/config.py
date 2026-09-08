@@ -550,6 +550,7 @@ BUILDING_FOOTPRINTS = {
     "farm_plot": (3, 3), "flock_pen": (2, 2), "fire": (1, 1), "hatchery": (2, 2),
     "boat": (2, 3), "bath_house": (2, 2), "library": (3, 3), "well": (2, 2),
     "object_creator": (3, 3), "created_structure": (2, 2),
+    "barracks": (3, 3),
 }
 
 # BUILD_FISHERY (backend/actions.py): a new building, unlocked once a Dock already
@@ -827,6 +828,22 @@ MILESTONE_HUNT_SUCCESSES = 5
 # ever has a small, fixed pool to hand out in total -- 3 personally-credited
 # trophies is a real, rare achievement, not a formality.
 WARRIOR_TROPHY_THRESHOLD = 3
+
+# Military branch, step 2: BUILD_BARRACKS. Repeatable, like BUILD_WAREHOUSE --
+# each one raises how large a Battalion TRAIN_BATTALION can ever train
+# (BATTALION_CAPACITY_PER_BARRACKS per Barracks), the same "repeatable
+# building raises a real cap" shape Warehouse already uses for storage,
+# rather than a population-fraction formula -- army size stays visibly tied
+# to something the player actually built. Gated on tribe.keep_built (not just
+# affordability) -- continues the existing Wall -> Long House -> Keep ->
+# Fortress/Castle defensive ladder rather than sitting unconnected to it.
+# Costs invented defaults, priced near Keep's own (30/35) since Barracks is
+# the next real investment past it, not tuned against live data yet --
+# revisit if a real run shows tribes never actually building this, the same
+# way Sawmill/Quarry/Mine costs were once flagged as unvalidated guesses.
+BARRACKS_WOOD_COST = 25
+BARRACKS_STONE_COST = 25
+BATTALION_CAPACITY_PER_BARRACKS = 20
 
 # BREED (backend/actions.py._breed, backend/breeding.py). Was free (0/0) -- the two
 # real eligible windows watched in an early session both landed inside a full
