@@ -3784,6 +3784,26 @@ def test_relocate_raider_sighting_after_ambush_clears_the_old_exact_spot():
     assert abs(sx - 60) <= config.RAIDER_SIGHTING_OFFSET and abs(sy - 60) <= config.RAIDER_SIGHTING_OFFSET
 
 
+def test_relocate_raider_sighting_after_ambush_never_lands_on_the_same_tile():
+    """Live bug, exposed by a real test flake: the old independent-x/y-offset
+    version could roll (0, 0) for both axes and "relocate" the raiders right
+    back onto the exact tile just cleared -- "cast elsewhere" ending up
+    nowhere. Also could land on unbuildable terrain and silently drop the
+    relocation entirely, so raiders just vanished instead of being cast
+    elsewhere. No mocking here at all -- this is meant to hold under real
+    randomness, not just a hand-picked roll, so it's checked across many
+    trials rather than once."""
+    for _ in range(200):
+        sim = _bare_simulation()
+        tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+        tribe.raider_sightings = [(60, 60)]
+
+        sim._relocate_raider_sighting_after_ambush(tribe, 60, 60)
+
+        assert (60, 60) not in tribe.raider_sightings
+        assert len(tribe.raider_sightings) == 1  # never silently vanished
+
+
 def test_outbound_expedition_flees_home_immediately_when_ambushed():
     """A uniform 0.0 for every random.random() call in the pipeline now also
     guarantees the new ambush defend-chance roll succeeds (see

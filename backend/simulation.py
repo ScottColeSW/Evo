@@ -4448,14 +4448,32 @@ class Simulation:
         records a new one nearby instead (the same RAIDER_SIGHTING_OFFSET nudge
         a scout's own raider-sighting report already uses) -- so the same
         location doesn't keep generating identical repeat encounters once its
-        raiders have actually been engaged, win or lose."""
+        raiders have actually been engaged, win or lose.
+
+        Explicit follow-up, after a real test flake exposed the gap: this used
+        to pick independent x/y offsets, which could land back on the exact
+        tile just cleared (both offsets rolling 0 -- "cast elsewhere" ending
+        up nowhere), or on unbuildable terrain, which silently dropped the
+        relocation entirely (raiders just vanish, contradicting "cast
+        elsewhere... not just gone"). Angle + a distance floored at
+        RAIDER_SIGHTING_MIN_OFFSET guarantees real displacement every time; a
+        bounded retry loop (same shape _find_minor_settlement_site's own
+        placement search already uses) guarantees a real landing spot instead
+        of silently giving up on the first unlucky roll."""
         if (x, y) in tribe.raider_sightings:
             tribe.raider_sightings.remove((x, y))
-        off = config.RAIDER_SIGHTING_OFFSET
-        rx = max(0, min(self.world.grid_size - 1, x + random.randint(-off, off)))
-        ry = max(0, min(self.world.grid_size - 1, y + random.randint(-off, off)))
-        if biome_at(rx, ry) not in config.UNBUILDABLE_BIOMES:
-            self._record_raider_sighting(tribe, rx, ry)
+        for _ in range(20):
+            angle = random.uniform(0, 2 * math.pi)
+            dist = random.randint(config.RAIDER_SIGHTING_MIN_OFFSET, config.RAIDER_SIGHTING_OFFSET)
+            rx = max(0, min(self.world.grid_size - 1, x + round(dist * math.cos(angle))))
+            ry = max(0, min(self.world.grid_size - 1, y + round(dist * math.sin(angle))))
+            if (rx, ry) != (x, y) and biome_at(rx, ry) not in config.UNBUILDABLE_BIOMES:
+                self._record_raider_sighting(tribe, rx, ry)
+                return
+        # Rare fallback on a very crowded/small map -- same "accept defeat
+        # after enough tries" shape _find_minor_settlement_site's own search
+        # uses. Raiders simply stay dispersed this time rather than force a
+        # placement onto invalid ground.
 
     def _expedition_raider_ambush(self, tribe: Tribe, exp: dict, x: int, y: int) -> bool:
         """Explicit request: "It would be interesting to see a Scout encounter a

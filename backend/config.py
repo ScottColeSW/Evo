@@ -1127,6 +1127,14 @@ RAIDER_SIGHTING_TRAUMA_RADIUS = 4
 # trip" doesn't have to mean "at the identical spot." Nudges the raider sighting by
 # up to this many tiles off the target instead, still nearby, no longer stacked.
 RAIDER_SIGHTING_OFFSET = 5
+# Explicit follow-up, after a test flake exposed the real gap: Simulation.
+# _relocate_raider_sighting_after_ambush used to pick independent x/y offsets
+# in [-RAIDER_SIGHTING_OFFSET, +RAIDER_SIGHTING_OFFSET], which could land back
+# on the exact tile just cleared (both offsets rolling 0) -- "cast elsewhere
+# on the map" should never mean "didn't actually move." A minimum radius (not
+# zero) on the angle+distance version of that same nudge guarantees real
+# displacement every time, not just most of the time.
+RAIDER_SIGHTING_MIN_OFFSET = 2
 # Bug report: "we introduced about 75% too many Raiders on the map, they are
 # interfering." Unlike the other LANDMARK_TYPES lists (a lumber/water/quarry site
 # stays a real, permanently-true fact), a raider sighting is transient danger --
