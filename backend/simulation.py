@@ -737,6 +737,13 @@ class Tribe:
         # actually found (Simulation._advance_exploration_party_outbound).
         self.explore_rotation_index = stagger
         self.landmarks: list[dict] = []
+        # Explicit design spec: "if anyone discovers a hazard, even if no one
+        # dies, they landmark it." Same {"x", "y", "name"} shape as landmarks
+        # above, deliberately a separate list -- these are warnings, not
+        # rewards, and need their own dedup check (Simulation._landmark_hazard)
+        # so a lingering party doesn't re-report the same known-dangerous tile
+        # every single day.
+        self.hazard_landmarks: list[dict] = []
         # Farming (backend/actions.py PLANT_CROP, Simulation._advance_farming). Growth
         # is a passive per-cycle tick once at least one plot exists, not a discrete
         # action -- same category as upkeep/population growth.
@@ -1122,6 +1129,7 @@ class Tribe:
             "visited_sectors": list(self.visited_sectors),
             "scout_rotation_index": self.scout_rotation_index,
             "landmarks": self.landmarks,
+            "hazard_landmarks": self.hazard_landmarks,
             "kitchen_built": self.kitchen_built,
             "tannery_built": self.tannery_built,
             "forge_built": self.forge_built,
@@ -3843,10 +3851,34 @@ class Simulation:
             # This restores the original once-per-day exposure the chance
             # constant was actually tuned against; only the raw position update
             # above still happens every cycle.
+            #
+            # Explicit design correction: "volcano, cliff, beach, ocean should
+            # all have the same treatment... any party goes out, they discover
+            # a hazard, 1 person in the party dies, they run home to report
+            # the death and the hazard area." These four used to fire (losing
+            # someone) without ever ending the trip -- a party could take a
+            # hit and just keep walking deeper into danger unless some
+            # unrelated later condition happened to also turn it back. Each
+            # now returns True only on an actual death (a mere discovery with
+            # no death still landmarks the ground -- see _landmark_hazard --
+            # but doesn't end the day), checked the same way
+            # _expedition_raider_ambush already is just below: whichever one
+            # actually kills someone (biomes are mutually exclusive, so at
+            # most one ever does) ends the day immediately and heads the party
+            # home. River/lake are the deliberate exception -- see
+            # _expedition_river_hazard's own docstring for why a death there
+            # never ends the trip; it's only reached via the water-sensing
+            # branch further down, which already heads home on its own terms
+            # (finding water, not the hazard, is what ends that leg).
             if is_new_day:
-                self._volcano_hazard(tribe, nx, ny)
-                self._cliffs_hazard(tribe, nx, ny)
-                self._ocean_hazard(tribe, nx, ny)
+                if (
+                    self._volcano_hazard(tribe, nx, ny)
+                    or self._cliffs_hazard(tribe, nx, ny)
+                    or self._ocean_hazard(tribe, nx, ny)
+                    or self._shoals_hazard(tribe, nx, ny)
+                ):
+                    exp["phase"] = "returning"
+                    return False
                 exp["food_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_FOOD
                 # Explicit correction: "foragers do not need to bring water back
                 # once they are settled, they should start bringing back
@@ -3932,7 +3964,7 @@ class Simulation:
                 wx, wy = sensed
                 on_water_now = (wx, wy) == (nx, ny)
                 if on_water_now:
-                    self._expedition_river_hazard(tribe, nx, ny)  # a no-op on a lake tile -- no current to drown in
+                    self._expedition_river_hazard(tribe, nx, ny)  # covers river and lake -- see its own docstring
                 exp["found"] = [wx, wy]
                 exp["phase"] = "returning"
                 if on_water_now:
@@ -4048,6 +4080,7 @@ class Simulation:
                 self._volcano_hazard(tribe, nx, ny)
                 self._cliffs_hazard(tribe, nx, ny)
                 self._ocean_hazard(tribe, nx, ny)
+                self._shoals_hazard(tribe, nx, ny)
                 self._expedition_raider_ambush(tribe, exp, nx, ny)
             # Live bug ("Scouts, after settlement, are doing weird things"):
             # the outbound leg already gives up when physics.terrain_aware_step
@@ -4211,59 +4244,114 @@ class Simulation:
                     best, best_dist = (wx, wy), dist
         return best
 
+    def _landmark_hazard(self, tribe: Tribe, x: int, y: int, hazard_label: str) -> None:
+        """Explicit design spec: "if anyone discovers a hazard, even if no one
+        dies, they landmark it... it needs a 'dangerous' sounding name." Called
+        unconditionally by every hazard function below the moment a party is
+        physically on that hazard's biome, independent of the separate,
+        chance-based death roll each one still makes on its own -- merely
+        knowing the ground is dangerous doesn't require losing someone first.
+
+        Dedup'd against tribe.hazard_landmarks (same {"x","y",name-field} shape
+        and same linear dedup check config.LANDMARK_NAMES's own reward
+        Landmarks already use against tribe.landmarks) so a lingering party
+        doesn't re-report the same known-dangerous tile every single day --
+        "no party should ever linger.\""""
+        if any(lm["x"] == x and lm["y"] == y for lm in tribe.hazard_landmarks):
+            return
+        name = random.choice(config.HAZARD_LANDMARK_NAMES)
+        tribe.hazard_landmarks.append({"x": x, "y": y, "name": name})
+        tribe.history.append(
+            f"the party marks {hazard_label} near ({x},{y}) as {name} -- a known danger for anyone who comes after"
+        )
+        tribe.memory.remember(
+            f"{name} near ({x},{y}) is known dangerous ground -- {hazard_label}.", self.cycle, weight=0.5,
+        )
+        self.recent_encounters.append({
+            "x": x, "y": y, "kind": "hazard_landmark", "label": name, "outcome": "sighted",
+        })
+
     def _expedition_river_hazard(self, tribe: Tribe, x: int, y: int) -> bool:
         """The same drowning risk GATHER_WATER already carries on a river tile
         (config.DROWNING_HAZARD_CHANCE) -- a traveling party crossing or camped on a
         river isn't any safer than a tribe standing on one to fill jugs. Returns True
         if it claimed someone (population loss and trauma already applied).
 
+        Explicit design correction: "other water like the River and Lake [is]
+        hazardous, yes, someone dies if they don't swim -- scouts can get over
+        pretty easily to form a path... if they still have time and people in
+        the party alive, they can continue on." Extended from river-only to
+        also cover lake -- lake tiles used to be an explicit no-op ("no
+        current to drown in"), but the user's own framing is that any open
+        water carries the same real risk, not just a river's current
+        specifically. Unlike volcano/cliffs/ocean/shoals (which force the
+        party home on an actual death), this one never does -- callers don't
+        check this return value to decide whether to keep going.
+
+        Explicit exception to the grave-marker every other hazard death here
+        leaves: "the only exception to the grave-marker/landmark is the River
+        and Lake. We imagine these grave markers as being washed away over
+        time, fleeting -- the water is not covered in death." A death here
+        still gets the landmark (the danger itself is real and worth knowing),
+        the history line, and the memory entry, but not the recent_encounters
+        "hazard_death" skull marker every land hazard leaves.
+
         Losing someone this way also becomes a real, remembered lesson, not just a
         chronicle line that scrolls away: a high-weight memory entry (see
         TribeMemory.consolidate) is what actually promotes into a standing taboo the
         tribe's own reasoning sees every future turn -- the survivors telling the rest
         of the tribe what happened, not the simulation warning them directly."""
-        if biome_at(x, y) != "river" or random.random() >= config.DROWNING_HAZARD_CHANCE:
+        biome = biome_at(x, y)
+        if biome not in ("river", "lake"):
+            return False
+        self._landmark_hazard(tribe, x, y, "a treacherous crossing")
+        if random.random() >= config.DROWNING_HAZARD_CHANCE:
             return False
         self.trauma.radiate_event_wave(x, y, config.DROWNING_TRAUMA_MAGNITUDE, config.DROWNING_TRAUMA_RADIUS)
         self._lose_population(tribe, config.DROWNING_HAZARD_POPULATION_LOSS, cause="drowning")
-        tribe.history.append("the river's current pulled someone under while the party was crossing -- the survivors turn back to warn the others")
+        water_word = "current" if biome == "river" else "cold water"
+        tribe.history.append(
+            f"the {water_word} pulled someone under while the party was crossing near ({x},{y}) -- "
+            "the rest press on"
+        )
         tribe.memory.remember(
-            f"A river crossing near ({x},{y}) drowned one of our own -- the current there is a real danger.",
+            f"A water crossing near ({x},{y}) drowned one of our own -- real danger there.",
             self.cycle, weight=0.85,
         )
-        # Live report: "it sounds like the Hazard didn't get reported back to the
-        # Tribe properly... if a party member dies and they have to run away to
-        # tell the Tribe, there should be a skull-n-crossbones marker." The
-        # chronicle line and memory above always fired, but unlike a raider
-        # ambush/wolf attack, no environmental hazard death ever appended to
-        # recent_encounters -- so nothing ever showed on the map itself.
-        self.recent_encounters.append({
-            "x": x, "y": y, "kind": "hazard_death", "label": "Lost to the river", "outcome": "struck",
-        })
         return True
 
     def _volcano_hazard(self, tribe: Tribe, x: int, y: int) -> bool:
         """Explicit correction: "the volcano is a Hazard they will die if they go
         there." Same shape as _expedition_river_hazard just above, far more
-        severe (config.VOLCANO_HAZARD_CHANCE/_POPULATION_LOSS vs. drowning's own
-        DROWNING_HAZARD_CHANCE/_POPULATION_LOSS) -- this needs to read as a
-        serious, well-known danger, not a mild river crossing. Called from every
+        likely to strike (config.VOLCANO_HAZARD_CHANCE 0.75 vs. drowning's own
+        DROWNING_HAZARD_CHANCE 0.08) -- this needs to read as a serious,
+        well-known danger, not a mild river crossing. Population cost is the
+        same single life every environmental hazard in this file costs (see
+        VOLCANO_HAZARD_POPULATION_LOSS's own comment -- it used to be 5, an
+        outlier that could extinction a young tribe in 2-3 hits; the chance,
+        not the death toll, is what makes this one worse). Called from every
         real way a tribe's people could end up on that tile: expedition movement
         (the same two call sites _expedition_river_hazard already hooks) and
         RELOCATE (actions._relocate) -- broader coverage than the river hazard
         gets, since "if they go there" has to mean any of them, not just an
-        expedition passing through."""
-        if biome_at(x, y) != "volcano" or random.random() >= config.VOLCANO_HAZARD_CHANCE:
+        expedition passing through.
+
+        Explicit design split: a discovery here (see _landmark_hazard) always
+        happens on arrival, but an actual death is what forces the party home
+        -- "1 person dies, they run home to report the death"; surviving the
+        ground unscathed, they mark it and move on."""
+        if biome_at(x, y) != "volcano":
+            return False
+        self._landmark_hazard(tribe, x, y, "a volcano")
+        if random.random() >= config.VOLCANO_HAZARD_CHANCE:
             return False
         self.trauma.radiate_event_wave(x, y, config.VOLCANO_TRAUMA_MAGNITUDE, config.VOLCANO_TRAUMA_RADIUS)
         self._lose_population(tribe, config.VOLCANO_HAZARD_POPULATION_LOSS, cause="volcano")
-        tribe.history.append(f"the volcano's toxic fumes and scalding ground claimed lives near ({x},{y}) -- the survivors flee, warning the rest to stay away")
+        tribe.history.append(f"the volcano's toxic fumes and scalding ground claimed lives near ({x},{y}) -- the survivors flee home to report it")
         tribe.memory.remember(
             f"The volcano near ({x},{y}) is deadly -- real danger there, stay away.",
             self.cycle, weight=0.9,
         )
-        # See _expedition_river_hazard's matching comment -- same live report,
-        # same missing marker.
         self.recent_encounters.append({
             "x": x, "y": y, "kind": "hazard_death", "label": "Lost to the volcano", "outcome": "struck",
         })
@@ -4276,12 +4364,16 @@ class Simulation:
         why this is moderate rather than volcano-severe. Called from every
         real way a tribe's people could end up on a cliffs tile: expedition
         movement and RELOCATE (actions._relocate), same broad coverage
-        _volcano_hazard already gets."""
-        if biome_at(x, y) != "cliffs" or random.random() >= config.CLIFFS_HAZARD_CHANCE:
+        _volcano_hazard already gets. Same discovery/death split as
+        _volcano_hazard's own comment."""
+        if biome_at(x, y) != "cliffs":
+            return False
+        self._landmark_hazard(tribe, x, y, "loose cliffside rock")
+        if random.random() >= config.CLIFFS_HAZARD_CHANCE:
             return False
         self.trauma.radiate_event_wave(x, y, config.CLIFFS_TRAUMA_MAGNITUDE, config.CLIFFS_TRAUMA_RADIUS)
         self._lose_population(tribe, config.CLIFFS_HAZARD_POPULATION_LOSS, cause="cliffs")
-        tribe.history.append(f"the cliffs near ({x},{y}) claimed a life on the loose rock -- the survivors turn back")
+        tribe.history.append(f"the cliffs near ({x},{y}) claimed a life on the loose rock -- the survivors head home to report it")
         tribe.memory.remember(
             f"The cliffs near ({x},{y}) are dangerous underfoot -- real risk lingering there.",
             self.cycle, weight=0.8,
@@ -4291,18 +4383,44 @@ class Simulation:
         })
         return True
 
+    def _shoals_hazard(self, tribe: Tribe, x: int, y: int) -> bool:
+        """Explicit design correction: "volcano, cliff, beach, ocean should
+        all have the same treatment." Same shape as _cliffs_hazard exactly --
+        "beach" is this map's shoals biome, the sandy counterpart to cliffs
+        along the same coastline (world.biome_at picks one or the other per
+        coastal tile), and had no hazard of its own at all before this. Same
+        discovery/death split as _volcano_hazard's own comment."""
+        if biome_at(x, y) != "shoals":
+            return False
+        self._landmark_hazard(tribe, x, y, "a rip current off the shoals")
+        if random.random() >= config.SHOALS_HAZARD_CHANCE:
+            return False
+        self.trauma.radiate_event_wave(x, y, config.SHOALS_TRAUMA_MAGNITUDE, config.SHOALS_TRAUMA_RADIUS)
+        self._lose_population(tribe, config.SHOALS_HAZARD_POPULATION_LOSS, cause="shoals")
+        tribe.history.append(f"a rip current off the shoals near ({x},{y}) claimed a life -- the survivors head home to report it")
+        tribe.memory.remember(
+            f"The shoals near ({x},{y}) are dangerous underfoot -- real risk lingering there.",
+            self.cycle, weight=0.8,
+        )
+        self.recent_encounters.append({
+            "x": x, "y": y, "kind": "hazard_death", "label": "Lost to the shoals", "outcome": "struck",
+        })
+        return True
+
     def _ocean_hazard(self, tribe: Tribe, x: int, y: int) -> bool:
         """Explicit spec: "Ocean is instant kill 1, report, gravemarker." A
         safety net, not a routine check -- physics.terrain_aware_step already
         deflects ordinary movement around ocean, so this only ever fires
         through the known reflected/overshot-target edge case (see physics.
         reflect_into_grid's own docstring). Certain rather than a rolled
-        chance, matching "instant.\""""
+        chance, matching "instant" -- so unlike every sibling hazard here,
+        there's no separate "discovered but survived" case to landmark on its
+        own; reaching this tile at all is the death."""
         if biome_at(x, y) != "ocean":
             return False
         self.trauma.radiate_event_wave(x, y, config.DROWNING_TRAUMA_MAGNITUDE, config.DROWNING_TRAUMA_RADIUS)
         self._lose_population(tribe, config.OCEAN_HAZARD_POPULATION_LOSS, cause="ocean")
-        tribe.history.append(f"the open sea claimed a life near ({x},{y}) -- the survivors turn back")
+        tribe.history.append(f"the open sea claimed a life near ({x},{y}) -- the survivors head home to report it")
         tribe.memory.remember(
             f"The open sea off ({x},{y}) is fatal -- real danger, never go there.",
             self.cycle, weight=0.9,
@@ -4453,10 +4571,21 @@ class Simulation:
         both end the search immediately; the catch itself still isn't real food until
         the party makes it all the way home (see _report_hunting_party_home)."""
         px, py = exp["pos"]
-        if self._expedition_river_hazard(tribe, px, py):
-            exp["phase"] = "returning"
-            return
-        if self._volcano_hazard(tribe, px, py):
+        # Explicit design split: volcano/cliffs/ocean/shoals are always-fatal
+        # terrain -- one hit and the party heads straight home (matches the
+        # general SCOUT/EXPLORATION_PARTY outbound leg's own coverage; this
+        # used to only check river/volcano, missing cliffs/ocean/shoals
+        # entirely). A river/lake crossing is different -- "someone dies if
+        # they don't swim... if they still have time and people in the party
+        # alive, they can continue on" -- so that one doesn't end the trip
+        # here; its own return value is ignored, same as every other caller.
+        self._expedition_river_hazard(tribe, px, py)
+        if (
+            self._volcano_hazard(tribe, px, py)
+            or self._cliffs_hazard(tribe, px, py)
+            or self._ocean_hazard(tribe, px, py)
+            or self._shoals_hazard(tribe, px, py)
+        ):
             exp["phase"] = "returning"
             return
 

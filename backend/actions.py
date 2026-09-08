@@ -1591,10 +1591,11 @@ def _relocate(sim, tribe, biome, target):
     # through the volcano needs the same real consequence -- this is exactly the
     # kind of "they went there" the hazard is meant to catch.
     sim._volcano_hazard(tribe, nx, ny)
-    # Same coverage, for cliffs and ocean -- see Simulation._cliffs_hazard/
-    # _ocean_hazard's own comments.
+    # Same coverage, for cliffs/ocean/shoals -- see Simulation._cliffs_hazard/
+    # _ocean_hazard/_shoals_hazard's own comments.
     sim._cliffs_hazard(tribe, nx, ny)
     sim._ocean_hazard(tribe, nx, ny)
+    sim._shoals_hazard(tribe, nx, ny)
     return None
 
 

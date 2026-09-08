@@ -389,12 +389,22 @@ DESERT_NORTH_BOUNDARY_BASE = 78
 # The volcano is a real hazard, not decoration -- explicit correction: "the
 # volcano is a Hazard they will die if they go there." "Inactive" describes its
 # look (dormant, not erupting on screen), not its danger -- a real inactive
-# volcano still kills via toxic gas/heat/unstable ground. Chance/loss set far
-# above DROWNING_HAZARD_CHANCE/_POPULATION_LOSS (0.08 / 1) -- this needs to read
-# as a serious, well-known danger, not a mild river crossing. See
-# Simulation._volcano_hazard.
+# volcano still kills via toxic gas/heat/unstable ground. Chance set far above
+# DROWNING_HAZARD_CHANCE (0.08) -- this needs to read as a serious, well-known
+# danger, not a mild river crossing. See Simulation._volcano_hazard.
+#
+# Explicit design correction: "the way we handle hazard is a scenario. Any
+# party goes out, they discover a hazard, 1 person in the party dies, they
+# run home to report the death and the hazard area." POPULATION_LOSS used to
+# be 5 here -- the one environmental hazard out of line with every sibling
+# (drowning/cliffs/ocean/wolf-pack/raider-ambush all cost exactly 1). Traced
+# live: a young, pre-settlement tribe (population 13, mid-relocation, 8/10
+# cycles into settling) took three volcano hits in three consecutive cycles
+# from a single unlucky scout and was wiped out outright -- a flat -5 against
+# a tribe that size isn't "one person," it's near-instant extinction. Matches
+# every other hazard now.
 VOLCANO_HAZARD_CHANCE = 0.75
-VOLCANO_HAZARD_POPULATION_LOSS = 5
+VOLCANO_HAZARD_POPULATION_LOSS = 1
 VOLCANO_TRAUMA_MAGNITUDE = -0.6  # more severe dread than DROWNING_TRAUMA_MAGNITUDE (-0.4)
 VOLCANO_TRAUMA_RADIUS = 8  # wider than DROWNING_TRAUMA_RADIUS (6) -- a bigger, more memorable disaster
 
@@ -419,6 +429,21 @@ CLIFFS_TRAUMA_RADIUS = 6
 # not a routine occurrence. Certain rather than a rolled chance, matching
 # "instant" -- see Simulation._ocean_hazard.
 OCEAN_HAZARD_POPULATION_LOSS = 1
+
+# Explicit design correction: "volcano, cliff, beach, ocean should all have
+# the same treatment." "Beach" is this map's shoals biome (world.py's
+# BIOME_LABELS -- "The Glass Shallows"), the flat, sandy counterpart to
+# cliffs along the same coastline (world.biome_at picks one or the other per
+# coastal tile). Had no hazard at all before this -- a scout could sit on it
+# indefinitely with nothing to fear, the same gap cliffs itself used to have.
+# Chance matches CLIFFS_HAZARD_CHANCE for now (same "routine coastal terrain,
+# real risk for lingering, not a near-certain death sentence" reasoning,
+# rather than volcano-severe or ocean-certain) -- a first pass, not tuned
+# against live data yet. See Simulation._shoals_hazard.
+SHOALS_HAZARD_CHANCE = 0.2
+SHOALS_HAZARD_POPULATION_LOSS = 1
+SHOALS_TRAUMA_MAGNITUDE = -0.4
+SHOALS_TRAUMA_RADIUS = 6
 
 # Redesigned 2026-09-02 ("these shouldn't be disconnected... look at it as a whole"):
 # retires the old abstract city_buildings counter (population-driven, unrelated to any
@@ -1779,6 +1804,21 @@ LANDMARK_NAMES = (
 LANDMARK_RESOURCE_NAMES = (
     "Amber Charm", "Carved Totem", "Silver Trinket", "Bone Flute",
     "Painted Shell", "Gilded Feather", "Polished Stone", "Woven Talisman",
+)
+
+# A hazard landmark is the warning-flavored sibling of the reward Landmark
+# above -- explicit design spec: "if anyone discovers a hazard, even if no
+# one dies, they landmark it... if its a landmark, it needs a 'dangerous'
+# sounding name." Land hazards (volcano/cliffs/ocean/shoals) get one on
+# first discovery, dedup'd against Tribe.hazard_landmarks the same way
+# LANDMARK_NAMES dedups against tribe.landmarks -- "no party should ever
+# linger" repeating the same sighting every day. Unconditional on the
+# separate, chance-based death roll (see each hazard function's own
+# HAZARD_CHANCE) -- merely knowing the ground is dangerous doesn't require
+# losing someone first.
+HAZARD_LANDMARK_NAMES = (
+    "Widow's Reach", "Skull Hollow", "The Bleeding Ground", "Deadfall Ridge",
+    "Cursed Hollow", "The Gnawed Bones", "Ashen Scar", "The Last Warning",
 )
 
 # Action-repetition throttle (Simulation._apply_turn/_prepare_turn): explicit

@@ -3258,7 +3258,12 @@ def test_expedition_gives_up_when_physically_boxed_in_by_ocean():
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
     }]
 
-    sim._advance_one_expedition(tribe, tribe.expeditions[0])
+    # (86,40) itself is a shoals tile -- mocked to guarantee _shoals_hazard's
+    # own real chance (config.SHOALS_HAZARD_CHANCE) doesn't intermittently
+    # fire and end the trip via a hazard death instead of the boxed-in
+    # give-up this test actually regression-tests.
+    with mock.patch("backend.simulation.random.random", return_value=1.0):
+        sim._advance_one_expedition(tribe, tribe.expeditions[0])
 
     assert tribe.expeditions[0]["phase"] == "returning"
     assert tribe.expeditions[0]["pos"] == [86, 40]  # didn't silently teleport anywhere
@@ -3287,7 +3292,12 @@ def test_expedition_gives_up_when_its_target_is_the_literal_grid_edge():
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
     }]
 
-    sim._advance_one_expedition(tribe, tribe.expeditions[0])
+    # (91,89) itself is a cliffs tile -- mocked to guarantee _cliffs_hazard's
+    # own real chance (config.CLIFFS_HAZARD_CHANCE) doesn't intermittently
+    # fire and end the trip via a hazard death instead of the boxed-in
+    # give-up this test actually regression-tests.
+    with mock.patch("backend.simulation.random.random", return_value=1.0):
+        sim._advance_one_expedition(tribe, tribe.expeditions[0])
 
     assert tribe.expeditions[0]["phase"] == "returning"
     assert tribe.expeditions[0]["found"] is None
@@ -3801,6 +3811,12 @@ def test_outbound_expedition_flees_home_immediately_when_ambushed():
 
 
 def test_hunting_party_drowns_if_its_daily_step_lands_on_a_river_tile():
+    """Explicit design correction: a river/lake death no longer ends the trip
+    -- "if they still have time and people in the party alive, they can
+    continue on." side_effect isolates the drowning roll (fires) from the
+    later wolf-hazard and catch-chance rolls in the same day (both fail),
+    so this test still verifies drowning specifically without those
+    unrelated later rolls also firing."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 40, 30, "#c084fc")
     tribe.population = 10
@@ -3811,11 +3827,11 @@ def test_hunting_party_drowns_if_its_daily_step_lands_on_a_river_tile():
         "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
     }]
 
-    with mock.patch("backend.simulation.random.random", return_value=0.0):
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, 1.0, 1.0]):
         sim._advance_expeditions(tribe)
 
     assert tribe.population == 9
-    assert tribe.expeditions[0]["phase"] == "returning"
+    assert tribe.expeditions[0]["phase"] == "outbound"  # still out -- a river/lake death doesn't end the trip
     assert any("pulled someone under" in entry for entry in tribe.history)
 
 
@@ -8777,6 +8793,222 @@ def test_ocean_hazard_never_fires_off_ocean_ground():
 
     assert fired is False
     assert tribe.population == 10
+
+
+def test_landmark_hazard_records_a_dangerous_sounding_name():
+    """Explicit design spec: "if anyone discovers a hazard, even if no one
+    dies, they landmark it... it needs a 'dangerous' sounding name.\""""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    sim._landmark_hazard(tribe, 10, 20, "a volcano")
+
+    assert len(tribe.hazard_landmarks) == 1
+    entry = tribe.hazard_landmarks[0]
+    assert (entry["x"], entry["y"]) == (10, 20)
+    assert entry["name"] in config.HAZARD_LANDMARK_NAMES
+    assert any(entry["name"] in e for e in tribe.history)
+    assert any(e["kind"] == "hazard_landmark" and e["label"] == entry["name"] for e in sim.recent_encounters)
+
+
+def test_landmark_hazard_does_not_repeat_for_the_same_tile():
+    """"No party should ever linger" repeating the same sighting every day --
+    dedup'd against tribe.hazard_landmarks, same shape reward Landmarks
+    already dedup against tribe.landmarks."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    sim._landmark_hazard(tribe, 10, 20, "a volcano")
+    sim._landmark_hazard(tribe, 10, 20, "a volcano")
+    sim._landmark_hazard(tribe, 10, 20, "a volcano")
+
+    assert len(tribe.hazard_landmarks) == 1
+
+
+def test_landmark_hazard_tracks_separate_tiles_independently():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    sim._landmark_hazard(tribe, 10, 20, "a volcano")
+    sim._landmark_hazard(tribe, 30, 40, "loose cliffside rock")
+
+    assert len(tribe.hazard_landmarks) == 2
+
+
+def test_volcano_hazard_landmarks_but_does_not_kill_when_the_chance_roll_misses():
+    """Explicit design split: discovery always happens on arrival (see
+    _landmark_hazard), but only an actual death costs population or gets a
+    "hazard_death" grave marker -- surviving the ground unscathed, the party
+    just marks it and moves on."""
+    from backend.world import VOLCANO_CENTER
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    vx, vy = VOLCANO_CENTER
+
+    with mock.patch("backend.simulation.random.random", return_value=0.99):  # misses the 75% death chance
+        fired = sim._volcano_hazard(tribe, vx, vy)
+
+    assert fired is False
+    assert tribe.population == 10
+    assert len(tribe.hazard_landmarks) == 1
+    assert not any(e["kind"] == "hazard_death" for e in sim.recent_encounters)
+
+
+def test_shoals_hazard_fires_on_shoals_ground():
+    """Explicit design correction: "volcano, cliff, beach, ocean should all
+    have the same treatment." "Beach" is this map's shoals biome -- had no
+    hazard at all before this."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    sx, sy = 86, 40  # confirmed real shoals terrain (see the boxed-in-by-shoals test)
+    assert sim.world.biome(sx, sy) == "shoals"
+
+    with mock.patch("backend.simulation.random.random", return_value=0.01):
+        fired = sim._shoals_hazard(tribe, sx, sy)
+
+    assert fired is True
+    assert tribe.population == 10 - config.SHOALS_HAZARD_POPULATION_LOSS
+    assert any("shoals" in entry for entry in tribe.history)
+    assert any(e["kind"] == "hazard_death" and (e["x"], e["y"]) == (sx, sy) for e in sim.recent_encounters)
+
+
+def test_shoals_hazard_never_fires_off_shoals_ground():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+
+    with mock.patch("backend.simulation.random.random", return_value=0.01):
+        fired = sim._shoals_hazard(tribe, 50, 50)  # plains, not shoals
+
+    assert fired is False
+    assert tribe.population == 10
+
+
+def test_shoals_hazard_respects_its_own_chance_roll():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    sx, sy = 86, 40
+
+    with mock.patch("backend.simulation.random.random", return_value=0.99):  # misses even the 20% chance
+        fired = sim._shoals_hazard(tribe, sx, sy)
+
+    assert fired is False
+    assert tribe.population == 10
+
+
+def test_drowning_hazard_covers_lake_now_too():
+    """Explicit design correction: "other water like the River and Lake [is]
+    hazardous, yes, someone dies if they don't swim." Lake used to be an
+    explicit no-op ("no current to drown in")."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    lx, ly = None, None
+    for y in range(config.GRID_SIZE):
+        for x in range(config.GRID_SIZE):
+            if sim.world.biome(x, y) == "lake":
+                lx, ly = x, y
+                break
+        if lx is not None:
+            break
+    assert lx is not None, "no lake tile found on this map"
+
+    with mock.patch("backend.simulation.random.random", return_value=0.01):
+        fired = sim._expedition_river_hazard(tribe, lx, ly)
+
+    assert fired is True
+    assert tribe.population == 10 - config.DROWNING_HAZARD_POPULATION_LOSS
+
+
+def test_drowning_hazard_death_does_not_leave_a_grave_marker():
+    """Explicit exception: "the only exception to the grave-marker/landmark
+    is the River and Lake. We imagine these grave markers as being washed
+    away over time, fleeting -- the water is not covered in death." A death
+    still gets the landmark, history, and memory, but not the recent_
+    encounters "hazard_death" skull marker every land hazard leaves."""
+    from backend.world import _is_river
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    rx, ry = None, None
+    for y in range(0, 100, 2):
+        for x in range(0, 100, 2):
+            if sim.world.biome(x, y) == "river":
+                rx, ry = x, y
+                break
+        if rx is not None:
+            break
+    assert rx is not None, "no river tile found on this map"
+
+    with mock.patch("backend.simulation.random.random", return_value=0.01):
+        fired = sim._expedition_river_hazard(tribe, rx, ry)
+
+    assert fired is True
+    assert tribe.population == 9
+    assert len(tribe.hazard_landmarks) == 1  # still landmarked
+    assert not any(e["kind"] == "hazard_death" for e in sim.recent_encounters)
+
+
+def test_drowning_hazard_death_does_not_end_the_outbound_trip():
+    """Explicit design correction: unlike volcano/cliffs/ocean/shoals, a
+    river/lake death never forces the party home -- "if they still have
+    time and people in the party alive, they can continue on.\""""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    rx, ry = None, None
+    for y in range(0, 100, 2):
+        for x in range(0, 100, 2):
+            if sim.world.biome(x, y) == "river":
+                rx, ry = x, y
+                break
+        if rx is not None:
+            break
+
+    exp = {"lead_scout": "Test Scout", "phase": "outbound"}
+    with mock.patch("backend.simulation.random.random", return_value=0.01):
+        result = sim._expedition_river_hazard(tribe, rx, ry)
+
+    # The function itself never touches exp["phase"] -- callers are the ones
+    # that would end the trip, and none of them do for this hazard.
+    assert result is True
+    assert exp["phase"] == "outbound"
+
+
+def test_land_hazard_death_ends_the_outbound_trip():
+    """Confirms the general SCOUT/EXPLORATION_PARTY outbound leg actually
+    ends the day and heads the party home on an actual volcano/cliffs/ocean/
+    shoals death -- not just that the hazard functions themselves fire."""
+    from backend.world import VOLCANO_CENTER
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    vx, vy = VOLCANO_CENTER
+    tribe.expeditions = [{
+        "kind": "scout", "pos": [vx, vy], "origin": [50, 50], "target": [vx, vy],
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 5, "path": [],
+    }]
+
+    with mock.patch("backend.physics.terrain_aware_step", return_value=(vx, vy)), \
+         mock.patch("backend.simulation.random.random", return_value=0.01):
+        sim._advance_expeditions(tribe)
+
+    assert tribe.expeditions[0]["phase"] == "returning"
+    assert tribe.population == 9
 
 
 def test_relocate_onto_volcano_ground_costs_population():

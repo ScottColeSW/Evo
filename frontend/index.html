@@ -3121,9 +3121,15 @@ function drawFrame() {
       // always reads as a clash either way, won or lost -- "we already have
       // that down cold," per explicit correction (2026-09-06) after this was
       // briefly (and incorrectly) applied there too.
+      //
+      // Explicit design distinction: "landmark and gravemark are different
+      // things" -- a "hazard_landmark" (Simulation._landmark_hazard) is a
+      // discovery, no one died, so it gets its own warning icon rather than
+      // the skull a real "hazard_death" earns.
       const encounterIcon = e.kind === "raider_attack" ? "⚔️"
         : e.kind === "wolf_attack" ? "🐺"
         : e.kind === "hazard_death" ? "☠️"
+        : e.kind === "hazard_landmark" ? "⚠️"
         : "\u{1F3F4}";
       ctx.fillText(encounterIcon, cx + shakeX, cy + shakeY);
       ctx.font = `bold ${Math.max(8, TILE * 0.35)}px sans-serif`;
