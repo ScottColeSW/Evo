@@ -4448,6 +4448,32 @@ def test_all_confirmed_sites_are_remembered_not_just_the_most_recent_three():
     assert "confirmed stone-rich area at (8,8)" in entities
 
 
+def test_visible_entities_names_might_comparison_against_a_nearby_rival():
+    """Military branch, step 7: "a real Might fact in the prompt... the same
+    way population, wellbeing, and era-gap already are." Only shown once
+    this tribe actually has a Battalion of its own to compare."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 52, 50, "#fb923c")
+    tribe.battalion_size = 20
+    sim.tribes = {tribe.id: tribe, rival.id: rival}
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert any("Might" in e and "Mountain Tribe" in e for e in entities)
+
+
+def test_visible_entities_omits_might_comparison_without_a_battalion():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 52, 50, "#fb923c")
+    sim.tribes = {tribe.id: tribe, rival.id: rival}
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert not any("Might" in e for e in entities)
+
+
 def test_visible_entities_omits_a_site_already_producing_its_in_territory_freebie():
     """Explicit request: an in-territory site "should not even be considered as
     All Scouting, Hunting, Exploration" once it's already producing its passive
@@ -7554,6 +7580,46 @@ def test_advance_battalion_patrol_starts_cooldown_once_home():
     assert tribe.battalion_patrol is None
     assert tribe.battalion_cooldown_until_cycle == 200 + config.BATTALION_PATROL_COOLDOWN_DAYS * config.DAY_LENGTH_CYCLES
     assert "returns from patrol" in tribe.history[-1]
+
+
+def test_advance_battalion_readiness_upkeep_drains_readiness_over_time():
+    """Explicit request: Might's Training factor, "not overpowered, more
+    like bolster and upkeep" -- a standing force goes stale without
+    continued drilling, it isn't recruited once and forgotten."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.battalion_size = 20
+    tribe.battalion_readiness = 0.5
+
+    sim._advance_battalion_readiness_upkeep(tribe)
+
+    assert tribe.battalion_readiness == 0.5 - config.BATTALION_READINESS_DECAY_PER_CYCLE
+
+
+def test_advance_battalion_readiness_upkeep_does_nothing_without_a_battalion():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.battalion_size = 0
+    tribe.battalion_readiness = 0.0
+
+    sim._advance_battalion_readiness_upkeep(tribe)
+
+    assert tribe.battalion_readiness == 0.0
+
+
+def test_advance_battalion_readiness_upkeep_floors_at_zero():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.battalion_size = 20
+    tribe.battalion_readiness = config.BATTALION_READINESS_DECAY_PER_CYCLE / 2  # less than one cycle's drain
+
+    sim._advance_battalion_readiness_upkeep(tribe)
+
+    assert tribe.battalion_readiness == 0.0
 
 
 def test_advance_water_supply_does_nothing_before_settling():

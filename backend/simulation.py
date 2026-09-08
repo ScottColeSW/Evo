@@ -24,6 +24,7 @@ from .threat import threat_assessment_string
 from .wellbeing import compute_wellbeing
 from .leadership import elect_chief, name_settlement
 from .memory import TribeMemory
+from .might import compute_might
 from .ollama_client import OllamaClient
 from .prompts import compile_live_state_prompt, get_prime_consciousness_prompt
 from .scheduler import ModelBatchScheduler
@@ -408,14 +409,21 @@ AFFORDABILITY_CHECKS = {
         t.keep_built and t.wood >= config.BARRACKS_WOOD_COST and t.stone >= config.BARRACKS_STONE_COST
         and _can_place(t, w, "barracks")
     ),
-    # Military branch, step 3 (plan file valiant-forging-falcon.md) -- hides
-    # the guaranteed no-ops (no Warrior/Barracks yet, already at capacity, or
-    # can't afford even one soldier's food cost) the same way every other
-    # entry in this table already does.
+    # Military branch, steps 3 and 5 (plan file valiant-forging-falcon.md) --
+    # hides the guaranteed no-ops (no Warrior/Barracks yet, can't afford even
+    # one soldier's food cost while still recruiting, or -- once at full
+    # headcount -- readiness already maxed or can't afford the cheaper
+    # maintenance-drill cost) the same way every other entry in this table
+    # already does. Two real branches, matching actions._train_battalion's
+    # own recruit-vs-drill split.
     "TRAIN_BATTALION": lambda t, w: (
         t.warrior_name is not None and t.barracks_built > 0
-        and t.battalion_size < config.BATTALION_CAPACITY_PER_BARRACKS * t.barracks_built
-        and t.food >= config.BATTALION_TRAINING_FOOD_COST_PER_SOLDIER
+        and (
+            (t.battalion_size < config.BATTALION_CAPACITY_PER_BARRACKS * t.barracks_built
+             and t.food >= config.BATTALION_TRAINING_FOOD_COST_PER_SOLDIER)
+            or (t.battalion_size >= config.BATTALION_CAPACITY_PER_BARRACKS * t.barracks_built
+                and t.battalion_readiness < 1.0 and t.food >= config.BATTALION_READINESS_UPKEEP_FOOD_COST)
+        )
     ),
     "BUILD_KEEP": lambda t, w: (
         t.long_houses_built >= config.KEEP_LONG_HOUSES_REQUIRED
@@ -941,6 +949,14 @@ class Tribe:
         # BATTALION_CAPACITY_PER_BARRACKS * barracks_built the same way a
         # wall section's own progress builds up over several actions.
         self.battalion_size = 0
+        # Military branch, step 5 (Might's Training factor) -- explicit
+        # request: "not overpowered, more like bolster and upkeep," a real
+        # meter that has to be earned AND maintained, not a one-time flip.
+        # Bolstered by actions._train_battalion (config.
+        # BATTALION_READINESS_BOLSTER_PER_ACTION per call), drained a little
+        # every cycle by Simulation._advance_battalion_readiness_upkeep
+        # regardless of whether the Battalion is currently out on patrol.
+        self.battalion_readiness = 0.0
         # Military branch, step 4 (Simulation._advance_battalion_patrol) --
         # deliberately NOT stored in self.expeditions: a Battalion patrol is
         # autonomous (never chief-dispatched) and must never compete with
@@ -1250,6 +1266,8 @@ class Tribe:
             "castle_built": self.castle_built,
             "barracks_built": self.barracks_built,
             "battalion_size": self.battalion_size,
+            "battalion_readiness": round(self.battalion_readiness, 3),
+            "might": compute_might(self),
             "battalion_patrol": self.battalion_patrol,
             "road_built": self.road_built,
             "toll_roads_completed": self.toll_roads_completed,
@@ -2044,6 +2062,7 @@ class Simulation:
             self._check_raider_attack(tribe)
             self._advance_raider_approach(tribe)
             self._advance_battalion_patrol(tribe)
+            self._advance_battalion_readiness_upkeep(tribe)
             self._grow_population(tribe)
             self._advance_era_if_ready(tribe)
             if not tribe.settlement_name and not tribe.pending_settlement_naming and self._is_settled_near_water(tribe):
@@ -2343,6 +2362,18 @@ class Simulation:
                 visible_entities.append(
                     f"{other.name} is nearby at ({other.x},{other.y}), about {distance:.0f} tiles away"
                 )
+                # Military branch, step 7 (plan file valiant-forging-falcon.md): "The
+                # Chief has to actually be able to reach DECLARE_CONQUEST -- not just
+                # mechanically possible, but visible: a real Might fact in the
+                # prompt." Only shown once a Battalion actually exists on this side --
+                # a tribe with no Battalion yet has nothing meaningful to compare, and
+                # RAID/DECLARE_CONQUEST's own win chance is unaffected by Might until
+                # then anyway (see actions._might_adjusted_win_chance).
+                if tribe.battalion_size > 0:
+                    visible_entities.append(
+                        f"Military strength (Might) compared to {other.name}: "
+                        f"{compute_might(tribe)} vs. their estimated {compute_might(other)}."
+                    )
             elif distance <= config.RIVAL_DISTANT_SIGHTING_RADIUS:
                 visible_entities.append(f"distant signs of {other.name} somewhere to the {_compass_direction(dx, dy)}")
 
@@ -3283,6 +3314,32 @@ class Simulation:
                 f"{len(tribe.items)} crafted item(s) are on hand -- each can be redeemed for its stored "
                 "value (USE_ITEM) or handed over in a future trade."
             )
+
+        # Military branch, step 7 (plan file valiant-forging-falcon.md): "The Chief
+        # has to actually be able to reach DECLARE_CONQUEST -- not just mechanically
+        # possible, but visible... an eligibility nudge once it's genuinely a good
+        # bet." Original root-cause theory (2026-09-07) for why this action had
+        # never fired even once: "an isolated, all-or-nothing gamble with nothing
+        # feeding into it." Now there's something real to feed into it -- only
+        # fires once this tribe has an actual Battalion AND a known, nearby rival
+        # whose own Might is meaningfully behind (config.
+        # DECLARE_CONQUEST_NUDGE_MIGHT_RATIO), the same "nudge harder once a real
+        # gate is met" shape the COOK_FOOD/CONSTRUCT_WALL nudges above already use.
+        if "DECLARE_CONQUEST" in available_actions and tribe.battalion_size > 0:
+            nearby_rivals = [
+                other for other in self.tribes.values()
+                if other.id != tribe.id and not other.extinct
+                and math.hypot(other.x - tribe.x, other.y - tribe.y) <= config.RIVAL_PRECISE_AWARENESS_RADIUS
+            ]
+            if nearby_rivals:
+                rival = min(nearby_rivals, key=lambda o: math.hypot(o.x - tribe.x, o.y - tribe.y))
+                tribe_might, rival_might = compute_might(tribe), compute_might(rival)
+                if tribe_might > rival_might * config.DECLARE_CONQUEST_NUDGE_MIGHT_RATIO:
+                    visible_entities.append(
+                        f"{rival.name}'s Battalion is meaningfully weaker (Might {rival_might} vs. this "
+                        f"tribe's {tribe_might}) -- DECLARE_CONQUEST at ({rival.x},{rival.y}) is a real, "
+                        "favorable bet now, not just a blind gamble."
+                    )
 
         settlement_actions = ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH")
         if any(a in unlocked_actions_through(tribe.era) for a in settlement_actions):
@@ -5713,6 +5770,22 @@ class Simulation:
         else:
             nx, ny = physics.terrain_aware_step(px, py, tx, ty, base_speed=config.BATTALION_PATROL_SPEED)
             patrol["pos"] = [nx, ny]
+
+    def _advance_battalion_readiness_upkeep(self, tribe: Tribe) -> None:
+        """Military branch, step 5 (Might's Training factor, compute_might) --
+        explicit request: "not overpowered, more like bolster and upkeep."
+        The bolster half lives in actions._train_battalion (called by the
+        Chief); this is the upkeep half -- a small, steady drain every
+        cycle regardless of whether the Battalion is out on patrol or at
+        home, the same "you have to keep paying into this" shape
+        BATTALION_PATROL's own cooldown already gives the patrol side of
+        this branch. Only drains once there's an actual Battalion to
+        neglect -- readiness starts and stays at 0.0 otherwise (see Tribe.
+        __init__), so this would be a no-op either way, but the check keeps
+        the intent explicit."""
+        if tribe.battalion_size <= 0 or tribe.battalion_readiness <= 0.0:
+            return
+        tribe.battalion_readiness = max(0.0, tribe.battalion_readiness - config.BATTALION_READINESS_DECAY_PER_CYCLE)
 
     def _advance_fish_supply(self, tribe: Tribe) -> None:
         """Once fishing is learned (the first successful CATCH_FISH), food flows in

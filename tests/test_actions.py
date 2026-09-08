@@ -405,11 +405,16 @@ def test_train_battalion_stops_at_capacity_and_announces_full_strength():
     assert tribe.battalion_size == capacity
     assert "full strength" in result
 
-    # No further growth past capacity, even with plenty of food left.
-    food_before = tribe.food
-    assert ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET) is None
-    assert tribe.battalion_size == capacity
-    assert tribe.food == food_before
+    # No further headcount growth past capacity -- but this is no longer a bare
+    # no-op: Might's Training factor (config.BATTALION_READINESS_*) switches
+    # TRAIN_BATTALION to a cheaper readiness drill instead. See the dedicated
+    # readiness tests below for that branch's own behavior.
+    food_before, readiness_before = tribe.food, tribe.battalion_readiness
+    drill_result = ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.battalion_size == capacity  # headcount itself never exceeds capacity
+    assert tribe.battalion_readiness > readiness_before
+    assert tribe.food == food_before - config.BATTALION_READINESS_UPKEEP_FOOD_COST
+    assert drill_result is not None
 
 
 def test_train_battalion_no_op_when_cannot_afford_the_food_cost():
@@ -426,6 +431,140 @@ def test_train_battalion_no_op_when_cannot_afford_the_food_cost():
 
     assert result is None
     assert tribe.battalion_size == 0
+
+
+def test_train_battalion_bolsters_readiness_while_still_recruiting():
+    """Explicit request: Might's Training factor, "not overpowered, more
+    like bolster and upkeep" -- every real call, not just the post-capacity
+    drill, nudges readiness up."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.warrior_name = "BriMir"
+    tribe.barracks_built = 1
+    tribe.population = config.POPULATION_YIELD_BASELINE
+    tribe.food = 200
+
+    ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.battalion_readiness == config.BATTALION_READINESS_BOLSTER_PER_ACTION
+
+
+def test_train_battalion_drills_readiness_once_at_full_capacity():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.warrior_name = "BriMir"
+    tribe.barracks_built = 1
+    tribe.battalion_size = config.BATTALION_CAPACITY_PER_BARRACKS
+    tribe.battalion_readiness = 0.0
+    tribe.food = 200
+    food_before = tribe.food
+
+    result = ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.battalion_readiness == config.BATTALION_READINESS_BOLSTER_PER_ACTION
+    assert tribe.food == food_before - config.BATTALION_READINESS_UPKEEP_FOOD_COST
+    assert "drill" in result
+    assert "BriMir" in result
+
+
+def test_train_battalion_readiness_drill_caps_at_full_and_announces_peak():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.warrior_name = "BriMir"
+    tribe.barracks_built = 1
+    tribe.battalion_size = config.BATTALION_CAPACITY_PER_BARRACKS
+    tribe.battalion_readiness = 1.0 - config.BATTALION_READINESS_BOLSTER_PER_ACTION / 2  # one drill from full
+    tribe.food = 200
+
+    result = ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.battalion_readiness == 1.0
+    assert "peak readiness" in result
+
+
+def test_train_battalion_readiness_drill_no_op_once_readiness_is_maxed():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.warrior_name = "BriMir"
+    tribe.barracks_built = 1
+    tribe.battalion_size = config.BATTALION_CAPACITY_PER_BARRACKS
+    tribe.battalion_readiness = 1.0
+    tribe.food = 200
+    food_before = tribe.food
+
+    result = ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
+
+    assert result is None
+    assert tribe.food == food_before
+
+
+def test_train_battalion_readiness_drill_no_op_when_cannot_afford_it():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.warrior_name = "BriMir"
+    tribe.barracks_built = 1
+    tribe.battalion_size = config.BATTALION_CAPACITY_PER_BARRACKS
+    tribe.battalion_readiness = 0.0
+    tribe.food = config.BATTALION_READINESS_UPKEEP_FOOD_COST - 1
+
+    result = ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
+
+    assert result is None
+    assert tribe.battalion_readiness == 0.0
+
+
+def test_might_adjusted_win_chance_is_neutral_when_neither_side_has_a_battalion():
+    """Ordinary RAID/DECLARE_CONQUEST behavior for every tribe that hasn't
+    touched the Military branch must stay completely unchanged."""
+    from backend.actions import _might_adjusted_win_chance
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+
+    assert _might_adjusted_win_chance(tribe, rival, 0.5) == 0.5
+
+
+def test_might_adjusted_win_chance_rewards_the_stronger_side():
+    from backend.actions import _might_adjusted_win_chance
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    tribe.battalion_size = 50
+
+    assert _might_adjusted_win_chance(tribe, rival, 0.5) > 0.5
+
+
+def test_might_adjusted_win_chance_penalizes_the_weaker_side():
+    from backend.actions import _might_adjusted_win_chance
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    rival.battalion_size = 50
+
+    assert _might_adjusted_win_chance(tribe, rival, 0.5) < 0.5
+
+
+def test_might_adjusted_win_chance_never_reaches_a_sure_thing():
+    from backend import config
+    from backend.actions import _might_adjusted_win_chance
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    tribe.battalion_size = 10000  # absurdly overwhelming
+
+    adjusted = _might_adjusted_win_chance(tribe, rival, 0.99)
+
+    assert adjusted <= config.MIGHT_ADJUSTED_WIN_CHANCE_CEILING
 
 
 def test_larger_population_trains_battalion_faster():
@@ -458,7 +597,17 @@ def test_can_afford_train_battalion_matches_the_action_itself():
     assert AFFORDABILITY_CHECKS["TRAIN_BATTALION"](tribe, sim.world) is True
 
     tribe.battalion_size = config.BATTALION_CAPACITY_PER_BARRACKS
-    assert AFFORDABILITY_CHECKS["TRAIN_BATTALION"](tribe, sim.world) is False  # already at capacity
+    # At full headcount, TRAIN_BATTALION switches to a readiness drill (Might's
+    # Training factor) rather than disappearing outright -- still affordable as
+    # long as readiness isn't already maxed and the cheaper drill cost is covered.
+    assert AFFORDABILITY_CHECKS["TRAIN_BATTALION"](tribe, sim.world) is True
+
+    tribe.battalion_readiness = 1.0
+    assert AFFORDABILITY_CHECKS["TRAIN_BATTALION"](tribe, sim.world) is False  # genuinely nothing left to do
+
+    tribe.battalion_readiness = 0.0
+    tribe.food = config.BATTALION_READINESS_UPKEEP_FOOD_COST - 1
+    assert AFFORDABILITY_CHECKS["TRAIN_BATTALION"](tribe, sim.world) is False  # can't afford the drill cost
 
 
 def test_second_fire_at_the_same_tile_costs_nothing_and_gains_no_pride():
@@ -1922,6 +2071,31 @@ def test_declare_conquest_loss_costs_more_than_an_ordinary_raid_failure():
     assert "failed" in result.lower()
 
 
+def test_declare_conquest_win_chance_is_boosted_by_a_stronger_battalion():
+    """Military branch, step 6: Might layers a bounded adjustment on top of
+    the population-share win chance -- never a replacement for it."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Armed Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Even Tribe", "gemma2:2b", 51, 50, "#fb923c")
+    attacker.population = 100
+    defender.population = 100  # even population -- base win chance is exactly 0.5
+    attacker.battalion_size = 50  # overwhelming Might advantage; defender has none
+    attacker.wood = config.DECLARE_CONQUEST_WOOD_COST
+    attacker.stone = config.DECLARE_CONQUEST_STONE_COST
+    sim.tribes = {attacker.id: attacker, defender.id: defender}
+
+    # A roll that would fail under the unmodified 0.5 base chance, but should
+    # succeed once Might's modifier is added on top.
+    with mock.patch("backend.actions.random.random", return_value=0.55):
+        ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
+
+    assert defender.id not in sim.tribes  # would have failed at 0.55 under the old, unadjusted formula
+
+
 def test_declare_conquest_finds_no_rival_returns_a_note_not_a_crash():
     from backend import config
 
@@ -3098,6 +3272,28 @@ def test_raid_with_no_rival_nearby_does_nothing():
 
     assert "no rival" in note
     assert tribe.population == 8
+
+
+def test_raid_win_chance_is_reduced_by_a_stronger_defending_battalion():
+    """Military branch, step 6: a real, if bounded, penalty for raiding a
+    tribe with a stronger Battalion than your own -- Might layers on top of
+    the population-share math, it doesn't replace it."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Bare Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Armed Tribe", "gemma2:2b", 51, 50, "#fb923c")
+    attacker.population = 100
+    defender.population = 100  # even population -- base win chance is exactly 0.5
+    defender.battalion_size = 50  # overwhelming Might advantage; attacker has none
+    sim.tribes = {attacker.id: attacker, defender.id: defender}
+
+    # A roll that would have WON under the unmodified 0.5 base chance, but should
+    # now lose once Might's penalty is subtracted.
+    with mock.patch("backend.actions.random.random", return_value=0.45):
+        result = ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 50))
+
+    assert "repelled" in result  # would have said "raided" and won at 0.45 under the old formula
 
 
 def test_raid_win_steals_resources_and_absorbs_some_of_the_defenders_population():

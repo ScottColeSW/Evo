@@ -17,6 +17,7 @@ import math
 import random
 
 from . import architect, city_layout, config, physics
+from .might import compute_might
 from .world import BIOME_LABELS, biome_at, mark_visited_sector, sector_of
 
 
@@ -822,24 +823,45 @@ def _train_battalion(sim, tribe, biome, target):
     commitment lock the way CONSTRUCT_WALL has (see its own docstring) --
     that exists for a specific documented live bug this hasn't hit; closer in
     spirit to EXPAND_TERRITORY's own uncommitted "invest again whenever
-    ready" shape."""
+    ready" shape.
+
+    Military branch, step 5 (Might's Training factor): once the Battalion is
+    at full headcount, this doesn't just stop mattering -- it switches to a
+    cheaper maintenance drill that bolsters tribe.battalion_readiness
+    (config.BATTALION_READINESS_BOLSTER_PER_ACTION) instead of growing the
+    roster further. Explicit request: "not overpowered, more like bolster
+    and upkeep" -- readiness has to be kept up with continued drilling, it
+    isn't recruited once and forgotten (Simulation.
+    _advance_battalion_readiness_upkeep drains it a little every cycle
+    regardless of this action)."""
     if tribe.warrior_name is None or tribe.barracks_built <= 0:
         return None
     capacity = config.BATTALION_CAPACITY_PER_BARRACKS * tribe.barracks_built
-    if tribe.battalion_size >= capacity:
+
+    if tribe.battalion_size < capacity:
+        added = min(
+            capacity - tribe.battalion_size,
+            round(config.BATTALION_TRAINING_PER_ACTION_BASE * _labor_multiplier(tribe.population)),
+        )
+        food_cost = round(config.BATTALION_TRAINING_FOOD_COST_PER_SOLDIER * added)
+        if tribe.food < food_cost:
+            return None
+        tribe.food -= food_cost
+        tribe.battalion_size += added
+        tribe.battalion_readiness = min(
+            1.0, tribe.battalion_readiness + config.BATTALION_READINESS_BOLSTER_PER_ACTION
+        )
+        if tribe.battalion_size >= capacity:
+            return f"the Battalion reaches full strength at {tribe.battalion_size}, trained and ready under {tribe.warrior_name}"
+        return f"the Battalion trains further under {tribe.warrior_name} -- {tribe.battalion_size}/{capacity} strong"
+
+    if tribe.battalion_readiness >= 1.0 or tribe.food < config.BATTALION_READINESS_UPKEEP_FOOD_COST:
         return None
-    added = min(
-        capacity - tribe.battalion_size,
-        round(config.BATTALION_TRAINING_PER_ACTION_BASE * _labor_multiplier(tribe.population)),
-    )
-    food_cost = round(config.BATTALION_TRAINING_FOOD_COST_PER_SOLDIER * added)
-    if tribe.food < food_cost:
-        return None
-    tribe.food -= food_cost
-    tribe.battalion_size += added
-    if tribe.battalion_size >= capacity:
-        return f"the Battalion reaches full strength at {tribe.battalion_size}, trained and ready under {tribe.warrior_name}"
-    return f"the Battalion trains further under {tribe.warrior_name} -- {tribe.battalion_size}/{capacity} strong"
+    tribe.food -= config.BATTALION_READINESS_UPKEEP_FOOD_COST
+    tribe.battalion_readiness = min(1.0, tribe.battalion_readiness + config.BATTALION_READINESS_BOLSTER_PER_ACTION)
+    if tribe.battalion_readiness >= 1.0:
+        return f"the Battalion drills to peak readiness under {tribe.warrior_name}"
+    return f"the Battalion drills under {tribe.warrior_name} -- readiness at {round(tribe.battalion_readiness * 100)}%"
 
 
 def _build_kitchen(sim, tribe, biome, target):
@@ -1147,6 +1169,38 @@ def _created_object_bonus(tribe, category: str) -> float:
     return sum(config.CREATED_OBJECT_MAGNITUDE for obj in tribe.created_objects if obj["category"] == category)
 
 
+def _might_adjusted_win_chance(tribe, rival, base_win_chance: float) -> float:
+    """Military branch, step 6 (plan file valiant-forging-falcon.md): layers
+    a bounded Might-based adjustment on top of the existing population-share
+    win chance shared by RAID(rival)/DECLARE_CONQUEST -- never a replacement
+    for it, "tribe-vs-tribe stays entirely Chief-controlled" (Might only
+    ever adjusts the odds of a fight the Chief already chose to start, it
+    never triggers one on its own -- see Simulation._advance_battalion_patrol's
+    own docstring for the autonomous side, scoped to raiders only). Neither
+    Might dominance nor Might weakness alone can make the outcome certain
+    (config.MIGHT_ADJUSTED_WIN_CHANCE_FLOOR/_CEILING), the same "real
+    ceiling, never an absolute guarantee" shape every other win-chance
+    formula here already uses.
+
+    When neither side has ever built a Battalion (still the common case
+    before this branch gets used at all), the modifier is exactly 0 --
+    ordinary population-share odds, completely unchanged from before this
+    step existed."""
+    tribe_might = compute_might(tribe)
+    rival_might = compute_might(rival)
+    if tribe_might == 0 and rival_might == 0:
+        modifier = 0.0
+    else:
+        might_ratio = tribe_might / max(1, rival_might)
+        modifier = max(
+            config.MIGHT_MODIFIER_MIN, min(config.MIGHT_MODIFIER_MAX, (might_ratio - 1) * config.MIGHT_MODIFIER_SCALE)
+        )
+    return max(
+        config.MIGHT_ADJUSTED_WIN_CHANCE_FLOOR,
+        min(config.MIGHT_ADJUSTED_WIN_CHANCE_CEILING, base_win_chance + modifier),
+    )
+
+
 def _build_object_creator(sim, tribe, biome, target):
     """Object Creator era's signature building -- the factory that lets a
     tribe start inventing genuinely new things. One-time, permanent, same
@@ -1247,19 +1301,19 @@ def _declare_conquest(sim, tribe, biome, target):
     to one all-in campaign: win, and the rival is fully and immediately
     absorbed (Simulation._merge_tribes), not just weakened. Same
     population-share win chance as RAID (boosted by a combat_boost created
-    object, same as RAID itself now gets), but a much steeper population
-    cost on failure, since this is a full campaign, not a raiding party's
-    hit-and-run.
+    object, same as RAID itself now gets), now also layered with a bounded
+    Might-based adjustment (_might_adjusted_win_chance -- see its own
+    docstring), but a much steeper population cost on failure, since this is
+    a full campaign, not a raiding party's hit-and-run.
 
-    TODO (design, not yet scoped): confirmed via real run data that this has
-    never fired even once across every recorded run -- "War and World
-    Domination"'s one signature action sits completely unused. Working
-    theory (2026-09-07): it's an isolated, all-or-nothing gamble with nothing
-    feeding into it -- no real military to visibly build up first (Forge
-    items, Keep/Fortress/Castle, a trained-warriors stat), so there's nothing
-    for this to be the payoff of. A real Military branch was floated as the
-    fix; deferred pending its own design pass, not folded into this session's
-    other fixes."""
+    Originally never fired even once across every recorded run -- confirmed
+    via real run data, before the Military branch (plan file
+    valiant-forging-falcon.md) existed at all. Working theory (2026-09-07):
+    it was an isolated, all-or-nothing gamble with nothing feeding into it --
+    no real military to visibly build up first. The Military branch
+    (Warrior, Barracks, a trained Battalion, compute_might) is that fix --
+    this action finally has a real payoff to build toward, not just a bare
+    population gamble."""
     tx, ty = target
     defender = None
     for other in sim.tribes.values():
@@ -1276,6 +1330,7 @@ def _declare_conquest(sim, tribe, biome, target):
     tribe.stone -= config.DECLARE_CONQUEST_STONE_COST
     effective_population = tribe.population * (1 + _created_object_bonus(tribe, "combat_boost"))
     attacker_win_chance = effective_population / max(1, effective_population + defender.population)
+    attacker_win_chance = _might_adjusted_win_chance(tribe, defender, attacker_win_chance)
     if random.random() < attacker_win_chance:
         old_name, defender_name = tribe.name, defender.name
         _record_combat(tribe, "Conquest", "won")
@@ -1843,12 +1898,15 @@ def _raid_minor_settlement(sim, tribe, settlement):
 def _raid(sim, tribe, biome, target):
     """Attempt to raid a rival tribe found at target_vector -- the mechanical outlet
     for an aggressive/warlord chief philosophy (leadership.py can already generate one)
-    that otherwise has nothing to act on. Real risk on both sides: win chance is just
-    the attacker's share of the two tribes' combined population, so a smaller raiding
-    party can still lose to a larger defender, and even a winning raid costs the
+    that otherwise has nothing to act on. Real risk on both sides: win chance starts as
+    just the attacker's share of the two tribes' combined population, then gets a
+    bounded Might-based adjustment on top (_might_adjusted_win_chance -- Military
+    branch, plan file valiant-forging-falcon.md), so a smaller raiding party can
+    still lose to a larger, better-armed defender, and even a winning raid costs the
     attacker people -- violence isn't a free lever here. Also checks for an
     unaffiliated minor settlement first (Simulation._spawn_minor_settlements) -- a
-    much safer, weaker target than a real rival, guaranteed to succeed."""
+    much safer, weaker target than a real rival, guaranteed to succeed, unaffected by
+    Might (RAID against a minor settlement never touches this path)."""
     tx, ty = target
     settlement = _find_minor_settlement(sim, tx, ty)
     if settlement is not None:
@@ -1869,6 +1927,7 @@ def _raid(sim, tribe, biome, target):
     # DECLARE_CONQUEST -- see _created_object_bonus.
     effective_population = tribe.population * (1 + _created_object_bonus(tribe, "combat_boost"))
     attacker_win_chance = effective_population / max(1, effective_population + defender.population)
+    attacker_win_chance = _might_adjusted_win_chance(tribe, defender, attacker_win_chance)
     if random.random() < attacker_win_chance:
         # Code-quality pass: the attacker's own gain here used to setattr the
         # stolen amount directly -- the same uncapped-mutation bug already fixed

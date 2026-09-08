@@ -882,6 +882,72 @@ BATTALION_PATROL_COOLDOWN_DAYS = 3
 # real target. Same baseline as EXPEDITION_SPEED.
 BATTALION_PATROL_SPEED = 10
 
+# Military branch, step 5: Might (plan file valiant-forging-falcon.md,
+# compute_might). Explicit request, 2026-09-08: "Might now should include a
+# Training factor (not overpowered, more like bolster and upkeep)." tribe.
+# battalion_readiness (0.0-1.0) is a real, maintained meter, not a one-time
+# flip -- it has to be earned AND kept up, the same "sustained investment,
+# not fire-and-forget" shape BATTALION_PATROL's own cooldown already gives
+# the patrol side of this branch. Bolster: actions._train_battalion nudges
+# it up a little every time it's called -- recruiting new soldiers while
+# still under capacity, or (new) a cheaper maintenance drill once the
+# Battalion is already at full headcount, so there's always something worth
+# doing to keep readiness from draining even after "done" training. Upkeep:
+# Simulation._advance_battalion_readiness_upkeep drains it a small fixed
+# amount every cycle regardless -- a standing force goes stale without
+# continued drilling, it isn't just recruited once and forgotten.
+BATTALION_READINESS_BOLSTER_PER_ACTION = 0.15
+BATTALION_READINESS_DECAY_PER_CYCLE = 0.005
+# Deliberately cheaper than BATTALION_TRAINING_FOOD_COST_PER_SOLDIER times a
+# real batch of soldiers -- nobody's being newly fed here, just drilled.
+BATTALION_READINESS_UPKEEP_FOOD_COST = 8
+
+# compute_might(tribe) itself: each term below is an independent, named
+# multiplier stacked on tribe.battalion_size (the base), the same "stack
+# multiple named multipliers" shape _food_multiplier already uses for
+# kitchen/cooking/created-object bonuses. All four originally-planned inputs
+# (equipment, defensive tier, Warrior trophies, Well-Being) plus training/
+# readiness now. Every value below is an invented first-pass default, not
+# tuned against live data yet -- revisit once a real run shows Might numbers
+# in practice, the same way every other unvalidated constant in this project
+# has been flagged.
+MIGHT_WEAPON_BONUS = 0.5  # a fully-armed Battalion (1 Forge weapon per soldier): +50%
+MIGHT_TIER_BONUS_PER_TIER = 0.15  # Keep/Fortress/Castle: +15%/+30%/+45%
+MIGHT_TROPHY_BONUS_PER_TROPHY = 0.1  # each trophy personally credited to the Warrior: +10%
+# Explicit request: "Well-Being might be included some also" -- deliberately
+# the smallest-magnitude term (+-15% across the full 0.0-1.0 range), since
+# Well-Being already drives population growth elsewhere and shouldn't double
+# up as a dominant lever here too.
+MIGHT_WELLBEING_WEIGHT = 0.3
+# Explicit request: "not overpowered, more like bolster and upkeep" --
+# capped well under weapon's own swing, comparable to the tier ladder's.
+MIGHT_TRAINING_BONUS = 0.25
+
+# Military branch, step 6: RAID(rival)/DECLARE_CONQUEST integration
+# (actions._might_adjusted_win_chance). Might is layered on TOP of the
+# existing population-share win chance, never a replacement for it -- same
+# "real ceiling, never an absolute guarantee either direction" shape every
+# other win-chance formula in this project already uses. When neither side
+# has ever built a Battalion (still the common case before this branch gets
+# used at all), the modifier is exactly 0 -- ordinary RAID/DECLARE_CONQUEST
+# behavior for every tribe that hasn't touched Military stays completely
+# unchanged.
+MIGHT_MODIFIER_MIN = -0.2
+MIGHT_MODIFIER_MAX = 0.2
+MIGHT_MODIFIER_SCALE = 0.15
+# The combined (population + Might) win chance still can't be a sure thing
+# either way -- same reasoning STRIKE_RAIDER_CAMP_MAX_WIN_CHANCE/
+# EXPEL_RAIDERS_MAX_WIN_CHANCE already codify for their own fights.
+MIGHT_ADJUSTED_WIN_CHANCE_FLOOR = 0.05
+MIGHT_ADJUSTED_WIN_CHANCE_CEILING = 0.95
+
+# Military branch, step 7: the DECLARE_CONQUEST eligibility nudge
+# (Simulation._prepare_turn) -- "the Chief has to actually be able to reach
+# DECLARE_CONQUEST... an eligibility nudge once it's genuinely a good bet."
+# Only fires once this tribe's own Might is at least 30% ahead of a known,
+# nearby rival's -- a real, named advantage, not just any nonzero edge.
+DECLARE_CONQUEST_NUDGE_MIGHT_RATIO = 1.3
+
 # BREED (backend/actions.py._breed, backend/breeding.py). Was free (0/0) -- the two
 # real eligible windows watched in an early session both landed inside a full
 # starvation death spiral (0 food/water), so a positive cost would have blocked BREED
