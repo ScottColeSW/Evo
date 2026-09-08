@@ -813,6 +813,17 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
 
 const RESOURCE_ICON = { wood: "🪵", stone: "🪨", food: "🍖", water: "💧" };
 
+// Explicit request: "every water source a Tribe finds, adds to the passive
+// Water income, so they should just get an Infinity sign for water once they
+// find 2 or 3." Mirrors backend/config.py's WATER_SECURITY_SITE_THRESHOLD --
+// once a tribe has confirmed this many distinct sources (Simulation.
+// _advance_water_supply keeps water topped to the storage cap from then on,
+// unconditionally), the number itself stops being the interesting fact.
+const WATER_SECURITY_SITE_THRESHOLD = 3;
+function waterDisplay(t) {
+  return (t.confirmed_water_sites || []).length >= WATER_SECURITY_SITE_THRESHOLD ? "∞" : t.water;
+}
+
 // Explicit request: "The Forge isn't recognizing all the different types of
 // Ore so it's stockpiling yet, we do not have it on the resources icon/count
 // line in the sidebar, which we should." Ore was never a dedicated field --
@@ -3814,7 +3825,7 @@ function updateSidebar(state) {
           </div>
           <div class="resources">
             (${t.x}, ${t.y}) · ${t.model} · Pop ${t.population}<br>
-            🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${t.food} &nbsp;💧 ${t.water}
+            🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${t.food} &nbsp;💧 ${waterDisplay(t)}
             ${oreLine(t)}
             ${furLine(t)}
             ${t.chief_name ? `<br><span class="chief-line">👑 ${t.chief_name}${t.library_built ? "" : ` — ${t.chief_philosophy}`}</span>` : ""}

@@ -77,6 +77,28 @@ def test_critical_food_omits_cooking_suggestion_once_already_learned():
     assert "cook" not in text.lower()
 
 
+def test_water_secure_suppresses_the_thirst_warning_even_at_zero_water():
+    """Explicit request: "every water source a Tribe finds... they should just
+    get an Infinity sign for water once they find 2 or 3." Once
+    Simulation._advance_water_supply is topping water to the storage cap every
+    cycle for real, a thirst warning here would flatly contradict "off the
+    management board for good" -- water=0 is only reachable in this test
+    because the caller controls the value directly; the guarantee is that this
+    function itself never raises the alarm once told water is secure."""
+    text, critical = survival_bias_string(food=50, water=0, population=SMALL_TRIBE, water_secure=True)
+    assert "thirst" not in text
+    assert critical is False
+
+
+def test_water_secure_does_not_suppress_a_real_food_crisis():
+    """water_secure only ever silences the water half -- a genuine famine is
+    still a genuine famine regardless of how safe the water supply is."""
+    text, critical = survival_bias_string(food=1, water=0, population=SMALL_TRIBE, water_secure=True)
+    assert "starving" in text
+    assert "thirst" not in text
+    assert critical is True
+
+
 def test_thresholds_scale_with_population_not_a_flat_stockpile_number():
     """The whole point of this design: the same absolute stockpile means something
     different depending on how many people it has to feed. food=5 is comfortably above

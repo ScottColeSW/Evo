@@ -7169,6 +7169,64 @@ def test_advance_water_supply_is_capped_by_storage():
     assert tribe.water == config.STORAGE_CAP_BASE
 
 
+def test_advance_water_supply_tops_to_the_storage_cap_once_water_secure():
+    """Explicit request: "every water source a Tribe finds, adds to the passive
+    Water income, so they should just get an Infinity sign for water once they
+    find 2 or 3." confirmed_water_sites was never actually wired into the
+    formula before -- a real day-12 live run showed water declining for 100+
+    straight cycles despite several confirmed sources on record. Now
+    WATER_SECURITY_SITE_THRESHOLD distinct sources takes water off the
+    management board for good: always topped to the storage cap."""
+    from backend import config
+    from backend.actions import _storage_cap
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.confirmed_water_sites = [(1, 1), (2, 2), (3, 3)]
+    assert len(tribe.confirmed_water_sites) == config.WATER_SECURITY_SITE_THRESHOLD
+    tribe.water = 5
+
+    sim._advance_water_supply(tribe)
+
+    assert tribe.water == _storage_cap(tribe)
+
+
+def test_advance_water_supply_water_security_ignores_current_position():
+    """A tribe that's proven it knows where the water is doesn't lose that
+    knowledge by standing somewhere that doesn't itself qualify as "settled
+    near water" -- water security is unconditional on current position, unlike
+    the ordinary formula below the threshold."""
+    from backend import config
+    from backend.actions import _storage_cap
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # forest, not river
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    # Far from the tribe's own position -- _near_confirmed_water would be False.
+    tribe.confirmed_water_sites = [(1, 1), (2, 2), (3, 3)]
+    tribe.water = 5
+
+    sim._advance_water_supply(tribe)
+
+    assert tribe.water == _storage_cap(tribe)
+
+
+def test_advance_water_supply_uses_the_ordinary_formula_below_the_security_threshold():
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.confirmed_water_sites = [(1, 1), (2, 2)]  # one short of the threshold
+    tribe.water = 10
+
+    sim._advance_water_supply(tribe)
+
+    upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+    assert tribe.water == 10 + round(upkeep * config.SETTLED_WATER_SUPPLY_MULTIPLIER)
+
+
 def test_advance_water_supply_does_nothing_before_settling():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # forest, not settled
     tribe = sim.tribes["tribe_0"]

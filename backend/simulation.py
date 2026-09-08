@@ -1098,7 +1098,8 @@ class Tribe:
     def to_dict(self) -> dict:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
         survival_warning, _ = survival_bias_string(
-            self.food, self.water, self.population, self.fishing_learned, self.cooking_learned
+            self.food, self.water, self.population, self.fishing_learned, self.cooking_learned,
+            water_secure=len(self.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD,
         )
         nxt = next_era(self.era)
         next_era_info = None
@@ -1711,7 +1712,8 @@ class Simulation:
             f"Resources on hand: {tribe.wood} wood, {tribe.stone} stone, {tribe.food} food, {tribe.water} water.",
         ]
         survival_bias, _critical = survival_bias_string(
-            tribe.food, tribe.water, tribe.population, tribe.fishing_learned, tribe.cooking_learned
+            tribe.food, tribe.water, tribe.population, tribe.fishing_learned, tribe.cooking_learned,
+            water_secure=len(tribe.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD,
         )
         if survival_bias:
             lines.append(survival_bias)
@@ -2411,7 +2413,8 @@ class Simulation:
         nearby = self.world.nearby_structures(tribe.x, tribe.y)
         ghost_bias = self.trauma.bias_string(tribe.x, tribe.y)
         survival_bias, survival_critical = survival_bias_string(
-            tribe.food, tribe.water, tribe.population, tribe.fishing_learned, tribe.cooking_learned
+            tribe.food, tribe.water, tribe.population, tribe.fishing_learned, tribe.cooking_learned,
+            water_secure=len(tribe.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD,
         )
         # NUDGE (2026-08-31, explicit request: "the warnings do not mention settling
         # as an alternative to low water"). A tribe already sitting on a chronic water
@@ -5445,7 +5448,24 @@ class Simulation:
         turn number never showed. Folding the farm draw into the margin here fixes
         the sustained deficit; Simulation.step now runs this (and fish supply and
         farming) before upkeep so a cycle's own income can actually cover that same
-        cycle's own drain instead of only the next one's."""
+        cycle's own drain instead of only the next one's.
+
+        Explicit request (2026-09-08): "every water source a Tribe finds, adds to
+        the passive Water income, so they should just get an Infinity sign for
+        water once they find 2 or 3." confirmed_water_sites was never actually
+        wired into this formula -- a second or third confirmed source genuinely
+        changed nothing, confirmed against a real day-12 live run where water
+        declined for 100+ straight cycles despite several confirmed sources on
+        record. Now it does: config.WATER_SECURITY_SITE_THRESHOLD distinct
+        confirmed sources takes water off the management board for good, the
+        same permanent-mastery shape fishing_learned/cooking_learned already
+        give their own resource -- unconditional on current position (a tribe
+        that's proven it knows where the water is doesn't lose that knowledge
+        by walking away from any one source), and naturally one-way since
+        confirmed_water_sites only ever grows."""
+        if len(tribe.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD:
+            tribe.water = _storage_cap(tribe)
+            return
         if self._is_settled_near_water(tribe):
             upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
             farm_draw = config.CROP_WATER_PER_PLOT_PER_CYCLE * tribe.farm_plots

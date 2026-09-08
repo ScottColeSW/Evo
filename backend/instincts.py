@@ -12,7 +12,7 @@ from . import config
 
 def survival_bias_string(
     food: int, water: int, population: int,
-    fishing_learned: bool = False, cooking_learned: bool = False,
+    fishing_learned: bool = False, cooking_learned: bool = False, water_secure: bool = False,
 ) -> tuple[str, bool]:
     """Returns (bias_text, is_critical). is_critical raises inference temperature the
     same way ancestral dread does -- panic should read as less predictable model
@@ -25,7 +25,13 @@ def survival_bias_string(
     has grown. Cooking no longer adjusts this -- see config.COOKING_FOOD_MULTIPLIER's
     own comment: cooking now multiplies food *production* at the harvest point
     (actions._food_multiplier), the same shape Sawmill/Quarry/Dock already use,
-    instead of shrinking *consumption* here."""
+    instead of shrinking *consumption* here.
+
+    water_secure (config.WATER_SECURITY_SITE_THRESHOLD confirmed sources, see
+    Simulation._advance_water_supply) means water is always topped to the storage
+    cap every cycle from here on -- a real thirst warning could still fire off pure
+    numeric coincidence right after the threshold is crossed without this, which
+    would flatly contradict "off the management board for good.\""""
     upkeep = max(1, population // config.UPKEEP_POPULATION_DIVISOR)
     urgent: list[str] = []
     critical = False
@@ -61,7 +67,9 @@ def survival_bias_string(
             message += " Learning to cook would help stored food last much longer too."
         urgent.append(message)
 
-    if water <= upkeep * config.THIRST_CRITICAL_CYCLES_LEFT:
+    if water_secure:
+        pass
+    elif water <= upkeep * config.THIRST_CRITICAL_CYCLES_LEFT:
         urgent.append("Your people are dying of thirst -- gather water or dispatch scouts to find a source now.")
         critical = True
     elif water <= upkeep * config.THIRST_WARNING_CYCLES_LEFT:

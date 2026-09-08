@@ -263,6 +263,22 @@ WATER_YIELD_OFF_RIVER = 3
 # "easy factor variable" to turn up if tribes are still running dry.
 SETTLED_WATER_SUPPLY_MULTIPLIER = 1.5
 
+# Explicit request: "every water source a Tribe finds, adds to the passive
+# Water income, so they should just get an Infinity sign for water once they
+# find 2 or 3." Checked against SETTLED_WATER_SUPPLY_MULTIPLIER's own formula
+# and confirmed_water_sites was never actually part of it -- passive income
+# only ever scaled with upkeep/farm_draw/well_built, so a second or third
+# confirmed source genuinely did nothing extra, and a real live run (day 12,
+# population climbing into the thousands) showed water declining for 100+
+# straight cycles despite multiple confirmed sources on record. Real state
+# now: a tribe that's confirmed this many distinct sources gets water
+# entirely off the management board for good -- same "permanent one-way
+# mastery" shape fishing_learned/cooking_learned already give their own
+# resource, and naturally one-way already since confirmed_water_sites only
+# ever grows (Tribe.confirmed_water_sites.append, never removed), so no
+# separate flag is needed to make this stick.
+WATER_SECURITY_SITE_THRESHOLD = 3
+
 # Explicit request: "if they are lucky enough to have a resource... in the
 # territory they settle in, it's a daily allotted freebie they never have to
 # gather from." Same per-capita-upkeep scaling as SETTLED_WATER_SUPPLY_MULTIPLIER/
