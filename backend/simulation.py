@@ -2399,7 +2399,10 @@ class Simulation:
         if tribe.wood < config.TOLL_FEE_WOOD:
             return cx, cy  # can't pay -- blocked, stay put
         tribe.wood -= config.TOLL_FEE_WOOD
-        owner.wood += config.TOLL_FEE_WOOD
+        # Code-quality pass: same uncapped-mutation bug class as the expedition-
+        # homecoming fix above, just a much smaller per-crossing amount -- still
+        # worth routing through the cap for a heavily-trafficked toll road.
+        self._capped_add(owner, "wood", config.TOLL_FEE_WOOD)
         return nx, ny
 
     def _prepare_turn(self, tribe: Tribe) -> tuple[dict, dict]:
@@ -5222,14 +5225,17 @@ class Simulation:
         setattr(tribe, resource, current + added)
         return added
 
-    def _capped_unique_add(self, tribe: Tribe, resource_name: str, amount: int) -> None:
+    def _capped_unique_add(self, tribe: Tribe, resource_name: str, amount: int) -> int:
         """Same as _capped_add, for the tribe.unique_resources dict (Mine ore,
         Tannery Fur) -- each named resource gets its own cap ceiling, same as
-        every other resource."""
+        every other resource. Returns the amount actually added, same reason
+        _capped_add does -- a caller reporting what a trade/action actually
+        delivered needs the real number, not the nominal one."""
         cap = _storage_cap(tribe)
         current = tribe.unique_resources.get(resource_name, 0)
         added = max(0, min(amount, cap - current))
         tribe.unique_resources[resource_name] = current + added
+        return added
 
     def _advance_automatic_fire(self, tribe: Tribe) -> None:
         """Explicit request, after a live run showed a tribe sitting on 900 idle

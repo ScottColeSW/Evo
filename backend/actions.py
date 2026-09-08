@@ -1049,10 +1049,14 @@ def _use_item(sim, tribe, biome, target):
     if not tribe.items:
         return None
     item = tribe.items.pop(0)
-    stone_gain = round(item["value"] * config.USE_ITEM_STONE_SHARE)
-    wood_gain = item["value"] - stone_gain
-    tribe.wood += wood_gain
-    tribe.stone += stone_gain
+    stone_gain_nominal = round(item["value"] * config.USE_ITEM_STONE_SHARE)
+    wood_gain_nominal = item["value"] - stone_gain_nominal
+    # Code-quality pass: this used to add straight to tribe.wood/stone with no
+    # cap check -- same bug class fixed across the rest of this file/simulation.py
+    # (see Simulation._capped_add's own docstring). sim._capped_add returns the
+    # amount actually added, since the message below needs the real number.
+    wood_gain = sim._capped_add(tribe, "wood", wood_gain_nominal)
+    stone_gain = sim._capped_add(tribe, "stone", stone_gain_nominal)
     return f"the {item['name']} is put to use -- {wood_gain} wood and {stone_gain} stone recovered from its worth"
 
 
@@ -1268,8 +1272,13 @@ def _catch_fish(sim, tribe, biome, target):
     # BUILD_DOCK requires fishing_learned already, and CATCH_FISH retires from
     # available_actions the instant fishing_learned is set, so a dock could
     # never actually exist while this manual catch was still reachable.
-    caught = round(caught * _food_multiplier(tribe))
-    tribe.food += caught
+    # Code-quality pass: every other manual gather action (GATHER_WOOD/STONE/
+    # WATER/FOOD, HUNT_DEER) already routes its gain through the storage cap --
+    # this one was the odd one out, adding straight to tribe.food with no check.
+    # sim._capped_add (not the message-returning _add_capped above) since the
+    # "first catch" story below needs the real landed amount regardless of
+    # whether it's the special first-catch message or the routine one.
+    caught = sim._capped_add(tribe, "food", round(caught * _food_multiplier(tribe)))
     if not tribe.fishing_learned:
         tribe.fishing_learned = True
         sim._award_trophy(tribe, "Angler")
@@ -1693,15 +1702,15 @@ def _raid_minor_settlement(sim, tribe, settlement):
     same gap Simulation._resolve_raider_attack's own fix just closed. Capped
     here the same way: the settlement still loses the full stolen amount (a
     real, permanent loss toward its own depletion), but only what actually
-    fits under the tribe's own _storage_cap lands in its stockpile."""
+    fits under the tribe's own storage cap lands in its stockpile.
+
+    Code-quality pass: routed through sim._capped_add instead of inlining the
+    same cap arithmetic that helper already implements."""
     looted = {}
     for resource in ("wood", "stone", "food", "water"):
         stolen = round(settlement[resource] * config.MINOR_SETTLEMENT_RAID_STEAL_FRACTION)
         settlement[resource] -= stolen
-        current = getattr(tribe, resource)
-        gained = max(0, min(stolen, _storage_cap(tribe) - current))
-        setattr(tribe, resource, current + gained)
-        looted[resource] = gained
+        looted[resource] = sim._capped_add(tribe, resource, stolen)
     settlement["raids_remaining"] -= 1
     if settlement["raids_remaining"] <= 0:
         settlement["depleted_at_cycle"] = sim.cycle
@@ -1746,10 +1755,15 @@ def _raid(sim, tribe, biome, target):
     effective_population = tribe.population * (1 + _created_object_bonus(tribe, "combat_boost"))
     attacker_win_chance = effective_population / max(1, effective_population + defender.population)
     if random.random() < attacker_win_chance:
+        # Code-quality pass: the attacker's own gain here used to setattr the
+        # stolen amount directly -- the same uncapped-mutation bug already fixed
+        # on the raider-camp-strike/minor-settlement-raid paths (see
+        # _raid_minor_settlement's own comment), just missed on the one path
+        # where a tribe raids a real rival tribe instead of a camp/settlement.
         for resource in ("wood", "stone", "food", "water"):
             stolen = round(getattr(defender, resource) * config.RAID_STEAL_FRACTION)
             setattr(defender, resource, getattr(defender, resource) - stolen)
-            setattr(tribe, resource, getattr(tribe, resource) + stolen)
+            sim._capped_add(tribe, resource, stolen)
         tribe.raids_won += 1
         _record_combat(tribe, "Raiding", "won")
         _record_combat(defender, "Raid Defense", "lost")
@@ -1802,10 +1816,12 @@ def _raid(sim, tribe, biome, target):
         _record_combat(defender, "Raid Defense", "won")
         if defender.raids_defended == 1:
             sim._award_trophy(defender, "Raid Breaker")
+        # Code-quality pass: same uncapped-mutation fix as the win branch above,
+        # mirrored -- the defender's gain here was equally uncapped.
         for resource in ("wood", "stone", "food", "water"):
             stolen = round(getattr(tribe, resource) * config.RAID_STEAL_FRACTION)
             setattr(tribe, resource, getattr(tribe, resource) - stolen)
-            setattr(defender, resource, getattr(defender, resource) + stolen)
+            sim._capped_add(defender, resource, stolen)
 
         sim._lose_population(tribe, config.RAID_ATTACKER_POPULATION_LOSS_ON_LOSS, cause="failed_raid")
         sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
@@ -1855,13 +1871,10 @@ def _strike_raider_camp(sim, tribe, biome, target):
         # this used to setattr a fraction of the tribe's OWN current food
         # directly, bypassing the storage cap -- not loot recovered from the
         # camp, just an uncapped compound multiplier on the tribe's own
-        # stockpile every time this is won. Capped the same way _add_capped
-        # caps every other resource gain (inlined here rather than reusing
-        # _add_capped itself, since that returns a narration string/None, not
-        # the amount actually added -- this action's own return line needs the
-        # real number, the same reason Simulation._capped_add exists).
-        looted = max(0, min(round(tribe.food * config.STRIKE_RAIDER_CAMP_LOOT_FRACTION), _storage_cap(tribe) - tribe.food))
-        tribe.food += looted
+        # stockpile every time this is won. sim._capped_add returns the amount
+        # actually added, since this action's own return line needs the real
+        # number, not just a message.
+        looted = sim._capped_add(tribe, "food", round(tribe.food * config.STRIKE_RAIDER_CAMP_LOOT_FRACTION))
         sim.trauma.radiate_event_wave(camp[0], camp[1], config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
         sim.recent_encounters.append({
             "x": camp[0], "y": camp[1], "kind": "raider_camp_strike",
@@ -1924,9 +1937,15 @@ def _expel_raiders_from_territory(sim, tribe, biome, target):
         )
         if random.random() < win_chance:
             tribe.raiders_approaching = None
-            gained_food = max(1, round(tribe.population * config.EXPEL_RAIDERS_LOOT_PER_POPULATION * reward_multiplier))
+            # Code-quality pass: uncapped tribe.food += -- same bug class as the
+            # rest of this file. A large, established tribe's population-scaled
+            # loot here can be substantial, easily enough to overrun the cap in
+            # one call.
+            gained_food = sim._capped_add(
+                tribe, "food",
+                max(1, round(tribe.population * config.EXPEL_RAIDERS_LOOT_PER_POPULATION * reward_multiplier)),
+            )
             gained_population = max(1, round(tribe.population * config.EXPEL_RAIDERS_POPULATION_GAIN_FRACTION * reward_multiplier))
-            tribe.food += gained_food
             tribe.population += gained_population
             tribe.max_population = max(tribe.max_population, tribe.population)
             sim._relocate_raider_sighting_after_ambush(tribe, ax, ay)
@@ -1990,15 +2009,22 @@ def _execute_trade(sim, tribe, partner) -> str:
     either has found a real partner -- both sides give up the same fraction of what
     they're currently holding and receive the same fraction back, unconditional
     once initiated (like RAID, this doesn't ask the other side's permission)."""
+    # Code-quality pass: each side's received gift used to be folded straight into
+    # the same setattr as its own given gift, uncapped -- same bug class as the
+    # rest of this file/simulation.py. Give (a plain subtraction, no cap concern)
+    # and receive (routed through sim._capped_add) are now separate steps; the
+    # trade ledger below records what actually landed, not the nominal gift.
     for resource in ("wood", "stone", "food", "water"):
         tribe_amount = getattr(tribe, resource)
         partner_amount = getattr(partner, resource)
         tribe_gift = round(tribe_amount * config.TRADE_GIFT_FRACTION)
         partner_gift = round(partner_amount * config.TRADE_GIFT_FRACTION)
-        setattr(tribe, resource, tribe_amount - tribe_gift + partner_gift)
-        setattr(partner, resource, partner_amount - partner_gift + tribe_gift)
-        _record_trade(tribe, resource, given=tribe_gift, received=partner_gift)
-        _record_trade(partner, resource, given=partner_gift, received=tribe_gift)
+        setattr(tribe, resource, tribe_amount - tribe_gift)
+        setattr(partner, resource, partner_amount - partner_gift)
+        tribe_received = sim._capped_add(tribe, resource, partner_gift)
+        partner_received = sim._capped_add(partner, resource, tribe_gift)
+        _record_trade(tribe, resource, given=tribe_gift, received=tribe_received)
+        _record_trade(partner, resource, given=partner_gift, received=partner_received)
 
     # Explicit request: "maybe some hunters want a Tannery and they can trade
     # furs too." A Mine/Tannery's named resource (Fur, Orosite Ore, ...) used
@@ -2006,15 +2032,20 @@ def _execute_trade(sim, tribe, partner) -> str:
     # resources, the exact gap the original "Mine & unique resource" design
     # note called out. Same fractional-gift shape as the loop above, over
     # whichever named resources either side actually holds.
+    #
+    # Code-quality pass: same give/receive split and cap fix as the generic
+    # resource loop above -- this one was equally uncapped.
     for resource in set(tribe.unique_resources) | set(partner.unique_resources):
         tribe_amount = tribe.unique_resources.get(resource, 0)
         partner_amount = partner.unique_resources.get(resource, 0)
         tribe_gift = round(tribe_amount * config.TRADE_GIFT_FRACTION)
         partner_gift = round(partner_amount * config.TRADE_GIFT_FRACTION)
-        tribe.unique_resources[resource] = tribe_amount - tribe_gift + partner_gift
-        partner.unique_resources[resource] = partner_amount - partner_gift + tribe_gift
-        _record_trade(tribe, resource, given=tribe_gift, received=partner_gift)
-        _record_trade(partner, resource, given=partner_gift, received=tribe_gift)
+        tribe.unique_resources[resource] = tribe_amount - tribe_gift
+        partner.unique_resources[resource] = partner_amount - partner_gift
+        tribe_received = sim._capped_unique_add(tribe, resource, partner_gift)
+        partner_received = sim._capped_unique_add(partner, resource, tribe_gift)
+        _record_trade(tribe, resource, given=tribe_gift, received=tribe_received)
+        _record_trade(partner, resource, given=partner_gift, received=partner_received)
 
     # A forged item is a discrete, indivisible thing -- can't hand over a "fraction"
     # of one the way the fractional gifts above work, so each side that actually has
@@ -2066,16 +2097,16 @@ def _trade_with_minor_settlement(sim, tribe, settlement):
     seeded from whichever tribe is currently biggest (Simulation.
     _biggest_tribe_snapshot), and since this never depletes the way raiding
     does, it's a repeatable enough channel that the receiving side's own
-    _storage_cap must actually hold."""
+    storage cap must actually hold.
+
+    Code-quality pass: routed through sim._capped_add instead of inlining the
+    same cap arithmetic that helper already implements."""
     gained = {}
     for resource in ("wood", "stone", "food", "water"):
         taken = round(settlement[resource] * config.MINOR_SETTLEMENT_TRADE_FRACTION)
         settlement[resource] -= taken
-        current = getattr(tribe, resource)
-        received = max(0, min(taken, _storage_cap(tribe) - current))
-        setattr(tribe, resource, current + received)
-        gained[resource] = received
-        _record_trade(tribe, resource, received=received)  # one-way -- nothing given up
+        gained[resource] = sim._capped_add(tribe, resource, taken)
+        _record_trade(tribe, resource, received=gained[resource])  # one-way -- nothing given up
     tribe.trades_completed += 1
     if tribe.trades_completed == 1:
         sim._award_trophy(tribe, "First Contact")
