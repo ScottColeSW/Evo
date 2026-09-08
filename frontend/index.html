@@ -431,6 +431,15 @@ const ENCOUNTER_DISPLAY_MS = 4000;
 // so a second tribe's bubble can be nudged clear of one that already claimed the same
 // space -- see claimBubbleSlot, reset once per frame in drawFrame.
 let activeBubbleRects = [];
+// Live report: "the Chief's dialog boxes are placed under icons so it's hard to
+// read." drawTribeIndividuals (which computes a bubble's position/size) used to
+// draw it immediately, but that whole pass runs before buildings/walls/settlement
+// markers/landmarks -- any of those painted right over a bubble sharing the same
+// screen space. Bubble draws are queued here instead and flushed in their own pass
+// at the very end of drawFrame, alongside drawLandmarks -- the same "labels always
+// on top" tier every other overlay label already uses (see drawFrame's own comment).
+// Reset once per frame, same as activeBubbleRects above.
+let pendingSpeechBubbles = [];
 
 const canvas = document.getElementById("simCanvas");
 const ctx = canvas.getContext("2d");
@@ -1845,6 +1854,14 @@ function drawTribeIndividuals(tribeId, t) {
     }
   }
 
+  pendingSpeechBubbles.push(() => drawTribeSpeechBubble(t, centerX, centerY, topClearance, isNight));
+
+  (t.expeditions || []).forEach((exp, i) => drawExpedition(t, tribeId, exp, i));
+}
+
+// Extracted from drawTribeIndividuals -- see pendingSpeechBubbles' own comment for why
+// this now draws in a deferred, later pass instead of inline.
+function drawTribeSpeechBubble(t, centerX, centerY, topClearance, isNight) {
   if (isNight && t.last_reflection) {
     drawThoughtBubble(t, centerX, centerY - topClearance);
   } else if (!isNight && t.last_broadcast) {
@@ -1928,8 +1945,6 @@ function drawTribeIndividuals(tribeId, t) {
       ctx.fillText(line, bx + padX, by + padY + (i + 1) * lineHeight - 2);
     });
   }
-
-  (t.expeditions || []).forEach((exp, i) => drawExpedition(t, tribeId, exp, i));
 }
 
 // The scouting party (backend/actions.py._scout, backend/simulation.py._advance_expedition)
@@ -3091,6 +3106,7 @@ function drawFrame() {
   // speech bubble) nudges a new bubble up and out of any already-claimed rectangle's
   // way before it ever gets drawn.
   activeBubbleRects.length = 0;
+  pendingSpeechBubbles.length = 0;
 
   if (latestState) {
     drawCelestialLighting(latestState.cycle);
@@ -3214,6 +3230,10 @@ function drawFrame() {
     // used to draw before trails, so a toll road painted right over them. Drawn
     // after everything else instead -- labels always stay on top, full stack from
     // bottom to top is terrain -> individuals -> trails -> buildings/walls -> labels.
+    // Chief thought/speech bubbles are part of that same top "labels" tier now too
+    // (see pendingSpeechBubbles' own comment) -- flushed here, before drawLandmarks,
+    // so a bubble never again renders underneath a building or landmark icon.
+    pendingSpeechBubbles.forEach(draw => draw());
     drawLandmarks();
     drawMinorSettlements();
     // The day/night tint goes over literally everything (tribes, trails, structures
