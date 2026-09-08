@@ -1793,11 +1793,19 @@ POPULATION_YIELD_BASELINE = 8
 # growth (Simulation._grow_population) even during what should have been a
 # real, sustained famine -- the tribe's own daily gathering summaries showed
 # growth spikes of 50-167 population in the same run this was traced against.
-# Same cap value as farming's own fix, for the same reason: still a real,
-# meaningful reward for a bigger tribe (up to POPULATION_YIELD_BASELINE * this
-# = population 40) without the windfall becoming large enough on its own to
-# swing wellbeing.
-LABOR_MULTIPLIER_CAP = 5.0
+#
+# 2026-09-08: _labor_multiplier itself moved from a flat, unbounded ratio to
+# sqrt(population / POPULATION_YIELD_BASELINE) -- see its own docstring for
+# the full reasoning. A flat 5.0x cap on a linear ratio meant every tribe past
+# population 40 got the exact same per-action yield as one of exactly 40 --
+# confirmed against a live day-12 run sitting on 16 wood at population 4767,
+# unable to ever afford CONSTRUCT_WALL's 60-wood threshold. The sqrt curve
+# only reaches 5.0x at population 200 now and keeps climbing gently past it
+# (~20x at 3232, ~45x at 16,574) instead of flatlining -- this cap is raised
+# to match: a real backstop far out past anything the curve produces at any
+# population actually reached in a real run, not the everyday ceiling a flat
+# 5.0x had quietly become.
+LABOR_MULTIPLIER_CAP = 100.0
 
 # Every expedition's lead scout gets a procedurally-generated determination trait (see
 # actions.py._generate_scout) that shifts their own personal give-up point by up to

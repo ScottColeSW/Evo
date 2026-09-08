@@ -108,12 +108,30 @@ def _labor_multiplier(population: int) -> float:
     never scales a tribe at or below starting size down -- only ever rewards growth
     past it.
 
-    See config.LABOR_MULTIPLIER_CAP's own comment -- capped the same way
-    FARM_LABOR_MULTIPLIER_CAP already caps farm harvests, and for the same
-    reason: uncapped, this produced single-action windfalls (1,854 food from
-    one HUNT_DEER at population 3232) large enough to spike wellbeing's
-    physiological tier and reopen population growth during a real famine."""
-    return min(config.LABOR_MULTIPLIER_CAP, max(1.0, population / config.POPULATION_YIELD_BASELINE))
+    2026-09-08 rework (live report: a day-12 run had a tribe sitting on 16 wood at
+    population 4767, unable to ever afford CONSTRUCT_WALL's 60-wood threshold):
+    the flat ratio this used to be (population / POPULATION_YIELD_BASELINE) was
+    exactly why config.LABOR_MULTIPLIER_CAP existed at all -- linear and
+    unbounded, it hit 404x at the population (3232) that originally produced a
+    single 1,854-food HUNT_DEER windfall large enough to spike wellbeing's
+    physiological tier and reopen population growth during a real famine. Capping
+    it at a flat 5.0x closed that explosion, but a flat cap can only ever pick one
+    of two problems to have: reached almost immediately (population 40) and
+    flatlined forever after, or reached at a believable population and still
+    exploding past it. A tribe of 4767 or 16,574 (both real, this same live run)
+    was strictly worse off per-capita than one of exactly 40, the identical bug
+    this function was built to fix in the first place, just moved further out.
+
+    sqrt(population / POPULATION_YIELD_BASELINE) keeps growing at every
+    population instead of hitting a wall, but decelerates fast enough that it
+    never reproduces the 404x-style explosion -- population 3232 now yields
+    ~20x (not 5x, not 404x), population 16,574 yields ~45x. config.
+    LABOR_MULTIPLIER_CAP is kept as a real backstop (never an unbounded
+    ratchet, same standing principle MAX_WALL_RINGS/POPULATION_GROWTH_CAP
+    already hold elsewhere), just raised far enough out that it's a genuine
+    safety net again rather than the everyday ceiling every tribe past 40
+    people was already slamming into."""
+    return min(config.LABOR_MULTIPLIER_CAP, max(1.0, math.sqrt(population / config.POPULATION_YIELD_BASELINE)))
 
 
 def _harvest(sim, tribe, resource_key, base_yield, biome):

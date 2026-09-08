@@ -181,31 +181,58 @@ def test_gather_wood_below_the_cap_is_unaffected():
     assert "DREAD" not in sim.trauma.bias_string(50, 50)  # no waste, no punishment
 
 
-def test_labor_multiplier_is_capped_for_a_large_population():
-    """Live bug, confirmed against a real run: uncapped, a single HUNT_DEER at
-    population 3232 (multiplier 404x) generated 1,854 raw food in one action --
-    large enough to briefly spike wellbeing's physiological tier and reopen
-    population growth during what should have been a real, sustained famine.
-    Same fix shape as FARM_LABOR_MULTIPLIER_CAP already applies to farm
-    harvests specifically -- this closes the identical gap for every other
-    consumer (GATHER_WOOD/STONE/WATER/FOOD, HUNT_DEER, GATHER_ORE, CONSTRUCT_
-    WALL progress)."""
+def test_labor_multiplier_uses_a_decelerating_curve_not_a_flat_ratio():
+    """2026-09-08 rework, live report: a day-12 run had a tribe sitting on 16
+    wood at population 4767, unable to ever afford CONSTRUCT_WALL's 60-wood
+    threshold -- the flat ratio this used to be hit its cap at population 40
+    and stayed there forever after, identical per-action yield whether a tribe
+    was 40 or 40,000. sqrt keeps rewarding growth at every population instead
+    of flatlining, while still decelerating fast enough to never reproduce the
+    original bug this whole function exists to prevent: uncapped, a single
+    HUNT_DEER at population 3232 (a flat ratio's 404x) generated 1,854 raw food
+    in one action, large enough to briefly spike wellbeing's physiological
+    tier and reopen population growth during what should have been a real,
+    sustained famine. sqrt(3232/8) is ~20x -- real, meaningful, nowhere near
+    404x."""
     from backend.actions import _labor_multiplier
     from backend import config
+    import math
 
-    assert _labor_multiplier(3232) == config.LABOR_MULTIPLIER_CAP
-    # Still real, meaningful scaling below the cap -- this isn't a flat 1.0.
-    assert _labor_multiplier(config.POPULATION_YIELD_BASELINE * 2) == 2.0
+    assert _labor_multiplier(3232) == math.sqrt(3232 / config.POPULATION_YIELD_BASELINE)
+    assert _labor_multiplier(3232) < 25  # nowhere near the historical 404x explosion
+    # Still real, meaningful scaling below the cap -- this isn't a flat 1.0, and it
+    # keeps moving past population 40 (where the old flat-ratio cap used to freeze).
+    assert _labor_multiplier(config.POPULATION_YIELD_BASELINE * 2) == math.sqrt(2)
+    assert _labor_multiplier(16574) > _labor_multiplier(4767) > _labor_multiplier(40)
 
 
-def test_hunt_deer_yield_is_capped_for_a_large_population():
+def test_labor_multiplier_still_has_a_real_ceiling_at_extreme_population():
+    """A backstop, not an unbounded ratchet -- same standing principle
+    MAX_WALL_RINGS/POPULATION_GROWTH_CAP already hold elsewhere."""
+    from backend.actions import _labor_multiplier
+    from backend import config
+    import math
+
+    huge_population = 1_000_000
+    assert math.sqrt(huge_population / config.POPULATION_YIELD_BASELINE) > config.LABOR_MULTIPLIER_CAP
+    assert _labor_multiplier(huge_population) == config.LABOR_MULTIPLIER_CAP
+
+
+def test_hunt_deer_yield_is_capped_for_an_extreme_population():
+    """Same fix shape as FARM_LABOR_MULTIPLIER_CAP already applies to farm
+    harvests specifically -- this closes the identical gap for every other
+    consumer (GATHER_WOOD/STONE/WATER/FOOD, HUNT_DEER, GATHER_ORE, CONSTRUCT_
+    WALL progress). Uses a population extreme enough to genuinely hit the cap
+    under the gentler sqrt curve (see test_labor_multiplier_uses_a_
+    decelerating_curve_not_a_flat_ratio for the realistic-population case)."""
     from unittest import mock
     from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.population = 3232
+    tribe.population = 1_000_000
     tribe.food = 0
+    tribe.warehouses_built = 10  # ample storage headroom -- isolates the labor cap from _storage_cap's own
 
     with mock.patch("backend.actions.random.random", return_value=0.99):  # 0.99 clears HUNT_HAZARD_CHANCE (0.12)
         ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "forest", _NO_TARGET)  # forest's own game multiplier is 1.0
@@ -2099,7 +2126,7 @@ def test_harvest_yield_scales_up_for_a_larger_tribe():
 
     ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "forest", _NO_TARGET)
 
-    assert tribe.wood == 20  # round(10 * (16/8) labor multiplier)
+    assert tribe.wood == 14  # round(10 * sqrt(16/8) labor multiplier) -- see _labor_multiplier's own 2026-09-08 rework
 
 
 def test_expedition_capacity_matches_the_floor_at_baseline_population():
