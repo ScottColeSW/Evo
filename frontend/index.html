@@ -828,11 +828,14 @@ function oreLine(t) {
 // Same "surface it the same way wood/stone/food/water already are" precedent
 // as oreLine above, once Fur can actually do something (BUILD_LONG_HOUSE's
 // discount, backend/actions.py._long_house_fur_discount) instead of just
-// piling up unseen.
+// piling up unseen. Unlike oreLine, no trailing name needed -- Fur is always
+// Fur (not a per-biome variable name the way a Mine's resource is), so the
+// icon alone already says what this number is; the word was pure noise next
+// to wood/stone/food/water's own bare icon+number lines.
 function furLine(t) {
   if (!t.tannery_built) return "";
   const amount = (t.unique_resources && t.unique_resources.Fur) || 0;
-  return `&nbsp;🦫 ${amount} Fur`;
+  return `&nbsp;🦫 ${amount}`;
 }
 
 function renderEraLadder(state) {
@@ -3560,7 +3563,7 @@ function farmingPanel(t) {
   // way every other Establishment does.
   if (t.boat_built) parts.push("⛵ Boat — river and lake crossings move at full speed instead of wading through");
   if (t.fire_ever_built) parts.push("🔥 Fire — mastered, enables cooking");
-  if (t.cooking_learned && !t.kitchen_built) parts.push("🍳 Cooking — mastered, stored food goes much further");
+  if (t.cooking_learned && !t.kitchen_built) parts.push("🍳 Cooking — mastered, every forage/hunt/catch worth 3x as much food");
   if (t.founded_city) {
     const name = t.settlement_name ? escapeHtml(t.settlement_name) : "the city";
     const count = (t.buildings || []).length;

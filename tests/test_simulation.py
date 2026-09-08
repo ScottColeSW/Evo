@@ -1100,7 +1100,7 @@ def test_cook_food_available_once_hunted_and_fire_built():
     request, ctx = sim._prepare_turn(tribe)
 
     assert "COOK_FOOD" in ctx["available_actions"]
-    assert "learning to cook would make stored food go much further" in request["prompt"]
+    assert "worth three times as much food" in request["prompt"]
 
 
 def test_cook_food_available_via_forage_success_too():

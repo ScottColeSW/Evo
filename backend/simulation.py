@@ -2956,9 +2956,18 @@ class Simulation:
             # fire, both real facts on the tribe) is otherwise silent -- same
             # "nudge harder once the gate is actually met" category as the
             # farm-plot/flock/fishing eligibility nudges just below.
+            #
+            # Live report ("Cooking is a good one to see"): this used to say
+            # "much further" while the BUILD_KITCHEN nudge right below it names
+            # its own real multiplier outright ("nine times... instead of only
+            # three") -- same inconsistency as BUILD_SAWMILL's stale action
+            # description this session already found elsewhere. Matches
+            # COOKING_FOOD_MULTIPLIER now, the same real number COOK_FOOD's own
+            # action description already states.
             visible_entities.append(
                 "The tribe has both hunted successfully and built a fire before -- learning to cook "
-                "would make stored food go much further from then on."
+                "would make every future forage, hunt, or catch worth three times as much food from "
+                "then on."
             )
 
         # Real wall ring, not one progress-bar tile (2026-09-02 redesign) -- ring 0
