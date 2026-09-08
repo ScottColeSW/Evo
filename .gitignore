@@ -9,3 +9,4 @@ server_err.log
 scripts/*.log
 scripts/*log*.txt
 scripts/*_results.json
+.claude/scheduled_tasks.lock
