@@ -819,6 +819,15 @@ COOKING_FOOD_MULTIPLIER = 3
 MILESTONE_SCOUT_SUCCESSES = 5
 MILESTONE_HUNT_SUCCESSES = 5
 
+# Military branch, step 1 (plan file valiant-forging-falcon.md): NAME_WARRIOR
+# lets the Chief appoint a proven individual (never the Chief themself -- see
+# actions._eligible_warrior_candidate) as this tribe's Warrior, the
+# prerequisite for training a Battalion later. _award_trophy pays out each
+# named trophy type once per tribe's entire lifetime, so the whole tribe only
+# ever has a small, fixed pool to hand out in total -- 3 personally-credited
+# trophies is a real, rare achievement, not a formality.
+WARRIOR_TROPHY_THRESHOLD = 3
+
 # BREED (backend/actions.py._breed, backend/breeding.py). Was free (0/0) -- the two
 # real eligible windows watched in an early session both landed inside a full
 # starvation death spiral (0 food/water), so a positive cost would have blocked BREED

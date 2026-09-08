@@ -7,8 +7,9 @@ import random
 from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
-    _created_object_bonus, _eligible_breeding_pair, _food_multiplier, _item_storage_cap,
-    _labor_multiplier, _long_house_fur_discount, _push_past_visited_ground, _record_combat, _storage_cap,
+    _created_object_bonus, _eligible_breeding_pair, _eligible_warrior_candidate, _food_multiplier,
+    _item_storage_cap, _labor_multiplier, _long_house_fur_discount, _push_past_visited_ground,
+    _record_combat, _storage_cap,
     expedition_capacity,
 )
 from .ancestral_matrix import AncestralTraumaMatrix
@@ -431,6 +432,7 @@ AFFORDABILITY_CHECKS = {
         and _can_place(t, w, "farm_plot")
     ),
     "BREED": lambda t, w: t.food >= config.BREED_FOOD_COST and t.water >= config.BREED_WATER_COST,
+    "NAME_WARRIOR": lambda t, w: t.warrior_name is None and _eligible_warrior_candidate(t) is not None,
     # Explicit request: "it's unwise to Trade before we have a full Wall" --
     # see actions.py._send_trade_emissary's matching real prerequisite. Instant
     # TRADE is left alone (a chance encounter, not a deliberate choice to
@@ -651,6 +653,11 @@ class Tribe:
         self.chief_philosophy = ""
         self.chief_decree = ""
         self.chief_victory = ""
+        # Military branch, step 1 (plan file valiant-forging-falcon.md,
+        # actions.NAME_WARRIOR) -- a real, permanently-appointed individual,
+        # never the chief. Later steps (Barracks, Battalion, Might) build on
+        # this once it's real.
+        self.warrior_name: str | None = None
         # Lifetime counters for backend/scoreboard.py -- what an evaluator actually
         # wants to compare across models isn't just "did it survive," it's how it got
         # there: how often it needed a new leader, how often scouting actually paid
@@ -1249,6 +1256,7 @@ class Tribe:
             "chief_philosophy": self.chief_philosophy,
             "chief_decree": self.chief_decree,
             "chief_victory": self.chief_victory,
+            "warrior_name": self.warrior_name,
             "trophies": self.trophies,
             "fame": self.fame,
             "lineage": self.lineage,

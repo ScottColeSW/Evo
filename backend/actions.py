@@ -1669,6 +1669,46 @@ def _eligible_breeding_pair(tribe) -> tuple[str, str] | None:
     return candidates[0], candidates[1]
 
 
+def _eligible_warrior_candidate(tribe) -> str | None:
+    """The named individual this tribe's Chief could appoint Warrior (see
+    NAME_WARRIOR, plan file valiant-forging-falcon.md): whoever has the most
+    trophies personally credited to them (config.WARRIOR_TROPHY_THRESHOLD or
+    more), excluding the Chief -- the Chief appoints a Warrior, doesn't
+    become one. Ties keep whichever name reached that count first
+    (tribe.trophies is already in the order each was actually earned, and
+    dict iteration order matches insertion order). Returns None if nobody
+    qualifies yet -- expect this most of the time, since _award_trophy pays
+    out each named trophy only once per tribe's entire lifetime, so the whole
+    pool available to spread across individuals is small and finite."""
+    counts: dict[str, int] = {}
+    for trophy in tribe.trophies:
+        name = trophy["chief"]
+        if name == tribe.chief_name:
+            continue
+        counts[name] = counts.get(name, 0) + 1
+    best_name, best_count = None, 0
+    for name, count in counts.items():
+        if count > best_count:
+            best_name, best_count = name, count
+    return best_name if best_count >= config.WARRIOR_TROPHY_THRESHOLD else None
+
+
+def _name_warrior(sim, tribe, biome, target):
+    """Military branch, step 1 (plan file valiant-forging-falcon.md): the
+    Chief appoints a proven individual as Warrior -- the prerequisite for
+    later training a Battalion, once a Barracks exists. One-way, like
+    chief_name itself; see _eligible_warrior_candidate for exactly who
+    qualifies."""
+    if tribe.warrior_name is not None:
+        return None
+    candidate = _eligible_warrior_candidate(tribe)
+    if candidate is None:
+        return None
+    tribe.warrior_name = candidate
+    tribe.history.append(f"{candidate} is named Warrior of {tribe.name}, proven in battle and ready to lead")
+    return f"{candidate} is named Warrior -- a real leader now, once a Barracks trains a Battalion to follow them"
+
+
 def _breed(sim, tribe, biome, target):
     """Two named individuals from the tribe -- its chief and whoever holds a trophy,
     see _eligible_breeding_pair -- start a family. A solo cost paid by this one tribe
@@ -2313,6 +2353,7 @@ ACTION_REGISTRY = {
     "HUNTING_PARTY": _hunting_party,
     "RELOCATE": _relocate,
     "BREED": _breed,
+    "NAME_WARRIOR": _name_warrior,
     "RAID": _raid,
     "STRIKE_RAIDER_CAMP": _strike_raider_camp,
     "EXPEL_RAIDERS_FROM_TERRITORY": _expel_raiders_from_territory,
@@ -2373,6 +2414,7 @@ ACTION_DESCRIPTIONS = {
     "HUNTING_PARTY": "Send a hunting party toward target_vector -- shares the same expedition capacity as SCOUT (several parties, scouting or hunting in any mix, can be out at once -- more as your population grows). They travel and hunt on their own supply for up to several days, facing the same wolf-pack risk as an instant hunt on every day out, until they catch something or give up. Any food caught only becomes real, usable food once they've walked all the way home -- a hunt still in the field does nothing for hunger right now, no matter how promising.",
     "RELOCATE": "Move your whole tribe several tiles toward target_vector this cycle, possibly over several cycles for a far destination. Produces no resources while traveling and costs extra food and water for the effort.",
     "BREED": "Your chief and whoever currently holds a trophy start a family together, costing food and water and growing your population by one child if it succeeds. Does nothing if fewer than two named individuals (a chief plus at least one trophy-holder) exist yet, or if food/water can't cover the cost.",
+    "NAME_WARRIOR": f"Appoint your most decorated individual (at least {config.WARRIOR_TROPHY_THRESHOLD} personal trophies, never the chief) as this tribe's Warrior -- the first real step toward a Military branch: a Warrior can later lead a trained Battalion once a Barracks stands. One-time and permanent. Does nothing if already named, or if nobody has earned enough trophies yet.",
     "RAID": "Attempt to raid a rival tribe if one is near target_vector. A win steals some of their stockpile but still costs you people; a loss costs you more. An unaffiliated minor settlement near target_vector is a much safer alternative -- no people of its own, so a raid there always succeeds with no risk, though it can only be raided a few times before it's exhausted and needs time to recover. Does nothing if neither is there.",
     "STRIKE_RAIDER_CAMP": "Attack a raider camp your scouts have already found (see your raider sighting reports) -- only possible once you know where one is. Success destroys it and recovers some food; failure costs a life and leaves the camp standing.",
     "EXPEL_RAIDERS_FROM_TERRITORY": "Turn the whole population out to drive off raiders currently approaching (only possible while raiders are actually inbound). A win seizes real plunder and wins over stragglers, scaled by your own population -- and the raiders are cast off elsewhere, not gone for good. A loss costs people and supplies, but doesn't end the fight: anger fuels an immediate second and third wave in the same breath, each cheaper in reward and costlier in lives than the last.",

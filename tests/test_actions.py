@@ -3671,6 +3671,117 @@ def test_breed_refuses_at_the_population_cap():
     assert tribe.pending_birth is None
 
 
+def test_name_warrior_does_nothing_below_the_trophy_threshold():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+    tribe.trophies = [
+        {"name": t, "chief": "BriMir", "cycle": i}
+        for i, t in enumerate(["Water Bringer", "Master Pathfinder"])
+    ]
+    assert len(tribe.trophies) < config.WARRIOR_TROPHY_THRESHOLD
+
+    result = ACTION_REGISTRY["NAME_WARRIOR"](sim, tribe, "plains", (0, 0))
+
+    assert result is None
+    assert tribe.warrior_name is None
+
+
+def test_name_warrior_appoints_whoever_clears_the_trophy_threshold():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+    tribe.trophies = [
+        {"name": f"Trophy {i}", "chief": "BriMir", "cycle": i}
+        for i in range(config.WARRIOR_TROPHY_THRESHOLD)
+    ]
+
+    result = ACTION_REGISTRY["NAME_WARRIOR"](sim, tribe, "plains", (0, 0))
+
+    assert tribe.warrior_name == "BriMir"
+    assert "BriMir" in result and "Warrior" in result
+    assert any("BriMir is named Warrior" in e for e in tribe.history)
+
+
+def test_name_warrior_never_appoints_the_chief():
+    """The Chief appoints a Warrior, doesn't become one -- even if every
+    single trophy this tribe has ever earned happened to default-credit the
+    chief (see _award_trophy's own fallback: `individual or tribe.chief_name`),
+    which is common for building-completion trophies that don't name a
+    specific individual."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+    tribe.trophies = [
+        {"name": f"Trophy {i}", "chief": "Ashgar", "cycle": i}
+        for i in range(config.WARRIOR_TROPHY_THRESHOLD)
+    ]
+
+    result = ACTION_REGISTRY["NAME_WARRIOR"](sim, tribe, "plains", (0, 0))
+
+    assert result is None
+    assert tribe.warrior_name is None
+
+
+def test_name_warrior_picks_the_individual_with_the_most_trophies():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+    tribe.trophies = (
+        [{"name": f"Scout Trophy {i}", "chief": "BriMir", "cycle": i} for i in range(config.WARRIOR_TROPHY_THRESHOLD)]
+        + [{"name": f"Hunt Trophy {i}", "chief": "TalOra", "cycle": 100 + i} for i in range(config.WARRIOR_TROPHY_THRESHOLD + 2)]
+    )
+
+    result = ACTION_REGISTRY["NAME_WARRIOR"](sim, tribe, "plains", (0, 0))
+
+    assert tribe.warrior_name == "TalOra"  # more trophies than BriMir
+    assert "TalOra" in result
+
+
+def test_name_warrior_is_a_one_way_permanent_appointment():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+    tribe.warrior_name = "BriMir"
+    tribe.trophies = [
+        {"name": f"Trophy {i}", "chief": "TalOra", "cycle": i} for i in range(config.WARRIOR_TROPHY_THRESHOLD)
+    ]
+
+    result = ACTION_REGISTRY["NAME_WARRIOR"](sim, tribe, "plains", (0, 0))
+
+    assert result is None
+    assert tribe.warrior_name == "BriMir"  # unchanged -- already named, even though TalOra also now qualifies
+
+
+def test_can_afford_name_warrior_matches_the_action_itself():
+    from backend.simulation import AFFORDABILITY_CHECKS
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+
+    assert AFFORDABILITY_CHECKS["NAME_WARRIOR"](tribe, sim.world) is False
+
+    tribe.trophies = [
+        {"name": f"Trophy {i}", "chief": "BriMir", "cycle": i} for i in range(config.WARRIOR_TROPHY_THRESHOLD)
+    ]
+    assert AFFORDABILITY_CHECKS["NAME_WARRIOR"](tribe, sim.world) is True
+
+    ACTION_REGISTRY["NAME_WARRIOR"](sim, tribe, "plains", (0, 0))
+    assert AFFORDABILITY_CHECKS["NAME_WARRIOR"](tribe, sim.world) is False  # already named
+
+
 def test_scout_allows_a_second_party_of_the_same_kind_within_capacity():
     """Explicit correction (2026-09-07): "Each Tribe can always send a max of
     3 Orders out. They can all be the same if they want. I think we have
