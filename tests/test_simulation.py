@@ -1612,6 +1612,32 @@ def test_survival_crisis_filters_menu_to_survival_actions_only():
     assert "only actions which could directly help" in request["prompt"]
 
 
+def test_food_secure_tribe_never_enters_a_food_crisis_regardless_of_the_raw_number():
+    """Live report ("'hunger warning suppressed' ... they shouldn't fire at all
+    under these conditions"): food_crisis_active used to be computed from
+    tribe.food alone, correct only by the incidental fact that a food-secure
+    tribe's stock happens to already be huge by the time this runs -- not by an
+    actual guarantee. This proves the guarantee directly: food=1 would trigger a
+    real crisis (see test_survival_crisis_filters_menu_to_survival_actions_only)
+    for any tribe that isn't food-secure."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"
+    tribe.population = 10
+    tribe.food = 1  # would be critical on its own -- see the sibling test above
+    tribe.kitchen_built = True
+    tribe.fishery_built = True
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert tribe.food_crisis_active is False
+    assert "GATHER_STONE" in ctx["available_actions"]  # not in SURVIVAL_CRISIS_ACTIONS -- menu isn't narrowed
+
+
 def test_survival_crisis_hysteresis_requires_recovery_past_the_warning_line():
     from backend import config
 

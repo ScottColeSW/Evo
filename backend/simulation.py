@@ -183,6 +183,26 @@ WALL_LOCK_ACTIONS = {"CONSTRUCT_WALL", "GATHER_WOOD", "GATHER_STONE"} | SURVIVAL
 # CONSTRUCT_WALL kept getting chosen, the exact same no-op-oscillation bug this
 # whole table exists to close). _wall_next_afford_cost mirrors actions.
 # _construct_wall's own cost computation exactly, without mutating any state.
+def _is_food_secure(tribe) -> bool:
+    """A Kitchen plus a genuinely proven, passive food source (a Fishery, or at
+    least one real harvest ever brought in) -- see Simulation._advance_food_supply's
+    own docstring for the full reasoning. Module-level (not a Simulation method) so
+    both Tribe.to_dict (self) and every Simulation method (tribe) can share the one
+    real definition instead of repeating the same boolean expression -- confirmed
+    live why that matters: tribe.food_crisis_active used to compute this same
+    "is food actually a crisis" question from raw numbers alone, correct only by the
+    incidental fact that a secure tribe's food happens to already be huge by the
+    time it runs, not by an explicit guarantee."""
+    return tribe.kitchen_built and (tribe.fishery_built or tribe.last_harvest_cycle > 0)
+
+
+def _is_water_secure(tribe) -> bool:
+    """config.WATER_SECURITY_SITE_THRESHOLD distinct confirmed water sources -- see
+    Simulation._advance_water_supply's own docstring. Module-level for the same
+    shared-definition reason as _is_food_secure above."""
+    return len(tribe.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD
+
+
 def _wall_next_afford_cost(tribe) -> tuple[int, int] | None:
     target = city_layout.next_wall_work_section(tribe)
     if target is None:
@@ -1099,8 +1119,7 @@ class Tribe:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
         survival_warning, _ = survival_bias_string(
             self.food, self.water, self.population, self.fishing_learned, self.cooking_learned,
-            water_secure=len(self.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD,
-            food_secure=self.kitchen_built and (self.fishery_built or self.last_harvest_cycle > 0),
+            water_secure=_is_water_secure(self), food_secure=_is_food_secure(self),
         )
         nxt = next_era(self.era)
         next_era_info = None
@@ -1714,8 +1733,7 @@ class Simulation:
         ]
         survival_bias, _critical = survival_bias_string(
             tribe.food, tribe.water, tribe.population, tribe.fishing_learned, tribe.cooking_learned,
-            water_secure=len(tribe.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD,
-            food_secure=tribe.kitchen_built and (tribe.fishery_built or tribe.last_harvest_cycle > 0),
+            water_secure=_is_water_secure(tribe), food_secure=_is_food_secure(tribe),
         )
         if survival_bias:
             lines.append(survival_bias)
@@ -2417,8 +2435,7 @@ class Simulation:
         ghost_bias = self.trauma.bias_string(tribe.x, tribe.y)
         survival_bias, survival_critical = survival_bias_string(
             tribe.food, tribe.water, tribe.population, tribe.fishing_learned, tribe.cooking_learned,
-            water_secure=len(tribe.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD,
-            food_secure=tribe.kitchen_built and (tribe.fishery_built or tribe.last_harvest_cycle > 0),
+            water_secure=_is_water_secure(tribe), food_secure=_is_food_secure(tribe),
         )
         # NUDGE (2026-08-31, explicit request: "the warnings do not mention settling
         # as an alternative to low water"). A tribe already sitting on a chronic water
@@ -2709,12 +2726,25 @@ class Simulation:
         # duplicated as a new number), but enforced as a menu cut instead of only a
         # fact. Hysteresis via tribe.food_crisis_active/water_crisis_active: entering
         # needs the critical line, clearing needs the warning line.
+        #
+        # Live report ("'hunger warning suppressed' ... they shouldn't fire at all
+        # under these conditions"): _is_food_secure/_is_water_secure short-circuit
+        # this explicitly now, the same way survival_bias_string's own text already
+        # does -- this used to compute crisis state from raw numbers alone, correct
+        # only by the incidental fact that a secure tribe's stock happens to already
+        # be huge by the time this runs (Simulation._advance_food_supply/
+        # _advance_water_supply top up earlier in the same step()), not by an actual
+        # guarantee. A real, explicit guarantee now, matching the text.
         upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
-        if tribe.food <= upkeep * config.HUNGER_CRITICAL_CYCLES_LEFT:
+        if _is_food_secure(tribe):
+            tribe.food_crisis_active = False
+        elif tribe.food <= upkeep * config.HUNGER_CRITICAL_CYCLES_LEFT:
             tribe.food_crisis_active = True
         elif tribe.food > upkeep * config.HUNGER_WARNING_CYCLES_LEFT:
             tribe.food_crisis_active = False
-        if tribe.water <= upkeep * config.THIRST_CRITICAL_CYCLES_LEFT:
+        if _is_water_secure(tribe):
+            tribe.water_crisis_active = False
+        elif tribe.water <= upkeep * config.THIRST_CRITICAL_CYCLES_LEFT:
             tribe.water_crisis_active = True
         elif tribe.water > upkeep * config.THIRST_WARNING_CYCLES_LEFT:
             tribe.water_crisis_active = False
@@ -5467,7 +5497,7 @@ class Simulation:
         that's proven it knows where the water is doesn't lose that knowledge
         by walking away from any one source), and naturally one-way since
         confirmed_water_sites only ever grows."""
-        if len(tribe.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD:
+        if _is_water_secure(tribe):
             tribe.water = _storage_cap(tribe)
             return
         if self._is_settled_near_water(tribe):
@@ -5493,7 +5523,7 @@ class Simulation:
         diversification_note already uses for has_farm. kitchen_built/fishery_built
         are themselves already permanent (nothing in this project ever un-builds a
         structure), so the whole condition only ever turns on, never off."""
-        if tribe.kitchen_built and (tribe.fishery_built or tribe.last_harvest_cycle > 0):
+        if _is_food_secure(tribe):
             tribe.food = _storage_cap(tribe)
 
     def _advance_fish_supply(self, tribe: Tribe) -> None:
