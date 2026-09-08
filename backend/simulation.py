@@ -4357,12 +4357,19 @@ class Simulation:
         # already uses, but always wins here -- a boat on the water it was
         # actually built for beats raiders on foot outright, no roll needed.
         if tribe.boat_built and biome_at(x, y) in config.BOAT_WATER_BIOMES:
+            # Live bug, same shape as Simulation._resolve_raider_attack's own
+            # fix (a previous commit, discovered from a different tribe's live
+            # run than the one that caught this one): this used to setattr the
+            # requested amount directly, bypassing _capped_add -- since the
+            # requested amount is a fraction of the tribe's OWN current
+            # stockpile, that's an uncapped compound multiplier every time this
+            # fires, not loot recovered from the raiders. Confirmed live: three
+            # of these landed in a single cycle (762+914+1097=2773 wood at
+            # once), pushing a tribe's wood well past its own _storage_cap.
             looted = {
-                resource: round(getattr(tribe, resource) * config.RAIDER_DEFEAT_LOOT_FRACTION)
+                resource: self._capped_add(tribe, resource, round(getattr(tribe, resource) * config.RAIDER_DEFEAT_LOOT_FRACTION))
                 for resource in ("wood", "stone", "food")
             }
-            for resource, amount in looted.items():
-                setattr(tribe, resource, getattr(tribe, resource) + amount)
             self.trauma.radiate_event_wave(x, y, config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
             tribe.history.append(
                 f"{exp['lead_scout']}'s boat runs down a raider band on the water near ({x},{y}) and heads "
@@ -4389,12 +4396,11 @@ class Simulation:
             + (tribe.population // 10) * config.EXPEDITION_AMBUSH_DEFENSE_POPULATION_BONUS_PER_10,
         )
         if random.random() < defense_chance:
+            # Same storage-cap fix as the boat branch just above.
             looted = {
-                resource: round(getattr(tribe, resource) * config.RAIDER_DEFEAT_LOOT_FRACTION)
+                resource: self._capped_add(tribe, resource, round(getattr(tribe, resource) * config.RAIDER_DEFEAT_LOOT_FRACTION))
                 for resource in ("wood", "stone", "food")
             }
-            for resource, amount in looted.items():
-                setattr(tribe, resource, getattr(tribe, resource) + amount)
             self.trauma.radiate_event_wave(x, y, config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
             tribe.history.append(
                 f"{exp['lead_scout']}'s party fought off an ambush near ({x},{y}) and heads home with the "

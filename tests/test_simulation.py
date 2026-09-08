@@ -3622,6 +3622,31 @@ def test_expedition_raider_ambush_can_be_defended_for_loot():
     assert sim.recent_encounters and sim.recent_encounters[0]["label"] == "Ambush repelled"
 
 
+def test_expedition_raider_ambush_defended_loot_is_capped_by_storage():
+    """Live bug, same shape as Simulation._resolve_raider_attack's own fix
+    (STRIKE_RAIDER_CAMP too): this used to setattr a fraction of the tribe's
+    OWN current stockpile directly, bypassing the storage cap. Confirmed live
+    against a real run: three of these (this branch and the boat branch below)
+    landed in a single cycle, adding 2,773 wood at once and pushing a tribe
+    well past its own _storage_cap."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.population = 10
+    cap = config.STORAGE_CAP_BASE
+    tribe.wood = tribe.stone = tribe.food = cap  # already at the cap
+    exp = {"lead_scout": "Test Scout", "phase": "outbound"}
+
+    with mock.patch("backend.simulation.random.random", side_effect=[0.0, 0.0]):
+        sim._expedition_raider_ambush(tribe, exp, 60, 60)
+
+    assert tribe.wood == cap
+    assert tribe.stone == cap
+    assert tribe.food == cap
+
+
 def test_expedition_raider_ambush_is_an_automatic_boat_win_on_the_water():
     """Explicit request: "When a Boat encounters a Raider on the Water, the
     Boat wins automatically and goes home to deliver the counter-raid loot.\""""
@@ -3643,6 +3668,29 @@ def test_expedition_raider_ambush_is_an_automatic_boat_win_on_the_water():
     assert tribe.wood > 100 and tribe.stone > 100 and tribe.food > 100
     assert any("boat runs down a raider band" in entry for entry in tribe.history)
     assert sim.recent_encounters and sim.recent_encounters[0]["label"] == "Raiders routed by boat"
+
+
+def test_expedition_raider_ambush_boat_win_loot_is_capped_by_storage():
+    """Same fix as the land-ambush defense branch above -- the boat-win branch
+    had the identical uncapped setattr."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.population = 10
+    tribe.boat_built = True
+    cap = config.STORAGE_CAP_BASE
+    tribe.wood = tribe.stone = tribe.food = cap
+    exp = {"lead_scout": "Test Scout", "phase": "outbound"}
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0), \
+         mock.patch("backend.simulation.biome_at", return_value="river"):
+        sim._expedition_raider_ambush(tribe, exp, 60, 60)
+
+    assert tribe.wood == cap
+    assert tribe.stone == cap
+    assert tribe.food == cap
 
 
 def test_expedition_raider_ambush_is_a_normal_loss_without_a_boat_even_on_water():
