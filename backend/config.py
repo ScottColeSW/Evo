@@ -1720,7 +1720,13 @@ EXPEDITION_SLOT_POPULATION_DIVISOR = 5
 # This was a deliberate "no hard ceiling" design once (see EXPEDITION_SLOT_
 # POPULATION_DIVISOR's own comment), but real scale exposed that as wrong -- a
 # genuine ceiling now caps expedition_capacity()'s per-capita growth.
-MAX_CONCURRENT_EXPEDITIONS_CEILING = 8
+#
+# Follow-up live report (run_20260908_082234, both tribes well past this
+# ceiling in population): "the board is very crowded with outgoing and
+# returning. There should only be 6 at a time total." 8 was already close
+# enough to read as flooded once two large tribes both hit it at once --
+# lowered to the number actually confirmed comfortable to watch.
+MAX_CONCURRENT_EXPEDITIONS_CEILING = 6
 
 # Explicit request: "I am concerned about excess chatter... a lot of players
 # on the board." A real prompt reconstructed from a live run (population 329,
