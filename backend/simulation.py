@@ -239,6 +239,25 @@ def _wall_next_afford_cost(tribe) -> tuple[int, int] | None:
     return round(config.WALL_WOOD_COST_TOTAL * added / 100), round(config.WALL_STONE_COST_TOTAL * added / 100)
 
 
+def _warehouse_needed(tribe) -> bool:
+    """A real need, not just affordability -- explicit request: "we have to
+    limit build_warehouse when they don't have a need." Same population-vs-cap
+    heuristic _warehouse_capacity_note already uses for the very first
+    warehouse (a live run showed a tribe outgrow STORAGE_CAP_BASE 10x over with
+    zero ever built), generalized against the CURRENT cap (_storage_cap
+    already accounts for however many are already standing) so a second or
+    third warehouse only gets offered once population has grown past what
+    existing capacity actually supports -- not just because wood/stone happen
+    to be on hand this cycle. Also true the moment any one resource is already
+    sitting close to the cap, a more immediate real-overflow signal than
+    population alone."""
+    cap = _storage_cap(tribe)
+    if tribe.population >= cap:
+        return True
+    near_cap = cap * config.WAREHOUSE_NEED_NEAR_CAP_FRACTION
+    return any(getattr(tribe, r) >= near_cap for r in ("wood", "stone", "food", "water"))
+
+
 def _warehouse_capacity_note(tribe: "Tribe") -> str:
     """Live trace finding (run_20260908_082234): a tribe that grew past population
     1600 on the original STORAGE_CAP_BASE of 150 (never having built a warehouse)
@@ -253,7 +272,7 @@ def _warehouse_capacity_note(tribe: "Tribe") -> str:
     A standalone function (unlike diversification_note's own inline block) so an A/B
     test can monkeypatch it off for a baseline run without touching real game
     mechanics -- see scripts/ab_test_growth_facts.py."""
-    if tribe.warehouses_built == 0 and tribe.population >= config.STORAGE_CAP_BASE:
+    if tribe.warehouses_built == 0 and _warehouse_needed(tribe):
         return (
             f"Population ({tribe.population}) has already outgrown the storage cap "
             f"({config.STORAGE_CAP_BASE} of any one resource, with no warehouse built yet) -- a "
@@ -440,8 +459,13 @@ AFFORDABILITY_CHECKS = {
         bool(t.wall_rings) and city_layout.ring_fully_reinforced(t.wall_rings[0])
         and t.wood >= config.MOAT_WOOD_COST and t.stone >= config.MOAT_STONE_COST
     ),
+    # Explicit request: "we have to limit build_warehouse when they don't have
+    # a need" -- _warehouse_needed is the same real-overflow-risk signal
+    # _warehouse_capacity_note's own prompt fact already uses, now also gating
+    # the menu itself rather than just explaining after the fact why it's
+    # worth building.
     "BUILD_WAREHOUSE": lambda t, w: (
-        t.wood_ever_gathered and t.stone_ever_gathered
+        _warehouse_needed(t) and t.wood_ever_gathered and t.stone_ever_gathered
         and t.wood >= config.WAREHOUSE_WOOD_COST and t.stone >= config.WAREHOUSE_STONE_COST
         and _can_place(t, w, "warehouse")
     ),

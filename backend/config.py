@@ -1541,6 +1541,11 @@ WASTE_TRAUMA_RADIUS = 5
 WAREHOUSE_STORAGE_BONUS_PER_BUILDING = 400
 WAREHOUSE_WOOD_COST = 25
 WAREHOUSE_STONE_COST = 20
+# Explicit request, 2026-09-08: "we have to limit build_warehouse when they
+# don't have a need" -- Simulation._warehouse_needed's own "a resource is
+# already this close to the cap" half, on top of the population-vs-cap check
+# it already used for the very first warehouse.
+WAREHOUSE_NEED_NEAR_CAP_FRACTION = 0.85
 
 # Resource-site discovery (lumber/wildlife/quarry/mine): superseded 2026-09-02 --
 # see world.py's SITE_SEED_GRID_CELL_SIZE/SITE_SEED_FILL_PROBABILITY/

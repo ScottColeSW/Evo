@@ -1972,6 +1972,8 @@ def test_affordability_gate_reappears_once_the_cost_is_covered():
     sim._found_territory(tribe)  # real game always pairs these -- BUILD_WAREHOUSE's own placement check needs it
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"
+    tribe.population = config.STORAGE_CAP_BASE  # a real need, isolated from the cost check below
+    tribe.food = tribe.water = 200  # clear of survival-crisis thresholds at this population
     tribe.wood = 1
     tribe.stone = 200
 
