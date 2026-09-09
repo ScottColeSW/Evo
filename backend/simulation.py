@@ -8,8 +8,8 @@ from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _created_object_bonus, _eligible_breeding_pair, _eligible_warrior_candidate, _food_multiplier,
-    _item_storage_cap, _labor_multiplier, _long_house_fur_discount, _push_past_visited_ground,
-    _record_combat, _storage_cap,
+    _generate_raider_name, _item_storage_cap, _labor_multiplier, _long_house_fur_discount,
+    _push_past_visited_ground, _record_combat, _storage_cap,
     expedition_capacity,
 )
 from .ancestral_matrix import AncestralTraumaMatrix
@@ -2310,10 +2310,33 @@ class Simulation:
         if tribe.raiders_approaching:
             ax, ay = tribe.raiders_approaching["x"], tribe.raiders_approaching["y"]
             cycles_left = tribe.raiders_approaching["cycles_left"]
-            visible_entities.append(
-                f"RAIDERS ARE RIDING IN, currently near ({ax},{ay}) -- {cycles_left} cycles until they "
-                "reach camp. This is real time to prepare, not a surprise."
+            name = tribe.raiders_approaching.get("name", "Unnamed")
+            # Live-run finding, 2026-09-08: confirmed via a running simulation that
+            # the raiders' own live position can already sit well inside
+            # territory_radius while this fact still framed it as a distant,
+            # still-approaching countdown -- the tribe kept choosing an unrelated
+            # action (HUNT_DEER) one cycle before the attack landed, with
+            # EXPEL_RAIDERS_FROM_TERRITORY (the real, always-available answer to
+            # exactly this) never named or made to feel more urgent than any other
+            # item in the menu. Escalates the wording and names the actual action
+            # once the raiders' current position is genuinely inside the tribe's
+            # own territory boundary, not just somewhere en route to it.
+            inside_territory = (
+                tribe.territory_center is not None
+                and math.hypot(ax - tribe.territory_center[0], ay - tribe.territory_center[1])
+                <= tribe.territory_radius
             )
+            if inside_territory:
+                visible_entities.append(
+                    f"THE {name.upper()} RAIDERS ARE ALREADY INSIDE YOUR TERRITORY BOUNDARY, at ({ax},{ay}) "
+                    f"-- {cycles_left} cycles until they reach camp. EXPEL_RAIDERS_FROM_TERRITORY is the "
+                    "real answer to this right now, not a routine gather or hunt."
+                )
+            else:
+                visible_entities.append(
+                    f"The {name} Raiders are riding in, currently near ({ax},{ay}) -- {cycles_left} cycles "
+                    "until they reach camp. This is real time to prepare, not a surprise."
+                )
         if tribe.gathering_brief:
             visible_entities.append(f"this morning's gathering: {tribe.gathering_brief}")
         # Factual telemetry about this exact tile, not a suggestion to move -- what the
@@ -5129,12 +5152,17 @@ class Simulation:
         angle = random.uniform(0, 2 * math.pi)
         sx = round(tribe.x + config.RAIDER_APPROACH_START_DISTANCE * math.cos(angle))
         sy = round(tribe.y + config.RAIDER_APPROACH_START_DISTANCE * math.sin(angle))
+        # Explicit request: "Raiders incoming need a Label, like 'Terrible Knoxit
+        # RAIDS!!!'" -- named once, here, so the same raid keeps its identity for
+        # its whole approach (the frontend map label and every prompt fact below
+        # all read this same name, not a fresh roll each cycle).
+        name = _generate_raider_name(tribe.id, self.cycle)
         tribe.raiders_approaching = {
-            "start_x": sx, "start_y": sy, "x": sx, "y": sy,
+            "start_x": sx, "start_y": sy, "x": sx, "y": sy, "name": name,
             "cycles_left": config.RAIDER_APPROACH_CYCLES, "total_cycles": config.RAIDER_APPROACH_CYCLES,
         }
         tribe.history.append(
-            f"raiders have been spotted riding in from ({sx},{sy}) -- "
+            f"the {name} Raiders have been spotted riding in from ({sx},{sy}) -- "
             f"{config.RAIDER_APPROACH_CYCLES} cycles until they arrive"
         )
 

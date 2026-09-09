@@ -5242,6 +5242,62 @@ def test_raider_approach_counts_down_and_resolves_on_arrival():
     assert sim.recent_encounters  # resolution actually ran
 
 
+def test_raider_attack_names_the_approaching_raiders():
+    """Explicit request: "Raiders incoming need a Label, like 'Terrible Knoxit
+    RAIDS!!!'" -- every approach used to read as the same bare "Raiders" text
+    everywhere on the map."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.population = 100
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._check_raider_attack(tribe)
+
+    name = tribe.raiders_approaching["name"]
+    assert name
+    assert name in tribe.history[-1]
+
+
+def test_visible_entities_escalates_the_raider_warning_once_inside_territory():
+    """Live-run finding, 2026-09-08: confirmed via a running simulation that the
+    raiders' own live position can already sit well inside territory_radius
+    while this fact still framed it as a distant, still-approaching countdown --
+    the tribe kept choosing an unrelated action instead of
+    EXPEL_RAIDERS_FROM_TERRITORY, which was never named as the real answer."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.territory_center = (50, 50)
+    tribe.territory_radius = 12
+    tribe.raiders_approaching = {
+        "start_x": 62, "start_y": 50, "x": 55, "y": 50, "name": "Terrible Zulgrak",
+        "cycles_left": 1, "total_cycles": 10,
+    }
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert any("ALREADY INSIDE YOUR TERRITORY BOUNDARY" in e and "EXPEL_RAIDERS_FROM_TERRITORY" in e for e in entities)
+    assert any("Terrible Zulgrak" in e.upper() or "TERRIBLE ZULGRAK" in e for e in entities)
+
+
+def test_visible_entities_does_not_escalate_while_raiders_are_still_outside_territory():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.territory_center = (50, 50)
+    tribe.territory_radius = 12
+    tribe.raiders_approaching = {
+        "start_x": 90, "start_y": 50, "x": 80, "y": 50, "name": "Terrible Zulgrak",
+        "cycles_left": 8, "total_cycles": 10,
+    }
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert not any("ALREADY INSIDE YOUR TERRITORY BOUNDARY" in e for e in entities)
+    assert any("Terrible Zulgrak Raiders are riding in" in e for e in entities)
+
+
 def test_raider_approach_moves_toward_the_settlement_over_time():
     import math
 

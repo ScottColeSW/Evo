@@ -1451,6 +1451,27 @@ def _generate_scout(tribe, cycle: int, base_days: int = None) -> dict:
     }
 
 
+# Explicit request: "Raiders incoming need a Label, like 'Terrible Knoxit RAIDS!!!'"
+# -- a live report that every raider approach/sighting read as the same bare
+# "Raiders" text everywhere on the map, indistinguishable from every other one
+# a tribe has ever seen. Same deterministic seeded-combination shape
+# _generate_scout uses above (no LLM call, no state to track beyond the seed
+# inputs), just its own title/syllable pool so a raid reads as a distinct,
+# memorable threat rather than another named individual.
+_RAIDER_NAME_TITLES = ("Terrible", "Savage", "Dread", "Merciless", "Bloodfang", "Ruthless", "Wicked", "Feral")
+_RAIDER_NAME_SYLLABLES = ("Grak", "Thok", "Mor", "Zul", "Krag", "Skarn", "Vor", "Drex", "Rok", "Gnash", "Kro", "Fell")
+
+
+def _generate_raider_name(tribe_id: str, cycle: int) -> str:
+    """Deterministic per (tribe, cycle) the same way _generate_scout's own name
+    is -- re-reading the same approach's state doesn't change who's riding in."""
+    seed = hash((tribe_id, cycle, "raiders")) & 0xFFFFFFFF
+    rng = random.Random(seed)
+    title = rng.choice(_RAIDER_NAME_TITLES)
+    name = "".join(rng.sample(_RAIDER_NAME_SYLLABLES, 2))
+    return f"{title} {name}"
+
+
 # Moved to physics.reflect_into_grid so RELOCATE's raw model target (simulation.py)
 # and _hunting_party's own target (below) can reuse it too -- kept as a thin alias
 # here since this is where it originated and existing callers/tests import it from

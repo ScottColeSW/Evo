@@ -4385,3 +4385,25 @@ def test_trade_with_minor_settlement_records_received_only():
 
     assert tribe.trade_received["wood"] > 0
     assert tribe.trade_given == {}
+
+
+def test_generate_raider_name_is_deterministic_per_tribe_and_cycle():
+    """Explicit request: "Raiders incoming need a Label, like 'Terrible Knoxit
+    RAIDS!!!'" -- same deterministic seeded-combination shape _generate_scout
+    already uses, so re-reading the same approach's state doesn't change who's
+    riding in."""
+    from backend.actions import _generate_raider_name
+
+    first = _generate_raider_name("tribe_0", 42)
+    second = _generate_raider_name("tribe_0", 42)
+
+    assert first == second
+    assert " " in first  # "{Title} {Name}", matching the user's own example shape
+
+
+def test_generate_raider_name_varies_across_raids():
+    from backend.actions import _generate_raider_name
+
+    names = {_generate_raider_name("tribe_0", cycle) for cycle in range(20)}
+
+    assert len(names) > 1
