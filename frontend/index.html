@@ -445,6 +445,54 @@ const canvas = document.getElementById("simCanvas");
 const ctx = canvas.getContext("2d");
 const terrainCanvas = document.createElement("canvas");
 
+// Explicit request, 2026-09-09: "The blackout came back. can we put a trace on
+// z-layers?" -- live report: "the map got moved into the lowest z-level, lower
+// than a layer of black." The earlier fix (try/catch around socket.onmessage,
+// see startSimulation's own comment) addressed one specific cause (a stuck
+// #spawn-splash surviving a malformed message) but the symptom has recurred,
+// meaning either that fix didn't fully cover it or a different element is now
+// the culprit -- a screenshot alone never tells you WHICH, since nothing on
+// screen looks different, only what's on top. Standing watchdog instead of
+// guessing again: periodically checks whether the canvas is still actually the
+// topmost element at its own center; if something else is covering it, logs
+// exactly what (id/class, computed z-index/position/display/opacity) plus the
+// full stacking state of every canvas-container child, so the next occurrence
+// is diagnosable straight from the console.
+let lastZLayerCheckFrame = -9999;
+const Z_LAYER_CHECK_INTERVAL_FRAMES = 120; // ~2s at 60fps -- cheap enough to run continuously
+let zLayerWatchdogTripped = false; // logs once per incident, not every frame it persists
+
+function checkZLayerHealth() {
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return; // canvas not laid out yet (e.g. picker screen)
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const topElement = document.elementFromPoint(cx, cy);
+  if (topElement === canvas) {
+    zLayerWatchdogTripped = false; // recovered (or a one-off false alarm) -- ready to report again
+    return;
+  }
+  if (zLayerWatchdogTripped) return; // already reported this ongoing incident
+  zLayerWatchdogTripped = true;
+
+  const container = document.getElementById("canvas-container");
+  const stack = container ? Array.from(container.children).map(el => {
+    const cs = getComputedStyle(el);
+    return {
+      id: el.id || "(no id)", class: el.className || "(no class)",
+      display: cs.display, opacity: cs.opacity, zIndex: cs.zIndex,
+      position: cs.position, background: cs.backgroundColor,
+      hasHiddenAttr: el.hasAttribute("hidden"),
+    };
+  }) : [];
+  console.error(
+    "[Z-LAYER WATCHDOG] Something is covering the canvas -- the map is likely blacked out.",
+    "\nTopmost element at canvas center:", topElement,
+    "id:", topElement && topElement.id, "class:", topElement && topElement.className,
+    "\nFull canvas-container child stack:", stack
+  );
+}
+
 /* ---------- Picker screen ---------- */
 
 // Known to actually work well in this sim (fast, reliable JSON-mode output, tested
@@ -3186,6 +3234,10 @@ function drawFrame() {
   }
   pausedFrameAlreadyDrawn = isPaused;
   animFrame++;
+  if (latestState && animFrame - lastZLayerCheckFrame >= Z_LAYER_CHECK_INTERVAL_FRAMES) {
+    lastZLayerCheckFrame = animFrame;
+    checkZLayerHealth();
+  }
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(terrainCanvas, 0, 0);
   drawWaterfall();
