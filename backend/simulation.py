@@ -2593,6 +2593,29 @@ class Simulation:
                 visible_entities.append(
                     f"{other.name}'s camp is known to be at ({other.x},{other.y}), about {distance:.0f} tiles away"
                 )
+                # Explicit request, 2026-09-09: "dig into why tribe-to-tribe
+                # contact never gets acted on." Grounded in a real run: both
+                # tribes discovered each other (one with a 98-cycle window
+                # where DECLARE_ALLIANCE/DECLARE_WAR were both unlocked and
+                # the rival's exact position already known) and never once
+                # chose RAID/TRADE/DECLARE_ALLIANCE/DECLARE_WAR toward it.
+                # The location fact above was purely descriptive -- it never
+                # actually said aiming target_vector there would resolve any
+                # of these instantly. Same "informed, but not told it's
+                # actionable" gap CONSTRUCT_WALL's own nudge just fixed.
+                # Deliberately neutral about WHICH of these to choose (the
+                # design philosophy's own "no scripted directives" line) --
+                # states only what's mechanically true and currently
+                # reachable, same as the wall fix's real cost numbers did.
+                # Filtered to available_actions so this never dangles
+                # something not actually offered yet (DECLARE_ALLIANCE/
+                # DECLARE_WAR are Tribal Synapse-only).
+                reachable = [a for a in ("RAID", "TRADE", "DECLARE_ALLIANCE", "DECLARE_WAR") if a in available_actions]
+                if reachable:
+                    visible_entities.append(
+                        f"Aiming directly at {other.name}'s coordinates would reach them right now for: "
+                        f"{', '.join(reachable)}."
+                    )
                 # Military branch, step 7 (plan file valiant-forging-falcon.md): "The
                 # Chief has to actually be able to reach DECLARE_CONQUEST -- not just
                 # mechanically possible, but visible: a real Might fact in the

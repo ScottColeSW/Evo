@@ -765,6 +765,61 @@ def test_no_rival_awareness_beyond_the_distant_sighting_radius():
     assert "Mountain Tribe" not in request["prompt"]
 
 
+def test_discovered_rival_names_which_actions_can_reach_them_right_now():
+    """Explicit request, 2026-09-09: "dig into why tribe-to-tribe contact
+    never gets acted on." Grounded in a real run: a tribe with a
+    98-cycle window (DECLARE_ALLIANCE/DECLARE_WAR both unlocked, rival's
+    exact position already known the whole time) never once chose any of
+    RAID/TRADE/DECLARE_ALLIANCE/DECLARE_WAR toward it -- the location fact
+    was purely descriptive, never stating that aiming there would actually
+    resolve one of these instantly."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 55, 50, "#fb923c")
+    tribe.discovered_rivals.add("tribe_1")
+    sim.tribes = {"tribe_0": tribe, "tribe_1": rival}
+
+    entities, _ = sim._build_visible_entities(
+        tribe, "plains", [], [], ["RAID", "TRADE", "DECLARE_ALLIANCE", "DECLARE_WAR", "GATHER_WOOD"]
+    )
+
+    assert any(
+        "Aiming directly at Mountain Tribe's coordinates would reach them right now for: "
+        "RAID, TRADE, DECLARE_ALLIANCE, DECLARE_WAR." in e
+        for e in entities
+    )
+
+
+def test_discovered_rival_reachable_list_only_names_actions_actually_offered():
+    """DECLARE_ALLIANCE/DECLARE_WAR are Tribal Synapse-only -- this must never
+    dangle them before they're actually reachable, same "never dangle"
+    discipline every other nudge in this file follows."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 55, 50, "#fb923c")
+    tribe.discovered_rivals.add("tribe_1")
+    sim.tribes = {"tribe_0": tribe, "tribe_1": rival}
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], ["RAID", "TRADE", "GATHER_WOOD"])
+
+    fact = next((e for e in entities if e.startswith("Aiming directly at")), None)
+    assert fact is not None
+    assert "RAID" in fact and "TRADE" in fact
+    assert "DECLARE_ALLIANCE" not in fact and "DECLARE_WAR" not in fact
+
+
+def test_discovered_rival_reachable_fact_absent_when_nothing_is_available():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 55, 50, "#fb923c")
+    tribe.discovered_rivals.add("tribe_1")
+    sim.tribes = {"tribe_0": tribe, "tribe_1": rival}
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], ["GATHER_WOOD"])
+
+    assert not any(e.startswith("Aiming directly at") for e in entities)
+
+
 def test_note_rival_discovery_records_a_rival_within_range():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
