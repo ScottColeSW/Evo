@@ -3492,21 +3492,44 @@ class Simulation:
                 # tribe no longer needs to be told which action unlocks what,
                 # since there's only one action left to pick. These lines are now
                 # purely informational (how much of the ring is real progress).
+                # Explicit request, 2026-09-09: "we are not telling them, for
+                # instance, 'You can build X now, it will cost {resources},
+                # and provide {bonus}.'" Confirmed via two independent live
+                # runs: CONSTRUCT_WALL was chosen zero times, the entire run,
+                # by either tribe -- not attempted and blocked, just never
+                # picked, while GATHER_STONE alone was picked 3-4x more often
+                # than GATHER_WOOD despite wood yielding *better* than stone
+                # on the plains both tribes settled on (no terrain excuse).
+                # The old text here was purely informational ("X/Y sections
+                # built"), with no cost number and no stated payoff -- next
+                # to GATHER_STONE's obvious immediate "a number goes up," it
+                # never had a real reason to win. Every branch below now
+                # states the real, cheap cost and the real downstream payoff
+                # (Long House, then Kitchen's ninefold food) explicitly,
+                # matching the concrete "cost + bonus" shape the Kitchen
+                # nudge just below already uses successfully.
+                wall_cost_note = (
+                    f"roughly {config.WALL_WOOD_COST_TOTAL} wood and {config.WALL_STONE_COST_TOTAL} stone total, "
+                    "spread over a few turns -- cheap next to what it unlocks: a Long House, then a Kitchen "
+                    "(nine times as much food from every future forage, hunt, or catch, instead of only three)"
+                )
                 if unlocked_count < real_total and built >= unlocked_count:
                     if unlocked_count == 0:
                         visible_entities.append(
                             f"The settlement's first wall ring has no section unlocked yet -- CONSTRUCT_WALL "
-                            f"unlocks the first one automatically{natural_note}."
+                            f"unlocks the first one automatically{natural_note}. Each section costs "
+                            f"{wall_cost_note}."
                         )
                     else:
                         visible_entities.append(
                             f"The settlement's first wall ring has {built}/{real_total} real sections built, and "
                             f"every unlocked section is complete -- CONSTRUCT_WALL unlocks the next "
-                            f"one automatically{natural_note}."
+                            f"one automatically{natural_note}. Each section costs {wall_cost_note}."
                         )
                 else:
                     visible_entities.append(
-                        f"The settlement's first wall ring has {built}/{real_total} real sections built{natural_note}."
+                        f"The settlement's first wall ring has {built}/{real_total} real sections built"
+                        f"{natural_note} -- finishing the section already unlocked costs {wall_cost_note}."
                     )
             elif not ring0_reinforced:
                 if tribe.long_houses_built == 0:

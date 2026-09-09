@@ -340,15 +340,21 @@ def test_resolve_toll_free_passage_once_the_owner_is_extinct():
     assert traveler.wood == 0  # no one left to collect from
 
 
-def test_unfinished_wall_hides_long_house_from_the_menu_without_nagging_about_it():
+def test_unfinished_wall_hides_long_house_from_the_menu():
     """Explicit bug report (original): live logs showed the chief repeatedly
     choosing BUILD_LONG_HOUSE against an unfinished wall, over and over, each
-    attempt silently rejected inside _build_long_house. Explicit follow-up
-    correction: "keep the Long House blocked note hidden until [the wall's
-    done and] they build one" -- BUILD_LONG_HOUSE is already absent from
-    available_actions this whole stretch (_can_afford_build_long_house), so a
-    prose reminder about it every single cycle was pure nag, not a real fix
-    for anything the menu-hiding didn't already solve."""
+    attempt silently rejected inside _build_long_house -- BUILD_LONG_HOUSE
+    must stay absent from available_actions this whole stretch
+    (_can_afford_build_long_house).
+
+    Explicit follow-up, 2026-09-09 ("we are not telling them... it will cost
+    {resources}, and provide {bonus}"): the wall-progress fact now DOES name
+    "a Long House" as part of CONSTRUCT_WALL's own real payoff chain (Wall ->
+    Long House -> Kitchen) -- a forward-looking cost/benefit statement, not
+    the old bug (repeatedly suggesting BUILD_LONG_HOUSE as something to
+    choose *right now* when it isn't actually offered). The menu-hiding
+    above is what actually matters; a prose mention of what's ahead is a
+    different, now-intentional thing."""
     from backend import config
 
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])  # plains, farmable
@@ -371,7 +377,55 @@ def test_unfinished_wall_hides_long_house_from_the_menu_without_nagging_about_it
     assert "CONSTRUCT_WALL" in ctx["available_actions"]
     assert "BUILD_LONG_HOUSE" not in ctx["available_actions"]
     assert f"{built}/{len(real_sections)} real sections built" in request["prompt"]
-    assert "long house" not in request["prompt"].lower()
+
+
+def test_wall_progress_fact_now_states_real_cost_and_the_kitchen_payoff():
+    """Explicit request, 2026-09-09: "we are not telling them, for instance,
+    'You can build X now, it will cost {resources}, and provide {bonus}.'"
+    Confirmed via two independent live runs: CONSTRUCT_WALL was chosen zero
+    times the entire run by either tribe, despite being affordable and
+    available the whole time -- the old fact here named how much of the
+    ring was built but never the real (cheap) cost or what it actually
+    unlocks, next to GATHER_STONE's obvious immediate payoff. This checks
+    the real numbers actually land in the prompt, not just some cost/benefit
+    text existing somewhere."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.has_ever_settled = True
+    tribe.wood_ever_gathered = tribe.stone_ever_gathered = True
+    sim._found_territory(tribe)
+    tribe.wall_rings[0]["sections"][0]["unlocked"] = True
+    tribe.wall_rings[0]["sections"][0]["progress"] = 40
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert f"{config.WALL_WOOD_COST_TOTAL} wood and {config.WALL_STONE_COST_TOTAL} stone" in request["prompt"]
+    assert "a long house, then a kitchen" in request["prompt"].lower()
+    assert "nine times as much food" in request["prompt"]
+
+
+def test_wall_not_yet_unlocked_nudge_also_states_the_real_cost():
+    """Same cost/benefit treatment for the earlier "nothing unlocked yet"
+    branch -- a fresh settlement shouldn't have to wait until a section is
+    already unlocked to be told what CONSTRUCT_WALL actually costs."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "tribal_synapse"
+    # No section unlocked yet -- _found_territory's own fresh ring0.
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "has no section unlocked yet" in request["prompt"]
+    assert f"{config.WALL_WOOD_COST_TOTAL} wood and {config.WALL_STONE_COST_TOTAL} stone" in request["prompt"]
 
 
 def test_wall_progress_fact_notes_natural_barriers_separately_from_the_real_count():
@@ -1963,7 +2017,12 @@ def test_kitchen_crisis_carve_out_does_not_reopen_the_menu_when_not_yet_reachabl
 
 def test_kitchen_nudge_stays_quiet_before_it_is_actually_reachable():
     """Same 'never dangle' reasoning as the PLANT_CROP nudge -- no point
-    naming a fix the tribe can't actually reach this cycle."""
+    naming a fix the tribe can't actually reach this cycle. Checks the
+    Kitchen-eligibility nudge's own unique "affordable right now" tail, not
+    the bare "nine times as much food" phrase -- explicit follow-up,
+    2026-09-09, means the wall-progress fact now legitimately uses that same
+    phrase too, as part of CONSTRUCT_WALL's own forward-looking payoff
+    chain, regardless of whether Kitchen itself is reachable yet."""
     from backend import config
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
@@ -1977,7 +2036,7 @@ def test_kitchen_nudge_stays_quiet_before_it_is_actually_reachable():
     request, ctx = sim._prepare_turn(tribe)
 
     assert "BUILD_KITCHEN" not in ctx["available_actions"]
-    assert "nine times as much food" not in request["prompt"]
+    assert "affordable right now" not in request["prompt"]
 
 
 def test_farming_nudge_stays_quiet_once_a_plot_exists_or_food_is_comfortable():
