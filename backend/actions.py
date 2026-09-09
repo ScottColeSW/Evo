@@ -315,9 +315,9 @@ def _build_fire(sim, tribe, biome, target):
     # more ancestral pride every time at zero additional benefit -- a self-reinforcing
     # loop that made staying in one spot forever look increasingly attractive. A second
     # fire where one already burns accomplishes nothing.
-    if _already_built(sim, tribe, "fire") or tribe.wood < 10:
+    if _already_built(sim, tribe, "fire") or tribe.wood < config.BUILD_FIRE_WOOD_COST:
         return None
-    tribe.wood -= 10
+    tribe.wood -= config.BUILD_FIRE_WOOD_COST
     sim.world.add_construction(tribe.x, tribe.y, "fire", sim.cycle)
     tribe.fire_ever_built = True  # see actions.py._cook_food's own prerequisite
     # Fire is available from the very first era, long before a tribe has any real

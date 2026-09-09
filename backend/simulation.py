@@ -387,7 +387,7 @@ AFFORDABILITY_CHECKS = {
     # _fire_not_yet_built_here since AFFORDABILITY_CHECKS lambdas only get
     # world, not a full Simulation) every other one-time structure already
     # gets checked here -- just never wired in.
-    "BUILD_FIRE": lambda t, w: _fire_not_yet_built_here(t, w) and t.wood >= 10,
+    "BUILD_FIRE": lambda t, w: _fire_not_yet_built_here(t, w) and t.wood >= config.BUILD_FIRE_WOOD_COST,
     "BUILD_DOCK": lambda t, w: t.fishing_learned and t.wood >= config.DOCK_WOOD_COST and _can_place(t, w, "dock"),
     "CONSTRUCT_WALL": _can_afford_construct_wall,
     "BUILD_LONG_HOUSE": _can_afford_build_long_house,

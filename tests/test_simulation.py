@@ -72,13 +72,15 @@ def test_hunting_hazard_never_fires_outside_forest():
 
 
 def test_build_fire_radiates_pride_not_dread():
+    from backend import config
+
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.wood = 50
 
     sim._apply_action(tribe, "BUILD_FIRE", "forest", (0, 0))
 
-    assert tribe.wood == 40
+    assert tribe.wood == 50 - config.BUILD_FIRE_WOOD_COST
     assert "PRIDE" in sim.trauma.bias_string(50, 50)
 
 

@@ -178,6 +178,12 @@ VRAM_LIMIT_GB = 14.0
 DEFAULT_TEMPERATURE = 0.55
 ANCESTRAL_DREAD_TEMPERATURE = 1.15
 
+# Explicit request, 2026-09-08: "Fire should require > 10 wood so it's a touch
+# harder but still necessary." Was a bare hardcoded 10 in actions._build_fire
+# (and mirrored in simulation.AFFORDABILITY_CHECKS) -- a real named constant now,
+# same as every other action's own cost.
+BUILD_FIRE_WOOD_COST = 15
+
 # Ancestral trauma matrix event weights (see backend/ancestral_matrix.py). Pride/dread
 # bias text only appears once a tile's score crosses +-0.35 (ancestral_matrix.py), so
 # a single-event magnitude below that never actually surfaces -- keep these above it.
