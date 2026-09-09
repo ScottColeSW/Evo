@@ -651,16 +651,20 @@ INNOVATION_ERA_DISCOUNT_CAP = 0.5
 # ranking, which this deliberately mirrors), not the full raw log dumped in.
 LIBRARY_ENTRY_MEMORY_COUNT = 3
 
-# BUILD_WELL (backend/actions.py, Simulation._advance_water_supply): explicit
-# request -- water's only passive-income lever was a single flat formula tied to
-# population, with no equivalent of Fishery/Dock's stacking bonus for food. Same
-# "infrastructure from the moment it's unlocked" shape Bath House/Warehouse
-# already use (no proven-success gate), stacking onto SETTLED_WATER_SUPPLY_
-# MULTIPLIER exactly the way FISHERY_SUPPLY_BONUS_MULTIPLIER stacks onto
-# FISHING_SUPPLY_MULTIPLIER for food.
+# BUILD_WELL (backend/actions.py, Simulation._advance_water_supply/
+# _is_water_secure): explicit request -- water's only passive-income lever was
+# a single flat formula tied to population, with no equivalent of Fishery/
+# Dock's stacking bonus for food. Same "infrastructure from the moment it's
+# unlocked" shape Bath House/Warehouse already use (no proven-success gate).
+#
+# Explicit correction, 2026-09-09: "Tribe 2 built a Well which should have
+# gotten them to the infinity Water." A Well used to only stack a
+# WELL_SUPPLY_BONUS_MULTIPLIER (retired) onto the passive formula, never
+# granting full water security the way Kitchen+a proven source does for food
+# -- now well_built is its own sufficient path to _is_water_secure, same as
+# every other resource's building-based mastery route.
 WELL_WOOD_COST = 20
 WELL_STONE_COST = 20
-WELL_SUPPLY_BONUS_MULTIPLIER = 1.5
 
 EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR = 5  # 1 egg per 5 flock members per cycle
 # Live report: "crazy villagers" eating the whole flock/every egg the moment

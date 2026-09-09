@@ -4684,6 +4684,52 @@ def test_confirmed_water_sites_are_surfaced_as_a_durable_fact():
     assert "confirmed water source at (40,37)" in entities
 
 
+def test_water_security_progress_nudge_names_sites_and_the_well_alternative():
+    """Explicit live-run report, 2026-09-09: a tribe with a large water
+    stockpile (from the ordinary passive top-up, not true security) kept
+    seeing the standard "running low" warning with nothing in the prompt
+    explaining why or how to fix it for good."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.confirmed_water_sites = [(1, 1)]
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    needed = config.WATER_SECURITY_SITE_THRESHOLD - 1
+    assert any(f"1/{config.WATER_SECURITY_SITE_THRESHOLD} confirmed water sources" in e for e in entities)
+    assert any(f"{needed} more would do it" in e for e in entities)
+    assert any("building a Well would secure it immediately" in e for e in entities)
+
+
+def test_water_security_progress_nudge_absent_once_secure_via_sites():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.confirmed_water_sites = [(1, 1), (2, 2), (3, 3)]
+    assert len(tribe.confirmed_water_sites) == config.WATER_SECURITY_SITE_THRESHOLD
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert not any("Water is not yet permanently secure" in e for e in entities)
+
+
+def test_water_security_progress_nudge_absent_once_secure_via_well():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.well_built = True
+    tribe.confirmed_water_sites = []
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], [])
+
+    assert not any("Water is not yet permanently secure" in e for e in entities)
+
+
 def test_all_confirmed_sites_are_remembered_not_just_the_most_recent_three():
     """Explicit request: "make sure they remember all the important discover
     sites when they are making decisions." These lists used to be sliced to
@@ -7705,26 +7751,25 @@ def test_advance_water_supply_scales_with_population_not_a_flat_amount():
     assert tribe.water > upkeep  # a real surplus, not just barely keeping pace
 
 
-def test_advance_water_supply_stacks_a_well_bonus():
-    """Explicit request: a Well gives water the same kind of stacking supply
-    bonus Fishery/Dock already give food (_advance_fish_supply's fishery_bonus),
-    since water previously had only the flat settled-near-water formula with no
-    way to scale further."""
+def test_advance_water_supply_a_well_grants_full_water_security():
+    """Explicit correction, 2026-09-09: "Tribe 2 built a Well which should have
+    gotten them to the infinity Water." A Well used to only stack a flat
+    multiplier onto the ordinary passive formula (retired) -- it's now its own
+    sufficient path to _is_water_secure, same as the confirmed-sites path,
+    independent of how many distinct sources happen to be confirmed."""
     from backend import config
+    from backend.actions import _storage_cap
 
     sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
     tribe = sim.tribes["tribe_0"]
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
-    tribe.population = 100  # large enough that the bonus isn't lost to rounding
     tribe.well_built = True
+    tribe.confirmed_water_sites = []  # nowhere near the site-count threshold
     tribe.water = 10
 
     sim._advance_water_supply(tribe)
 
-    upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
-    expected = round(upkeep * config.SETTLED_WATER_SUPPLY_MULTIPLIER * config.WELL_SUPPLY_BONUS_MULTIPLIER)
-    assert tribe.water == 10 + expected
-    assert expected > round(upkeep * config.SETTLED_WATER_SUPPLY_MULTIPLIER)  # a real boost over the bare formula
+    assert tribe.water == _storage_cap(tribe)
 
 
 def test_advance_water_supply_is_capped_by_storage():

@@ -220,8 +220,19 @@ def _is_food_secure(tribe) -> bool:
 def _is_water_secure(tribe) -> bool:
     """config.WATER_SECURITY_SITE_THRESHOLD distinct confirmed water sources -- see
     Simulation._advance_water_supply's own docstring. Module-level for the same
-    shared-definition reason as _is_food_secure above."""
-    return len(tribe.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD
+    shared-definition reason as _is_food_secure above.
+
+    Explicit correction, 2026-09-09: "Tribe 2 built a Well which should have
+    gotten them to the infinity Water." A real run showed a tribe with
+    well_built=True still hitting the ordinary "running low" warning --
+    the Well only ever gave _advance_water_supply's passive top-up formula a
+    flat multiplier (now retired), it was never actually a path to full
+    security the way BUILD_KITCHEN+a proven food source is for food, or
+    BUILD_SAWMILL+a Timber Grove is for wood. Every other resource's
+    "mastery" ladder has a building-based path; water's didn't. Now it does --
+    a real Well is its own sufficient proof of water mastery, independent of
+    how many distinct sites happen to be confirmed."""
+    return tribe.well_built or len(tribe.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD
 
 
 def _is_wood_secure(tribe) -> bool:
@@ -2393,6 +2404,21 @@ class Simulation:
         # these lists only grow as large as genuinely distinct real finds --
         # not the unbounded, ever-repeating kind of list slicing exists to cap.
         visible_entities += [f"confirmed water source at ({x},{y})" for x, y in tribe.confirmed_water_sites]
+        # Explicit live-run report, 2026-09-09: a tribe with a large water
+        # stockpile (from the ordinary passive top-up, not true security) kept
+        # seeing the standard "running low" warning with nothing in the prompt
+        # explaining why, or what would actually fix it for good -- the two
+        # real paths to _is_water_secure (config.WATER_SECURITY_SITE_THRESHOLD
+        # distinct confirmed sources, or a real Well) were both real facts, just
+        # never surfaced as a fact themselves. Same "don't leave a real payoff
+        # implicit" shape every other progress nudge in this function follows.
+        if not _is_water_secure(tribe):
+            sites_needed = config.WATER_SECURITY_SITE_THRESHOLD - len(tribe.confirmed_water_sites)
+            visible_entities.append(
+                f"Water is not yet permanently secure -- {len(tribe.confirmed_water_sites)}/"
+                f"{config.WATER_SECURITY_SITE_THRESHOLD} confirmed water sources found "
+                f"({sites_needed} more would do it), or building a Well would secure it immediately."
+            )
         # Explicit request: an in-territory site already producing its passive
         # freebie (_advance_in_territory_site_yields) shouldn't still be named as
         # somewhere worth traveling to gather -- it's already covered.
@@ -5959,17 +5985,23 @@ class Simulation:
         give their own resource -- unconditional on current position (a tribe
         that's proven it knows where the water is doesn't lose that knowledge
         by walking away from any one source), and naturally one-way since
-        confirmed_water_sites only ever grows."""
+        confirmed_water_sites only ever grows.
+
+        Explicit correction (2026-09-09): "Tribe 2 built a Well which should
+        have gotten them to the infinity Water." A real Well used to only ever
+        multiply the passive formula below (config.WELL_SUPPLY_BONUS_MULTIPLIER,
+        now retired), never granting the same full security the site-count
+        path already does -- every other resource's mastery ladder has a
+        building-based path (Kitchen+a proven source for food, Sawmill+a Timber
+        Grove for wood), water's didn't. See _is_water_secure -- well_built now
+        satisfies security on its own, same "unconditional, one-way" shape."""
         if _is_water_secure(tribe):
             tribe.water = _storage_cap(tribe)
             return
         if self._is_settled_near_water(tribe):
             upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
             farm_draw = config.CROP_WATER_PER_PLOT_PER_CYCLE * tribe.farm_plots
-            well_bonus = config.WELL_SUPPLY_BONUS_MULTIPLIER if tribe.well_built else 1.0
-            self._capped_add(
-                tribe, "water", round((upkeep + farm_draw) * config.SETTLED_WATER_SUPPLY_MULTIPLIER * well_bonus)
-            )
+            self._capped_add(tribe, "water", round((upkeep + farm_draw) * config.SETTLED_WATER_SUPPLY_MULTIPLIER))
 
     def _advance_food_supply(self, tribe: Tribe) -> None:
         """Food's counterpart to _advance_water_supply's water-security branch above
