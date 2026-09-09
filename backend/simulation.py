@@ -3,6 +3,7 @@ import difflib
 import importlib
 import math
 import random
+from collections import deque
 
 from . import architect, city_layout, config, physics
 from .actions import (
@@ -1214,6 +1215,13 @@ class Tribe:
         # instead, an escalating-cost repeatable so it doesn't just become the same
         # infinite-spam problem under a new name. See _storage_cap/_item_storage_cap.
         self.warehouse_upgrades = 0
+        # Explicit request, 2026-09-09: live debug view of raw LLM I/O -- see
+        # config.DEBUG_TRANSCRIPT_HISTORY_LIMIT's own comment. A capped deque
+        # (not tribe.history, which is the in-fiction chronicle) of
+        # {"cycle", "prompt", "raw_response", "latency_ms"} entries, one per
+        # turn actually dispatched to this tribe's model. Populated by
+        # Simulation.step(), read by Simulation.debug_snapshot().
+        self.debug_transcript: deque = deque(maxlen=config.DEBUG_TRANSCRIPT_HISTORY_LIMIT)
         # See Simulation._prepare_turn's GATHER_FOOD retirement -- one-way, like
         # has_ever_settled, once a genuinely proven passive food source exists.
         self.foraging_retired = False
@@ -2126,6 +2134,25 @@ class Simulation:
             "linguistic_consensus": consensus,
         }
 
+    def debug_snapshot(self) -> dict:
+        """Explicit request, 2026-09-09: "a separate page that shows me, in a 4
+        column format, live, what we tell the llm, how it responses... I want to
+        see the raw info we sent and how they reply. I don't need the visual
+        board for this look." A deliberately separate, much smaller payload from
+        snapshot() -- this view never touches board rendering, so it shouldn't
+        share (or bloat) that payload's shape. Each tribe's own to_dict() is
+        included whole (not a hand-picked subset) so "the inventory/build at the
+        top of the Tribe columns" the frontend renders never drifts out of sync
+        with a second, independently-maintained field list."""
+        return {
+            "cycle": self.cycle,
+            "status": self.status,
+            "tribes": {
+                tid: {"tribe": tribe.to_dict(), "transcript": list(tribe.debug_transcript)}
+                for tid, tribe in self.tribes.items()
+            },
+        }
+
     def toggle_pause(self) -> None:
         self.paused = not self.paused
 
@@ -2168,12 +2195,14 @@ class Simulation:
 
         requests = []
         contexts = {}
+        prompts_by_tid = {}
         for tid, tribe in self.tribes.items():
             if tribe.extinct:
                 continue
             request, ctx = self._prepare_turn(tribe)
             requests.append(request)
             contexts[tid] = ctx
+            prompts_by_tid[tid] = request["prompt"]
 
         results = await self.scheduler.run_batch(requests)
 
@@ -2181,6 +2210,16 @@ class Simulation:
             if tribe.extinct:
                 continue
             outcome = results.get(tid, {"intent": {}, "latency_ms": 0.0})
+            # Explicit request, 2026-09-09: raw LLM I/O for the live debug view
+            # (see Tribe.debug_transcript's own comment) -- captured here, right
+            # where the request/response pair actually meet, rather than
+            # threaded through _apply_turn just to reach a second call site.
+            tribe.debug_transcript.append({
+                "cycle": self.cycle,
+                "prompt": prompts_by_tid[tid],
+                "raw_response": outcome.get("raw_response", ""),
+                "latency_ms": outcome["latency_ms"],
+            })
             self._apply_turn(tribe, outcome["intent"], outcome["latency_ms"], contexts[tid])
             self._advance_automatic_fire(tribe)
             self._advance_automatic_boat(tribe)

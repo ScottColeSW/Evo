@@ -66,6 +66,37 @@ async def test_generate_json_returns_empty_dict_on_invalid_json():
 
 
 @run_async
+async def test_generate_json_with_raw_returns_both_the_parsed_dict_and_the_raw_text():
+    """Explicit request, 2026-09-09: the live debug view needs the model's
+    actual, unparsed text, not just whatever survived JSON parsing --
+    generate_json (still used by every other caller in this codebase) discards
+    it; this is the one method that doesn't."""
+    client = OllamaClient()
+    fake = _FakeResponse({"response": '{"chief_name": "Ashgar"}'})
+
+    with mock.patch.object(httpx.AsyncClient, "post", mock.AsyncMock(return_value=fake)):
+        parsed, raw = await client.generate_json_with_raw("gemma2:2b", "prompt")
+
+    assert parsed == {"chief_name": "Ashgar"}
+    assert raw == '{"chief_name": "Ashgar"}'
+
+
+@run_async
+async def test_generate_json_with_raw_still_returns_the_text_on_a_degenerate_response():
+    """Same "not a dict" guard generate_json's own test already covers -- the
+    raw text should still come through even when parsing produces {} instead
+    of a usable dict, so the debug view can show what actually happened."""
+    client = OllamaClient()
+    fake = _FakeResponse({"response": "not json at all"})
+
+    with mock.patch.object(httpx.AsyncClient, "post", mock.AsyncMock(return_value=fake)):
+        parsed, raw = await client.generate_json_with_raw("gemma2:2b", "prompt")
+
+    assert parsed == {}
+    assert raw == "not json at all"
+
+
+@run_async
 async def test_list_loaded_models_returns_names_from_api_ps():
     client = OllamaClient()
     fake = _FakeResponse({"models": [{"name": "gemma2:2b"}, {"name": "qwen2.5:3b"}]})

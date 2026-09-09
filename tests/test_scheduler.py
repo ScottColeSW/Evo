@@ -8,11 +8,11 @@ class FakeOllamaClient:
     def __init__(self):
         self.calls: list[str] = []
 
-    async def generate_json(self, model, prompt, temperature=0.7, **kwargs):
+    async def generate_json_with_raw(self, model, prompt, temperature=0.7, **kwargs):
         self.calls.append(model)
         if model == "broken-model":
             raise RuntimeError("simulated Ollama failure")
-        return {"visual_action": "IDLE", "model_echo": model}
+        return {"visual_action": "IDLE", "model_echo": model}, f'{{"visual_action": "IDLE", "model_echo": "{model}"}}'
 
 
 @run_async
@@ -31,6 +31,11 @@ async def test_groups_requests_by_model():
     assert results["tribe_1"]["intent"]["model_echo"] == "mistral"
     assert client.calls.count("llama3") == 2
     assert client.calls.count("mistral") == 1
+    # Explicit request, 2026-09-09: the live debug view needs the model's raw,
+    # unparsed text alongside the parsed intent -- generate_json_with_raw is
+    # what makes that available here instead of being discarded.
+    assert "llama3" in results["tribe_0"]["raw_response"]
+    assert "mistral" in results["tribe_1"]["raw_response"]
 
 
 @run_async
@@ -46,6 +51,8 @@ async def test_one_failing_request_does_not_take_down_its_batch():
     assert results["tribe_0"]["intent"] == {}
     assert results["tribe_1"]["intent"] == {}
     assert results["tribe_2"]["intent"]["model_echo"] == "llama3"
+    assert results["tribe_0"]["raw_response"] == ""  # a raised call has no real text to report
+    assert results["tribe_1"]["raw_response"] == ""
 
 
 @run_async

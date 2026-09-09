@@ -6338,6 +6338,59 @@ def test_gathering_brief_is_surfaced_into_the_next_turns_visible_entities():
 
 
 @run_async
+async def test_step_records_the_raw_prompt_and_response_in_the_debug_transcript():
+    """Explicit request, 2026-09-09: a live debug view of "what we tell the
+    llm, how it responses" needs the actual prompt sent and the actual raw
+    text the model sent back, captured every real turn."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+
+    async def fake_run_batch(requests):
+        assert requests[0]["prompt"]  # a real prompt was actually built and passed through
+        return {"tribe_0": {"intent": {"visual_action": "GATHER_WOOD"}, "latency_ms": 12.5, "raw_response": '{"visual_action": "GATHER_WOOD"}'}}
+
+    with mock.patch.object(sim.scheduler, "run_batch", fake_run_batch):
+        await sim.step()
+
+    entry = tribe.debug_transcript[-1]
+    assert entry["cycle"] == sim.cycle
+    assert isinstance(entry["prompt"], str) and len(entry["prompt"]) > 0  # the real prompt actually sent, not a placeholder
+    assert entry["raw_response"] == '{"visual_action": "GATHER_WOOD"}'
+    assert entry["latency_ms"] == 12.5
+
+
+@run_async
+async def test_debug_transcript_is_capped_at_the_configured_history_limit():
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+
+    async def fake_run_batch(requests):
+        return {"tribe_0": {"intent": {"visual_action": "GATHER_WOOD"}, "latency_ms": 1.0, "raw_response": "{}"}}
+
+    with mock.patch.object(sim.scheduler, "run_batch", fake_run_batch):
+        for _ in range(config.DEBUG_TRANSCRIPT_HISTORY_LIMIT + 5):
+            await sim.step()
+
+    assert len(tribe.debug_transcript) == config.DEBUG_TRANSCRIPT_HISTORY_LIMIT
+
+
+def test_debug_snapshot_includes_each_tribes_state_and_transcript():
+    sim = _bare_simulation()
+    sim.status = "RUNNING"
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    tribe.debug_transcript.append({"cycle": 1, "prompt": "p", "raw_response": "r", "latency_ms": 5.0})
+
+    snap = sim.debug_snapshot()
+
+    assert snap["cycle"] == sim.cycle
+    assert snap["tribes"]["tribe_0"]["tribe"]["name"] == "Forest Tribe"
+    assert snap["tribes"]["tribe_0"]["transcript"] == [{"cycle": 1, "prompt": "p", "raw_response": "r", "latency_ms": 5.0}]
+
+
+@run_async
 async def test_dawn_gathering_chronicle_line_lands_before_this_cycles_own_action():
     """Bug report: "scouts fired before the day started." The dawn gathering/evening
     recap used to run *after* the per-tribe turn loop, so an action dispatched on

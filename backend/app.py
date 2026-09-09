@@ -22,6 +22,18 @@ async def index(request: web.Request) -> web.FileResponse:
     return web.FileResponse(FRONTEND_DIR / "index.html")
 
 
+@routes.get("/debug")
+async def debug_console(request: web.Request) -> web.FileResponse:
+    """Explicit request, 2026-09-09: "a separate page that shows me, in a 4
+    column format, live, what we tell the llm, how it responses... I don't
+    need the visual board for this look." A genuinely separate page (own
+    route, own file, opened in its own window per the follow-up request) --
+    not a tab or toggle inside index.html's own board UI. See ws_handler's
+    OBSERVE command for how it attaches to a run already going in another
+    tab instead of starting a second, independent one."""
+    return web.FileResponse(FRONTEND_DIR / "debug.html")
+
+
 @routes.get("/api/models")
 async def models(request: web.Request) -> web.Response:
     async with httpx.AsyncClient(timeout=5.0) as client:
@@ -61,10 +73,17 @@ async def experiments(request: web.Request) -> web.Response:
 async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     """Each connection owns its own Simulation. Two browser tabs (or two clients
     hitting this server) get two fully independent worlds, rather than one shared
-    global simulation where the second START silently replaces the first."""
+    global simulation where the second START silently replaces the first.
+
+    The one exception is OBSERVE (below): explicit request, 2026-09-09, for a
+    separate live debug page that watches the SAME run already going in another
+    tab, not a second independent one. An observer session shares its `sim`
+    reference with whichever session actually owns and steps it -- see
+    `session["observer"]`, which both _tick_session and the disconnect cleanup
+    below check before ever touching that shared sim."""
     ws = web.WebSocketResponse()
     await ws.prepare(request)
-    session = {"sim": None}
+    session = {"sim": None, "observer": False}
     request.app["sessions"][ws] = session
 
     try:
@@ -83,19 +102,44 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                     session["sim"] = await Simulation.create(
                         tribe_configs, config.OLLAMA_URL, immortality_cycles
                     )
-            elif command == "TOGGLE_PAUSE" and session["sim"] is not None:
+                    # Explicit request, 2026-09-09: "a separate page that
+                    # shows me... live, what we tell the llm, how it
+                    # responses." The debug page has no board of its own to
+                    # START from -- it OBSERVEs whatever the most recently
+                    # started real session is instead. Matches the user's
+                    # own stated workflow (one run at a time, always
+                    # restarted fresh) -- "most recent" is an unambiguous
+                    # choice, not a guess, under that workflow.
+                    request.app["latest_sim"] = session["sim"]
+            elif command == "OBSERVE":
+                # Read-only: never creates a Simulation, never steps one --
+                # just attaches to whatever's already running so this
+                # connection's own _tick_session send loop starts including
+                # it. Always replies, even before any run exists (latest_sim
+                # still None then) -- an empty tribes dict is what tells the
+                # frontend's own "no active run yet" state to render, instead
+                # of silently sending nothing and leaving the page stuck on
+                # its initial "connecting..." indicator forever.
+                target = request.app.get("latest_sim")
+                if target is not None:
+                    session["sim"] = target
+                    session["observer"] = True
+                    await ws.send_str(json.dumps(target.debug_snapshot()))
+                else:
+                    await ws.send_str(json.dumps({"cycle": 0, "status": "NO_RUN", "tribes": {}}))
+            elif command == "TOGGLE_PAUSE" and session["sim"] is not None and not session["observer"]:
                 session["sim"].toggle_pause()
                 # Immediate feedback instead of waiting up to TICK_SECONDS for the
                 # next broadcast tick -- also what makes it safe for _tick_session to
                 # skip a paused sim entirely below (see its own comment) without the
                 # frontend's pause indicator ever going stale.
                 await ws.send_str(json.dumps(session["sim"].snapshot()))
-            elif command == "ADD_TRIBE" and session["sim"] is not None:
+            elif command == "ADD_TRIBE" and session["sim"] is not None and not session["observer"]:
                 name = data.get("name") or "New Tribe"
                 model = data.get("model")
                 if model:
                     await session["sim"].add_tribe(name, model, data.get("x"), data.get("y"))
-            elif command == "STOP" and session["sim"] is not None:
+            elif command == "STOP" and session["sim"] is not None and not session["observer"]:
                 # Explicit end of this run -- PAUSE only stops stepping, it never
                 # released the models a run had loaded. Distinct from just closing
                 # the tab (see the finally block below, which catches that case too).
@@ -121,8 +165,13 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
         # -- only reaching the all-extinct GAME OVER state ever unloaded them. This
         # is the same cleanup an explicit STOP does, just triggered by disconnection
         # instead of a command.
+        #
+        # Critical for OBSERVE (above): an observer's `sim` is the SAME object
+        # reference the owning session is still running -- shutting it down here
+        # because the debug tab closed would unload the real run's models out
+        # from under it. Only the owning session ever reaches shutdown().
         ended_session = request.app["sessions"].pop(ws, None)
-        if ended_session is not None and ended_session.get("sim") is not None:
+        if ended_session is not None and ended_session.get("sim") is not None and not ended_session.get("observer"):
             await ended_session["sim"].shutdown()
     return ws
 
@@ -130,6 +179,20 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
 async def _tick_session(ws: web.WebSocketResponse, session: dict) -> None:
     sim = session.get("sim")
     if sim is None:
+        return
+    if session.get("observer"):
+        # Explicit request, 2026-09-09: OBSERVE never steps the sim it's
+        # attached to -- that's the owning session's job, driven by its own
+        # _tick_session call in the same asyncio.gather below. Stepping here
+        # too would advance the shared sim twice per broadcast tick. This can
+        # land up to one tick behind the owner's own step (no ordering is
+        # guaranteed between concurrent gather calls), which is fine for a
+        # debug view of "what did we send, what came back" -- it's not
+        # driving anything.
+        try:
+            await ws.send_str(json.dumps(sim.debug_snapshot()))
+        except Exception:
+            pass  # connection may have dropped between the tick finishing and the send
         return
     # Live report: "the game is paused but it sure seems to be working the drive...
     # is there something hitting the disc in Pause mode?" -- confirmed: sim.step()
@@ -196,6 +259,9 @@ async def _unload_stale_models() -> None:
 
 async def on_startup(app: web.Application) -> None:
     app["sessions"] = {}
+    # See ws_handler's OBSERVE command -- the debug page attaches to whichever
+    # session was most recently started, rather than owning its own sim.
+    app["latest_sim"] = None
     await _unload_stale_models()
     app["bg_task"] = asyncio.create_task(broadcast_loop(app))
 

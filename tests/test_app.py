@@ -100,6 +100,38 @@ async def test_tick_session_logs_and_never_sends_when_sim_step_itself_fails():
 
 
 @run_async
+async def test_tick_session_sends_the_debug_snapshot_for_an_observer_and_never_steps():
+    """Explicit request, 2026-09-09: the live LLM-console debug page attaches
+    to a run already going in another tab (see ws_handler's OBSERVE command)
+    rather than owning its own sim -- it must never call sim.step() itself,
+    since the owning session's own _tick_session call already does, in the
+    same broadcast_loop gather. Stepping here too would advance the shared
+    sim twice per tick."""
+    sim = mock.Mock()
+    sim.paused = False
+    sim.step = mock.AsyncMock()
+    sim.debug_snapshot.return_value = {"cycle": 5, "tribes": {}}
+    ws = mock.AsyncMock()
+
+    with mock.patch("backend.app.record_board_state") as record:
+        await _tick_session(ws, {"sim": sim, "observer": True})
+
+    sim.step.assert_not_called()
+    record.assert_not_called()
+    ws.send_str.assert_awaited_once_with(json.dumps({"cycle": 5, "tribes": {}}))
+
+
+@run_async
+async def test_tick_session_observer_swallows_a_send_failure():
+    sim = mock.Mock()
+    sim.debug_snapshot.return_value = {"cycle": 1, "tribes": {}}
+    ws = mock.AsyncMock()
+    ws.send_str = mock.AsyncMock(side_effect=ConnectionResetError("gone"))
+
+    await _tick_session(ws, {"sim": sim, "observer": True})  # must not raise
+
+
+@run_async
 async def test_tick_session_still_swallows_a_send_failure_after_a_successful_tick():
     """The one case this bare except is actually for -- a viewer's connection
     drops between the tick finishing and the send going out."""

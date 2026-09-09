@@ -5,6 +5,16 @@ TICK_SECONDS = 0.5
 GRID_SIZE = 100
 MAX_TRIBES = 4
 
+# Simulation.debug_snapshot / Tribe.debug_transcript: explicit request,
+# 2026-09-09 -- "a separate page that shows me, in a 4 column format, live,
+# what we tell the llm, how it responses... I want to see the raw info we
+# sent and how they reply." How many recent turns of raw prompt/response
+# each tribe keeps for that live debug view -- a capped deque, not the full
+# run's history, so this can't grow unbounded over a long run. Called out
+# explicitly as a number worth raising later if 20 turns of scrollback isn't
+# enough.
+DEBUG_TRANSCRIPT_HISTORY_LIMIT = 20
+
 # Map dream, phase 2: "another attempt at increasing the Ocean/unplayable
 # area" -- a real island, ocean wrapping the north/south/west edges too, not
 # just the existing east coast (world._coast_boundary_x). Same "fixed inset +

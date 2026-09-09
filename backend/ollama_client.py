@@ -41,6 +41,20 @@ class OllamaClient:
     async def generate_json(
         self, model: str, prompt: str, temperature: float = 0.7, num_ctx: int = 4096, keep_alive: str = "5m"
     ) -> dict:
+        parsed, _raw = await self.generate_json_with_raw(model, prompt, temperature, num_ctx, keep_alive)
+        return parsed
+
+    async def generate_json_with_raw(
+        self, model: str, prompt: str, temperature: float = 0.7, num_ctx: int = 4096, keep_alive: str = "5m"
+    ) -> tuple[dict, str]:
+        """Same call as generate_json, but also returns the raw, unparsed response
+        text -- explicit request, 2026-09-09: a live debug view of "what we tell the
+        llm, how it responses" needs the actual text the model sent back, not just
+        whatever survived JSON parsing. A separate method (not a changed return
+        shape on generate_json itself) so the several other callers here
+        (breeding.py, genetics.py, leadership.py, reflection.py) -- none of which
+        need the raw text -- stay untouched; only scheduler.py's per-cycle tribe
+        turn calls this one."""
         payload = {
             "model": model,
             "prompt": prompt,
@@ -56,7 +70,7 @@ class OllamaClient:
             try:
                 parsed = json.loads(raw)
             except json.JSONDecodeError:
-                return {}
+                return {}, raw
             # `format: "json"` guarantees valid JSON, not a JSON *object* -- a weak or
             # very small model (seen live with llama3.2:1b) can emit a bare string,
             # number, or list that parses without error but isn't a dict. Every caller
@@ -64,7 +78,7 @@ class OllamaClient:
             # fallback as an outright parse failure) is what makes that safe regardless
             # of how capable the model actually is, rather than crashing the whole
             # simulation on one degenerate response.
-            return parsed if isinstance(parsed, dict) else {}
+            return (parsed if isinstance(parsed, dict) else {}), raw
 
     async def generate_text(self, model: str, prompt: str, temperature: float = 0.5, keep_alive: str = "5m") -> str:
         payload = {

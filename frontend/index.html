@@ -36,7 +36,8 @@
   #immortal-banner { padding: 6px 14px; background: #3730a3; color: #c7d2fe; font-weight: bold; border-radius: 4px; font-size: 11px; font-family: monospace; }
   #immortal-banner.hidden { display: none; }
   #day-banner { padding: 6px 14px; background: #1e293b; color: #cbd5e1; font-weight: bold; border-radius: 4px; font-size: 11px; font-family: monospace; }
-  #btn-pause { background: #4338ca; color: white; padding: 8px 16px; font-size: 12px; margin-left: auto; }
+  #btn-llm-console { background: #1e293b; color: #cbd5e1; padding: 8px 16px; font-size: 12px; margin-left: auto; }
+  #btn-pause { background: #4338ca; color: white; padding: 8px 16px; font-size: 12px; }
   #btn-quit { background: #7f1d1d; color: #fecaca; padding: 8px 16px; font-size: 12px; }
 
   /* Explicit request: "an information section near the day... that lists each of
@@ -276,6 +277,7 @@
     <div id="day-banner">Day 1</div>
     <div id="immortal-banner" class="hidden"></div>
     <button id="btn-icon-key">🗺️ KEY</button>
+    <button id="btn-llm-console">🖥️ LLM CONSOLE</button>
     <button id="btn-pause">PAUSE</button>
     <button id="btn-quit">QUIT</button>
   </div>
@@ -829,6 +831,21 @@ function toggleIconKey() {
 }
 document.getElementById("btn-icon-key").addEventListener("click", toggleIconKey);
 document.getElementById("btn-icon-key-close").addEventListener("click", toggleIconKey);
+
+// Explicit request, 2026-09-09: "a separate page that shows me... live, what
+// we tell the llm, how it responses" -- opened in a real new window (explicit
+// follow-up: "I'd prefer a _new window"), not a same-tab navigation, so the
+// live board here keeps running untouched. A named window target means a
+// second click focuses the same window instead of spawning another one.
+document.getElementById("btn-llm-console").addEventListener("click", () => {
+  // "_blank" (not a custom named target) is the one value every browser
+  // guarantees never falls back to same-tab navigation -- a named target can,
+  // in some embedded/automated browser contexts, resolve against the calling
+  // window itself instead of opening a distinct one if window-name lookup
+  // doesn't behave as expected. The size hint still asks for a window rather
+  // than a tab where the browser distinguishes.
+  window.open("/debug", "_blank", "width=1400,height=900,noopener");
+});
 
 document.getElementById("btn-pause").addEventListener("click", () => {
   if (!socket) return;
