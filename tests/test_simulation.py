@@ -821,6 +821,73 @@ def test_water_warning_omits_the_settling_suggestion_once_already_settled_there(
     assert "would fix this for good" not in request["prompt"]
 
 
+def test_food_warning_mentions_building_a_kitchen_once_fishing_and_cooking_already_exist():
+    """Live-run finding, 2026-09-08: confirmed via board_history.db that the exact
+    same starving warning fired for 600+ consecutive cycles on a tribe that grew
+    from a handful of people to population 21,000+, and the chief's own reasoning
+    kept choosing HUNT_DEER (a single deer) in direct response every single time --
+    the warning never once mentioned BUILD_KITCHEN, the actual permanent fix
+    (_is_food_secure) once a real food source already exists. Same "old advice
+    never refreshed for how far the tribe has actually grown" bug the water-side
+    settling addendum above already fixed for thirst."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.food = 0  # triggers the starving warning
+    tribe.cooking_learned = True
+    tribe.fishery_built = True
+    tribe.long_houses_built = 1
+    tribe.kitchen_built = False
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Building a Kitchen would make this food security permanent" in request["prompt"]
+
+
+def test_food_warning_omits_kitchen_suggestion_without_a_long_house():
+    """Gated on BUILD_KITCHEN's own real prerequisites, not just the food-source
+    half -- never promises an action the tribe can't actually take yet."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.food = 0
+    tribe.cooking_learned = True
+    tribe.fishery_built = True
+    tribe.long_houses_built = 0  # BUILD_KITCHEN isn't actually available yet
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Building a Kitchen" not in request["prompt"]
+
+
+def test_food_warning_omits_kitchen_suggestion_without_cooking_learned():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.food = 0
+    tribe.cooking_learned = False
+    tribe.fishery_built = True
+    tribe.long_houses_built = 1
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Building a Kitchen" not in request["prompt"]
+
+
+def test_food_warning_omits_kitchen_suggestion_once_kitchen_already_built():
+    """Once Kitchen + Fishery both stand, _is_food_secure is True and the whole
+    warning (base message included) stops firing -- nothing left to suggest."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.food = 0
+    tribe.cooking_learned = True
+    tribe.fishery_built = True
+    tribe.long_houses_built = 1
+    tribe.kitchen_built = True
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "starving" not in request["prompt"].lower()
+    assert "Building a Kitchen" not in request["prompt"]
+
+
 def test_material_surplus_is_not_surfaced_without_a_real_survival_warning():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]

@@ -2567,6 +2567,29 @@ class Simulation:
         if survival_bias and "water" in survival_bias.lower() and tribe.confirmed_water_sites and not self._near_confirmed_water(tribe):
             wx, wy = tribe.confirmed_water_sites[-1]
             survival_bias += f" Settling at the confirmed water source ({wx},{wy}) would fix this for good, not just this cycle."
+
+        # NUDGE (2026-09-08, live-run finding): confirmed via board_history.db that
+        # the exact same "starving" warning fired for 600+ consecutive cycles on a
+        # tribe that grew from a handful of people to a population of 21,000+ --
+        # the model's own reasoning kept choosing HUNT_DEER (a single deer) in
+        # direct response, every single time, because that's the only remedy this
+        # warning ever names. It never once mentioned BUILD_KITCHEN, the actual
+        # permanent fix once a real food source already exists (_is_food_secure --
+        # Kitchen plus a proven Fishery or harvest) -- the warning stayed frozen at
+        # primitive-era advice regardless of how far the tribe had actually grown.
+        # Same shape as the water-settling addendum just above: appended onto the
+        # warning line itself, only once the real gate (a proven food source) is
+        # already met and the one missing building would end this for good.
+        # Gated on BUILD_KITCHEN's own real prerequisites (cooking_learned and a
+        # long house standing -- see actions._build_kitchen), not just food_secure's
+        # other half, so this never promises an action the tribe can't actually take
+        # yet -- same "facts must be real" discipline every other nudge here follows.
+        if (
+            survival_bias and "food" in survival_bias.lower() and not tribe.kitchen_built
+            and tribe.cooking_learned and tribe.long_houses_built > 0
+            and (tribe.fishery_built or tribe.last_harvest_cycle > 0)
+        ):
+            survival_bias += " Building a Kitchen would make this food security permanent, not just this cycle."
         memories = tribe.memory.recall(f"{biome} at {tribe.x},{tribe.y}")
         # Renamed from `settled` (explicit request, 2026-09-04): _is_camped only
         # ever tested camp viability, not real settlement -- see _is_camped's own
