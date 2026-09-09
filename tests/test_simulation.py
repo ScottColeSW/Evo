@@ -1892,6 +1892,75 @@ def test_kitchen_nudge_names_the_real_payoff_once_reachable():
     assert "nine times as much food" in request["prompt"]
 
 
+def test_kitchen_stays_choosable_during_the_exact_crisis_that_nudges_toward_it():
+    """Live report, 2026-09-09: "The are not building a kitchen still." Ground
+    truth, confirmed before this fix landed: the crisis nudge (survival_bias's
+    own "Building a Kitchen would make this food security permanent" line,
+    appended at the very top of _prepare_turn before available_actions is even
+    computed) fires the instant food_crisis_active flips True -- the exact
+    same HUNGER_CRITICAL_CYCLES_LEFT threshold. A few hundred lines later, the
+    crisis narrowing used to strip available_actions down to
+    SURVIVAL_CRISIS_ACTIONS, which never included BUILD_KITCHEN -- so the one
+    moment the tribe was told to build a Kitchen was also the one moment it
+    was mechanically blocked from choosing it. Fixed with a carve-out
+    (Simulation._prepare_turn's survival_crisis block) mirroring
+    wall_lock_long_house_credits' own precedent: BUILD_KITCHEN stays in the
+    menu through a crisis once it was already genuinely reachable (every real
+    prerequisite + affordability check already passed), since it only costs
+    wood/stone -- never the scarce resource actually in crisis. Real numbers:
+    population 10, food 1 -> upkeep 1, exactly at the critical cutoff, well
+    past the post-settlement grace window (SETTLEMENT_CRISIS_GRACE_CYCLES) so
+    the crisis narrowing genuinely applies to everything else."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "tribal_synapse"
+    tribe.cooking_learned = True
+    tribe.long_houses_built = 1
+    tribe.fishery_built = True
+    tribe.wood = tribe.stone = 1000
+    tribe.population = 10
+    tribe.food = 1  # <= upkeep(1) * HUNGER_CRITICAL_CYCLES_LEFT(1) -- the critical cutoff
+    tribe.settled_at_cycle = 0
+    sim.cycle = 100  # well past SETTLEMENT_CRISIS_GRACE_CYCLES
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert tribe.food_crisis_active is True  # confirms the crisis narrowing genuinely applies
+    assert "Building a Kitchen would make this food security permanent" in request["prompt"]
+    assert "BUILD_KITCHEN" in ctx["available_actions"]  # ...and it's still an action they can actually take
+    assert "GATHER_WOOD" not in ctx["available_actions"]  # crisis narrowing still real for everything else
+
+
+def test_kitchen_crisis_carve_out_does_not_reopen_the_menu_when_not_yet_reachable():
+    """The carve-out only widens the crisis menu for BUILD_KITCHEN once it was
+    already genuinely reachable -- a tribe still missing a real prerequisite
+    (no Long House here) gets the normal, fully narrow crisis menu, same as
+    before this fix."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "tribal_synapse"
+    # cooking_learned stays False, long_houses_built stays 0 -- BUILD_KITCHEN not reachable
+    tribe.population = 10
+    tribe.food = 1
+    tribe.settled_at_cycle = 0
+    sim.cycle = 100
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert tribe.food_crisis_active is True
+    assert "BUILD_KITCHEN" not in ctx["available_actions"]
+
+
 def test_kitchen_nudge_stays_quiet_before_it_is_actually_reachable():
     """Same 'never dangle' reasoning as the PLANT_CROP nudge -- no point
     naming a fix the tribe can't actually reach this cycle."""

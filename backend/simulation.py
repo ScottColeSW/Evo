@@ -3064,7 +3064,27 @@ class Simulation:
             # Fail-open guard: never cut the menu down to nothing (e.g. an
             # unusual pre-settlement gating combination) -- a soft-lock is worse
             # than an occasional bad choice getting through.
-            survival_only = [a for a in available_actions if a in SURVIVAL_CRISIS_ACTIONS]
+            #
+            # Explicit live-run finding, 2026-09-09: "The are not building a
+            # kitchen still." Ground truth: the crisis nudge (survival_bias,
+            # built earlier in this same function, before available_actions
+            # even exists) already tells the tribe "Building a Kitchen would
+            # make this food security permanent" the instant food_crisis_active
+            # flips True -- the exact same HUNGER_CRITICAL_CYCLES_LEFT
+            # threshold. Without this carve-out, that was dangling an action
+            # the very next few lines were about to strip from the menu -- the
+            # one moment the nudge fires is also the one moment BUILD_KITCHEN
+            # becomes unreachable. BUILD_KITCHEN costs only wood/stone, never
+            # the scarce resource actually in crisis, so keeping it choosable
+            # doesn't undermine why the menu narrows in the first place -- same
+            # shape as wall_lock_long_house_credits' own carve-out for
+            # BUILD_LONG_HOUSE just above. Membership in available_actions here
+            # already means every real prerequisite (cooking_learned, a Long
+            # House, affordability) is genuinely met, not just hoped for.
+            crisis_allowed = SURVIVAL_CRISIS_ACTIONS | (
+                {"BUILD_KITCHEN"} if "BUILD_KITCHEN" in available_actions else set()
+            )
+            survival_only = [a for a in available_actions if a in crisis_allowed]
             if survival_only:
                 available_actions = survival_only
             else:
