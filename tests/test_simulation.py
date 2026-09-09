@@ -5710,6 +5710,7 @@ def test_top_era_narrows_the_menu_to_endgame_resolution_when_a_rival_exists():
     tribe.era = "war_and_world_domination_era"
     tribe.wood = tribe.stone = 1000
     tribe.discovered_rivals.add("tribe_1")  # real contact -- DECLARE_WAR/ALLIANCE actually reachable
+    tribe.barracks_built = 1  # explicit request: no war/alliance without a Barracks first
 
     request, ctx = sim._prepare_turn(tribe)
 

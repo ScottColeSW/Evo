@@ -366,22 +366,66 @@ def test_upgrade_warehouse_unavailable_before_the_count_cap_is_reached():
 
 
 def test_build_barracks_is_repeatable_and_raises_battalion_capacity():
+    """Explicit request, 2026-09-09: "it auto fills with pop" -- a Barracks
+    now staffs its own capacity immediately from the tribe's existing
+    population, no separate TRAIN_BATTALION action needed for the first
+    real headcount."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.kitchen_built = True
+    tribe.keep_built = True
+    tribe.population = 500
+    tribe.wood = config.BARRACKS_WOOD_COST * 3
+    tribe.stone = config.BARRACKS_STONE_COST * 3
+
+    result = ACTION_REGISTRY["BUILD_BARRACKS"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.barracks_built == 1
+    assert tribe.battalion_size == config.BATTALION_CAPACITY_PER_BARRACKS  # auto-filled, population easily covers it
+    assert f"{config.BATTALION_CAPACITY_PER_BARRACKS}" in result
+    assert "barracks rises" in result
+
+    ACTION_REGISTRY["BUILD_BARRACKS"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.barracks_built == 2
+    assert tribe.battalion_size == config.BATTALION_CAPACITY_PER_BARRACKS * 2  # auto-fills again to the new capacity
+
+
+def test_build_barracks_auto_fill_never_exceeds_real_population():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.kitchen_built = True
+    tribe.keep_built = True
+    tribe.population = 5  # far below BATTALION_CAPACITY_PER_BARRACKS
+    tribe.wood = config.BARRACKS_WOOD_COST * 3
+    tribe.stone = config.BARRACKS_STONE_COST * 3
+
+    ACTION_REGISTRY["BUILD_BARRACKS"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.battalion_size == 5
+
+
+def test_build_barracks_requires_a_kitchen_first():
+    """Explicit request, 2026-09-09: "I don't think they should try to have a
+    Military before they have a Kitchen.\""""
     from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     _settle(sim, tribe)
     tribe.keep_built = True
+    tribe.kitchen_built = False
     tribe.wood = config.BARRACKS_WOOD_COST * 3
     tribe.stone = config.BARRACKS_STONE_COST * 3
 
     result = ACTION_REGISTRY["BUILD_BARRACKS"](sim, tribe, "plains", _NO_TARGET)
-    assert tribe.barracks_built == 1
-    assert f"{config.BATTALION_CAPACITY_PER_BARRACKS}" in result
-    assert "barracks rises" in result
 
-    ACTION_REGISTRY["BUILD_BARRACKS"](sim, tribe, "plains", _NO_TARGET)
-    assert tribe.barracks_built == 2
+    assert result is None
+    assert tribe.barracks_built == 0
 
 
 def test_build_barracks_requires_a_keep_first():
@@ -422,6 +466,7 @@ def test_can_afford_build_barracks_matches_the_action_itself():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     _settle(sim, tribe)
+    tribe.kitchen_built = True
     tribe.wood = config.BARRACKS_WOOD_COST
     tribe.stone = config.BARRACKS_STONE_COST
 
@@ -429,6 +474,9 @@ def test_can_afford_build_barracks_matches_the_action_itself():
 
     tribe.keep_built = True
     assert AFFORDABILITY_CHECKS["BUILD_BARRACKS"](tribe, sim.world) is True
+
+    tribe.kitchen_built = False
+    assert AFFORDABILITY_CHECKS["BUILD_BARRACKS"](tribe, sim.world) is False  # explicit request: Kitchen before Military
 
 
 def test_train_battalion_does_nothing_without_a_warrior():
@@ -3968,6 +4016,7 @@ def test_declare_alliance_sets_symmetric_stance():
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
     a.discovered_rivals.add("tribe_1")
+    a.barracks_built = 1
     sim.tribes = {"tribe_0": a, "tribe_1": b}
 
     result = ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
@@ -3976,6 +4025,34 @@ def test_declare_alliance_sets_symmetric_stance():
     assert b.stance_toward["tribe_0"] == "ALLIED"
     assert "declares an alliance" in result
     assert a.pending_cultural_crossover == "tribe_1"
+
+
+def test_declare_alliance_requires_a_barracks_first():
+    """Explicit request, 2026-09-09: "let's make sure they can't take any
+    waring or alliance type actions until they build a Barracks.\""""
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.discovered_rivals.add("tribe_1")
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    result = ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
+
+    assert "a barracks must be built" in result
+    assert a.stance_toward == {}
+
+
+def test_declare_war_requires_a_barracks_first():
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.discovered_rivals.add("tribe_1")
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    result = ACTION_REGISTRY["DECLARE_WAR"](sim, a, "plains", (51, 51))
+
+    assert "a barracks must be built" in result
+    assert a.stance_toward == {}
 
 
 def test_declare_alliance_does_not_requeue_a_crossover_while_already_allied():
@@ -3998,6 +4075,7 @@ def test_declare_war_sets_symmetric_stance():
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
     a.discovered_rivals.add("tribe_1")
+    a.barracks_built = 1
     sim.tribes = {"tribe_0": a, "tribe_1": b}
 
     result = ACTION_REGISTRY["DECLARE_WAR"](sim, a, "plains", (51, 51))
@@ -4012,9 +4090,11 @@ def test_declare_war_requires_the_rival_to_have_been_discovered():
     contact with another Tribe or Settlement" -- a rival that exists but has
     never actually been discovered (Tribe.discovered_rivals, see
     Simulation._note_rival_discovery) shouldn't be a valid target, regardless
-    of target_vector."""
+    of target_vector. A barracks already stands here so this isolates the
+    discovery gate specifically, not the separate barracks_built one."""
     sim = _bare_simulation()
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    a.barracks_built = 1
     undiscovered = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 55, 50, "#fb923c")
     sim.tribes = {"tribe_0": a, "tribe_1": undiscovered}
 
@@ -4029,6 +4109,7 @@ def test_declare_war_is_a_no_op_if_already_at_war():
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
     a.discovered_rivals.add("tribe_1")
+    a.barracks_built = 1
     a.stance_toward["tribe_1"] = "WAR"
     b.stance_toward["tribe_0"] = "WAR"
     sim.tribes = {"tribe_0": a, "tribe_1": b}
@@ -4043,6 +4124,7 @@ def test_declare_alliance_ends_a_previously_declared_war():
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
     a.discovered_rivals.add("tribe_1")
+    a.barracks_built = 1
     a.stance_toward["tribe_1"] = "WAR"
     b.stance_toward["tribe_0"] = "WAR"
     sim.tribes = {"tribe_0": a, "tribe_1": b}
@@ -4058,6 +4140,7 @@ def test_declare_alliance_ends_a_previously_declared_war():
 def test_declare_alliance_with_no_rival_tribe():
     sim = _bare_simulation()
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    a.barracks_built = 1
     sim.tribes = {"tribe_0": a}
 
     result = ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
@@ -4069,9 +4152,11 @@ def test_declare_alliance_with_no_rival_tribe():
 def test_declare_alliance_requires_the_rival_to_have_been_discovered():
     """Same discovery requirement as DECLARE_WAR (see the test above) -- a
     rival that exists but was never discovered isn't a valid ALLIANCE target
-    either, no matter how target_vector is aimed."""
+    either, no matter how target_vector is aimed. A barracks already stands
+    here so this isolates the discovery gate specifically."""
     sim = _bare_simulation()
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    a.barracks_built = 1
     undiscovered = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 55, 50, "#fb923c")
     sim.tribes = {"tribe_0": a, "tribe_1": undiscovered}
 
@@ -4084,6 +4169,7 @@ def test_declare_alliance_requires_the_rival_to_have_been_discovered():
 def test_declare_stance_picks_the_nearest_rival_not_the_first():
     sim = _bare_simulation()
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    a.barracks_built = 1
     far = Tribe("tribe_1", "Far Tribe", "gemma2:2b", 90, 90, "#fb923c")
     near = Tribe("tribe_2", "Near Tribe", "gemma2:2b", 52, 52, "#34d399")
     a.discovered_rivals.update({"tribe_1", "tribe_2"})

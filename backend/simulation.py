@@ -536,8 +536,16 @@ AFFORDABILITY_CHECKS = {
     # Military branch, step 2 (plan file valiant-forging-falcon.md) -- real
     # prerequisite (Keep) AND cost checked together, same shape BUILD_SAWMILL/
     # BUILD_QUARRY/BUILD_TANNERY already use.
+    #
+    # Explicit request, 2026-09-09: "I don't think they should try to have a
+    # Military before they have a Kitchen." kitchen_built is the single real
+    # entry point into the whole Military branch -- everything else
+    # (NAME_WARRIOR, TRAIN_BATTALION, DECLARE_WAR/DECLARE_ALLIANCE) flows
+    # from a Barracks existing, so gating just this one action keeps feeding
+    # the tribe the real priority over arming it.
     "BUILD_BARRACKS": lambda t, w: (
-        t.keep_built and t.wood >= config.BARRACKS_WOOD_COST and t.stone >= config.BARRACKS_STONE_COST
+        t.kitchen_built and t.keep_built
+        and t.wood >= config.BARRACKS_WOOD_COST and t.stone >= config.BARRACKS_STONE_COST
         and _can_place(t, w, "barracks")
     ),
     # Military branch, steps 3 and 5 (plan file valiant-forging-falcon.md) --
@@ -556,6 +564,20 @@ AFFORDABILITY_CHECKS = {
                 and t.battalion_readiness < 1.0 and t.food >= config.BATTALION_READINESS_UPKEEP_FOOD_COST)
         )
     ),
+    # Explicit request, 2026-09-09: "let's make sure they can't take any
+    # waring or alliance type actions until they build a Barracks." Real
+    # military commitment (or at least the roof over one) before either a
+    # formal war or a formal peace -- neither DECLARE_WAR nor DECLARE_
+    # ALLIANCE had any AFFORDABILITY_CHECKS entry at all before this (the
+    # "no rival encountered" rejection lived entirely inside each action
+    # body, via _nearest_rival) -- now hidden from the menu outright until
+    # a Barracks exists, the same "never dangle a guaranteed no-op" shape
+    # every other real prerequisite in this table already follows.
+    # DECLARE_ALLIANCE also doubles as suing for peace out of a declared
+    # war (see its own docstring) -- no soft-lock risk here, since a tribe
+    # can only ever have reached WAR in the first place via this same gate.
+    "DECLARE_WAR": lambda t, w: t.barracks_built > 0,
+    "DECLARE_ALLIANCE": lambda t, w: t.barracks_built > 0,
     # long_houses_built + long_house_upgrades, not long_houses_built alone --
     # explicit request, 2026-09-09: "modify long houses to scale like
     # warehouse." Real builds cap at LONG_HOUSE_MAX_COUNT (5); Fortress/

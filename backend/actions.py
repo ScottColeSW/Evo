@@ -878,8 +878,24 @@ def _build_barracks(sim, tribe, biome, target):
     Gated on tribe.keep_built, not just affordability -- continues the
     existing Wall -> Long House -> Keep -> Fortress/Castle defensive ladder
     rather than sitting unconnected to it (Barracks branches off Keep, the
-    same way Fortress/Castle do)."""
-    if not tribe.keep_built:
+    same way Fortress/Castle do).
+
+    Explicit request, 2026-09-09: "I don't think they should try to have a
+    Military before they have a Kitchen" -- also gated on kitchen_built, the
+    real entry point into this whole branch (see this action's own
+    AFFORDABILITY_CHECKS entry, which mirrors this exactly).
+
+    Explicit request: "only allow either option [DECLARE_WAR/DECLARE_
+    ALLIANCE] after both have a Barracks (it auto fills with pop)." A
+    Barracks now staffs its own capacity immediately from the tribe's
+    existing population -- no separate TRAIN_BATTALION action, food cost, or
+    named Warrior needed just to reach a first real headcount (confirmed via
+    two independent live runs that NAME_WARRIOR/BUILD_BARRACKS/
+    TRAIN_BATTALION had never once fired together in practice). TRAIN_
+    BATTALION still matters afterward: growing the roster further once
+    capacity rises again (another Barracks), and readiness upkeep once at
+    full strength (see its own docstring)."""
+    if not tribe.kitchen_built or not tribe.keep_built:
         return None
     if tribe.wood < config.BARRACKS_WOOD_COST or tribe.stone < config.BARRACKS_STONE_COST:
         return None
@@ -891,9 +907,10 @@ def _build_barracks(sim, tribe, biome, target):
     w, h = config.BUILDING_FOOTPRINTS["barracks"]
     architect.record_building(tribe, "barracks", slot[0], slot[1], w, h, sim.cycle)
     tribe.barracks_built += 1
-    sim._award_trophy(tribe, "Drillmaster")
     capacity = config.BATTALION_CAPACITY_PER_BARRACKS * tribe.barracks_built
-    return f"a barracks rises -- a Battalion can grow to {capacity} strong once a Warrior trains one"
+    tribe.battalion_size = max(tribe.battalion_size, min(capacity, tribe.population))
+    sim._award_trophy(tribe, "Drillmaster")
+    return f"a barracks rises, staffed at {tribe.battalion_size} strong from the tribe's own population -- a Battalion can grow to {capacity} strong in total"
 
 
 def _train_battalion(sim, tribe, biome, target):
@@ -2518,7 +2535,17 @@ def _declare_alliance(sim, tribe, biome, target):
     doubles as suing for peace out of a declared war (the same action either way,
     simpler than a separate CEASEFIRE verb for what's mechanically the same state
     change). State-only: this doesn't itself change RAID/TRADE odds, just gives the
-    tribe (and its rival) a real, persistent fact to reason from."""
+    tribe (and its rival) a real, persistent fact to reason from.
+
+    Explicit request, 2026-09-09: "let's make sure they can't take any waring
+    or alliance type actions until they build a Barracks." Real guard here,
+    not just the menu-filtering AFFORDABILITY_CHECKS entry -- same
+    belt-and-suspenders shape _build_kitchen's own cooking_learned/
+    long_houses_built check already uses. No soft-lock risk for suing for
+    peace: a tribe can only ever have reached WAR in the first place via
+    this same barracks_built gate."""
+    if tribe.barracks_built <= 0:
+        return "a barracks must be built before any formal stance toward a rival tribe is worth declaring"
     tx, ty = target
     rival = _nearest_rival(sim, tribe, tx, ty)
     if rival is None:
@@ -2540,7 +2567,10 @@ def _declare_alliance(sim, tribe, biome, target):
 
 def _declare_war(sim, tribe, biome, target):
     """The hostile counterpart to _declare_alliance -- same symmetric, state-only
-    shape."""
+    shape, including the same explicit barracks_built guard (see _declare_
+    alliance's own docstring)."""
+    if tribe.barracks_built <= 0:
+        return "a barracks must be built before any formal stance toward a rival tribe is worth declaring"
     tx, ty = target
     rival = _nearest_rival(sim, tribe, tx, ty)
     if rival is None:
@@ -2714,7 +2744,7 @@ ACTION_DESCRIPTIONS = {
     "EXPEL_RAIDERS_FROM_TERRITORY": "Turn the whole population out to drive off raiders currently approaching (only possible while raiders are actually inbound). A win seizes real plunder and wins over stragglers, scaled by your own population -- and the raiders are cast off elsewhere, not gone for good. A loss costs people and supplies, but doesn't end the fight: anger fuels an immediate second and third wave in the same breath, each cheaper in reward and costlier in lives than the last.",
     "CLEAR_TERRITORY": "Sweep every raider camp near the territory boundary (a little past the boundary line itself, not just strictly inside it) -- only possible while one is actually camped there. Real construction (walls and every building but a basic fire) is blocked until this is done, so a fresh settlement isn't left building next to a standing threat.",
     "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. An unaffiliated minor settlement near target_vector can also be traded with -- smaller and one-sided (nothing is given up), but it never depletes the way raiding one does. Does nothing if neither is there.",
-    "DECLARE_ALLIANCE": "Declare a lasting alliance with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember, not a one-time exchange. Also ends a war you'd previously declared with that same rival. Does nothing if no rival tribe exists.",
-    "DECLARE_WAR": "Declare a lasting state of war with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember. Does not attack them directly (see RAID for that); this only sets how the two tribes now stand. Does nothing if no rival tribe exists, or if already at war with them.",
+    "DECLARE_ALLIANCE": "Declare a lasting alliance with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember, not a one-time exchange. Also ends a war you'd previously declared with that same rival. Only possible once a Barracks stands. Does nothing if no rival tribe exists.",
+    "DECLARE_WAR": "Declare a lasting state of war with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember. Does not attack them directly (see RAID for that); this only sets how the two tribes now stand. Only possible once a Barracks stands. Does nothing if no rival tribe exists, or if already at war with them.",
     "SEND_TRADE_EMISSARY": "Reach out to open trade with a rival tribe already in contact (a much longer reach than TRADE's tight radius, but requires the rival to have actually been encountered before -- same requirement as ALLIANCE/DECLARE_WAR). An unaffiliated minor settlement near target_vector can also be traded with, the same as TRADE -- safer than RAIDing it, and it never depletes the way raiding does. Instant: goods exchange immediately if either is found.",
 }
