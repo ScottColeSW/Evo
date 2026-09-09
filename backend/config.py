@@ -1787,7 +1787,29 @@ CREATED_OBJECT_POPULATION_BONUS = 3
 # ordinary repelled raid, since this is a full campaign, not a hit-and-run.
 DECLARE_CONQUEST_WOOD_COST = 100
 DECLARE_CONQUEST_STONE_COST = 100
-DECLARE_CONQUEST_FAILURE_POPULATION_LOSS = 5
+
+# Explicit request, 2026-09-09: "I do want a play by play blows, meters
+# falling, informational popup for only the one and only WAR... Yes, real
+# loss." Redesigned from a single instant dice roll into a bounded war of
+# attrition -- each round rolls the same population-share/Might-adjusted
+# chance DECLARE_CONQUEST always used, but now the loser of THAT round
+# takes a real, permanent population hit (and the round's winner takes a
+# smaller one too -- "meters falling" plural, not just the loser's) instead
+# of the whole campaign resolving on one roll. Ends the moment either side
+# is fought down to DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION of its OWN
+# starting population -- "we can 'win' and absorb the last 10% or so of the
+# remaining pop" -- and _merge_tribes absorbs the loser's survivors and
+# stockpiles into the winner exactly like it already does for an ordinary
+# RAID reducing someone to zero. Symmetric by design: the side that
+# initiated the campaign can lose it all too, not just pay a bounded
+# penalty -- a real reason "to build up their Might with Training" first,
+# not just a nice-to-have. A fight that never breaks either side within
+# DECLARE_CONQUEST_MAX_ROUNDS ends in a costly stalemate -- no merge,
+# both sides keep whatever they have left.
+DECLARE_CONQUEST_MAX_ROUNDS = 6
+DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION = 0.10
+DECLARE_CONQUEST_ROUND_LOSS_FRACTION_LOSER = 0.30
+DECLARE_CONQUEST_ROUND_LOSS_FRACTION_WINNER = 0.08
 
 # Bronze Age counter-offensive (backend/actions.py._strike_raider_camp): a tribe that
 # has scouted a raider camp (raider_sightings) can strike it directly once organized

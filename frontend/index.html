@@ -143,6 +143,31 @@
   #btn-game-over-quit { background: #7f1d1d; color: #fecaca; }
   #btn-game-over-quit:hover { background: #991b1b; }
 
+  /* Battle popup: DECLARE_CONQUEST's multi-round war of attrition, played back
+     round by round -- see backend/actions.py's _declare_conquest docstring. */
+  #battle-splash { position: fixed; inset: 0; background: radial-gradient(circle at 50% 0%, #3a1b1b 0%, rgba(9,9,13,0.98) 55%); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; padding: 32px 24px; }
+  #battle-splash.hidden { display: none; }
+  #battle-splash .battle-wrap { width: 100%; max-width: 720px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  #battle-splash .battle-title { font-size: 34px; font-weight: 900; letter-spacing: 3px; color: #fca5a5; text-shadow: 0 0 18px rgba(248,113,113,0.5); }
+  #battle-splash .battle-round-label { font-size: 13px; color: #e2e2e7; letter-spacing: 0.4px; min-height: 18px; text-align: center; }
+  #battle-splash .battle-columns { width: 100%; display: flex; align-items: center; gap: 18px; }
+  #battle-splash .battle-side { flex: 1; background: rgba(0,0,0,0.35); border: 1px solid #3a2a2a; border-radius: 8px; padding: 14px 16px; }
+  #battle-splash .battle-vs { font-size: 15px; font-weight: 800; color: #7c7c94; }
+  #battle-splash .battle-side-name { font-size: 15px; font-weight: 700; color: #fde68a; margin-bottom: 10px; text-align: center; }
+  #battle-splash .battle-meter-label { font-size: 9px; color: #93a0c7; letter-spacing: 0.5px; text-transform: uppercase; margin-top: 8px; }
+  #battle-splash .battle-meter { width: 100%; height: 12px; background: #1a1a24; border-radius: 6px; overflow: hidden; margin-top: 3px; }
+  #battle-splash .battle-meter-fill { height: 100%; border-radius: 6px; transition: width 0.6s ease; }
+  #battle-splash .battle-meter-fill.pop { background: linear-gradient(90deg, #34d399, #6ee7b7); }
+  #battle-splash .battle-meter-fill.might { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+  #battle-splash .battle-meter-value { font-size: 11px; color: #c7c7d1; margin-top: 2px; text-align: right; }
+  #battle-splash .battle-log { width: 100%; max-height: 130px; overflow-y: auto; background: rgba(0,0,0,0.3); border: 1px solid #2a2a3a; border-radius: 6px; padding: 10px 14px; font-size: 11px; color: #c7d2fe; line-height: 1.6; font-family: monospace; }
+  #battle-splash .battle-log div.attacker-line { color: #6ee7b7; }
+  #battle-splash .battle-log div.defender-line { color: #fca5a5; }
+  #battle-splash .battle-outcome { font-size: 16px; font-weight: 700; color: #fde68a; text-align: center; }
+  #battle-splash .battle-outcome.hidden, #battle-splash .battle-actions.hidden { display: none; }
+  #battle-splash .battle-actions button { padding: 10px 26px; font-size: 13px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; letter-spacing: 0.5px; background: #4338ca; color: #e0e7ff; }
+  #battle-splash .battle-actions button:hover { background: #4f46e5; }
+
   #icon-key { position: absolute; top: 12px; right: 12px; width: 240px; max-height: calc(100% - 24px); background: rgba(17,17,17,0.95); border: 2px solid #2a2a3a; border-radius: 6px; z-index: 15; display: flex; flex-direction: column; }
   #icon-key.hidden { display: none; }
   .icon-key-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #2a2a3a; font-weight: bold; font-size: 13px; color: #e2e8f0; flex-shrink: 0; }
@@ -308,6 +333,43 @@
           <div class="game-over-actions">
             <button id="btn-try-again">TRY AGAIN</button>
             <button id="btn-game-over-quit">QUIT</button>
+          </div>
+        </div>
+      </div>
+      <!-- Explicit request, 2026-09-09: "I do want a play by play blows, meters
+           falling, informational popup for only the one and only WAR." Shown
+           once DECLARE_CONQUEST's multi-round battle (backend/actions.py's
+           _declare_conquest) lands a "tribe_conquest_battle" encounter --
+           the one climactic top-era war, not the routine RAID skirmishes. -->
+      <div id="battle-splash" class="hidden">
+        <div class="battle-wrap">
+          <div class="battle-title">⚔️ WAR</div>
+          <div class="battle-round-label" id="battle-round-label">Forces are mustering...</div>
+          <div class="battle-columns">
+            <div class="battle-side" id="battle-side-attacker">
+              <div class="battle-side-name" id="battle-attacker-name"></div>
+              <div class="battle-meter-label">Population</div>
+              <div class="battle-meter"><div class="battle-meter-fill pop" id="battle-attacker-pop-fill"></div></div>
+              <div class="battle-meter-value" id="battle-attacker-pop-value"></div>
+              <div class="battle-meter-label">Might</div>
+              <div class="battle-meter"><div class="battle-meter-fill might" id="battle-attacker-might-fill"></div></div>
+              <div class="battle-meter-value" id="battle-attacker-might-value"></div>
+            </div>
+            <div class="battle-vs">VS</div>
+            <div class="battle-side" id="battle-side-defender">
+              <div class="battle-side-name" id="battle-defender-name"></div>
+              <div class="battle-meter-label">Population</div>
+              <div class="battle-meter"><div class="battle-meter-fill pop" id="battle-defender-pop-fill"></div></div>
+              <div class="battle-meter-value" id="battle-defender-pop-value"></div>
+              <div class="battle-meter-label">Might</div>
+              <div class="battle-meter"><div class="battle-meter-fill might" id="battle-defender-might-fill"></div></div>
+              <div class="battle-meter-value" id="battle-defender-might-value"></div>
+            </div>
+          </div>
+          <div class="battle-log" id="battle-log"></div>
+          <div class="battle-outcome hidden" id="battle-outcome"></div>
+          <div class="battle-actions hidden" id="battle-actions">
+            <button id="btn-battle-close">CONTINUE</button>
           </div>
         </div>
       </div>
@@ -629,6 +691,7 @@ function startSimulation(tribes, immortalCycles) {
       checkChiefElections(latestState);
       checkCelebrations(latestState);
       checkRaids(latestState);
+      checkConquestBattle(latestState);
       checkGameOver(latestState);
       updateSidebar(latestState);
     } catch (err) {
@@ -788,6 +851,101 @@ document.getElementById("btn-game-over-quit").addEventListener("click", () => {
   }
   location.reload();
 });
+
+/* ---------- Battle popup: DECLARE_CONQUEST's multi-round war of attrition --
+   see backend/actions.py's _declare_conquest for the mechanic itself. Unlike
+   heldEncounters' brief map pins (raids, lightning strikes -- routine events
+   with dozens of occurrences a run), this is "only for that last climactic
+   ending" per the explicit request, so it gets its own full-screen animated
+   replay instead of a fleeting label. recent_encounters is emptied every
+   backend cycle (Simulation.step's reset), so any "tribe_conquest_battle"
+   entry seen here is always freshly new -- same reasoning heldEncounters
+   above already relies on. */
+
+let battleAnimationTimer = null;
+
+function checkConquestBattle(state) {
+  const entry = (state.recent_encounters || []).find(e => e.kind === "tribe_conquest_battle");
+  if (entry) showBattleSplash(entry.battle);
+}
+
+function battleLogLineForRound(battle, round) {
+  const winnerName = round.attacker_won ? battle.attacker_name : battle.defender_name;
+  const cls = round.attacker_won ? "attacker-line" : "defender-line";
+  return `<div class="${cls}">Round ${round.round}: ${escapeHtml(winnerName)} strikes true -- `
+    + `${escapeHtml(battle.attacker_name)} ${round.attacker_population} / ${escapeHtml(battle.defender_name)} ${round.defender_population}</div>`;
+}
+
+function renderBattleMeters(battle, attackerPop, defenderPop) {
+  const attackerPct = Math.max(0, Math.min(100, (attackerPop / battle.attacker_start_population) * 100));
+  const defenderPct = Math.max(0, Math.min(100, (defenderPop / battle.defender_start_population) * 100));
+  document.getElementById("battle-attacker-pop-fill").style.width = `${attackerPct}%`;
+  document.getElementById("battle-defender-pop-fill").style.width = `${defenderPct}%`;
+  document.getElementById("battle-attacker-pop-value").textContent = `${attackerPop} / ${battle.attacker_start_population}`;
+  document.getElementById("battle-defender-pop-value").textContent = `${defenderPop} / ${battle.defender_start_population}`;
+}
+
+const BATTLE_ROUND_INTERVAL_MS = 900;
+
+function showBattleSplash(battle) {
+  if (battleAnimationTimer) clearInterval(battleAnimationTimer);
+
+  document.getElementById("battle-attacker-name").textContent = battle.attacker_name;
+  document.getElementById("battle-defender-name").textContent = battle.defender_name;
+  const maxMight = Math.max(1, battle.attacker_might, battle.defender_might);
+  document.getElementById("battle-attacker-might-fill").style.width = `${(battle.attacker_might / maxMight) * 100}%`;
+  document.getElementById("battle-defender-might-fill").style.width = `${(battle.defender_might / maxMight) * 100}%`;
+  document.getElementById("battle-attacker-might-value").textContent = battle.attacker_might.toFixed(1);
+  document.getElementById("battle-defender-might-value").textContent = battle.defender_might.toFixed(1);
+  document.getElementById("battle-round-label").textContent = "Forces are mustering...";
+  document.getElementById("battle-log").innerHTML = "";
+  document.getElementById("battle-outcome").classList.add("hidden");
+  document.getElementById("battle-actions").classList.add("hidden");
+  renderBattleMeters(battle, battle.attacker_start_population, battle.defender_start_population);
+  document.getElementById("battle-splash").classList.remove("hidden");
+
+  let i = 0;
+  battleAnimationTimer = setInterval(() => {
+    if (i >= battle.rounds.length) {
+      clearInterval(battleAnimationTimer);
+      battleAnimationTimer = null;
+      finishBattleSplash(battle);
+      return;
+    }
+    const round = battle.rounds[i];
+    document.getElementById("battle-round-label").textContent = `Round ${round.round} of ${battle.rounds.length}`;
+    renderBattleMeters(battle, round.attacker_population, round.defender_population);
+    const log = document.getElementById("battle-log");
+    log.insertAdjacentHTML("beforeend", battleLogLineForRound(battle, round));
+    log.scrollTop = log.scrollHeight;
+    i++;
+  }, BATTLE_ROUND_INTERVAL_MS);
+}
+
+const BATTLE_OUTCOME_TEXT = {
+  attacker_wins: b => `👑 ${escapeHtml(b.attacker_name)} breaks ${escapeHtml(b.defender_name)} and wins outright -- total conquest!`,
+  defender_wins: b => `🛡️ ${escapeHtml(b.defender_name)} repels the invasion and absorbs ${escapeHtml(b.attacker_name)} instead!`,
+  stalemate: b => `⚖️ Neither side breaks -- a costly stalemate, both battered but standing.`,
+};
+
+function finishBattleSplash(battle) {
+  document.getElementById("battle-round-label").textContent = "The dust settles...";
+  const outcomeEl = document.getElementById("battle-outcome");
+  outcomeEl.textContent = "";
+  outcomeEl.innerHTML = (BATTLE_OUTCOME_TEXT[battle.outcome] || (() => ""))(battle);
+  outcomeEl.classList.remove("hidden");
+  document.getElementById("battle-actions").classList.remove("hidden");
+}
+
+function hideBattleSplash() {
+  if (battleAnimationTimer) {
+    clearInterval(battleAnimationTimer);
+    battleAnimationTimer = null;
+  }
+  document.getElementById("battle-splash").classList.add("hidden");
+}
+
+document.getElementById("btn-battle-close").addEventListener("click", hideBattleSplash);
 
 /* ---------- Spawn splash: covers the warm-up window while Simulation.create()
    runs VRAM checks and every tribe's founding chief election, entirely before the

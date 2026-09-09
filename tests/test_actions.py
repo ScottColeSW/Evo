@@ -2229,6 +2229,13 @@ def test_created_object_celebration_discount_lowers_celebration_cost():
 
 
 def test_declare_conquest_win_absorbs_the_rival_outright():
+    """Redesigned 2026-09-09 into a multi-round war of attrition -- the
+    attacker must actually break the defender down to
+    DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION of its own starting
+    population, not win a single roll. The per-round loss fraction is
+    patched up here so the compounding math clears that threshold well
+    within DECLARE_CONQUEST_MAX_ROUNDS, keeping the test deterministic
+    regardless of exact rounding."""
     from unittest import mock
 
     from backend import config
@@ -2237,21 +2244,26 @@ def test_declare_conquest_win_absorbs_the_rival_outright():
     attacker = Tribe("tribe_0", "Strong Tribe", "gemma2:2b", 50, 50, "#c084fc")
     defender = Tribe("tribe_1", "Weak Tribe", "gemma2:2b", 51, 50, "#fb923c")
     attacker.population = 100
-    defender.population = 5
+    defender.population = 100
     attacker.wood = config.DECLARE_CONQUEST_WOOD_COST
     attacker.stone = config.DECLARE_CONQUEST_STONE_COST
     sim.tribes = {attacker.id: attacker, defender.id: defender}
 
-    with mock.patch("backend.actions.random.random", return_value=0.0):  # guarantees the win roll
+    with mock.patch("backend.actions.random.random", return_value=0.0), \
+            mock.patch("backend.config.DECLARE_CONQUEST_ROUND_LOSS_FRACTION_LOSER", 0.5):
         result = ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
 
     assert defender.id not in sim.tribes  # fully absorbed, not just weakened
     assert attacker.conquests_won == 1
     assert "Weak Tribe" in attacker.conquered_tribe_names
-    assert "conquest" in result.lower()
+    assert "conquest" in result.lower() or "wins outright" in result.lower()
 
 
-def test_declare_conquest_loss_costs_more_than_an_ordinary_raid_failure():
+def test_declare_conquest_loss_can_cost_the_attacker_everything():
+    """Symmetric by design: the side that started the campaign can itself be
+    the one broken and absorbed if it loses the war of attrition -- a real
+    reason to build up Might with Training first, not just a bounded
+    fixed-cost gamble like the old single-roll version."""
     from unittest import mock
 
     from backend import config
@@ -2259,44 +2271,98 @@ def test_declare_conquest_loss_costs_more_than_an_ordinary_raid_failure():
     sim = _bare_simulation()
     attacker = Tribe("tribe_0", "Weak Tribe", "gemma2:2b", 50, 50, "#c084fc")
     defender = Tribe("tribe_1", "Strong Tribe", "gemma2:2b", 51, 50, "#fb923c")
-    attacker.population = 5
+    attacker.population = 100
     defender.population = 100
     attacker.wood = config.DECLARE_CONQUEST_WOOD_COST
     attacker.stone = config.DECLARE_CONQUEST_STONE_COST
     sim.tribes = {attacker.id: attacker, defender.id: defender}
-    population_before = attacker.population
 
-    with mock.patch("backend.actions.random.random", return_value=0.999):  # guarantees the loss roll
+    with mock.patch("backend.actions.random.random", return_value=0.999), \
+            mock.patch("backend.config.DECLARE_CONQUEST_ROUND_LOSS_FRACTION_LOSER", 0.5):
         result = ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
 
-    assert attacker.population == population_before - config.DECLARE_CONQUEST_FAILURE_POPULATION_LOSS
-    assert defender.id in sim.tribes  # still around, not absorbed
-    assert "failed" in result.lower()
+    assert attacker.id not in sim.tribes  # the attacker itself was broken and absorbed
+    assert defender.conquests_won == 1
+    assert "Weak Tribe" in defender.conquered_tribe_names
+    assert "absorbs" in result.lower()
 
 
-def test_declare_conquest_win_chance_is_boosted_by_a_stronger_battalion():
-    """Military branch, step 6: Might layers a bounded adjustment on top of
-    the population-share win chance -- never a replacement for it."""
+def test_declare_conquest_stalemate_when_neither_side_breaks():
+    """If the round cap is exhausted without either side crossing the defeat
+    threshold, both sides keep whatever they have left -- no merge."""
     from unittest import mock
 
     from backend import config
 
     sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Tribe A", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Tribe B", "gemma2:2b", 51, 50, "#fb923c")
+    attacker.population = 100
+    defender.population = 100
+    attacker.wood = config.DECLARE_CONQUEST_WOOD_COST
+    attacker.stone = config.DECLARE_CONQUEST_STONE_COST
+    sim.tribes = {attacker.id: attacker, defender.id: defender}
+
+    with mock.patch("backend.actions.random.random", return_value=0.0), \
+            mock.patch("backend.config.DECLARE_CONQUEST_ROUND_LOSS_FRACTION_LOSER", 0.01), \
+            mock.patch("backend.config.DECLARE_CONQUEST_ROUND_LOSS_FRACTION_WINNER", 0.01):
+        result = ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
+
+    assert attacker.id in sim.tribes and defender.id in sim.tribes  # nobody absorbed
+    assert "stalemate" in result.lower()
+
+
+def test_declare_conquest_attaches_a_round_by_round_battle_record():
+    """The frontend replays this as a "play by play blows, meters falling"
+    popup -- confirm the structured record actually lands on
+    recent_encounters, not just the one-line result string."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Strong Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Weak Tribe", "gemma2:2b", 51, 50, "#fb923c")
+    attacker.population = 100
+    defender.population = 100
+    attacker.wood = config.DECLARE_CONQUEST_WOOD_COST
+    attacker.stone = config.DECLARE_CONQUEST_STONE_COST
+    sim.tribes = {attacker.id: attacker, defender.id: defender}
+
+    with mock.patch("backend.actions.random.random", return_value=0.0), \
+            mock.patch("backend.config.DECLARE_CONQUEST_ROUND_LOSS_FRACTION_LOSER", 0.5):
+        ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
+
+    entry = sim.recent_encounters[-1]
+    assert entry["kind"] == "tribe_conquest_battle"
+    battle = entry["battle"]
+    assert battle["outcome"] == "attacker_wins"
+    assert battle["attacker_name"] == "Strong Tribe"
+    assert battle["defender_name"] == "Weak Tribe"
+    assert len(battle["rounds"]) >= 1
+    first_round = battle["rounds"][0]
+    assert first_round["round"] == 1
+    assert first_round["attacker_won"] is True
+    assert "attacker_population" in first_round and "defender_population" in first_round
+
+
+def test_declare_conquest_win_chance_is_boosted_by_a_stronger_battalion():
+    """Military branch, step 6: Might layers a bounded adjustment on top of
+    the population-share win chance -- never a replacement for it. Tested
+    directly against the per-round chance function rather than a full
+    multi-round battle, since Might shifts as population changes round to
+    round and a full-battle assertion would be fragile to that."""
+    from backend.actions import _might_adjusted_win_chance
+
     attacker = Tribe("tribe_0", "Armed Tribe", "gemma2:2b", 50, 50, "#c084fc")
     defender = Tribe("tribe_1", "Even Tribe", "gemma2:2b", 51, 50, "#fb923c")
     attacker.population = 100
     defender.population = 100  # even population -- base win chance is exactly 0.5
     attacker.battalion_size = 50  # overwhelming Might advantage; defender has none
-    attacker.wood = config.DECLARE_CONQUEST_WOOD_COST
-    attacker.stone = config.DECLARE_CONQUEST_STONE_COST
-    sim.tribes = {attacker.id: attacker, defender.id: defender}
 
-    # A roll that would fail under the unmodified 0.5 base chance, but should
-    # succeed once Might's modifier is added on top.
-    with mock.patch("backend.actions.random.random", return_value=0.55):
-        ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
+    boosted_chance = _might_adjusted_win_chance(attacker, defender, 0.5)
 
-    assert defender.id not in sim.tribes  # would have failed at 0.55 under the old, unadjusted formula
+    assert boosted_chance > 0.5
 
 
 def test_declare_conquest_finds_no_rival_returns_a_note_not_a_crash():

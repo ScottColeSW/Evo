@@ -1400,22 +1400,38 @@ def _declare_conquest(sim, tribe, biome, target):
     """War and World Domination era's decisive war action -- unlike ordinary
     RAID's gradual population-siphon (several successful raids to fully
     absorb a rival), a tribe that's reached this era can commit everything
-    to one all-in campaign: win, and the rival is fully and immediately
-    absorbed (Simulation._merge_tribes), not just weakened. Same
-    population-share win chance as RAID (boosted by a combat_boost created
-    object, same as RAID itself now gets), now also layered with a bounded
-    Might-based adjustment (_might_adjusted_win_chance -- see its own
-    docstring), but a much steeper population cost on failure, since this is
-    a full campaign, not a raiding party's hit-and-run.
+    to one all-in campaign against a real, known rival.
 
-    Originally never fired even once across every recorded run -- confirmed
-    via real run data, before the Military branch (plan file
-    valiant-forging-falcon.md) existed at all. Working theory (2026-09-07):
-    it was an isolated, all-or-nothing gamble with nothing feeding into it --
-    no real military to visibly build up first. The Military branch
-    (Warrior, Barracks, a trained Battalion, compute_might) is that fix --
-    this action finally has a real payoff to build toward, not just a bare
-    population gamble."""
+    Originally a single instant dice roll (win outright and absorb the
+    rival via Simulation._merge_tribes, or fail at a small fixed population
+    cost) -- confirmed via real run data it never fired even once across
+    every recorded run before the Military branch existed, and working
+    theory (2026-09-07) was that it read as an isolated, all-or-nothing
+    gamble with nothing feeding into it.
+
+    Explicit request, 2026-09-09, for a live "play by play blows, meters
+    falling" popup once a fresh run reaches this same climactic action
+    again: "Yes, real loss... we can 'win' and absorb the last 10% or so of
+    the remaining pop." Redesigned into a bounded war of attrition
+    (config.DECLARE_CONQUEST_MAX_ROUNDS rounds) -- each round rolls the
+    same population-share/Might-adjusted chance the old single roll always
+    used, but now the loser of THAT round takes a real, permanent
+    population hit (config.DECLARE_CONQUEST_ROUND_LOSS_FRACTION_LOSER) and
+    the round's winner takes a smaller one too
+    (..._WINNER) -- "meters falling" plural, not just one side's. Ends the
+    moment either side is fought down to
+    config.DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION of its OWN starting
+    population, and that side's survivors and stockpiles are fully absorbed
+    into the other via _merge_tribes -- symmetric by design: the tribe that
+    started this campaign can lose everything too, a real reason to build
+    up Might with training first, not just a nice-to-have. A fight that
+    never breaks either side within the round cap ends in a costly
+    stalemate -- no merge, both sides keep whatever they have left.
+
+    Returns the round-by-round record in the "battle" key of the
+    recent_encounters entry this appends (see Simulation.recent_encounters'
+    own "kind": "tribe_conquest_battle" -- the frontend replays this as an
+    animated popup), not just a one-line result string."""
     tx, ty = target
     defender = None
     for other in sim.tribes.values():
@@ -1430,26 +1446,71 @@ def _declare_conquest(sim, tribe, biome, target):
         return None
     tribe.wood -= config.DECLARE_CONQUEST_WOOD_COST
     tribe.stone -= config.DECLARE_CONQUEST_STONE_COST
-    effective_population = tribe.population * (1 + _created_object_bonus(tribe, "combat_boost"))
-    attacker_win_chance = effective_population / max(1, effective_population + defender.population)
-    attacker_win_chance = _might_adjusted_win_chance(tribe, defender, attacker_win_chance)
-    if random.random() < attacker_win_chance:
-        old_name, defender_name = tribe.name, defender.name
+
+    attacker_name, defender_name = tribe.name, defender.name
+    attacker_start_population = tribe.population
+    defender_start_population = defender.population
+    attacker_might = compute_might(tribe)
+    defender_might = compute_might(defender)
+    rounds = []
+    outcome = "stalemate"
+
+    for round_number in range(1, config.DECLARE_CONQUEST_MAX_ROUNDS + 1):
+        effective_attacker_population = tribe.population * (1 + _created_object_bonus(tribe, "combat_boost"))
+        round_win_chance = effective_attacker_population / max(1, effective_attacker_population + defender.population)
+        round_win_chance = _might_adjusted_win_chance(tribe, defender, round_win_chance)
+        attacker_won_round = random.random() < round_win_chance
+        winner, loser = (tribe, defender) if attacker_won_round else (defender, tribe)
+        sim._lose_population(loser, round(loser.population * config.DECLARE_CONQUEST_ROUND_LOSS_FRACTION_LOSER), cause="conquest_round_loss")
+        sim._lose_population(winner, round(winner.population * config.DECLARE_CONQUEST_ROUND_LOSS_FRACTION_WINNER), cause="conquest_round_loss")
+        rounds.append({
+            "round": round_number, "attacker_won": attacker_won_round,
+            "attacker_population": tribe.population, "defender_population": defender.population,
+        })
+
+        if defender.extinct or defender.population <= defender_start_population * config.DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION:
+            outcome = "attacker_wins"
+            break
+        if tribe.extinct or tribe.population <= attacker_start_population * config.DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION:
+            outcome = "defender_wins"
+            break
+
+    battle_record = {
+        "attacker_name": attacker_name, "defender_name": defender_name,
+        "attacker_start_population": attacker_start_population, "defender_start_population": defender_start_population,
+        "attacker_might": attacker_might, "defender_might": defender_might,
+        "rounds": rounds, "outcome": outcome,
+    }
+
+    if outcome == "attacker_wins":
         _record_combat(tribe, "Conquest", "won")
         _record_combat(defender, "Conquest Defense", "lost")
         sim.trauma.radiate_event_wave(defender.x, defender.y, config.RAID_TRAUMA_MAGNITUDE * 2, config.RAID_TRAUMA_RADIUS)
         sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_PRIDE_MAGNITUDE * 2, config.RAID_PRIDE_RADIUS)
+        new_name = sim._merge_tribes(tribe, defender) if not defender.extinct else tribe.name
         sim.recent_encounters.append({
-            "x": defender.x, "y": defender.y, "kind": "tribe_raid",
-            "label": f"{tribe.name} conquers {defender.name}", "outcome": "won",
+            "x": defender.x, "y": defender.y, "kind": "tribe_conquest_battle",
+            "label": f"{attacker_name} conquers {defender_name}", "outcome": "won", "battle": battle_record,
         })
-        new_name = sim._merge_tribes(tribe, defender)
-        return f"declared total conquest of {defender_name} and won outright -- {old_name} becomes {new_name}!"
-    sim._lose_population(tribe, config.DECLARE_CONQUEST_FAILURE_POPULATION_LOSS, cause="conquest_failed")
+        return f"after {len(rounds)} rounds of real fighting, {attacker_name} breaks {defender_name} and wins outright -- {attacker_name} becomes {new_name}!"
+    if outcome == "defender_wins":
+        _record_combat(tribe, "Conquest", "lost")
+        _record_combat(defender, "Conquest Defense", "won")
+        sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE * 2, config.RAID_TRAUMA_RADIUS)
+        sim.trauma.radiate_event_wave(defender.x, defender.y, config.RAID_PRIDE_MAGNITUDE * 2, config.RAID_PRIDE_RADIUS)
+        new_name = sim._merge_tribes(defender, tribe) if not tribe.extinct else defender.name
+        sim.recent_encounters.append({
+            "x": defender.x, "y": defender.y, "kind": "tribe_conquest_battle",
+            "label": f"{defender_name} repels {attacker_name}'s all-in campaign and breaks them", "outcome": "lost", "battle": battle_record,
+        })
+        return f"after {len(rounds)} rounds of real fighting, {defender_name} breaks the campaign and absorbs {attacker_name} instead -- {defender_name} becomes {new_name}!"
     _record_combat(tribe, "Conquest", "lost")
     _record_combat(defender, "Conquest Defense", "won")
-    defender.history.append(f"{tribe.name}'s all-in campaign to conquer {defender.name} failed at great cost")
-    return f"the campaign to conquer {defender.name} failed -- heavy losses, nothing gained"
+    sim.recent_encounters.append({
+        "x": defender.x, "y": defender.y, "kind": "tribe_conquest_battle",
+        "label": f"{attacker_name} and {defender_name} fight to a standstill", "outcome": "stalemate", "battle": battle_record,
+    })
+    return f"after {config.DECLARE_CONQUEST_MAX_ROUNDS} brutal rounds neither side breaks -- {attacker_name}'s campaign against {defender_name} ends in a costly stalemate"
 
 
 def _plant_crop(sim, tribe, biome, target):
