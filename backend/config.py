@@ -1432,14 +1432,32 @@ MOAT_DEFENSE_BONUS = 0.08
 # population needs." Repeatable now, gated on real population need
 # (HOUSING_POPULATION_PER_LONG_HOUSE) rather than a single one-time flag -- a
 # growing tribe keeps needing more shelter, the same way farm plots keep
-# growing rather than capping at one. Still gated on the wall already being
-# complete first -- defense before shelter.
+# growing rather than capping at one.
+#
+# Explicit correction, 2026-09-09: "I'm very tempted to remove the Wall
+# restriction on it" -- dropped; Long House no longer requires the wall at
+# all. See _build_long_house's own docstring for the real-run finding this
+# was grounded in.
 LONG_HOUSE_WOOD_COST = 25
 LONG_HOUSE_STONE_COST = 20
 # Raised 8 -> 30 (explicit request: "how many people to a Long House? 30 maybe at
 # most") -- a real, human-scale capacity per building rather than a small number
 # that mostly just controlled how fast Long Houses accumulated.
 HOUSING_POPULATION_PER_LONG_HOUSE = 30
+
+# Explicit request, 2026-09-09: "modify long houses to scale like warehouse."
+# Same shape as WAREHOUSE_MAX_COUNT/UPGRADE_WAREHOUSE (real data showed a
+# warehouse count with no ceiling spiraling to 47 in one run) -- real
+# BUILD_LONG_HOUSE builds now cap here; UPGRADE_LONG_HOUSE
+# (backend/actions.py._upgrade_long_house) takes over from there, with an
+# escalating cost so it can't become the same infinite-spam problem under a
+# new name. Necessary given FORTRESS_LONG_HOUSES_REQUIRED/CASTLE_LONG_
+# HOUSES_REQUIRED below (40/70) -- no tribe should need 40-70 literal
+# buildings placed on the map to reach those tiers.
+LONG_HOUSE_MAX_COUNT = 5
+LONG_HOUSE_UPGRADE_WOOD_COST_BASE = 30
+LONG_HOUSE_UPGRADE_STONE_COST_BASE = 25
+LONG_HOUSE_UPGRADE_COST_GROWTH = 0.35
 
 # Explicit request: "'furs' can make the Long Houses more comfortable and
 # easier to build" -- Tannery Fur (TANNERY_YIELD_PER_CYCLE, tribe.
@@ -1456,24 +1474,40 @@ FUR_LONG_HOUSE_MIN_WOOD_COST = 16
 FUR_LONG_HOUSE_MIN_STONE_COST = 11
 
 # The defensive tier ladder after Long House (backend/actions.py._build_keep/
-# _build_fortress/_build_castle): explicit request -- "they can have 10 houses
-# before they build a Keep, 40 until they reach a Fortress, 70 until they can
-# build castles." Gated on tribe.long_houses_built (a real proxy for how
-# established the settlement has become) rather than era or population alone,
-# each stage requiring the previous one already standing. Each is a real,
-# additional defense bonus stacked on top of the wall's own (Simulation.
+# _build_fortress/_build_castle): explicit request (original) -- "they can
+# have 10 houses before they build a Keep, 40 until they reach a Fortress, 70
+# until they can build castles." Gated on tribe.long_houses_built PLUS
+# tribe.long_house_upgrades now (a real proxy for how established the
+# settlement has become) rather than era or population alone, each stage
+# requiring the previous one already standing. Each is a real, additional
+# defense bonus stacked on top of the wall's own (Simulation.
 # _resolve_raider_attack's RAIDER_DEFENSE_WALL_BONUS_AT_FULL_PROGRESS).
-KEEP_LONG_HOUSES_REQUIRED = 10
+#
+# Explicit correction, 2026-09-09: "lower long houses restriction to 3" --
+# real data showed the original 10 was already a steep bar even before
+# LONG_HOUSE_MAX_COUNT (5) existed; Fortress/Castle's own much higher
+# thresholds now lean on UPGRADE_LONG_HOUSE to stay reachable at all.
+KEEP_LONG_HOUSES_REQUIRED = 3
 KEEP_WOOD_COST = 30
 KEEP_STONE_COST = 35
 KEEP_DEFENSE_BONUS = 0.10
 
-FORTRESS_LONG_HOUSES_REQUIRED = 40
+# Explicit correction, 2026-09-09: "I think the costs on Fortress and Castle
+# are wrong in terms of very restricted... we need to allow it with some
+# effort not a nearly impossible goal." The original 40/70 were tuned
+# against the old unbounded (population-scaled) Long House count -- against
+# the new LONG_HOUSE_MAX_COUNT=5 cap, that would have meant 35/65
+# UPGRADE_LONG_HOUSE calls on an escalating cost curve, effectively
+# unreachable. Rescaled proportionally to the new model instead: Fortress
+# needs 3 upgrades past the real cap (8 total), Castle needs 7 (12 total)
+# -- a real, escalating-but-affordable step up from Keep's 3, not a
+# separate order of magnitude.
+FORTRESS_LONG_HOUSES_REQUIRED = 8
 FORTRESS_WOOD_COST = 50
 FORTRESS_STONE_COST = 60
 FORTRESS_DEFENSE_BONUS = 0.20
 
-CASTLE_LONG_HOUSES_REQUIRED = 70
+CASTLE_LONG_HOUSES_REQUIRED = 12
 CASTLE_WOOD_COST = 40
 CASTLE_STONE_COST = 50
 CASTLE_DEFENSE_BONUS = 0.15

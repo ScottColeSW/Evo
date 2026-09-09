@@ -450,10 +450,6 @@ def _construct_wall(sim, tribe, biome, target):
     section["progress"] += added
     if section["progress"] >= 100:
         tribe.wall_commitment_active = False
-        # User's own refinement: "allow 1 Long House per section, then once it is
-        # 100% Wall Ring 1 Layer, they can build the rest on demand" -- a banked
-        # credit so housing doesn't stall out during a long wall push.
-        tribe.wall_lock_long_house_credits += 1
         return f"the {section['direction']} wall section is complete"
     return f"the {section['direction']} wall section continues -- {section['progress']}% complete"
 
@@ -494,28 +490,30 @@ def _long_house_fur_discount(tribe) -> tuple[int, int, int]:
 
 
 def _build_long_house(sim, tribe, biome, target):
-    """Explicit request, gated on the wall already being complete first -- defense
-    before shelter. Explicit correction: "most structures they only need 1 of.
-    but house builds are dependant on population needs" -- repeatable, not a
-    one-time flag, gated each time on real population need
+    """Explicit correction: "most structures they only need 1 of. but house
+    builds are dependant on population needs" -- repeatable, not a one-time
+    flag, gated each time on real population need
     (config.HOUSING_POPULATION_PER_LONG_HOUSE) so a tribe can't spam housing it
     doesn't need. tribe.long_houses_built is also the real proxy the Keep/
     Fortress/Castle tier reads for how established this settlement has become.
 
-    User's own refinement on the wall-commitment lock (see Simulation._prepare_
-    turn): locking out housing for an entire ring's construction would stall it
-    too long, so a banked wall_lock_long_house_credits (one per section
-    completed, see _construct_wall) lets exactly one Long House through early,
-    before ring 0 is actually finished.
+    Explicit correction, 2026-09-09: "I'm very tempted to remove the Wall
+    restriction on it." Dropped outright -- confirmed via two independent
+    live runs that CONSTRUCT_WALL simply not getting chosen (not blocked,
+    just never picked) stalled a tribe's entire Long House -> Kitchen chain
+    both times, regardless of what else was fixed on the wall side. Defense
+    and shelter no longer share a single point of failure; the wall still
+    stands on its own real defensive merit, it just no longer gates
+    anything else. This retires the wall_lock_long_house_credits system
+    entirely (banked "let one through early" credits have nothing left to
+    apply to) -- see Simulation._prepare_turn and _construct_wall's own
+    updated comments.
 
     Explicit request: "'furs' can make the Long Houses more comfortable and
     easier to build" -- see _long_house_fur_discount for the actual cost math;
     furs consumed here (not just checked) so a discount can only ever be used
     once per Fur, never re-applied to a later Long House."""
-    ring0_done = bool(tribe.wall_rings) and city_layout.ring_fully_built(tribe.wall_rings[0])
-    if not ring0_done and tribe.wall_lock_long_house_credits <= 0:
-        return "the first wall ring must be finished before a long house is worth building here (or bank a credit by completing another wall section)"
-    houses_needed = max(1, -(-tribe.population // config.HOUSING_POPULATION_PER_LONG_HOUSE))
+    houses_needed = min(config.LONG_HOUSE_MAX_COUNT, max(1, -(-tribe.population // config.HOUSING_POPULATION_PER_LONG_HOUSE)))
     if tribe.long_houses_built >= houses_needed:
         return None
     wood_cost, stone_cost, furs_used = _long_house_fur_discount(tribe)
@@ -531,8 +529,6 @@ def _build_long_house(sim, tribe, biome, target):
     w, h = config.BUILDING_FOOTPRINTS["long_house"]
     architect.record_building(tribe, "long_house", slot[0], slot[1], w, h, sim.cycle)
     tribe.long_houses_built += 1
-    if not ring0_done:
-        tribe.wall_lock_long_house_credits -= 1
     fur_note = f" ({furs_used} Fur worked in, cheaper and cozier)" if furs_used else ""
     if tribe.long_houses_built == 1:
         sim._award_trophy(tribe, "Master Builder")
@@ -541,14 +537,43 @@ def _build_long_house(sim, tribe, biome, target):
     return f"another long house rises{fur_note} -- {tribe.long_houses_built} now stand"
 
 
+def _upgrade_long_house(sim, tribe, biome, target):
+    """Explicit request, 2026-09-09: "modify long houses to scale like
+    warehouse." BUILD_LONG_HOUSE stops offering itself past
+    config.LONG_HOUSE_MAX_COUNT (see its own AFFORDABILITY_CHECKS entry) --
+    this is what a settlement reaches for past that point instead, the same
+    shape actions._upgrade_warehouse already uses. Deliberately no
+    footprint/placement check, unlike a fresh build -- this expands what's
+    already standing, not a new structure competing for space.
+
+    Repeatable, but cost grows by config.LONG_HOUSE_UPGRADE_COST_GROWTH per
+    tier already banked (tribe.long_house_upgrades), so it doesn't just
+    become the same infinite-spam problem under a new name -- necessary
+    given Fortress/Castle need 40/70 long-house-equivalents, far more than
+    any tribe should ever place as literal buildings."""
+    tier = tribe.long_house_upgrades
+    wood_cost = round(config.LONG_HOUSE_UPGRADE_WOOD_COST_BASE * (1 + tier * config.LONG_HOUSE_UPGRADE_COST_GROWTH))
+    stone_cost = round(config.LONG_HOUSE_UPGRADE_STONE_COST_BASE * (1 + tier * config.LONG_HOUSE_UPGRADE_COST_GROWTH))
+    if tribe.wood < wood_cost or tribe.stone < stone_cost:
+        return None
+    tribe.wood -= wood_cost
+    tribe.stone -= stone_cost
+    tribe.long_house_upgrades += 1
+    total = tribe.long_houses_built + tribe.long_house_upgrades
+    return f"the standing long houses are expanded -- the settlement now supports {total} household{'s' if total != 1 else ''} worth of shelter"
+
+
 def _build_keep(sim, tribe, biome, target):
-    """Explicit request: "they can have 10 houses before they build a Keep."
-    First tier of the defensive ladder after Long House -- a real additional
-    defense bonus stacked on top of the wall's own (Simulation.
-    _resolve_raider_attack)."""
+    """Explicit request (original): "they can have 10 houses before they
+    build a Keep" (lowered to 3, 2026-09-09). First tier of the defensive
+    ladder after Long House -- a real additional defense bonus stacked on
+    top of the wall's own (Simulation._resolve_raider_attack). Counts
+    tribe.long_house_upgrades alongside long_houses_built, same as this
+    action's own AFFORDABILITY_CHECKS entry -- see LONG_HOUSE_MAX_COUNT's
+    own comment for why."""
     if tribe.keep_built:
         return None
-    if tribe.long_houses_built < config.KEEP_LONG_HOUSES_REQUIRED:
+    if (tribe.long_houses_built + tribe.long_house_upgrades) < config.KEEP_LONG_HOUSES_REQUIRED:
         return f"{config.KEEP_LONG_HOUSES_REQUIRED} long houses are needed before a keep is worth building here"
     if tribe.wood < config.KEEP_WOOD_COST or tribe.stone < config.KEEP_STONE_COST:
         return None
@@ -571,7 +596,7 @@ def _build_fortress(sim, tribe, biome, target):
         return None
     if not tribe.keep_built:
         return "a keep must be built before a fortress is worth building here"
-    if tribe.long_houses_built < config.FORTRESS_LONG_HOUSES_REQUIRED:
+    if (tribe.long_houses_built + tribe.long_house_upgrades) < config.FORTRESS_LONG_HOUSES_REQUIRED:
         return f"{config.FORTRESS_LONG_HOUSES_REQUIRED} long houses are needed before a fortress is worth building here"
     if tribe.wood < config.FORTRESS_WOOD_COST or tribe.stone < config.FORTRESS_STONE_COST:
         return None
@@ -596,7 +621,7 @@ def _build_castle(sim, tribe, biome, target):
         return None
     if not tribe.fortress_built:
         return "a fortress must be built before a castle is worth building here"
-    if tribe.long_houses_built < config.CASTLE_LONG_HOUSES_REQUIRED:
+    if (tribe.long_houses_built + tribe.long_house_upgrades) < config.CASTLE_LONG_HOUSES_REQUIRED:
         return f"{config.CASTLE_LONG_HOUSES_REQUIRED} long houses are needed before a castle is worth building here"
     if tribe.wood < config.CASTLE_WOOD_COST or tribe.stone < config.CASTLE_STONE_COST:
         return None
@@ -2579,6 +2604,7 @@ ACTION_REGISTRY = {
     "COOK_FOOD": _cook_food,
     "CONSTRUCT_WALL": _construct_wall,
     "BUILD_LONG_HOUSE": _build_long_house,
+    "UPGRADE_LONG_HOUSE": _upgrade_long_house,
     "BUILD_CASTLE": _build_castle,
     "BUILD_ROAD": _build_road,
     "BUILD_DOCK": _build_dock,
@@ -2643,7 +2669,8 @@ ACTION_DESCRIPTIONS = {
     "BUILD_FIRE": "Build a fire at your current tile using stored wood. Does nothing if one is already built here.",
     "COOK_FOOD": "Learn to cook -- only possible once you've successfully hunted or foraged, and successfully built a fire, at some point. A one-time skill, usable anywhere from then on: every future forage, hunt, or catch brings home three times as much food, and every future celebration feast costs less.",
     "CONSTRUCT_WALL": "Work on your wall using stored wood and stone -- a real defensive structure built up over several turns, not finished in one. Automatically does whatever the wall needs next: unlocks a new section if none is currently open, continues an unlocked section's progress (more per turn with more people to put to the work), reinforces a completed section with another tier, or -- once a whole ring is fully built and reinforced -- opens a brand new ring further out. A more complete wall meaningfully improves your odds of defending against a raider attack. Repeatable; does nothing further once maxed out.",
-    "BUILD_LONG_HOUSE": "Build a long house at your current tile using stored wood and stone -- only possible once your wall is fully complete. Repeatable as population grows: real, lasting shelter for the tribe, one house at a time.",
+    "BUILD_LONG_HOUSE": "Build a long house at your current tile using stored wood and stone -- real, lasting shelter for the tribe, one house at a time. Repeatable as population grows, up to 5; UPGRADE_LONG_HOUSE takes over from there.",
+    "UPGRADE_LONG_HOUSE": "Expand the long houses already standing to support more households -- only worth considering once 5 long houses already stand. No new structure, no placement needed. Repeatable, but each upgrade costs more than the last.",
     "BUILD_CASTLE": "Build a castle at your current tile using stored wood and stone -- only possible once a fortress stands and enough long houses have been built. A one-time, permanent structure that adds real defense on top of whatever your wall already provides.",
     "BUILD_ROAD": "Build a road at your current tile using stored wood and stone. A one-time, permanent improvement: every future scouting party, hunting party, or exploration party you send out travels faster from then on.",
     "BUILD_DOCK": "Build a dock at your current tile using stored wood -- only possible once the tribe has settled here and has already learned to fish (a real successful catch). A one-time, permanent structure: every future fish caught here pays out more from then on.",

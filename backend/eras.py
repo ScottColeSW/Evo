@@ -132,21 +132,24 @@ ERAS: tuple[Era, ...] = (
         #
         # CONSTRUCT_WALL and BUILD_LONG_HOUSE moved together deliberately: every
         # other agrarian building here is independent, but BUILD_KITCHEN needs a
-        # standing Long House and BUILD_LONG_HOUSE itself needs a fully-built wall
-        # ring 0 -- leaving the wall behind in Tribal Synapse would have made
-        # moving Long House/Kitchen here a complete no-op (still transitively
-        # blocked on population 50 regardless of era). Bringing the whole chain
-        # down means a tribe can fully wall in, house, and feed itself well before
-        # Tribal Synapse, then arrive there already ready for the next real tier
-        # of defense (BUILD_MOAT/BUILD_KEEP, still gated on this same wall/housing
-        # progress) instead of starting fortification from zero at population 50.
+        # standing Long House. Bringing the whole chain down means a tribe can
+        # fully wall in, house, and feed itself well before Tribal Synapse, then
+        # arrive there already ready for the next real tier of defense
+        # (BUILD_MOAT/BUILD_KEEP, still gated on this same housing progress)
+        # instead of starting fortification from zero at population 50.
         # BUILD_MOAT/BUILD_KEEP themselves stay in Tribal Synapse -- reinforcing
         # and escalating an already-secure settlement's defense reads as "true
         # society" content, not founding-era survival.
+        #
+        # Explicit correction, 2026-09-09: "I'm very tempted to remove the Wall
+        # restriction on it" -- BUILD_LONG_HOUSE no longer needs the wall at
+        # all (see actions._build_long_house's own docstring for why); it's
+        # kept alongside CONSTRUCT_WALL here purely because they were already
+        # grouped, not because either still depends on the other.
         unlocks_actions=(
-            "CONSTRUCT_WALL", "BUILD_LONG_HOUSE", "BUILD_DOCK", "BUILD_FISHERY", "BUILD_SAWMILL",
-            "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_TANNERY", "BUILD_WAREHOUSE", "UPGRADE_WAREHOUSE",
-            "BUILD_HATCHERY", "BUILD_BATH_HOUSE", "BUILD_WELL",
+            "CONSTRUCT_WALL", "BUILD_LONG_HOUSE", "UPGRADE_LONG_HOUSE", "BUILD_DOCK", "BUILD_FISHERY",
+            "BUILD_SAWMILL", "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_TANNERY", "BUILD_WAREHOUSE",
+            "UPGRADE_WAREHOUSE", "BUILD_HATCHERY", "BUILD_BATH_HOUSE", "BUILD_WELL",
         ),
         announcement="{tribe} crosses into the Cognitive Horizon -- reflection begins to compound into wisdom.",
     ),

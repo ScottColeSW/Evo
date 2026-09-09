@@ -340,21 +340,15 @@ def test_resolve_toll_free_passage_once_the_owner_is_extinct():
     assert traveler.wood == 0  # no one left to collect from
 
 
-def test_unfinished_wall_hides_long_house_from_the_menu():
-    """Explicit bug report (original): live logs showed the chief repeatedly
-    choosing BUILD_LONG_HOUSE against an unfinished wall, over and over, each
-    attempt silently rejected inside _build_long_house -- BUILD_LONG_HOUSE
-    must stay absent from available_actions this whole stretch
-    (_can_afford_build_long_house).
-
-    Explicit follow-up, 2026-09-09 ("we are not telling them... it will cost
-    {resources}, and provide {bonus}"): the wall-progress fact now DOES name
-    "a Long House" as part of CONSTRUCT_WALL's own real payoff chain (Wall ->
-    Long House -> Kitchen) -- a forward-looking cost/benefit statement, not
-    the old bug (repeatedly suggesting BUILD_LONG_HOUSE as something to
-    choose *right now* when it isn't actually offered). The menu-hiding
-    above is what actually matters; a prose mention of what's ahead is a
-    different, now-intentional thing."""
+def test_unfinished_wall_no_longer_hides_long_house_from_the_menu():
+    """Explicit correction, 2026-09-09: "I'm very tempted to remove the Wall
+    restriction on it." Confirmed via two independent live runs that
+    CONSTRUCT_WALL not getting chosen (not blocked, just never picked)
+    stalled the whole Long House -> Kitchen chain both times, regardless of
+    what else was fixed on the wall side -- BUILD_LONG_HOUSE no longer
+    depends on wall progress at all, and the wall-progress fact still names
+    it as part of CONSTRUCT_WALL's own real payoff chain (Wall -> Long
+    House -> Kitchen) alongside real cost numbers."""
     from backend import config
 
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])  # plains, farmable
@@ -363,6 +357,7 @@ def test_unfinished_wall_hides_long_house_from_the_menu():
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.has_ever_settled = True
     tribe.wood_ever_gathered = tribe.stone_ever_gathered = True
+    tribe.wood = tribe.stone = 1000
     sim._found_territory(tribe)
     tribe.wall_rings[0]["sections"][0]["unlocked"] = True
     tribe.wall_rings[0]["sections"][0]["progress"] = 40
@@ -375,7 +370,7 @@ def test_unfinished_wall_hides_long_house_from_the_menu():
     real_sections = [s for s in tribe.wall_rings[0]["sections"] if not s["natural_barrier"]]
     built = sum(1 for s in real_sections if s["progress"] >= 100)
     assert "CONSTRUCT_WALL" in ctx["available_actions"]
-    assert "BUILD_LONG_HOUSE" not in ctx["available_actions"]
+    assert "BUILD_LONG_HOUSE" in ctx["available_actions"]
     assert f"{built}/{len(real_sections)} real sections built" in request["prompt"]
 
 
@@ -2126,6 +2121,7 @@ def test_wall_commitment_narrows_the_menu_to_wall_and_survival_actions():
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"  # unlocks every action, so the filter is doing the work
     tribe.wood_ever_gathered = tribe.stone_ever_gathered = True
+    tribe.wood = tribe.stone = 1000
     sim._found_territory(tribe)
     # Unlocked and incomplete -- CONSTRUCT_WALL needs a real target to stay
     # affordable (see _can_afford_construct_wall); this test is about what the
@@ -2141,31 +2137,13 @@ def test_wall_commitment_narrows_the_menu_to_wall_and_survival_actions():
     assert "CONSTRUCT_WALL" in ctx["available_actions"]
     assert "GATHER_WOOD" in ctx["available_actions"]
     assert "GATHER_STONE" in ctx["available_actions"]
-    assert "BUILD_LONG_HOUSE" not in ctx["available_actions"]
+    # Explicit correction, 2026-09-09: "I'm very tempted to remove the Wall
+    # restriction on it" -- BUILD_LONG_HOUSE stays permanently available
+    # during a wall commitment now, no longer tied to a banked credit (the
+    # old wall_lock_long_house_credits system is retired).
+    assert "BUILD_LONG_HOUSE" in ctx["available_actions"]
     assert set(ctx["available_actions"]) <= WALL_LOCK_ACTIONS
     assert "has to be finished before anything else" in request["prompt"]
-
-
-def test_wall_commitment_adds_build_long_house_only_with_a_banked_credit():
-    """User's own refinement: locking out an entire ring's worth of housing
-    stalls too long, so a banked credit (one per section completed) lets
-    BUILD_LONG_HOUSE back into the menu even while still locked."""
-    from backend import config
-
-    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
-    tribe = sim.tribes["tribe_0"]
-    tribe.has_ever_settled = True
-    sim._found_territory(tribe)  # BUILD_LONG_HOUSE's own affordability check needs real territory to place into
-    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
-    tribe.era = "monolithic_era"
-    tribe.wall_commitment_active = True
-
-    _, ctx_no_credit = sim._prepare_turn(tribe)
-    assert "BUILD_LONG_HOUSE" not in ctx_no_credit["available_actions"]
-
-    tribe.wall_lock_long_house_credits = 1
-    _, ctx_with_credit = sim._prepare_turn(tribe)
-    assert "BUILD_LONG_HOUSE" in ctx_with_credit["available_actions"]
 
 
 def test_wall_commitment_still_yields_to_a_real_survival_crisis():

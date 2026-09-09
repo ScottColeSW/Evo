@@ -770,7 +770,6 @@ def test_construct_wall_engages_commitment_lock_while_a_section_is_incomplete():
     ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
 
     assert tribe.wall_commitment_active is True
-    assert tribe.wall_lock_long_house_credits == 0
 
 
 def test_construct_wall_engages_commitment_even_when_it_cannot_afford_progress():
@@ -789,10 +788,11 @@ def test_construct_wall_engages_commitment_even_when_it_cannot_afford_progress()
     assert tribe.wall_commitment_active is True
 
 
-def test_construct_wall_clears_commitment_and_banks_a_long_house_credit_on_completion():
-    """User's own refinement: "allow 1 Long House per section, then once it is
-    100% Wall Ring 1 Layer, they can build the rest on demand" -- completing a
-    section clears the lock and banks exactly one Long House credit."""
+def test_construct_wall_clears_commitment_on_completion():
+    """A completed section clears the commitment lock -- no longer banks a
+    Long House credit (explicit correction, 2026-09-09: "I'm very tempted to
+    remove the Wall restriction on it" -- Long House no longer needs the
+    wall at all, so there's nothing left for a credit to unlock)."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     _settle(sim, tribe)
@@ -807,31 +807,6 @@ def test_construct_wall_clears_commitment_and_banks_a_long_house_credit_on_compl
         ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)
 
     assert tribe.wall_commitment_active is False
-    assert tribe.wall_lock_long_house_credits == 1
-
-
-def test_build_long_house_succeeds_early_by_spending_a_banked_credit():
-    """The other half of the same refinement: a banked credit lets exactly one
-    Long House through before ring 0 is actually finished."""
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    _settle(sim, tribe)
-    _unlock_all_ring0_sections(sim, tribe)
-    tribe.wall_lock_long_house_credits = 1
-    tribe.wood = 200
-    tribe.stone = 200
-
-    result = ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
-
-    assert tribe.long_houses_built == 1
-    assert tribe.wall_lock_long_house_credits == 0
-    assert "long house rises" in result
-
-    # The credit is spent -- a second Long House still needs ring 0 finished (or
-    # another banked credit).
-    result2 = ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
-    assert "wall ring must be finished" in result2
-    assert tribe.long_houses_built == 1
 
 
 def test_larger_population_builds_wall_progress_faster():
@@ -855,25 +830,24 @@ def test_larger_population_builds_wall_progress_faster():
     assert big_progress > small_progress
 
 
-def test_build_long_house_requires_the_wall_to_be_complete_first():
-    """Explicit request: BUILD_LONG_HOUSE is gated on the first wall ring already
-    being complete -- defense before shelter."""
-    from backend import city_layout
-
+def test_build_long_house_succeeds_with_no_wall_progress_at_all():
+    """Explicit correction, 2026-09-09: "I'm very tempted to remove the Wall
+    restriction on it." Long House used to require the first wall ring
+    already complete -- confirmed via two independent live runs that
+    CONSTRUCT_WALL simply not getting chosen (not blocked, just never
+    picked) stalled the whole Long House -> Kitchen chain both times.
+    BUILD_LONG_HOUSE now succeeds regardless of wall progress, even at a
+    freshly-founded territory with zero sections built or unlocked."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    _settle(sim, tribe)
-    _unlock_all_ring0_sections(sim, tribe)
+    _settle(sim, tribe)  # no wall progress made at all -- ring 0 exists but untouched
     tribe.wood = 100
     tribe.stone = 100
-    ring_i, sec_i = city_layout.next_wall_work_section(tribe)
-    ACTION_REGISTRY["CONSTRUCT_WALL"](sim, tribe, "plains", _NO_TARGET)  # one section, partial only
-    assert 0 < tribe.wall_rings[ring_i]["sections"][sec_i]["progress"] < 100
 
     result = ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
 
-    assert tribe.long_houses_built == 0
-    assert "wall ring must be finished" in result
+    assert tribe.long_houses_built == 1
+    assert "long house rises" in result
 
 
 def test_build_long_house_succeeds_once_wall_is_complete():
@@ -908,6 +882,96 @@ def test_build_long_house_no_op_when_cannot_afford_it():
     ACTION_REGISTRY["BUILD_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
 
     assert tribe.long_houses_built == 0
+
+
+def test_build_long_house_unavailable_past_the_count_cap():
+    """Explicit request, 2026-09-09: "modify long houses to scale like
+    warehouse." Real data showed Fortress/Castle's own thresholds (40/70)
+    would have needed that many literal buildings under the old unbounded
+    model -- capped now, same as BUILD_WAREHOUSE was capped the same
+    session for the same reason."""
+    from backend.simulation import AFFORDABILITY_CHECKS
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = tribe.stone = 1000
+    tribe.population = 10_000_000  # guarantees houses_needed would be huge without the cap
+    tribe.long_houses_built = config.LONG_HOUSE_MAX_COUNT
+
+    assert AFFORDABILITY_CHECKS["BUILD_LONG_HOUSE"](tribe, sim.world) is False
+
+
+def test_upgrade_long_house_raises_the_tier_count_and_costs_more_each_time():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    from backend import config
+
+    tribe.long_houses_built = config.LONG_HOUSE_MAX_COUNT
+    tribe.wood = tribe.stone = 10_000
+
+    result = ACTION_REGISTRY["UPGRADE_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.long_house_upgrades == 1
+    assert "expanded" in result
+    first_wood_spent = 10_000 - tribe.wood
+
+    wood_before_second = tribe.wood
+    ACTION_REGISTRY["UPGRADE_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.long_house_upgrades == 2
+    second_wood_spent = wood_before_second - tribe.wood
+    assert second_wood_spent > first_wood_spent  # each tier costs more than the last
+
+
+def test_upgrade_long_house_no_op_when_cannot_afford_it():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.long_houses_built = config.LONG_HOUSE_MAX_COUNT
+    tribe.wood = config.LONG_HOUSE_UPGRADE_WOOD_COST_BASE - 1
+    tribe.stone = config.LONG_HOUSE_UPGRADE_STONE_COST_BASE
+
+    assert ACTION_REGISTRY["UPGRADE_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.long_house_upgrades == 0
+
+
+def test_upgrade_long_house_unavailable_before_the_count_cap_is_reached():
+    """The two Long House actions never overlap -- UPGRADE_LONG_HOUSE only
+    becomes a real choice once BUILD_LONG_HOUSE has stopped offering
+    itself, so the model is never asked to pick between them."""
+    from backend.simulation import AFFORDABILITY_CHECKS
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = tribe.stone = 1000
+    tribe.long_houses_built = config.LONG_HOUSE_MAX_COUNT - 1
+
+    assert AFFORDABILITY_CHECKS["UPGRADE_LONG_HOUSE"](tribe, sim.world) is False
+
+
+def test_keep_fortress_castle_count_long_house_upgrades_toward_their_own_tier():
+    """Explicit request, 2026-09-09: Fortress/Castle need 8/12 long-house
+    tiers -- unreachable via real builds alone (capped at 5), so upgrades
+    must count the same way for these checks as they do for BUILD_KEEP's
+    own AFFORDABILITY_CHECKS entry."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = tribe.stone = 1000
+    tribe.long_houses_built = config.LONG_HOUSE_MAX_COUNT
+    tribe.long_house_upgrades = config.FORTRESS_LONG_HOUSES_REQUIRED - config.LONG_HOUSE_MAX_COUNT
+    tribe.keep_built = True
+
+    result = ACTION_REGISTRY["BUILD_FORTRESS"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.fortress_built is True
+    assert "fortress rises" in result
 
 
 def test_build_long_house_repeats_as_population_grows():
@@ -1016,7 +1080,7 @@ def test_can_afford_build_long_house_reflects_the_fur_discount():
     assert _can_afford_build_long_house(tribe, sim.world) is True
 
 
-def test_build_keep_requires_ten_long_houses():
+def test_build_keep_requires_keep_long_houses_required():
     from backend import config
 
     sim = _bare_simulation()
@@ -1027,7 +1091,7 @@ def test_build_keep_requires_ten_long_houses():
 
     result = ACTION_REGISTRY["BUILD_KEEP"](sim, tribe, "plains", _NO_TARGET)
     assert tribe.keep_built is False
-    assert "10 long houses" in result
+    assert f"{config.KEEP_LONG_HOUSES_REQUIRED} long houses" in result
 
     tribe.long_houses_built = config.KEEP_LONG_HOUSES_REQUIRED
     wood_before, stone_before = tribe.wood, tribe.stone

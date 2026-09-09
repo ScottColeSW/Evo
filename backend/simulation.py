@@ -177,10 +177,14 @@ SURVIVAL_CRISIS_ACTIONS = {
 # wall_commitment_active is set (actions.py._construct_wall, the moment
 # CONSTRUCT_WALL is chosen for a still-incomplete section), the menu narrows to
 # just the wall itself, its own two resources, and the same survival-crisis set
-# above -- a wall push still shouldn't be able to starve a tribe. BUILD_LONG_HOUSE
-# is added back in separately, only while a banked credit exists (see
-# wall_lock_long_house_credits).
-WALL_LOCK_ACTIONS = {"CONSTRUCT_WALL", "GATHER_WOOD", "GATHER_STONE"} | SURVIVAL_CRISIS_ACTIONS
+# above -- a wall push still shouldn't be able to starve a tribe.
+#
+# BUILD_LONG_HOUSE stays permanently included now (explicit correction,
+# 2026-09-09: "I'm very tempted to remove the Wall restriction on it" --
+# Long House no longer depends on the wall at all, so there's no reason for
+# a wall push to compete with it anymore; the old wall_lock_long_house_
+# credits carve-out this replaced is retired).
+WALL_LOCK_ACTIONS = {"CONSTRUCT_WALL", "GATHER_WOOD", "GATHER_STONE", "BUILD_LONG_HOUSE"} | SURVIVAL_CRISIS_ACTIONS
 
 # Explicit request, 2026-09-09: "When they reach this last age, we need to
 # start reducing their options to the Warring and maybe training. they have
@@ -406,19 +410,18 @@ def _fire_not_yet_built_here(tribe, world) -> bool:
 
 
 def _can_afford_build_long_house(tribe, world) -> bool:
-    """Explicit request: "the option to build a long house should not even
-    come up if they don't have a full Wall built" -- mirrors actions.
-    _build_long_house's own real prerequisite (ring_fully_built, or a banked
-    wall_lock_long_house_credits -- see that field's own comment) and repeat
-    gate (real housing need, not a flat one-time flag) exactly, so a
-    guaranteed no-op never dangles in the menu. Cost check reuses _long_house_
-    fur_discount (same Fur-discounted cost _build_long_house actually charges)
-    rather than the flat base cost, so banked Fur can be the difference
-    between this showing as affordable or not."""
-    ring0_done = bool(tribe.wall_rings) and city_layout.ring_fully_built(tribe.wall_rings[0])
-    if not ring0_done and tribe.wall_lock_long_house_credits <= 0:
-        return False
-    houses_needed = max(1, -(-tribe.population // config.HOUSING_POPULATION_PER_LONG_HOUSE))
+    """Mirrors actions._build_long_house's own repeat gate (real housing
+    need, not a flat one-time flag, capped at config.LONG_HOUSE_MAX_COUNT --
+    see that constant's own comment) exactly, so a guaranteed no-op never
+    dangles in the menu. Cost check reuses _long_house_fur_discount (same
+    Fur-discounted cost _build_long_house actually charges) rather than the
+    flat base cost, so banked Fur can be the difference between this showing
+    as affordable or not.
+
+    Explicit correction, 2026-09-09: "I'm very tempted to remove the Wall
+    restriction on it" -- the old ring_fully_built/wall_lock_long_house_
+    credits prerequisite is gone; see _build_long_house's own docstring."""
+    houses_needed = min(config.LONG_HOUSE_MAX_COUNT, max(1, -(-tribe.population // config.HOUSING_POPULATION_PER_LONG_HOUSE)))
     if tribe.long_houses_built >= houses_needed:
         return False
     wood_cost, stone_cost, _ = _long_house_fur_discount(tribe)
@@ -441,6 +444,11 @@ AFFORDABILITY_CHECKS = {
     "BUILD_DOCK": lambda t, w: t.fishing_learned and t.wood >= config.DOCK_WOOD_COST and _can_place(t, w, "dock"),
     "CONSTRUCT_WALL": _can_afford_construct_wall,
     "BUILD_LONG_HOUSE": _can_afford_build_long_house,
+    "UPGRADE_LONG_HOUSE": lambda t, w: (
+        t.long_houses_built >= config.LONG_HOUSE_MAX_COUNT
+        and t.wood >= round(config.LONG_HOUSE_UPGRADE_WOOD_COST_BASE * (1 + t.long_house_upgrades * config.LONG_HOUSE_UPGRADE_COST_GROWTH))
+        and t.stone >= round(config.LONG_HOUSE_UPGRADE_STONE_COST_BASE * (1 + t.long_house_upgrades * config.LONG_HOUSE_UPGRADE_COST_GROWTH))
+    ),
     "BUILD_FISHERY": lambda t, w: (
         t.dock_built and t.wood >= config.FISHERY_WOOD_COST and t.stone >= config.FISHERY_STONE_COST
         and _can_place(t, w, "fishery")
@@ -548,18 +556,23 @@ AFFORDABILITY_CHECKS = {
                 and t.battalion_readiness < 1.0 and t.food >= config.BATTALION_READINESS_UPKEEP_FOOD_COST)
         )
     ),
+    # long_houses_built + long_house_upgrades, not long_houses_built alone --
+    # explicit request, 2026-09-09: "modify long houses to scale like
+    # warehouse." Real builds cap at LONG_HOUSE_MAX_COUNT (5); Fortress/
+    # Castle's own much higher thresholds (40/70) lean on
+    # UPGRADE_LONG_HOUSE to stay reachable at all past that.
     "BUILD_KEEP": lambda t, w: (
-        t.long_houses_built >= config.KEEP_LONG_HOUSES_REQUIRED
+        (t.long_houses_built + t.long_house_upgrades) >= config.KEEP_LONG_HOUSES_REQUIRED
         and t.wood >= config.KEEP_WOOD_COST and t.stone >= config.KEEP_STONE_COST
         and _can_place(t, w, "keep")
     ),
     "BUILD_FORTRESS": lambda t, w: (
-        t.keep_built and t.long_houses_built >= config.FORTRESS_LONG_HOUSES_REQUIRED
+        t.keep_built and (t.long_houses_built + t.long_house_upgrades) >= config.FORTRESS_LONG_HOUSES_REQUIRED
         and t.wood >= config.FORTRESS_WOOD_COST and t.stone >= config.FORTRESS_STONE_COST
         and _can_place(t, w, "fortress")
     ),
     "BUILD_CASTLE": lambda t, w: (
-        t.fortress_built and t.long_houses_built >= config.CASTLE_LONG_HOUSES_REQUIRED
+        t.fortress_built and (t.long_houses_built + t.long_house_upgrades) >= config.CASTLE_LONG_HOUSES_REQUIRED
         and t.wood >= config.CASTLE_WOOD_COST and t.stone >= config.CASTLE_STONE_COST
         and _can_place(t, w, "castle")
     ),
@@ -1313,11 +1326,12 @@ class Tribe:
         # that section finishes -- see Simulation._prepare_turn for the actual
         # available_actions narrowing this drives.
         self.wall_commitment_active = False
-        # User's own refinement: locking out BUILD_LONG_HOUSE for an entire wall
-        # ring would stall housing for too long, so the tribe banks the right to
-        # build exactly one Long House per wall section completed, spendable any
-        # time while still locked.
-        self.wall_lock_long_house_credits = 0
+        # Explicit request, 2026-09-09: "modify long houses to scale like
+        # warehouse." Real BUILD_LONG_HOUSE builds cap at
+        # config.LONG_HOUSE_MAX_COUNT; UPGRADE_LONG_HOUSE
+        # (actions.py._upgrade_long_house) raises the Keep/Fortress/Castle
+        # tier count further past that -- same shape as warehouse_upgrades.
+        self.long_house_upgrades = 0
         # One entry per placed structure (every Long House instance, Town Hall,
         # Sawmill, Quarry, Dock, Fishery, Kitchen, Tannery, Mine, Keep, Fortress,
         # Castle, each Farm plot, the Flock pen, Fire) -- positional metadata only,
@@ -1422,6 +1436,7 @@ class Tribe:
             "fire_ever_built": self.fire_ever_built,
             "moat_built": self.moat_built,
             "long_houses_built": self.long_houses_built,
+            "long_house_upgrades": self.long_house_upgrades,
             # Explicit request: "It needs to say housed/unhoused... so the Tribe
             # knows how many more they will need to build until everyone is
             # housed comfortably." Computed here (not left for the frontend to
@@ -3158,8 +3173,7 @@ class Simulation:
         # cut below so a genuine food/water crisis can still narrow further on top
         # of this -- a wall commitment never overrides real starvation.
         if tribe.wall_commitment_active:
-            allowed = WALL_LOCK_ACTIONS | ({"BUILD_LONG_HOUSE"} if tribe.wall_lock_long_house_credits > 0 else set())
-            wall_locked_only = [a for a in available_actions if a in allowed]
+            wall_locked_only = [a for a in available_actions if a in WALL_LOCK_ACTIONS]
             if wall_locked_only:
                 available_actions = wall_locked_only
             else:
@@ -3198,11 +3212,10 @@ class Simulation:
             # one moment the nudge fires is also the one moment BUILD_KITCHEN
             # becomes unreachable. BUILD_KITCHEN costs only wood/stone, never
             # the scarce resource actually in crisis, so keeping it choosable
-            # doesn't undermine why the menu narrows in the first place -- same
-            # shape as wall_lock_long_house_credits' own carve-out for
-            # BUILD_LONG_HOUSE just above. Membership in available_actions here
-            # already means every real prerequisite (cooking_learned, a Long
-            # House, affordability) is genuinely met, not just hoped for.
+            # doesn't undermine why the menu narrows in the first place.
+            # Membership in available_actions here already means every real
+            # prerequisite (cooking_learned, a Long House, affordability) is
+            # genuinely met, not just hoped for.
             crisis_allowed = SURVIVAL_CRISIS_ACTIONS | (
                 {"BUILD_KITCHEN"} if "BUILD_KITCHEN" in available_actions else set()
             )
@@ -3258,13 +3271,10 @@ class Simulation:
 
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         if tribe.wall_commitment_active:
-            credit_note = (
-                " A Long House can still be built early, spending a banked credit."
-                if tribe.wall_lock_long_house_credits > 0 else ""
-            )
             visible_entities.append(
                 "The wall section already under construction has to be finished before anything else -- "
-                f"only gathering what it needs and continuing CONSTRUCT_WALL are being offered.{credit_note}"
+                "only gathering what it needs, continuing CONSTRUCT_WALL, and building a Long House "
+                "(no longer tied to the wall) are being offered."
             )
         if survival_crisis:
             # Same "don't keep them in the dark" reasoning as the repetition
@@ -3618,21 +3628,25 @@ class Simulation:
                 "for free, a further defense bonus."
             )
 
+        # long_house_tier counts UPGRADE_LONG_HOUSE alongside real builds, same
+        # as the AFFORDABILITY_CHECKS entries above -- see LONG_HOUSE_MAX_COUNT's
+        # own comment for why Fortress/Castle need the upgrade path at all.
+        long_house_tier = tribe.long_houses_built + tribe.long_house_upgrades
         if tribe.long_houses_built > 0:
-            if not tribe.keep_built and tribe.long_houses_built >= config.KEEP_LONG_HOUSES_REQUIRED:
+            if not tribe.keep_built and long_house_tier >= config.KEEP_LONG_HOUSES_REQUIRED:
                 visible_entities.append(
-                    f"{tribe.long_houses_built} long houses stand -- a keep is now worth building for a "
-                    "further defense bonus."
+                    f"{long_house_tier} long houses' worth of shelter stand -- a keep is now worth "
+                    "building for a further defense bonus."
                 )
-            elif tribe.keep_built and not tribe.fortress_built and tribe.long_houses_built >= config.FORTRESS_LONG_HOUSES_REQUIRED:
+            elif tribe.keep_built and not tribe.fortress_built and long_house_tier >= config.FORTRESS_LONG_HOUSES_REQUIRED:
                 visible_entities.append(
-                    f"{tribe.long_houses_built} long houses stand and the keep is complete -- a fortress "
-                    "is now worth building for a further defense bonus."
+                    f"{long_house_tier} long houses' worth of shelter stand and the keep is complete -- "
+                    "a fortress is now worth building for a further defense bonus."
                 )
-            elif tribe.fortress_built and not tribe.castle_built and tribe.long_houses_built >= config.CASTLE_LONG_HOUSES_REQUIRED:
+            elif tribe.fortress_built and not tribe.castle_built and long_house_tier >= config.CASTLE_LONG_HOUSES_REQUIRED:
                 visible_entities.append(
-                    f"{tribe.long_houses_built} long houses stand and the fortress is complete -- a "
-                    "castle is now worth building for a further defense bonus."
+                    f"{long_house_tier} long houses' worth of shelter stand and the fortress is complete "
+                    "-- a castle is now worth building for a further defense bonus."
                 )
 
         if "BUILD_SAWMILL" in available_actions and not tribe.sawmill_built:
