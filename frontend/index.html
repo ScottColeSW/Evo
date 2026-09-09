@@ -882,7 +882,15 @@ function renderEraLadder(state) {
     const resourceLines = Object.entries(t.next_era.requires_resources).map(([res, need]) => {
       const have = (res in t) ? t[res] : (t.unique_resources || {})[res] ?? 0;
       const done = have >= need;
-      return `${RESOURCE_ICON[res] || res} ${have}/${need}${done ? " ✓" : ""}`;
+      // Explicit live-run report: "the inventory line was incomplete and still
+      // lists a resource's name in the list" -- this used to fall back to the
+      // raw resource key (`|| res`) for anything RESOURCE_ICON doesn't know
+      // about, so a Fur requirement printed as the literal text "Fur 0/20"
+      // instead of an icon like every other resource here. commerceIcon
+      // already solves this exact fallback (Fur, a Mine's own per-biome ore
+      // name, item types) for the Commerce panel -- reused here instead of
+      // inventing a second, incomplete fallback.
+      return `${commerceIcon(res)} ${have}/${need}${done ? " ✓" : ""}`;
     });
     return `
       <div class="consensus-row" style="border-left:3px solid ${t.color};">
@@ -2407,7 +2415,17 @@ function drawSettlementMarker(t) {
   const cy = landY * TILE + TILE / 2;
   // Sized at 1/3 of the moon's own disc (MOON_CORE_RADIUS_TILES, see
   // drawCelestialLighting) per explicit request.
-  const r = Math.max(6, (TILE * MOON_CORE_RADIUS_TILES) / 3);
+  //
+  // Live-run report: "the Settlement central building is buried visually" --
+  // confirmed against a live board with several raider/landmark pins crowded
+  // near the settlement: raiders_approaching alone draws at Math.max(24,
+  // TILE*2.2), well over double this marker's own floor, so the one
+  // permanent structure that matters most on the whole map was consistently
+  // the smallest icon in its own neighborhood. Floor and font multiplier
+  // both raised -- still clearly smaller than an active raid (which should
+  // read as the more urgent, alarming thing), but no longer lost among
+  // ordinary discovery pins.
+  const r = Math.max(11, (TILE * MOON_CORE_RADIUS_TILES) / 3);
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, 2 * Math.PI);
   ctx.fillStyle = "rgba(15,23,42,0.8)";
@@ -2415,7 +2433,7 @@ function drawSettlementMarker(t) {
   ctx.strokeStyle = t.color;
   ctx.lineWidth = Math.max(1.5, TILE * 0.15);
   ctx.stroke();
-  ctx.font = `${Math.max(9, r * 1.5)}px sans-serif`;
+  ctx.font = `${Math.max(15, r * 1.7)}px sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(t.founded_city ? "🏛️" : "🛖", cx, cy + 1);
@@ -3268,7 +3286,21 @@ function drawFrame() {
       // busy map at typical window sizes.
       ctx.font = `${Math.max(24, TILE * 2.2)}px sans-serif`;
       ctx.textAlign = "center";
-      ctx.fillText("\u{1F3F4}", cx, cy);
+      // Explicit follow-up: "you might use the Raiders icon for the incoming
+      // Raider in addition to the war cries" -- crossed swords, matching
+      // LANDMARK_TYPES' own raider_sightings icon, instead of a generic black
+      // flag that shared no visual language with any other raider marker.
+      ctx.fillText("\u{2694}\u{FE0F}", cx, cy);
+      // Explicit request: "Raiders incoming need a Label, like 'Terrible Knoxit
+      // RAIDS!!!'" -- every approach used to read as the exact same bare icon
+      // and countdown, indistinguishable from any other one a tribe had
+      // ever faced. approach.name is rolled once per raid (backend/actions.py.
+      // _generate_raider_name) and stays fixed for its whole approach.
+      if (approach.name) {
+        ctx.font = `bold ${Math.max(10, TILE * 0.5)}px sans-serif`;
+        ctx.fillStyle = "#fecaca";
+        ctx.fillText(`${approach.name.toUpperCase()} RAIDS!!!`, cx, cy - TILE * 1.3);
+      }
       ctx.font = `bold ${Math.max(12, TILE * 0.6)}px sans-serif`;
       ctx.fillStyle = "#fca5a5";
       ctx.fillText(`${approach.cycles_left}`, cx, cy + TILE * 0.85);
