@@ -484,9 +484,15 @@ AFFORDABILITY_CHECKS = {
     # the menu itself rather than just explaining after the fact why it's
     # worth building.
     "BUILD_WAREHOUSE": lambda t, w: (
-        _warehouse_needed(t) and t.wood_ever_gathered and t.stone_ever_gathered
+        t.warehouses_built < config.WAREHOUSE_MAX_COUNT
+        and _warehouse_needed(t) and t.wood_ever_gathered and t.stone_ever_gathered
         and t.wood >= config.WAREHOUSE_WOOD_COST and t.stone >= config.WAREHOUSE_STONE_COST
         and _can_place(t, w, "warehouse")
+    ),
+    "UPGRADE_WAREHOUSE": lambda t, w: (
+        t.warehouses_built >= config.WAREHOUSE_MAX_COUNT and _warehouse_needed(t)
+        and t.wood >= round(config.WAREHOUSE_UPGRADE_WOOD_COST_BASE * (1 + t.warehouse_upgrades * config.WAREHOUSE_UPGRADE_COST_GROWTH))
+        and t.stone >= round(config.WAREHOUSE_UPGRADE_STONE_COST_BASE * (1 + t.warehouse_upgrades * config.WAREHOUSE_UPGRADE_COST_GROWTH))
     ),
     # Military branch, step 2 (plan file valiant-forging-falcon.md) -- real
     # prerequisite (Keep) AND cost checked together, same shape BUILD_SAWMILL/
@@ -1190,6 +1196,13 @@ class Tribe:
         # Repeatable, same shape as long_houses_built -- each one raises every
         # resource's storage cap by a further flat amount.
         self.warehouses_built = 0
+        # Explicit request, 2026-09-09: real data showed a run where a tribe built
+        # 47 warehouses (BUILD_WAREHOUSE had no count cap and a trivial flat cost).
+        # warehouses_built is now capped at config.WAREHOUSE_MAX_COUNT -- further
+        # storage growth comes from UPGRADE_WAREHOUSE (actions.py._upgrade_warehouse)
+        # instead, an escalating-cost repeatable so it doesn't just become the same
+        # infinite-spam problem under a new name. See _storage_cap/_item_storage_cap.
+        self.warehouse_upgrades = 0
         # See Simulation._prepare_turn's GATHER_FOOD retirement -- one-way, like
         # has_ever_settled, once a genuinely proven passive food source exists.
         self.foraging_retired = False
@@ -1408,6 +1421,7 @@ class Tribe:
             "conquests_won": self.conquests_won,
             "conquered_tribe_names": self.conquered_tribe_names,
             "warehouses_built": self.warehouses_built,
+            "warehouse_upgrades": self.warehouse_upgrades,
             "foraging_retired": self.foraging_retired,
             "watering_retired": self.watering_retired,
             "last_harvest_cycle": self.last_harvest_cycle,

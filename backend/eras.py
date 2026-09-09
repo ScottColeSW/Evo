@@ -145,8 +145,8 @@ ERAS: tuple[Era, ...] = (
         # society" content, not founding-era survival.
         unlocks_actions=(
             "CONSTRUCT_WALL", "BUILD_LONG_HOUSE", "BUILD_DOCK", "BUILD_FISHERY", "BUILD_SAWMILL",
-            "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_TANNERY", "BUILD_WAREHOUSE", "BUILD_HATCHERY",
-            "BUILD_BATH_HOUSE", "BUILD_WELL",
+            "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_TANNERY", "BUILD_WAREHOUSE", "UPGRADE_WAREHOUSE",
+            "BUILD_HATCHERY", "BUILD_BATH_HOUSE", "BUILD_WELL",
         ),
         announcement="{tribe} crosses into the Cognitive Horizon -- reflection begins to compound into wisdom.",
     ),

@@ -1553,6 +1553,19 @@ WAREHOUSE_STONE_COST = 20
 # it already used for the very first warehouse.
 WAREHOUSE_NEED_NEAR_CAP_FRACTION = 0.85
 
+# Explicit request, 2026-09-09: real data showed a run where one tribe built 47
+# warehouses (no count cap, trivial flat cost, 700->far beyond in ~50 cycles).
+# "They shouldn't build more than 5 I think. The rest of the capacity comes
+# from the build or improvement calls being made now for a new build." Real
+# BUILD_WAREHOUSE ceiling; UPGRADE_WAREHOUSE (backend/actions.py.
+# _upgrade_warehouse) takes over past this point, with an escalating cost
+# (WAREHOUSE_UPGRADE_COST_GROWTH per tier) so it doesn't just become the same
+# infinite-spam problem under a new name.
+WAREHOUSE_MAX_COUNT = 5
+WAREHOUSE_UPGRADE_WOOD_COST_BASE = 40
+WAREHOUSE_UPGRADE_STONE_COST_BASE = 35
+WAREHOUSE_UPGRADE_COST_GROWTH = 0.5
+
 # Resource-site discovery (lumber/wildlife/quarry/mine): superseded 2026-09-02 --
 # see world.py's SITE_SEED_GRID_CELL_SIZE/SITE_SEED_FILL_PROBABILITY/
 # SITE_DISCOVERY_RADIUS. Sites used to be decided fresh via an independent chance

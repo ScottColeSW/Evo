@@ -3878,8 +3878,15 @@ function farmingPanel(t) {
     parts.push(`🔨 Forge — ${items.length} item(s) on hand (${detail})`);
   }
   if (t.warehouses_built > 0) {
-    const cap = STORAGE_CAP_BASE + t.warehouses_built * WAREHOUSE_STORAGE_BONUS_PER_BUILDING;
-    parts.push(`🏬 Warehouse — ${t.warehouses_built} built, storage capacity ${cap} per resource`);
+    // Explicit request, 2026-09-09: BUILD_WAREHOUSE now caps at 5 real builds;
+    // UPGRADE_WAREHOUSE (warehouse_upgrades) raises capacity further past that
+    // -- counted the same way backend/actions.py._storage_cap does, so this
+    // never quietly under-reports once a tribe starts upgrading instead of
+    // building fresh.
+    const upgrades = t.warehouse_upgrades || 0;
+    const cap = STORAGE_CAP_BASE + (t.warehouses_built + upgrades) * WAREHOUSE_STORAGE_BONUS_PER_BUILDING;
+    const upgradeNote = upgrades ? `, ${upgrades} upgrade${upgrades !== 1 ? "s" : ""}` : "";
+    parts.push(`🏬 Warehouse — ${t.warehouses_built} built${upgradeNote}, storage capacity ${cap} per resource`);
   }
   if (t.object_creator_built) {
     const objects = t.created_objects || [];

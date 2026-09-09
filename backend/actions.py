@@ -195,8 +195,17 @@ def _storage_cap(tribe) -> int:
     advance. It only ever catches genuinely excessive hoarding (explicit request,
     after a live run showed a tribe pile wood up to 200+ while permanently starved
     on stone). Repeatable Warehouses raise it further -- 'expansion of the tribe
-    will allow that to scale storage with building needs.'"""
-    return config.STORAGE_CAP_BASE + tribe.warehouses_built * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+    will allow that to scale storage with building needs.'
+
+    Explicit follow-up, 2026-09-09: warehouses_built is now capped at
+    config.WAREHOUSE_MAX_COUNT (real data: 47 built in one run) -- growth past
+    that comes from tribe.warehouse_upgrades (UPGRADE_WAREHOUSE) instead, same
+    per-tier bonus so the curve stays continuous right through the cap."""
+    return (
+        config.STORAGE_CAP_BASE
+        + tribe.warehouses_built * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+        + tribe.warehouse_upgrades * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+    )
 
 
 def _sustainable_population(tribe) -> int:
@@ -810,6 +819,31 @@ def _build_warehouse(sim, tribe, biome, target):
     return f"a warehouse rises -- storage capacity grows to {_storage_cap(tribe)} per resource"
 
 
+def _upgrade_warehouse(sim, tribe, biome, target):
+    """Explicit request, 2026-09-09, after real data showed one tribe building 47
+    warehouses in a single run: "they shouldn't build more than 5 I think. The
+    rest of the capacity comes from the build or improvement calls being made
+    now for a new build." BUILD_WAREHOUSE now stops offering itself past
+    config.WAREHOUSE_MAX_COUNT (see its own AFFORDABILITY_CHECKS entry) --
+    this is what a mature economy reaches for past that point instead.
+    Deliberately no footprint/placement check, unlike a fresh build -- this
+    improves what's already standing, not a new structure competing for space.
+
+    Repeatable, but not free to spam the same way the old flat-cost
+    BUILD_WAREHOUSE was: cost grows by config.WAREHOUSE_UPGRADE_COST_GROWTH
+    per tier already banked (tribe.warehouse_upgrades), so this naturally
+    tapers off rather than needing its own hardcoded count cap."""
+    tier = tribe.warehouse_upgrades
+    wood_cost = round(config.WAREHOUSE_UPGRADE_WOOD_COST_BASE * (1 + tier * config.WAREHOUSE_UPGRADE_COST_GROWTH))
+    stone_cost = round(config.WAREHOUSE_UPGRADE_STONE_COST_BASE * (1 + tier * config.WAREHOUSE_UPGRADE_COST_GROWTH))
+    if tribe.wood < wood_cost or tribe.stone < stone_cost:
+        return None
+    tribe.wood -= wood_cost
+    tribe.stone -= stone_cost
+    tribe.warehouse_upgrades += 1
+    return f"the standing warehouses are reinforced -- storage capacity grows to {_storage_cap(tribe)} per resource"
+
+
 def _build_barracks(sim, tribe, biome, target):
     """Military branch, step 2 (plan file valiant-forging-falcon.md): real
     housing for a trained Battalion, not a symbolic building -- repeatable,
@@ -1130,8 +1164,10 @@ def _build_forge(sim, tribe, biome, target):
 def _item_storage_cap(tribe) -> int:
     """See config.ITEM_STORAGE_CAP_BASE's own comment -- a much smaller ceiling
     than _storage_cap's bulk-resource one, since each item already represents a
-    real spent investment rather than something freely re-gathered."""
-    return config.ITEM_STORAGE_CAP_BASE + tribe.warehouses_built * config.ITEM_STORAGE_CAP_PER_WAREHOUSE
+    real spent investment rather than something freely re-gathered. Counts
+    warehouse_upgrades alongside warehouses_built, same as _storage_cap -- an
+    upgraded warehouse holds more of everything, items included."""
+    return config.ITEM_STORAGE_CAP_BASE + (tribe.warehouses_built + tribe.warehouse_upgrades) * config.ITEM_STORAGE_CAP_PER_WAREHOUSE
 
 
 def _forge_item(sim, tribe, biome, target):
@@ -2558,6 +2594,7 @@ ACTION_REGISTRY = {
     "RESEARCH": _research,
     "BUILD_WELL": _build_well,
     "BUILD_WAREHOUSE": _build_warehouse,
+    "UPGRADE_WAREHOUSE": _upgrade_warehouse,
     "BUILD_BARRACKS": _build_barracks,
     "TRAIN_BATTALION": _train_battalion,
     "BUILD_FORGE": _build_forge,
@@ -2621,7 +2658,8 @@ ACTION_DESCRIPTIONS = {
     "BUILD_LIBRARY": "Build a library using stored wood and stone -- only possible once at least one long house stands. A one-time, permanent structure: unlocks RESEARCH, a real way to reach the next era sooner.",
     "RESEARCH": "Study the tribe's own remembered history at the library, using a little stored wood -- only possible once a library stands. Distills what's been lived through into a permanent Library entry, and permanently shortens the path to the next era a little further. Repeatable.",
     "BUILD_WELL": "Build a well using stored wood and stone -- no prerequisite beyond being settled. A one-time, permanent structure at your settlement: the tribe's daily passive water supply flows in faster from then on.",
-    "BUILD_WAREHOUSE": "Build a warehouse using stored wood and stone. Raises how much of every resource can be stored at once -- gathering more than storage allows is wasted. Repeatable: each one raises the limit further.",
+    "BUILD_WAREHOUSE": "Build a warehouse using stored wood and stone. Raises how much of every resource can be stored at once -- gathering more than storage allows is wasted. Repeatable up to 5 warehouses; UPGRADE_WAREHOUSE takes over from there.",
+    "UPGRADE_WAREHOUSE": "Reinforce the warehouses already standing to raise storage capacity further -- only worth considering once 5 warehouses already stand. No new structure, no placement needed. Repeatable, but each upgrade costs more than the last.",
     "BUILD_BARRACKS": "Build a barracks using stored wood and stone -- only possible once a Keep stands. Repeatable: each one raises how large a Battalion can ever be trained. Real housing for a standing military, the first building of the Military branch.",
     "TRAIN_BATTALION": "Train soldiers for your Battalion, led by your Warrior -- only possible once a Warrior is named and a Barracks stands. Costs food, not wood/stone. Built up over several turns like a wall section, not finished in one -- more people trains faster. Repeatable up to your Barracks' own capacity.",
     "BUILD_FORGE": "Build a forge using stored wood and stone -- only possible once a mine stands and at least one unit of its ore is already in stock. A one-time, permanent structure: from then on, ore can be worked into real tools, weapons, and inventions.",

@@ -136,6 +136,22 @@ def test_storage_cap_rises_with_each_warehouse_built():
     assert _storage_cap(tribe) == config.STORAGE_CAP_BASE + 2 * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
 
 
+def test_storage_cap_rises_with_warehouse_upgrades_too():
+    """Explicit request, 2026-09-09: past config.WAREHOUSE_MAX_COUNT real
+    builds, UPGRADE_WAREHOUSE (tribe.warehouse_upgrades) is what keeps
+    raising capacity -- same per-tier bonus as a fresh build, so the curve
+    stays continuous right through the cap."""
+    from backend.actions import _storage_cap
+    from backend import config
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT
+    tribe.warehouse_upgrades = 2
+
+    expected = config.STORAGE_CAP_BASE + (config.WAREHOUSE_MAX_COUNT + 2) * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+    assert _storage_cap(tribe) == expected
+
+
 def test_gather_wood_is_wasted_once_storage_is_already_full():
     """Explicit design goal: the tribe should be *told*, as the real result of the
     turn it just took, not have the overflow silently vanish. Explicit follow-up:
@@ -272,6 +288,81 @@ def test_build_warehouse_no_op_when_cannot_afford_it():
 
     assert ACTION_REGISTRY["BUILD_WAREHOUSE"](sim, tribe, "plains", _NO_TARGET) is None
     assert tribe.warehouses_built == 0
+
+
+def test_build_warehouse_unavailable_past_the_count_cap():
+    """Explicit request, 2026-09-09: real data showed a tribe build 47
+    warehouses in one run. BUILD_WAREHOUSE's own AFFORDABILITY_CHECKS entry
+    now caps at config.WAREHOUSE_MAX_COUNT -- checked directly rather than
+    via the action's own return, since the action itself has no count gate
+    (matches the project's "the menu shouldn't dangle a guaranteed no-op"
+    convention -- the gate lives in AFFORDABILITY_CHECKS, backend/
+    simulation.py, not duplicated here)."""
+    from backend.simulation import AFFORDABILITY_CHECKS
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = tribe.stone = 1000
+    tribe.wood_ever_gathered = tribe.stone_ever_gathered = True
+    tribe.population = 10_000_000  # guarantees _warehouse_needed regardless of cap
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT
+
+    assert AFFORDABILITY_CHECKS["BUILD_WAREHOUSE"](tribe, sim.world) is False
+
+
+def test_upgrade_warehouse_raises_capacity_and_costs_more_each_tier():
+    from backend.actions import _storage_cap
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT
+    tribe.wood = tribe.stone = 10_000
+    cap_before = _storage_cap(tribe)
+
+    result = ACTION_REGISTRY["UPGRADE_WAREHOUSE"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.warehouse_upgrades == 1
+    assert _storage_cap(tribe) == cap_before + config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+    assert "reinforced" in result
+    first_wood_spent = 10_000 - tribe.wood
+
+    wood_before_second = tribe.wood
+    ACTION_REGISTRY["UPGRADE_WAREHOUSE"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.warehouse_upgrades == 2
+    second_wood_spent = wood_before_second - tribe.wood
+    assert second_wood_spent > first_wood_spent  # each tier costs more than the last
+
+
+def test_upgrade_warehouse_no_op_when_cannot_afford_it():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT
+    tribe.wood = config.WAREHOUSE_UPGRADE_WOOD_COST_BASE - 1
+    tribe.stone = config.WAREHOUSE_UPGRADE_STONE_COST_BASE
+
+    assert ACTION_REGISTRY["UPGRADE_WAREHOUSE"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.warehouse_upgrades == 0
+
+
+def test_upgrade_warehouse_unavailable_before_the_count_cap_is_reached():
+    """The two warehouse actions never overlap -- UPGRADE_WAREHOUSE only
+    becomes a real choice once BUILD_WAREHOUSE has stopped offering itself,
+    so the model is never asked to pick between them."""
+    from backend.simulation import AFFORDABILITY_CHECKS
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = tribe.stone = 1000
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT - 1
+
+    assert AFFORDABILITY_CHECKS["UPGRADE_WAREHOUSE"](tribe, sim.world) is False
 
 
 def test_build_barracks_is_repeatable_and_raises_battalion_capacity():
