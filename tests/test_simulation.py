@@ -7097,15 +7097,24 @@ def test_population_growth_scales_with_tribe_size():
     POPULATION_GROWTH_WELLBEING_MAX_MULTIPLIER=2.0) isolates the
     population-scaling half of the formula from the Well-Being half below."""
     from backend import config
+    from backend.actions import _storage_cap
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.population = 200
     tribe.food = config.POPULATION_GROWTH_FOOD_THRESHOLD + 1000
+    population_before = tribe.population
 
     sim._grow_population(tribe)
 
-    assert tribe.population == 210  # +10 = 200 // POPULATION_GROWTH_SCALE_DIVISOR (20), neutral wellbeing
+    # +10 = 200 // POPULATION_GROWTH_SCALE_DIVISOR (20), neutral wellbeing, tempered by
+    # the real carrying-capacity brake (Simulation._grow_population's own docstring) --
+    # recomputed from the actual formula rather than a hardcoded literal, since a fresh
+    # tribe's own default storage_cap already makes this a real, non-1.0 fraction.
+    sustainable_population = _storage_cap(tribe) * config.UPKEEP_POPULATION_DIVISOR
+    carrying_capacity_fraction = max(0.0, 1 - population_before / sustainable_population)
+    expected_growth = round(10 * 0.5 * config.POPULATION_GROWTH_WELLBEING_MAX_MULTIPLIER * carrying_capacity_fraction)
+    assert tribe.population == population_before + expected_growth
 
 
 def test_population_growth_is_faster_for_a_thriving_tribe_than_a_struggling_one():
@@ -7129,6 +7138,51 @@ def test_population_growth_is_faster_for_a_thriving_tribe_than_a_struggling_one(
     sim._grow_population(neutral)
 
     assert thriving.population - 200 > neutral.population - 200
+
+
+def test_population_growth_tapers_off_as_it_approaches_sustainable_capacity():
+    """Explicit live-run finding, 2026-09-09: "so, pop. is unbounded? that's
+    probably the reason for a lot of problems. We need to put a reasonable
+    limit on this." Traced live: "Infinity Food/Water" only ever tops a
+    tribe up to _storage_cap(tribe), a real finite ceiling -- but population
+    (and therefore upkeep) had no equivalent ceiling, so growth being merely
+    population-proportional still compounded forever once a tribe grew past
+    what its own storage could actually sustain. A tribe near that real
+    line should grow much slower than an identically-sized tribe with far
+    more headroom (more warehouses, same population)."""
+    from backend import config
+
+    sim = _bare_simulation()
+    near_limit = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    near_limit.population = 2900  # just under the default storage_cap(300) * divisor(10) = 3000
+    near_limit.food = 1000
+    near_limit.warehouses_built = 0
+
+    plenty_of_room = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 60, 60, "#fb923c")
+    plenty_of_room.population = 2900
+    plenty_of_room.food = 1000
+    plenty_of_room.warehouses_built = 20  # sustainable_population = 8300 * 10 -- nowhere near the line
+
+    sim._grow_population(near_limit)
+    sim._grow_population(plenty_of_room)
+
+    assert (near_limit.population - 2900) < (plenty_of_room.population - 2900)
+
+
+def test_population_growth_stops_entirely_once_past_sustainable_capacity():
+    """Never negative through this path -- a tribe already over the line
+    doesn't lose population via growth going the wrong way, it just stops
+    digging the hole deeper. Losing population once truly starving is
+    still _starve/_dehydrate's own job."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 5000  # well past storage_cap(300) * divisor(10) = 3000
+    tribe.food = 1000
+    tribe.warehouses_built = 0
+
+    sim._grow_population(tribe)
+
+    assert tribe.population == 5000
 
 
 def test_population_growth_is_zero_during_a_real_sustained_famine():

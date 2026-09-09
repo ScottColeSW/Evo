@@ -5516,11 +5516,41 @@ class Simulation:
         (compute_wellbeing runs every turn already); an empty dict (the very
         first cycle, before any turn has run yet) reads as a neutral 0.5
         rather than crashing or silently zeroing growth out before the
-        simulation has even really started."""
+        simulation has even really started.
+
+        Explicit correction, 2026-09-09: "so, pop. is unbounded? that's
+        probably the reason for a lot of problems. We need to put a
+        reasonable limit on this... pull back a little." Traced live: the
+        "Infinity Food/Water" security mechanics (_advance_food_supply/
+        _advance_water_supply) only ever top a tribe up to _storage_cap(tribe)
+        -- a real, finite ceiling that only grows in flat +WAREHOUSE_STORAGE_
+        BONUS_PER_BUILDING steps -- while population, and therefore upkeep
+        (population // UPKEEP_POPULATION_DIVISOR), was growing with no
+        equivalent ceiling at all. Once population crossed roughly
+        storage_cap * UPKEEP_POPULATION_DIVISOR, the "security" a tribe had
+        already earned silently stopped being real: upkeep started
+        outpacing even a maxed-out top-up, every cycle, permanently -- and
+        because growth here is population-*proportional*, even the existing
+        physiological throttle above only ever slowed the compounding, never
+        stopped it, so the gap could only widen. carrying_capacity_fraction
+        is a real, resource-grounded brake instead of a flat magic number
+        (deliberately not reinstating config.POPULATION_GROWTH_CAP, an
+        arbitrary constant an earlier explicit request removed) -- growth
+        tapers to zero as population approaches what the tribe's OWN current
+        storage infrastructure can actually sustain, and picks back up the
+        moment another Warehouse raises that ceiling. Never negative (a
+        tribe already over the line doesn't lose population through this
+        path -- that's still _starve/_dehydrate's own job, this only stops
+        digging the hole deeper)."""
         if tribe.food > config.POPULATION_GROWTH_FOOD_THRESHOLD and tribe.population < config.POPULATION_GROWTH_CAP:
             base_growth = max(1, tribe.population // config.POPULATION_GROWTH_SCALE_DIVISOR)
             physiological = tribe.wellbeing.get("tiers", {}).get("physiological", 0.5)
-            growth = round(base_growth * physiological * config.POPULATION_GROWTH_WELLBEING_MAX_MULTIPLIER)
+            sustainable_population = _storage_cap(tribe) * config.UPKEEP_POPULATION_DIVISOR
+            carrying_capacity_fraction = max(0.0, 1 - tribe.population / sustainable_population)
+            growth = round(
+                base_growth * physiological * config.POPULATION_GROWTH_WELLBEING_MAX_MULTIPLIER
+                * carrying_capacity_fraction
+            )
             if growth > 0:
                 tribe.population += growth
                 tribe.food -= min(tribe.food, config.POPULATION_GROWTH_FOOD_COST * growth)
