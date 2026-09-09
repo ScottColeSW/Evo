@@ -134,9 +134,18 @@ magnitude was measured first.
    visible in the UI in a way a screenshot would catch faster than a test.
 3. **For a frontend change**, use the `Claude_Browser` tools:
    `preview_start({name: "evo2civ"})` (config already in
-   `.claude/launch.json`, serves on port 8766 — deliberately different
-   from `run.py`'s own default of 8765, so a preview server never collides
-   with a real run the user might have going). You do **not** need a real
+   `.claude/launch.json`, serves on port 8790). **Do not assume the user's
+   own real run is on run.py's documented default (8765)** — confirmed
+   2026-09-09 that the user actually runs `python run.py --port 8766`
+   himself, and a sandbox port already set to 8766 at the time got killed
+   (`taskkill`) on the wrong assumption that anything on that port had to
+   be a stale sandbox leftover. The sandbox's own port was moved to 8790
+   specifically so it can never collide with the user's real port again —
+   if you ever find *that* port occupied, it is almost certainly his own
+   server (which stays running, listening, between games — quitting one
+   game does not exit the process), not a leftover to kill. Ask before
+   touching a process on any port you didn't just start yourself. You do
+   **not** need a real
    live simulation running to verify frontend rendering — inject a
    synthetic state directly via `javascript_tool`:
    ```js

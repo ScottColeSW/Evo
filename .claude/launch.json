@@ -4,8 +4,8 @@
     {
       "name": "evo2civ",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["run.py", "--port", "8766"],
-      "port": 8766
+      "runtimeArgs": ["run.py", "--port", "8790"],
+      "port": 8790
     }
   ]
 }
