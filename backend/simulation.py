@@ -93,7 +93,25 @@ from .world import (
 # against the new slot 0/1 positions is tighter than the original four-corner
 # layout, a direct result of pulling 0/1 toward the coast, but all four remain
 # distinct, non-clustered starting points.
-SPAWN_POINTS = [(72, 17), (54, 70), (50, 55), (40, 37)]
+#
+# Retuned again 2026-09-09, explicit request ("Rebalance the spawn points,
+# push them away from eachother" / "widen the distance between them"), after
+# live data showed Tribe 1 settling consistently later than Tribe 2 across
+# every recent run (cycle 16-19 vs. cycle 11, every time) -- traced to (72,17)
+# sitting 59.0 tiles from its nearest river while (54,70) sat only 31.0 tiles
+# from its nearest lake, nearly double the travel. A computational search
+# (real Landscape(100), same technique as every prior retune here) over every
+# forest/plains/mountains tile clearing both the grid-edge floor (17) and a
+# real coastline buffer (18+ tiles from the nearest ocean tile, close to the
+# original SCOUT_PATROL_DISTANCE=25 standard) found (76,23)/(23,76) as the
+# best mutual-separation pair while keeping the established north/slot-0,
+# south/slot-1 orientation: 75.0 tiles apart (was 56.0), 23 tiles of edge
+# clearance each, and -- not the search's primary objective, but a real bonus
+# -- the old water-distance imbalance is gone too: 23.4 tiles from the river
+# for slot 0 (was 59.0) and 2.2 tiles from the lake for slot 1 (was 31.0),
+# each comfortably within a single expedition's reach and 34-42 tiles clear
+# of the untouched slot 2/3 fallbacks.
+SPAWN_POINTS = [(76, 23), (23, 76), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 # Design intent, not just "whichever body is closest": Tribe 1 settles the
 # river, Tribe 2 the lake -- each gets a distinct natural-barrier wall ring
