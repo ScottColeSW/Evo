@@ -152,6 +152,10 @@
   .icon-key-section:first-child { margin-top: 0; }
   .icon-key-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #cbd5e1; padding: 2px 0; }
   .icon-key-icon { width: 18px; text-align: center; flex-shrink: 0; font-size: 13px; }
+  /* Rows whose icon is populated from a multi-icon pool at runtime (see
+     populateIconKeyPools) -- the fixed 18px width above only ever fit one
+     glyph, so these get to grow instead of clipping/wrapping mid-emoji. */
+  .icon-key-icon-pool { width: auto; max-width: 90px; text-align: left; white-space: nowrap; }
   .icon-key-swatch { width: 18px; height: 10px; flex-shrink: 0; border-radius: 2px; }
   .icon-key-swatch-dashed { border: 1.5px dashed #a78bfa; background: transparent; }
   .icon-key-swatch-dot { border-radius: 50%; width: 8px; height: 8px; background: #c084fc; margin: 0 5px; }
@@ -348,16 +352,16 @@
           <div class="icon-key-row"><span class="icon-key-icon">✨</span> Created Structure</div>
 
           <div class="icon-key-section">Discoveries</div>
-          <div class="icon-key-row"><span class="icon-key-icon">💧</span> Confirmed water source</div>
+          <div class="icon-key-row"><span class="icon-key-icon icon-key-icon-pool" id="key-icon-water">💧</span> Confirmed water source (one, picked per site)</div>
           <div class="icon-key-row"><span class="icon-key-icon">🌲</span> Lumber-rich site</div>
           <div class="icon-key-row"><span class="icon-key-icon">🐾</span> Wildlife/game site</div>
           <div class="icon-key-row"><span class="icon-key-icon">⛏️</span> Stone-rich site</div>
           <div class="icon-key-row"><span class="icon-key-icon">💎</span> Ore vein</div>
-          <div class="icon-key-row"><span class="icon-key-icon">🗿</span> Landmark</div>
+          <div class="icon-key-row"><span class="icon-key-icon icon-key-icon-pool" id="key-icon-landmark">🗿</span> Landmark (one, picked per discovery)</div>
 
           <div class="icon-key-section">Hazards</div>
-          <div class="icon-key-row"><span class="icon-key-icon">🏴</span> Raiders approaching camp</div>
-          <div class="icon-key-row"><span class="icon-key-icon">⚔️</span> Raider attack / sighting</div>
+          <div class="icon-key-row"><span class="icon-key-icon" id="key-icon-raiders-approaching">⚔️</span> Raiders approaching camp (with their name, "___ RAIDS!!!")</div>
+          <div class="icon-key-row"><span class="icon-key-icon icon-key-icon-pool" id="key-icon-raiders-sighting">⚔️</span> Raider camp sighting (one, picked per camp)</div>
           <div class="icon-key-row"><span class="icon-key-icon">🐺</span> Wolf pack attack</div>
           <div class="icon-key-row"><span class="icon-key-icon">🏚️</span> Raidable minor settlement</div>
           <div class="icon-key-row"><span class="icon-key-icon">💀</span> Extinct tribe</div>
@@ -2244,18 +2248,36 @@ function pathColorForExpedition(hex, index) {
 // is a [field, emoji, offset] triple: field is the Tribe.to_dict() list to read,
 // offset nudges same-tile markers apart (a forest terrain report logs both a lumber and
 // a wildlife landmark at the identical coordinate) so they don't fully overlap.
+// Live report, 2026-09-09: "The landmarks get pretty stale when I see the
+// same one popup over and over." Each entry's icon slot now takes either a
+// single emoji (unchanged types) or an array of a few thematically-matched
+// alternatives -- drawLandmarks below picks one deterministically per
+// (field, x, y), so the SAME landmark always renders the SAME icon on every
+// redraw (stable), but two different landmarks of the same type read as
+// visually distinct rather than an identical pin repeated across the whole
+// map. Pools are deliberately small and hand-picked, not "every emoji that
+// could vaguely fit" -- explicit follow-up: "we don't need to change all our
+// icons... this might help us expand that list and allocate icons more
+// completely," not a wholesale redesign.
+const WATER_LANDMARK_ICONS = ["\u{1F4A7}", "\u{1F3DE}\u{FE0F}", "\u{1F41F}", "\u{1F33F}"]; // droplet, canyon/basin, fish, herb
+const RAIDER_LANDMARK_ICONS = ["\u{1FA93}", "\u{1F417}", "\u{1FAB5}", "\u{1F969}", "\u{26C8}\u{FE0F}"]; // axe, boar, log, meat, storm
+const GENERAL_LANDMARK_ICONS = [
+  "\u{1F30B}", "\u{1FAA8}", "\u{1F331}", "\u{1F525}", "\u{1F9B4}", "\u{1F6D6}", "\u{1F30A}",
+]; // volcano, rock, sprout, fire, bone, hut, water wave
+
 const LANDMARK_TYPES = [
-  ["confirmed_water_sites", "\u{1F4A7}", [0, 0], "Water"],       // droplet, centered
+  ["confirmed_water_sites", WATER_LANDMARK_ICONS, [0, 0], "Water"],       // droplet family, centered
   ["lumber_sites", "\u{1F332}", [-0.55, -0.4], "Timber"],          // evergreen, upper-left
   ["wildlife_sites", "\u{1F43E}", [0.55, -0.4], "Game"],         // paw prints, upper-right
   ["quarry_sites", "⛏️", [0, 0.55], "Quarry"],           // pick, lower-center
   ["mine_sites", "\u{1F48E}", [0.55, 0.55], "Mine"],       // gem, lower-right
-  ["raider_sightings", "\u{2694}\u{FE0F}", [-0.55, 0.55], "Raiders"], // crossed swords, lower-left
+  ["raider_sightings", RAIDER_LANDMARK_ICONS, [-0.55, 0.55], "Raiders"], // tribal-threat family, lower-left
   // Explicit request (building the Icon Key surfaced this): a discovered
   // Landmark used to share the exact classical-building emoji with the Town
   // Hall marker (drawSettlementMarker) and the sidebar's founded_city badge --
-  // a moai reads clearly as "a notable monument," not a building.
-  ["landmarks", "\u{1F5FF}", [0, -0.7], "Landmark"], // moai statue, top-center
+  // a moai reads clearly as "a notable monument," not a building. Now a small
+  // pool instead of always the same moai -- see the icon-variety comment above.
+  ["landmarks", GENERAL_LANDMARK_ICONS, [0, -0.7], "Landmark"], // top-center
   // Live report: "Foraging is supposed to include all so-far-discovered items
   // they find." tribe.hazard_landmarks (_landmark_hazard, this session's
   // hazard redesign) was already being populated for real -- it just never
@@ -2263,9 +2285,45 @@ const LANDMARK_TYPES = [
   // Widow's Reach, ...) never actually showed up as a durable marker like
   // every other discovery type does. Warning-triangle, not the skull used for
   // an actual hazard_death encounter -- a landmark here means "known danger,"
-  // not "someone died here."
+  // not "someone died here." Kept single-icon, deliberately not pooled --
+  // the warning triangle's specific "known danger, no one died" meaning
+  // shouldn't get diluted by an unrelated icon.
   ["hazard_landmarks", "\u{26A0}\u{FE0F}", [-0.55, -0.7], "Danger"],
 ];
+
+// Deterministic per-(field, x, y) pick from an icon pool -- same landmark
+// always renders the same icon (stable across redraws/reconnects), different
+// landmarks of the same type vary. A bare string (non-pooled types) always
+// returns itself unchanged.
+function pickLandmarkIcon(iconOrPool, field, x, y) {
+  if (!Array.isArray(iconOrPool)) return iconOrPool;
+  const seed = stringSeed(`${field}:${x},${y}`);
+  const index = Math.floor(hashUnit(seed) * iconOrPool.length) % iconOrPool.length;
+  return iconOrPool[index];
+}
+
+// Live report, 2026-09-09: "the inventory list is clearly wrong" -- the Icon
+// Key panel (#icon-key) is static, hand-typed HTML, completely separate from
+// the constants that actually decide what's drawn on the map. It had already
+// drifted twice by the time this was reported: the raiders_approaching
+// marker changed from a flag to crossed-swords (see its own comment above)
+// with the key never updated, and "Landmark" still said the single old moai
+// the instant after GENERAL_LANDMARK_ICONS replaced it with a 7-icon pool.
+// These specific rows now read their icon(s) straight from the same
+// constants drawLandmarks/the raiders_approaching block actually use, so
+// they can't silently drift out of sync with the map again. Static text
+// content (not live state), so this only needs to run once.
+function populateIconKeyPools() {
+  const setIcons = (id, poolOrIcon) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = Array.isArray(poolOrIcon) ? poolOrIcon.join("") : poolOrIcon;
+  };
+  setIcons("key-icon-water", WATER_LANDMARK_ICONS);
+  setIcons("key-icon-landmark", GENERAL_LANDMARK_ICONS);
+  setIcons("key-icon-raiders-approaching", "\u{2694}\u{FE0F}");
+  setIcons("key-icon-raiders-sighting", RAIDER_LANDMARK_ICONS);
+}
+populateIconKeyPools();
 
 // Explicit request: "we have to name the 'discovery' when it is celebrated so
 // viewers can relate it to the landmark on the map... I need to see them." A
