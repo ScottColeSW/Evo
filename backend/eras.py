@@ -104,14 +104,42 @@ ERAS: tuple[Era, ...] = (
         # tribe chooses to spend them.
         requires_resources={"water": 20, "stone": 20, "wood": 20, "food": 20},
         advancement_cost={"wood": 15, "stone": 15, "water": 10, "food": 10},
-        # No new discrete action -- small models essentially never reach for a newly
-        # unlocked one anyway (see _check_for_celebration's own docstring on this
-        # exact finding). This era's real content is a passive system, not an
-        # action: the tribe-level cultural crossover (Simulation.
-        # _resolve_cultural_crossover, calling genetics.breed()) -- already fully
-        # built and live, just triggered by a tribe's first real DECLARE_ALLIANCE
-        # rather than gated on reaching this era specifically.
-        unlocks_actions=(),
+        # Redesigned 2026-09-08 (explicit request: "Cognitive Horizon needs to be
+        # an agrarian society kind of evolution... take about half of the action
+        # items from Tribal Synapse"). Originally unlocked nothing of its own on
+        # the theory that a small model essentially never reaches for a newly
+        # unlocked action anyway (see _check_for_celebration's own docstring) --
+        # true, but that theory was about a SINGLE new action landing in a big
+        # already-crowded menu, not about giving a whole tier real content. Every
+        # action moved here is real settlement/subsistence infrastructure with no
+        # tie to war, diplomacy, or formal knowledge -- an agrarian village's own
+        # wall, houses, water, storage, and food/goods processing, not yet a
+        # standing army or a library. Each one keeps its own existing real
+        # prerequisite (BUILD_DOCK still needs fishing_learned, BUILD_SAWMILL
+        # still needs wood_ever_gathered, etc.) -- moving the ERA gate earlier
+        # just stops it from ALSO waiting on population 50 once its real
+        # prerequisite is already met, the same "real prerequisite, not era
+        # progression" fix COOK_FOOD/PLANT_CROP/GATHER_EGGS/CATCH_FISH already
+        # got out of this exact era, one tier further down the ladder.
+        #
+        # CONSTRUCT_WALL and BUILD_LONG_HOUSE moved together deliberately: every
+        # other agrarian building here is independent, but BUILD_KITCHEN needs a
+        # standing Long House and BUILD_LONG_HOUSE itself needs a fully-built wall
+        # ring 0 -- leaving the wall behind in Tribal Synapse would have made
+        # moving Long House/Kitchen here a complete no-op (still transitively
+        # blocked on population 50 regardless of era). Bringing the whole chain
+        # down means a tribe can fully wall in, house, and feed itself well before
+        # Tribal Synapse, then arrive there already ready for the next real tier
+        # of defense (BUILD_MOAT/BUILD_KEEP, still gated on this same wall/housing
+        # progress) instead of starting fortification from zero at population 50.
+        # BUILD_MOAT/BUILD_KEEP themselves stay in Tribal Synapse -- reinforcing
+        # and escalating an already-secure settlement's defense reads as "true
+        # society" content, not founding-era survival.
+        unlocks_actions=(
+            "CONSTRUCT_WALL", "BUILD_LONG_HOUSE", "BUILD_DOCK", "BUILD_FISHERY", "BUILD_SAWMILL",
+            "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_TANNERY", "BUILD_WAREHOUSE", "BUILD_HATCHERY",
+            "BUILD_BATH_HOUSE", "BUILD_WELL",
+        ),
         announcement="{tribe} crosses into the Cognitive Horizon -- reflection begins to compound into wisdom.",
     ),
     Era(
@@ -133,13 +161,21 @@ ERAS: tuple[Era, ...] = (
         # upkeep on its own.
         requires_resources={"water": 40, "stone": 40, "wood": 40, "food": 40},
         advancement_cost={"wood": 30, "stone": 30, "water": 20, "food": 20},
+        # Redesigned 2026-09-08 alongside Cognitive Horizon above -- the 12
+        # agrarian-infrastructure actions that used to unlock here (BUILD_LONG_
+        # HOUSE, BUILD_DOCK/_FISHERY/_SAWMILL/_QUARRY/_KITCHEN/_TANNERY/
+        # _WAREHOUSE/_HATCHERY/_BATH_HOUSE/_WELL, CONSTRUCT_WALL) moved down a
+        # tier. What's left here is genuinely "true society" content: a standing
+        # military (the whole Military branch, plan file valiant-forging-falcon.md),
+        # foreign relations (ALLIANCE/WAR), escalated fortification on top of an
+        # already-standing wall (MOAT/KEEP), and formal knowledge institutions
+        # (LIBRARY/RESEARCH) -- organized defense, diplomacy, and scholarship, not
+        # founding-era survival.
         unlocks_actions=(
-            "CONSTRUCT_WALL", "STRIKE_RAIDER_CAMP", "EXPEL_RAIDERS_FROM_TERRITORY", "NAME_WARRIOR",
+            "STRIKE_RAIDER_CAMP", "EXPEL_RAIDERS_FROM_TERRITORY", "NAME_WARRIOR",
             "BUILD_BARRACKS", "TRAIN_BATTALION",
-            "BUILD_LONG_HOUSE", "DECLARE_ALLIANCE", "DECLARE_WAR", "BUILD_DOCK", "BUILD_FISHERY",
-            "BUILD_SAWMILL", "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_MOAT", "BUILD_KEEP", "BUILD_TANNERY",
-            "BUILD_WAREHOUSE", "BUILD_HATCHERY", "BUILD_BATH_HOUSE",
-            "BUILD_LIBRARY", "RESEARCH", "BUILD_WELL",
+            "DECLARE_ALLIANCE", "DECLARE_WAR", "BUILD_MOAT", "BUILD_KEEP",
+            "BUILD_LIBRARY", "RESEARCH",
         ),
         announcement="{tribe} has forged the Tribal Synapse -- true society begins!",
     ),

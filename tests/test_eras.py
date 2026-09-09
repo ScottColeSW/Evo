@@ -54,6 +54,48 @@ def test_final_era_sits_at_a_real_concrete_population_threshold():
     assert ERAS[-1].requires_population == 1500
 
 
+def test_cognitive_horizon_is_the_agrarian_infrastructure_tier():
+    """Explicit request, 2026-09-08: "Cognitive Horizon needs to be an agrarian
+    society kind of evolution... take about half of the action items from
+    Tribal Synapse." Every settlement/subsistence-infrastructure action moved
+    here -- none of them tied to war, diplomacy, or formal knowledge."""
+    cognitive_horizon = next(e for e in ERAS if e.key == "cognitive_horizon")
+    assert set(cognitive_horizon.unlocks_actions) == {
+        "CONSTRUCT_WALL", "BUILD_LONG_HOUSE", "BUILD_DOCK", "BUILD_FISHERY", "BUILD_SAWMILL",
+        "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_TANNERY", "BUILD_WAREHOUSE", "BUILD_HATCHERY",
+        "BUILD_BATH_HOUSE", "BUILD_WELL",
+    }
+
+
+def test_tribal_synapse_now_holds_only_military_diplomacy_and_knowledge():
+    """The other half of the 2026-09-08 split -- what's left once the agrarian
+    tier moved down to Cognitive Horizon is genuinely "true society" content:
+    a standing military, foreign relations, escalated fortification, and
+    formal knowledge institutions."""
+    tribal_synapse = next(e for e in ERAS if e.key == "tribal_synapse")
+    assert set(tribal_synapse.unlocks_actions) == {
+        "STRIKE_RAIDER_CAMP", "EXPEL_RAIDERS_FROM_TERRITORY", "NAME_WARRIOR",
+        "BUILD_BARRACKS", "TRAIN_BATTALION",
+        "DECLARE_ALLIANCE", "DECLARE_WAR", "BUILD_MOAT", "BUILD_KEEP",
+        "BUILD_LIBRARY", "RESEARCH",
+    }
+
+
+def test_wall_dependent_buildings_moved_down_together_with_the_wall():
+    """BUILD_LONG_HOUSE needs a fully-built wall ring 0, and BUILD_KITCHEN needs
+    a standing Long House -- moving CONSTRUCT_WALL down without its dependents
+    would have made moving them a no-op, still transitively blocked on
+    population 50 regardless of era."""
+    cognitive_horizon_actions = unlocked_actions_through("cognitive_horizon")
+    assert "CONSTRUCT_WALL" in cognitive_horizon_actions
+    assert "BUILD_LONG_HOUSE" in cognitive_horizon_actions
+    assert "BUILD_KITCHEN" in cognitive_horizon_actions
+    # But the next tier of fortification (on top of an already-standing wall)
+    # still reads as "true society" content, not founding-era survival.
+    assert "BUILD_MOAT" not in cognitive_horizon_actions
+    assert "BUILD_KEEP" not in cognitive_horizon_actions
+
+
 def test_object_creator_and_war_domination_eras_replaced_the_old_empty_slots():
     """Explicit request, after a run reached the old ceiling with nothing left
     to do there ("we have to extend it now"): the three old empty reserved
