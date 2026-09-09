@@ -315,6 +315,19 @@ def _can_place(tribe, world, building_type: str) -> bool:
     return architect.find_free_slot(world, tribe, building_type) is not None
 
 
+def _fire_not_yet_built_here(tribe, world) -> bool:
+    """Mirrors actions._already_built's own check for "fire" -- that function
+    takes a full Simulation (for sim.world access), but AFFORDABILITY_CHECKS
+    lambdas only ever get world directly, so this re-expresses the same real
+    guard actions._build_fire already enforces against that. Gap found via a
+    live gating audit, 2026-09-08: every other real, staticly-checkable
+    precondition in this codebase gets an entry here; this one had simply
+    never been wired in, leaving BUILD_FIRE able to dangle in the menu as a
+    no-op before a tribe's very first fire if wood was short."""
+    existing = world.constructions.get((tribe.x, tribe.y))
+    return not (existing is not None and existing["type"] == "fire" and existing.get("progress", 100) >= 100)
+
+
 def _can_afford_build_long_house(tribe, world) -> bool:
     """Explicit request: "the option to build a long house should not even
     come up if they don't have a full Wall built" -- mirrors actions.
@@ -342,6 +355,12 @@ AFFORDABILITY_CHECKS = {
     # real structural prerequisite (a building or proven success) their own
     # action function already gates on -- the exact guaranteed-no-op class this
     # whole table exists to close, just missed on these specific entries.
+    # Gating audit, 2026-09-08: BUILD_FIRE had the same real, staticly-checkable
+    # precondition (actions._already_built, re-expressed here as
+    # _fire_not_yet_built_here since AFFORDABILITY_CHECKS lambdas only get
+    # world, not a full Simulation) every other one-time structure already
+    # gets checked here -- just never wired in.
+    "BUILD_FIRE": lambda t, w: _fire_not_yet_built_here(t, w) and t.wood >= 10,
     "BUILD_DOCK": lambda t, w: t.fishing_learned and t.wood >= config.DOCK_WOOD_COST and _can_place(t, w, "dock"),
     "CONSTRUCT_WALL": _can_afford_construct_wall,
     "BUILD_LONG_HOUSE": _can_afford_build_long_house,
@@ -457,12 +476,29 @@ AFFORDABILITY_CHECKS = {
     ),
     "BREED": lambda t, w: t.food >= config.BREED_FOOD_COST and t.water >= config.BREED_WATER_COST,
     "NAME_WARRIOR": lambda t, w: t.warrior_name is None and _eligible_warrior_candidate(t) is not None,
+    # Gating audit, 2026-09-08: confirmed via a real run's own chronicle log
+    # that both of these failed as a no-op every single time they were ever
+    # chosen ("no known raider camp at that location" / "no raiders are
+    # currently approaching the territory to expel") -- the chief's own
+    # reasoning was sound (a real defensive instinct), it just fired when
+    # there was nothing real to act on yet. Unlike RAID/TRADE/DECLARE_WAR
+    # (whose real target depends on wherever the model aims target_vector,
+    # with no fixed boolean to pre-check), both of these have a plain,
+    # static, tribe-level precondition -- exactly as checkable as
+    # GATHER_ORE's own mine_built entry -- that had simply never been wired
+    # in here.
+    "STRIKE_RAIDER_CAMP": lambda t, w: bool(t.raider_sightings),
+    "EXPEL_RAIDERS_FROM_TERRITORY": lambda t, w: t.raiders_approaching is not None,
     # Explicit request: "it's unwise to Trade before we have a full Wall" --
     # see actions.py._send_trade_emissary's matching real prerequisite. Instant
     # TRADE is left alone (a chance encounter, not a deliberate choice to
     # expose the tribe) -- only the deliberate reach-out to an already-known
     # rival is gated.
     "SEND_TRADE_EMISSARY": lambda t, w: bool(t.wall_rings) and city_layout.ring_fully_built(t.wall_rings[0]),
+    # Gating audit, 2026-09-08: same missed-plain-boolean shape as
+    # STRIKE_RAIDER_CAMP/EXPEL_RAIDERS_FROM_TERRITORY above -- actions._use_item's
+    # own guard is just "does the tribe have any items at all," never wired in here.
+    "USE_ITEM": lambda t, w: bool(t.items),
     # Both a real resource cost AND config.ITEM_STORAGE_CAP_BASE's own ceiling --
     # see _forge_item's matching "item stores are already full" no-op message.
     "FORGE_ITEM": lambda t, w: (

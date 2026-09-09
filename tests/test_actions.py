@@ -4165,6 +4165,75 @@ def test_can_afford_name_warrior_matches_the_action_itself():
     assert AFFORDABILITY_CHECKS["NAME_WARRIOR"](tribe, sim.world) is False  # already named
 
 
+def test_can_afford_strike_raider_camp_matches_the_action_itself():
+    """Gating audit finding, 2026-09-08: confirmed via a real run's own
+    chronicle that this failed as a no-op ("no known raider camp at that
+    location") every time it was ever chosen -- unlike RAID/TRADE, "is there
+    any known camp at all" is a plain, static boolean with no dependence on
+    where the model aims, exactly as checkable as GATHER_ORE's own
+    mine_built entry."""
+    from backend.simulation import AFFORDABILITY_CHECKS
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    assert AFFORDABILITY_CHECKS["STRIKE_RAIDER_CAMP"](tribe, sim.world) is False
+
+    tribe.raider_sightings = [(60, 50)]
+    assert AFFORDABILITY_CHECKS["STRIKE_RAIDER_CAMP"](tribe, sim.world) is True
+
+
+def test_can_afford_expel_raiders_from_territory_matches_the_action_itself():
+    """Same gating audit finding as STRIKE_RAIDER_CAMP above -- confirmed via
+    the same real run that this failed as a no-op ("no raiders are currently
+    approaching the territory to expel") every time it was ever chosen."""
+    from backend.simulation import AFFORDABILITY_CHECKS
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    assert AFFORDABILITY_CHECKS["EXPEL_RAIDERS_FROM_TERRITORY"](tribe, sim.world) is False
+
+    tribe.raiders_approaching = {"x": 52, "y": 50, "cycles_left": 3, "total_cycles": 10, "name": "Dread Grakvor"}
+    assert AFFORDABILITY_CHECKS["EXPEL_RAIDERS_FROM_TERRITORY"](tribe, sim.world) is True
+
+
+def test_can_afford_use_item_matches_the_action_itself():
+    """Gating audit finding, 2026-09-08: same missed-plain-boolean shape --
+    actions._use_item's own guard is just "does the tribe have any items,"
+    never wired into AFFORDABILITY_CHECKS."""
+    from backend.simulation import AFFORDABILITY_CHECKS
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    assert AFFORDABILITY_CHECKS["USE_ITEM"](tribe, sim.world) is False
+
+    tribe.items = [{"name": "Iron Spearhead", "type": "weapon", "value": 12, "cycle_made": 1}]
+    assert AFFORDABILITY_CHECKS["USE_ITEM"](tribe, sim.world) is True
+
+
+def test_can_afford_build_fire_matches_the_action_itself():
+    """Gating audit finding, 2026-09-08: BUILD_FIRE had the same real,
+    staticly-checkable precondition (actions._already_built's own guard)
+    every other one-time structure already gets checked here -- just never
+    wired in, leaving it able to dangle as a no-op before a tribe's first
+    fire if wood was short."""
+    from backend.simulation import AFFORDABILITY_CHECKS
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 5  # short of the real cost
+
+    assert AFFORDABILITY_CHECKS["BUILD_FIRE"](tribe, sim.world) is False
+
+    tribe.wood = 20
+    assert AFFORDABILITY_CHECKS["BUILD_FIRE"](tribe, sim.world) is True
+
+    ACTION_REGISTRY["BUILD_FIRE"](sim, tribe, "plains", (0, 0))
+    assert AFFORDABILITY_CHECKS["BUILD_FIRE"](tribe, sim.world) is False  # already built here
+
+
 def test_scout_allows_a_second_party_of_the_same_kind_within_capacity():
     """Explicit correction (2026-09-07): "Each Tribe can always send a max of
     3 Orders out. They can all be the same if they want. I think we have
