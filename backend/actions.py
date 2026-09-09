@@ -2198,6 +2198,72 @@ def _expel_raiders_from_territory(sim, tribe, biome, target):
     )
 
 
+def _territory_threat_radius(tribe) -> float:
+    """See config.TERRITORY_CLEARING_RADIUS_MARGIN's own comment -- CLEAR_TERRITORY
+    (and the real-construction menu-lock in Simulation._prepare_turn) both reach
+    slightly past the territory boundary itself, not just strictly inside it."""
+    return tribe.territory_radius + config.TERRITORY_CLEARING_RADIUS_MARGIN
+
+
+def _territory_has_nearby_threats(tribe) -> bool:
+    """Shared by AFFORDABILITY_CHECKS["CLEAR_TERRITORY"] and _prepare_turn's
+    real-construction menu-lock -- one real number, not two independently
+    drifting distance checks for the same question."""
+    if tribe.territory_center is None:
+        return False
+    cx, cy = tribe.territory_center
+    radius = _territory_threat_radius(tribe)
+    return any(math.hypot(x - cx, y - cy) <= radius for x, y in tribe.raider_sightings)
+
+
+def _clear_territory(sim, tribe, biome, target):
+    """Explicit request, 2026-09-09: "Territory boundaries must be cleared of
+    threats before they can really start building anything really. This is
+    not a passive action. The Chief must clear the area." Reverses an
+    earlier same-session version (Simulation._advance_territory_clearing,
+    a fully autonomous per-cycle sweep with no chief action at all) -- the
+    Chief now has to actually choose this, the same "not passive" shape
+    _expel_raiders_from_territory above already established for whole-
+    boundary defense, rather than the tribe defending itself for free every
+    cycle.
+
+    Sweeps every raider camp within _territory_threat_radius, not just
+    strictly inside the boundary -- explicit follow-up: "make the Clearing
+    radius a little larger than the Boundary area so they clear any Raider
+    just on the line or outside it." Reuses ACTION_REGISTRY["STRIKE_RAIDER_
+    CAMP"] directly per camp, the same established reuse pattern
+    Simulation._advance_battalion_patrol's own docstring explains (real
+    win-chance/loot logic, not duplicated here) -- bypassing
+    STRIKE_RAIDER_CAMP's own era gate is fine since this is an internal
+    call, not exposing that action itself; this action has its own,
+    earlier era unlock (see eras.py, primitive_dawn) precisely so it's
+    available before real construction ever is.
+
+    Iterates a snapshot, not the live list -- resolving one call can mutate
+    tribe.raider_sightings (a win removes the camp; see
+    _strike_raider_camp), and a still-recovering tribe hitting a wave of
+    camps more than once in the same sweep isn't the intent, just clearing
+    whatever's near the boundary right now."""
+    if tribe.territory_center is None:
+        return "there is no territory yet to clear"
+    cx, cy = tribe.territory_center
+    radius = _territory_threat_radius(tribe)
+    targets = [camp for camp in tribe.raider_sightings if math.hypot(camp[0] - cx, camp[1] - cy) <= radius]
+    if not targets:
+        return "no raiders are camped near the territory boundary to clear"
+
+    cleared = 0
+    for camp in targets:
+        if camp not in tribe.raider_sightings:
+            continue  # already resolved earlier in this same sweep
+        result = ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](sim, tribe, biome, camp)
+        if result and "destroyed" in result:
+            cleared += 1
+    if cleared == 0:
+        return "the tribe pushed toward the raiders camped near the boundary but couldn't clear any of them this time"
+    return f"the tribe clears {cleared} raider camp{'s' if cleared != 1 else ''} from around the territory boundary"
+
+
 def _record_trade(tribe, resource: str, given: int = 0, received: int = 0) -> None:
     """Shared by every trade path (_execute_trade, _trade_with_minor_settlement)
     -- explicit request: sidebar boxes for "an elastic and running total of
@@ -2517,6 +2583,7 @@ ACTION_REGISTRY = {
     "RAID": _raid,
     "STRIKE_RAIDER_CAMP": _strike_raider_camp,
     "EXPEL_RAIDERS_FROM_TERRITORY": _expel_raiders_from_territory,
+    "CLEAR_TERRITORY": _clear_territory,
     "TRADE": _trade,
     "DECLARE_ALLIANCE": _declare_alliance,
     "DECLARE_WAR": _declare_war,
@@ -2580,6 +2647,7 @@ ACTION_DESCRIPTIONS = {
     "RAID": "Attempt to raid a rival tribe if one is near target_vector. A win steals some of their stockpile but still costs you people; a loss costs you more. An unaffiliated minor settlement near target_vector is a much safer alternative -- no people of its own, so a raid there always succeeds with no risk, though it can only be raided a few times before it's exhausted and needs time to recover. Does nothing if neither is there.",
     "STRIKE_RAIDER_CAMP": "Attack a raider camp your scouts have already found (see your raider sighting reports) -- only possible once you know where one is. Success destroys it and recovers some food; failure costs a life and leaves the camp standing.",
     "EXPEL_RAIDERS_FROM_TERRITORY": "Turn the whole population out to drive off raiders currently approaching (only possible while raiders are actually inbound). A win seizes real plunder and wins over stragglers, scaled by your own population -- and the raiders are cast off elsewhere, not gone for good. A loss costs people and supplies, but doesn't end the fight: anger fuels an immediate second and third wave in the same breath, each cheaper in reward and costlier in lives than the last.",
+    "CLEAR_TERRITORY": "Sweep every raider camp near the territory boundary (a little past the boundary line itself, not just strictly inside it) -- only possible while one is actually camped there. Real construction (walls and every building but a basic fire) is blocked until this is done, so a fresh settlement isn't left building next to a standing threat.",
     "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. An unaffiliated minor settlement near target_vector can also be traded with -- smaller and one-sided (nothing is given up), but it never depletes the way raiding one does. Does nothing if neither is there.",
     "DECLARE_ALLIANCE": "Declare a lasting alliance with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember, not a one-time exchange. Also ends a war you'd previously declared with that same rival. Does nothing if no rival tribe exists.",
     "DECLARE_WAR": "Declare a lasting state of war with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember. Does not attack them directly (see RAID for that); this only sets how the two tribes now stand. Does nothing if no rival tribe exists, or if already at war with them.",

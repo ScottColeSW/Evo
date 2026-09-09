@@ -10,7 +10,7 @@ from .actions import (
     _created_object_bonus, _eligible_breeding_pair, _eligible_warrior_candidate, _food_multiplier,
     _generate_raider_name, _has_room_to_grow, _item_storage_cap, _labor_multiplier,
     _long_house_fur_discount, _push_past_visited_ground, _record_combat, _storage_cap,
-    _sustainable_population,
+    _sustainable_population, _territory_has_nearby_threats,
     expedition_capacity,
 )
 from .ancestral_matrix import AncestralTraumaMatrix
@@ -556,6 +556,7 @@ AFFORDABILITY_CHECKS = {
     # in here.
     "STRIKE_RAIDER_CAMP": lambda t, w: bool(t.raider_sightings),
     "EXPEL_RAIDERS_FROM_TERRITORY": lambda t, w: t.raiders_approaching is not None,
+    "CLEAR_TERRITORY": lambda t, w: _territory_has_nearby_threats(t),
     # Explicit request: "it's unwise to Trade before we have a full Wall" --
     # see actions.py._send_trade_emissary's matching real prerequisite. Instant
     # TRADE is left alone (a chance encounter, not a deliberate choice to
@@ -2179,7 +2180,6 @@ class Simulation:
             self._advance_raider_approach(tribe)
             self._advance_battalion_patrol(tribe)
             self._advance_battalion_readiness_upkeep(tribe)
-            self._advance_territory_clearing(tribe)
             self._grow_population(tribe)
             self._advance_era_if_ready(tribe)
             if not tribe.settlement_name and not tribe.pending_settlement_naming and self._is_settled_near_water(tribe):
@@ -3090,6 +3090,34 @@ class Simulation:
             else:
                 survival_crisis = False
 
+        # Explicit request, 2026-09-09: "Territory boundaries must be cleared
+        # of threats before they can really start building anything really.
+        # This is not a passive action. The Chief must clear the area."
+        # Follow-up to the earlier same-session "Clear Territory" mechanic
+        # (originally a fully autonomous per-cycle sweep, Simulation.
+        # _advance_territory_clearing) -- reversed per this explicit
+        # correction into a real chief-chosen action (CLEAR_TERRITORY, see
+        # actions.py._clear_territory), and now also gates every real BUILD_*
+        # action (and CONSTRUCT_WALL) out of the menu while a raider camp
+        # sits within _territory_threat_radius (territory_radius plus a
+        # margin -- "make the Clearing radius a little larger than the
+        # Boundary area so they clear any Raider just on the line or outside
+        # it"). BUILD_FIRE is the one exception: basic survival
+        # infrastructure, unlocked from primitive_dawn same as CLEAR_TERRITORY
+        # itself, not "really building" in the sense meant here.
+        territory_threatened = _territory_has_nearby_threats(tribe)
+        if territory_threatened:
+            build_free = [
+                a for a in available_actions
+                if a == "CLEAR_TERRITORY" or not ((a.startswith("BUILD_") and a != "BUILD_FIRE") or a == "CONSTRUCT_WALL")
+            ]
+            # Fail-open guard, same shape as survival_crisis/wall_commitment
+            # just above: never cut the menu down to nothing.
+            if build_free:
+                available_actions = build_free
+            else:
+                territory_threatened = False
+
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         if tribe.wall_commitment_active:
             credit_note = (
@@ -3110,6 +3138,11 @@ class Simulation:
                 "The crisis is severe enough that only actions which could directly help right now "
                 "are being offered -- building, expansion, trade, and family plans can wait until the "
                 "tribe is safely fed and watered again."
+            )
+        if territory_threatened:
+            visible_entities.append(
+                "Raiders are camped at or just outside the territory boundary -- CLEAR_TERRITORY has "
+                "to drive them off before any real construction (a fire is still fine) can continue."
             )
         if tribe.throttled_actions:
             # See "should we always keep them in the dark like this?" -- unlike
@@ -6067,43 +6100,6 @@ class Simulation:
         if tribe.battalion_size <= 0 or tribe.battalion_readiness <= 0.0:
             return
         tribe.battalion_readiness = max(0.0, tribe.battalion_readiness - config.BATTALION_READINESS_DECAY_PER_CYCLE)
-
-    def _advance_territory_clearing(self, tribe: Tribe) -> None:
-        """Explicit live-run finding, 2026-09-09: "we are placing too many
-        obstacles in the way of Tribe 1's Settling spot... require the
-        Clear the new Territory which will eliminate/challenge Threats."
-        Grounded first: hazard_landmarks aren't pre-placed obstacles at all
-        (_landmark_hazard only ever fires reactively, the instant a party
-        is physically standing on real hazard terrain -- there's no
-        "object" to move), but a raider camp (tribe.raider_sightings) is a
-        real, standing threat, and one already sitting inside a tribe's own
-        just-claimed territory boundary shouldn't just be something a fresh
-        settlement has to live next to indefinitely, waiting on a manual
-        STRIKE_RAIDER_CAMP or a trained Battalion (Military branch,
-        tribal_synapse-only). This is a home-ground instinct, not organized
-        warfare -- runs from the moment a tribe has any real territory at
-        all, the same "no chief action needed" shape
-        Simulation._advance_battalion_patrol already uses for autonomous
-        defense, and the same direct ACTION_REGISTRY["STRIKE_RAIDER_CAMP"]
-        reuse that method's own docstring explains the precedent for
-        (real win-chance/loot logic, not duplicated here).
-
-        Iterates a snapshot of raider_sightings, not the live list --
-        resolving one call can mutate it (a win removes the camp; see
-        actions._strike_raider_camp), and a still-recovering tribe hitting
-        a wave of enemies more than once per cycle isn't the intent here,
-        just clearing whatever's inside the boundary right now."""
-        if tribe.territory_center is None or not tribe.raider_sightings:
-            return
-        cx, cy = tribe.territory_center
-        for camp in list(tribe.raider_sightings):
-            if camp not in tribe.raider_sightings:
-                continue  # already resolved earlier in this same pass
-            if math.hypot(camp[0] - cx, camp[1] - cy) > tribe.territory_radius:
-                continue
-            result = ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](self, tribe, biome_at(camp[0], camp[1]), camp)
-            if result:
-                tribe.history.append(f"{tribe.name} clears its own territory -- {result}")
 
     def _advance_fish_supply(self, tribe: Tribe) -> None:
         """Once fishing is learned (the first successful CATCH_FISH), food flows in

@@ -1756,6 +1756,16 @@ EXPEL_RAIDERS_POPULATION_LOSS_PER_FAILED_WAVE = 2
 EXPEL_RAIDERS_REWARD_REDUCTION_PER_WAVE = 0.35
 EXPEL_RAIDERS_MIN_REWARD_MULTIPLIER = 0.2
 
+# CLEAR_TERRITORY (backend/actions.py._clear_territory): explicit request,
+# 2026-09-09: "Territory boundaries must be cleared of threats before they
+# can really start building anything really. This is not a passive action.
+# The Chief must clear the area... make the Clearing radius a little larger
+# than the Boundary area so they clear any Raider just on the line or
+# outside it." Extra tiles beyond tribe.territory_radius that both this
+# action and the real-construction menu-lock (Simulation._prepare_turn) reach
+# to find a raider camp.
+TERRITORY_CLEARING_RADIUS_MARGIN = 5
+
 # A tribe can only overhear another tribe's broadcast (and therefore only converge on
 # shared vocabulary with them) within this Euclidean distance -- previously broadcasts
 # were audible map-wide regardless of distance, which gave away free information and

@@ -3707,6 +3707,97 @@ def test_expel_raiders_unlocked_only_from_tribal_synapse():
     assert "EXPEL_RAIDERS_FROM_TERRITORY" in unlocked_actions_through("tribal_synapse")
 
 
+def test_clear_territory_requires_real_territory():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = None
+    tribe.raider_sightings = [(50, 50)]
+
+    result = ACTION_REGISTRY["CLEAR_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
+
+    assert "no territory yet" in result
+    assert tribe.raider_sightings == [(50, 50)]
+
+
+def test_clear_territory_fails_with_no_camps_near_the_boundary():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.raider_sightings = [(90, 90)]  # far past the boundary and its margin
+
+    result = ACTION_REGISTRY["CLEAR_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
+
+    assert "no raiders are camped near the territory boundary" in result
+    assert tribe.raider_sightings == [(90, 90)]
+
+
+def test_clear_territory_resolves_a_camp_just_past_the_boundary_line():
+    """Explicit request, 2026-09-09: "make the Clearing radius a little larger
+    than the Boundary area so they clear any Raider just on the line or
+    outside it." A camp outside territory_radius but within the added margin
+    still gets cleared."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.population = 100
+    tx, ty = tribe.territory_center
+    from unittest import mock
+    just_past = (tx + tribe.territory_radius + config.TERRITORY_CLEARING_RADIUS_MARGIN - 1, ty)
+    tribe.raider_sightings = [just_past]
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # guarantees the win roll
+        result = ACTION_REGISTRY["CLEAR_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
+
+    assert "clears 1 raider camp" in result
+    assert tribe.raider_sightings == []
+
+
+def test_clear_territory_ignores_a_camp_beyond_the_margin():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tx, ty = tribe.territory_center
+    beyond = (tx + tribe.territory_radius + config.TERRITORY_CLEARING_RADIUS_MARGIN + 5, ty)
+    tribe.raider_sightings = [beyond]
+
+    result = ACTION_REGISTRY["CLEAR_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
+
+    assert "no raiders are camped near the territory boundary" in result
+    assert tribe.raider_sightings == [beyond]
+
+
+def test_clear_territory_sweeps_every_camp_within_range_in_one_call():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.population = 100
+    tx, ty = tribe.territory_center
+    tribe.raider_sightings = [(tx + 1, ty), (tx - 1, ty)]
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        result = ACTION_REGISTRY["CLEAR_TERRITORY"](sim, tribe, "plains", _NO_TARGET)
+
+    assert "clears 2 raider camps" in result
+    assert tribe.raider_sightings == []
+
+
+def test_clear_territory_unlocked_from_primitive_dawn():
+    """Explicit request, 2026-09-09: "Territory boundaries must be cleared of
+    threats before they can really start building anything really" -- has to
+    be reachable before Cognitive Horizon's own real-construction unlocks,
+    or the menu-lock this action exists to clear would block every one of
+    those from the very first cycle a tribe could reach them."""
+    from backend.eras import unlocked_actions_through
+
+    assert "CLEAR_TERRITORY" in unlocked_actions_through("primitive_dawn")
+
+
 def test_cook_food_unlocked_from_primitive_dawn():
     """Explicit request: "this can happen early." COOK_FOOD is no longer gated to a
     later era at all -- its real prerequisites (a proven hunt and a proven fire) are

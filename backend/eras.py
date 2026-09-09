@@ -87,6 +87,14 @@ ERAS: tuple[Era, ...] = (
             # regardless of era, so moving them here is the same real-prerequisite
             # swap COOK_FOOD already got, not a loosening of any actual constraint.
             "PLANT_CROP", "GATHER_EGGS", "CATCH_FISH",
+            # Explicit request, 2026-09-09: "Territory boundaries must be cleared
+            # of threats before they can really start building anything really."
+            # Has to unlock this early -- Cognitive Horizon (below) is where real
+            # construction (CONSTRUCT_WALL, BUILD_LONG_HOUSE, ...) begins, and the
+            # menu-lock this action exists to clear (Simulation._prepare_turn)
+            # would otherwise block every one of those from the very first cycle
+            # a tribe could ever reach them.
+            "CLEAR_TERRITORY",
         ),
         announcement="{tribe} has awakened at the dawn of the Primitive Age.",
     ),

@@ -5488,49 +5488,65 @@ def test_raider_approach_counts_down_and_resolves_on_arrival():
     assert sim.recent_encounters  # resolution actually ran
 
 
-def test_territory_clearing_resolves_a_raider_camp_inside_the_boundary():
-    """Explicit live-run finding, 2026-09-09: "we are placing too many
-    obstacles in the way of Tribe 1's Settling spot... require the Clear
-    the new Territory which will eliminate/challenge Threats." A raider
-    camp already inside a tribe's own claimed territory shouldn't just sit
-    there indefinitely waiting on a manual STRIKE_RAIDER_CAMP or a trained
-    Battalion -- same "no chief action needed" autonomous-defense shape
-    _advance_battalion_patrol already uses."""
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.territory_center = (50, 50)
-    tribe.territory_radius = 12
-    tribe.raider_sightings = [(52, 50)]  # well inside the boundary
-    tribe.population = 100
+def test_prepare_turn_hides_build_actions_while_a_raider_camp_threatens_the_boundary():
+    """Explicit request, 2026-09-09: "Territory boundaries must be cleared of
+    threats before they can really start building anything really." A camp
+    within _territory_threat_radius (territory_radius + a margin -- "make the
+    Clearing radius a little larger than the Boundary area") hides every real
+    BUILD_* action and CONSTRUCT_WALL, but not CLEAR_TERRITORY itself or
+    BUILD_FIRE (basic survival infrastructure, not "really building")."""
+    from backend import config
 
-    with mock.patch("backend.actions.random.random", return_value=0.0):  # guarantees the win roll
-        sim._advance_territory_clearing(tribe)
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "cognitive_horizon"
+    tribe.wood = tribe.stone = 1000
+    tribe.wood_ever_gathered = tribe.stone_ever_gathered = True
+    tx, ty = tribe.territory_center
+    # Just past the boundary line -- inside territory_radius + the margin,
+    # not strictly inside territory_radius itself.
+    tribe.raider_sightings = [(tx + tribe.territory_radius + config.TERRITORY_CLEARING_RADIUS_MARGIN - 1, ty)]
 
-    assert tribe.raider_sightings == []
-    assert "clears its own territory" in tribe.history[-1]
+    request, ctx = sim._prepare_turn(tribe)
 
-
-def test_territory_clearing_leaves_a_camp_outside_the_boundary_alone():
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.territory_center = (50, 50)
-    tribe.territory_radius = 12
-    tribe.raider_sightings = [(90, 90)]  # nowhere near the territory
-
-    sim._advance_territory_clearing(tribe)
-
-    assert tribe.raider_sightings == [(90, 90)]
+    assert "CLEAR_TERRITORY" in ctx["available_actions"]
+    assert "BUILD_WELL" not in ctx["available_actions"]
+    assert "CONSTRUCT_WALL" not in ctx["available_actions"]
+    assert "has to drive them off before any real construction" in request["prompt"]
 
 
-def test_territory_clearing_does_nothing_before_a_tribe_has_real_territory():
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.territory_center = None
-    tribe.raider_sightings = [(50, 50)]
+def test_prepare_turn_still_allows_building_a_fire_during_a_territory_threat():
+    from backend import config
 
-    sim._advance_territory_clearing(tribe)
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tx, ty = tribe.territory_center
+    tribe.raider_sightings = [(tx + 1, ty)]
+    tribe.wood = 100
 
-    assert tribe.raider_sightings == [(50, 50)]
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_FIRE" in ctx["available_actions"]
+
+
+def test_prepare_turn_does_not_hide_building_once_the_boundary_is_actually_clear():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "cognitive_horizon"
+    tribe.wood = tribe.stone = 1000
+    tribe.wood_ever_gathered = tribe.stone_ever_gathered = True
+    tribe.raider_sightings = []
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_WELL" in ctx["available_actions"]
+    assert "has to drive them off before any real construction" not in request["prompt"]
 
 
 def test_raider_attack_names_the_approaching_raiders():
