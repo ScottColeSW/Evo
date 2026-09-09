@@ -5292,6 +5292,51 @@ def test_raider_approach_counts_down_and_resolves_on_arrival():
     assert sim.recent_encounters  # resolution actually ran
 
 
+def test_territory_clearing_resolves_a_raider_camp_inside_the_boundary():
+    """Explicit live-run finding, 2026-09-09: "we are placing too many
+    obstacles in the way of Tribe 1's Settling spot... require the Clear
+    the new Territory which will eliminate/challenge Threats." A raider
+    camp already inside a tribe's own claimed territory shouldn't just sit
+    there indefinitely waiting on a manual STRIKE_RAIDER_CAMP or a trained
+    Battalion -- same "no chief action needed" autonomous-defense shape
+    _advance_battalion_patrol already uses."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.territory_radius = 12
+    tribe.raider_sightings = [(52, 50)]  # well inside the boundary
+    tribe.population = 100
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # guarantees the win roll
+        sim._advance_territory_clearing(tribe)
+
+    assert tribe.raider_sightings == []
+    assert "clears its own territory" in tribe.history[-1]
+
+
+def test_territory_clearing_leaves_a_camp_outside_the_boundary_alone():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.territory_radius = 12
+    tribe.raider_sightings = [(90, 90)]  # nowhere near the territory
+
+    sim._advance_territory_clearing(tribe)
+
+    assert tribe.raider_sightings == [(90, 90)]
+
+
+def test_territory_clearing_does_nothing_before_a_tribe_has_real_territory():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = None
+    tribe.raider_sightings = [(50, 50)]
+
+    sim._advance_territory_clearing(tribe)
+
+    assert tribe.raider_sightings == [(50, 50)]
+
+
 def test_raider_attack_names_the_approaching_raiders():
     """Explicit request: "Raiders incoming need a Label, like 'Terrible Knoxit
     RAIDS!!!'" -- every approach used to read as the same bare "Raiders" text

@@ -2166,6 +2166,7 @@ class Simulation:
             self._advance_raider_approach(tribe)
             self._advance_battalion_patrol(tribe)
             self._advance_battalion_readiness_upkeep(tribe)
+            self._advance_territory_clearing(tribe)
             self._grow_population(tribe)
             self._advance_era_if_ready(tribe)
             if not tribe.settlement_name and not tribe.pending_settlement_naming and self._is_settled_near_water(tribe):
@@ -5988,6 +5989,43 @@ class Simulation:
         if tribe.battalion_size <= 0 or tribe.battalion_readiness <= 0.0:
             return
         tribe.battalion_readiness = max(0.0, tribe.battalion_readiness - config.BATTALION_READINESS_DECAY_PER_CYCLE)
+
+    def _advance_territory_clearing(self, tribe: Tribe) -> None:
+        """Explicit live-run finding, 2026-09-09: "we are placing too many
+        obstacles in the way of Tribe 1's Settling spot... require the
+        Clear the new Territory which will eliminate/challenge Threats."
+        Grounded first: hazard_landmarks aren't pre-placed obstacles at all
+        (_landmark_hazard only ever fires reactively, the instant a party
+        is physically standing on real hazard terrain -- there's no
+        "object" to move), but a raider camp (tribe.raider_sightings) is a
+        real, standing threat, and one already sitting inside a tribe's own
+        just-claimed territory boundary shouldn't just be something a fresh
+        settlement has to live next to indefinitely, waiting on a manual
+        STRIKE_RAIDER_CAMP or a trained Battalion (Military branch,
+        tribal_synapse-only). This is a home-ground instinct, not organized
+        warfare -- runs from the moment a tribe has any real territory at
+        all, the same "no chief action needed" shape
+        Simulation._advance_battalion_patrol already uses for autonomous
+        defense, and the same direct ACTION_REGISTRY["STRIKE_RAIDER_CAMP"]
+        reuse that method's own docstring explains the precedent for
+        (real win-chance/loot logic, not duplicated here).
+
+        Iterates a snapshot of raider_sightings, not the live list --
+        resolving one call can mutate it (a win removes the camp; see
+        actions._strike_raider_camp), and a still-recovering tribe hitting
+        a wave of enemies more than once per cycle isn't the intent here,
+        just clearing whatever's inside the boundary right now."""
+        if tribe.territory_center is None or not tribe.raider_sightings:
+            return
+        cx, cy = tribe.territory_center
+        for camp in list(tribe.raider_sightings):
+            if camp not in tribe.raider_sightings:
+                continue  # already resolved earlier in this same pass
+            if math.hypot(camp[0] - cx, camp[1] - cy) > tribe.territory_radius:
+                continue
+            result = ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](self, tribe, biome_at(camp[0], camp[1]), camp)
+            if result:
+                tribe.history.append(f"{tribe.name} clears its own territory -- {result}")
 
     def _advance_fish_supply(self, tribe: Tribe) -> None:
         """Once fishing is learned (the first successful CATCH_FISH), food flows in
