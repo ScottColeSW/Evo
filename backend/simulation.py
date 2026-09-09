@@ -182,6 +182,25 @@ SURVIVAL_CRISIS_ACTIONS = {
 # wall_lock_long_house_credits).
 WALL_LOCK_ACTIONS = {"CONSTRUCT_WALL", "GATHER_WOOD", "GATHER_STONE"} | SURVIVAL_CRISIS_ACTIONS
 
+# Explicit request, 2026-09-09: "When they reach this last age, we need to
+# start reducing their options to the Warring and maybe training. they have
+# to reach a stability point in this age." A tribe with nowhere further to
+# advance (next_era returns None) used to just keep drifting on ordinary
+# economic actions indefinitely -- confirmed live: a run ended with both
+# tribes alive, thriving, and having never once fought or allied, purely
+# because both independently hit the era ceiling with nothing forcing any
+# real resolution first. Confirmed via AskUserQuestion: peace stays a real
+# option alongside war (not war-only), and SCOUT/EXPLORATION_PARTY stay in
+# so a rival that hasn't been discovered yet can still be found -- this set
+# is only ever applied once a living rival genuinely exists (see
+# _prepare_turn); a tribe truly alone at the top keeps its ordinary menu
+# and ordinary era_ceiling ending untouched ("they have built it all, they
+# can end in Peace").
+ENDGAME_RESOLUTION_ACTIONS = {
+    "DECLARE_WAR", "DECLARE_ALLIANCE", "DECLARE_CONQUEST", "RAID", "TRADE", "SEND_TRADE_EMISSARY",
+    "TRAIN_BATTALION", "BUILD_BARRACKS", "NAME_WARRIOR", "SCOUT", "EXPLORATION_PARTY",
+} | SURVIVAL_CRISIS_ACTIONS
+
 # See _prepare_turn's affordability filter. A live run showed a tribe stuck at
 # wood=1 for 150+ cycles, cycling BUILD_WAREHOUSE/BUILD_FISHERY/BREED without
 # ever choosing GATHER_WOOD -- BUILD_WAREHOUSE and BUILD_FISHERY both cost wood
@@ -3221,6 +3240,22 @@ class Simulation:
             else:
                 territory_threatened = False
 
+        # Explicit request, 2026-09-09: force real convergence once there's
+        # nowhere further to grow, instead of letting both tribes drift
+        # independently into era_ceiling with nothing resolved. Gated on a
+        # living rival actually existing -- see ENDGAME_RESOLUTION_ACTIONS'
+        # own comment for why a rival-less tribe is deliberately left alone.
+        endgame_locked = False
+        if next_era(tribe.era) is None and any(
+            other.id != tribe.id and not other.extinct for other in self.tribes.values()
+        ):
+            endgame_only = [a for a in available_actions if a in ENDGAME_RESOLUTION_ACTIONS]
+            # Fail-open guard, same shape as every other menu-lock above --
+            # never cut the menu down to nothing.
+            if endgame_only:
+                available_actions = endgame_only
+                endgame_locked = True
+
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         if tribe.wall_commitment_active:
             credit_note = (
@@ -3246,6 +3281,12 @@ class Simulation:
             visible_entities.append(
                 "Raiders are camped at or just outside the territory boundary -- CLEAR_TERRITORY has "
                 "to drive them off before any real construction (a fire is still fine) can continue."
+            )
+        if endgame_locked:
+            visible_entities.append(
+                "There is nowhere further to grow -- every stage of development has been reached. What "
+                "remains is settling things with the known rival tribe once and for all: war, alliance, "
+                "or the training to prepare for either."
             )
         if tribe.throttled_actions:
             # See "should we always keep them in the dark like this?" -- unlike

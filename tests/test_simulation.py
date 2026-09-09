@@ -5709,6 +5709,107 @@ def test_prepare_turn_does_not_hide_building_once_the_boundary_is_actually_clear
     assert "has to drive them off before any real construction" not in request["prompt"]
 
 
+def test_top_era_narrows_the_menu_to_endgame_resolution_when_a_rival_exists():
+    """Explicit request, 2026-09-09: "When they reach this last age, we need
+    to start reducing their options to the Warring and maybe training. they
+    have to reach a stability point in this age." Grounded live: a run ended
+    with both tribes alive and thriving, having reached the top era, having
+    never once fought or allied -- nothing forced any real resolution before
+    both independently hit era_ceiling. Confirmed via AskUserQuestion: peace
+    stays open alongside war."""
+    from backend import config
+
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "war_and_world_domination_era"
+    tribe.wood = tribe.stone = 1000
+    tribe.discovered_rivals.add("tribe_1")  # real contact -- DECLARE_WAR/ALLIANCE actually reachable
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_WOOD" not in ctx["available_actions"]
+    assert "BUILD_WAREHOUSE" not in ctx["available_actions"]
+    for real_action in ("DECLARE_WAR", "DECLARE_ALLIANCE", "TRADE", "SCOUT"):
+        assert real_action in ctx["available_actions"]
+    assert "settling things with the known rival tribe once and for all" in request["prompt"]
+
+
+def test_top_era_menu_stays_normal_with_no_living_rival():
+    """"there is no rival left and they have built it all, they can end in
+    Peace" -- a tribe genuinely alone at the top keeps its ordinary menu
+    (and ordinary era_ceiling ending) untouched, same fail-open discipline
+    every other menu-lock in this file already follows."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "war_and_world_domination_era"
+    tribe.wood = tribe.stone = 1000
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_WOOD" in ctx["available_actions"]
+    assert "settling things with the known rival tribe" not in request["prompt"]
+
+
+def test_top_era_menu_stays_normal_when_the_only_rival_is_extinct():
+    from backend import config
+
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "war_and_world_domination_era"
+    tribe.wood = tribe.stone = 1000
+    tribe.discovered_rivals.add("tribe_1")
+    sim.tribes["tribe_1"].extinct = True
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_WOOD" in ctx["available_actions"]
+    assert "settling things with the known rival tribe" not in request["prompt"]
+
+
+def test_top_era_narrowing_does_not_apply_before_the_final_era():
+    from backend import config
+
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "tribal_synapse"
+    tribe.wood = tribe.stone = 1000
+    tribe.discovered_rivals.add("tribe_1")
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_WOOD" in ctx["available_actions"]
+    assert "settling things with the known rival tribe" not in request["prompt"]
+
+
 def test_raider_attack_names_the_approaching_raiders():
     """Explicit request: "Raiders incoming need a Label, like 'Terrible Knoxit
     RAIDS!!!'" -- every approach used to read as the same bare "Raiders" text
