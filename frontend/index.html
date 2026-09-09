@@ -892,10 +892,19 @@ function foodDisplay(t) {
 // it lives in t.unique_resources[t.mine_resource_name] (a single, per-biome
 // named resource per tribe, not multiple distinct ore types) -- surfaced here
 // the same way wood/stone/food/water already are, once a Mine actually stands.
+//
+// Explicit live-run report, 2026-09-09: "the Fur and Ore text is still in
+// the inventory snapshot" -- back to bare icon+number, dropping the trailing
+// resource name (see furLine's own SECOND-OPINION history just below for the
+// prior back-and-forth on this exact question). Unlike Fur, oreLine's name
+// genuinely varies per biome/run -- this does mean two tribes' "💎" numbers
+// no longer show which named resource they actually are on this line alone
+// (Establishments panel still names it in full). Implemented as asked;
+// worth another look if losing that per-biome name turns out to matter.
 function oreLine(t) {
   if (!t.mine_built || !t.mine_resource_name) return "";
   const amount = (t.unique_resources && t.unique_resources[t.mine_resource_name]) || 0;
-  return `&nbsp;💎 ${amount} ${escapeHtml(t.mine_resource_name)}`;
+  return `&nbsp;💎 ${amount}`;
 }
 
 // Same "surface it the same way wood/stone/food/water already are" precedent
@@ -909,11 +918,16 @@ function oreLine(t) {
 // genuinely varies. Live feedback: the bare icon+number read as an odd,
 // unlabeled one-off right next to oreLine's own "amount + name" format on
 // the same inventory line -- the inconsistency itself was confusing, not
-// the presence of a name. Matches oreLine's shape now.
+// the presence of a name. Matched oreLine's shape.
+//
+// Reversed again, explicit live-run report, 2026-09-09: "the Fur and Ore
+// text is still in the inventory snapshot" -- back to bare icon+number.
+// Both lines dropped their trailing name together this time, so they stay
+// consistent with each other either way.
 function furLine(t) {
   if (!t.tannery_built) return "";
   const amount = (t.unique_resources && t.unique_resources.Fur) || 0;
-  return `&nbsp;🦫 ${amount} Fur`;
+  return `&nbsp;🦫 ${amount}`;
 }
 
 function renderEraLadder(state) {
@@ -2259,14 +2273,35 @@ function pathColorForExpedition(hex, index) {
 // could vaguely fit" -- explicit follow-up: "we don't need to change all our
 // icons... this might help us expand that list and allocate icons more
 // completely," not a wholesale redesign.
-const WATER_LANDMARK_ICONS = ["\u{1F4A7}", "\u{1F3DE}\u{FE0F}", "\u{1F41F}", "\u{1F33F}"]; // droplet, canyon/basin, fish, herb
+// Explicit live-run report, 2026-09-09: "the water icon looks weird now" --
+// root cause was U+1F3DE+FE0F (canyon/basin), a rare multi-part glyph that
+// renders inconsistently at the small canvas fillText size this map uses.
+// First fix pooled it with alternatives (lotus/fish/herb); explicit
+// follow-up ("emoji droplet is good to rivers and lakes") said the plain
+// droplet alone is the right call here -- dropped back to a single icon,
+// same shape as lumber_sites/wildlife_sites/quarry_sites/mine_sites below,
+// rather than varying a symbol that already reads clearly on its own.
+const WATER_LANDMARK_ICON = "\u{1F4A7}"; // droplet
 const RAIDER_LANDMARK_ICONS = ["\u{1FA93}", "\u{1F417}", "\u{1FAB5}", "\u{1F969}", "\u{26C8}\u{FE0F}"]; // axe, boar, log, meat, storm
+// Explicit live-run report, 2026-09-09: "Hazards shouldn't be used for the
+// Landmark icons." This pool is for tribe.landmarks -- a genuine positive
+// discovery like "Sunken Idol" -- not tribe.hazard_landmarks (its own
+// dedicated warning-triangle icon just below, "known danger, no one died").
+// The old pool undercut that distinction on three separate counts: volcano/
+// fire/bone all read as danger, not discovery; the hut collided with
+// drawSettlementMarker's own icon (the exact "shares an icon with something
+// unrelated" problem this pool was first built to fix, for the moai); and
+// the water wave collided with WATER_LANDMARK_ICON's own domain above for a
+// field that has nothing to do with water. Replaced with a clean pool that
+// reads as "notable find," collides with nothing else on the map, and (the
+// amphora/feather especially) leans into the "Sunken Idol"/"Gilded Feather"
+// treasure flavor these landmarks already have.
 const GENERAL_LANDMARK_ICONS = [
-  "\u{1F30B}", "\u{1FAA8}", "\u{1F331}", "\u{1F525}", "\u{1F9B4}", "\u{1F6D6}", "\u{1F30A}",
-]; // volcano, rock, sprout, fire, bone, hut, water wave
+  "\u{1FAA8}", "\u{1F331}", "\u{1F3FA}", "\u{1FAB6}", "\u{1F9FF}", "\u{1FA99}",
+]; // rock, sprout, amphora, feather, nazar amulet, coin
 
 const LANDMARK_TYPES = [
-  ["confirmed_water_sites", WATER_LANDMARK_ICONS, [0, 0], "Water"],       // droplet family, centered
+  ["confirmed_water_sites", WATER_LANDMARK_ICON, [0, 0], "Water"],       // droplet, centered
   ["lumber_sites", "\u{1F332}", [-0.55, -0.4], "Timber"],          // evergreen, upper-left
   ["wildlife_sites", "\u{1F43E}", [0.55, -0.4], "Game"],         // paw prints, upper-right
   ["quarry_sites", "⛏️", [0, 0.55], "Quarry"],           // pick, lower-center
@@ -2318,7 +2353,7 @@ function populateIconKeyPools() {
     const el = document.getElementById(id);
     if (el) el.textContent = Array.isArray(poolOrIcon) ? poolOrIcon.join("") : poolOrIcon;
   };
-  setIcons("key-icon-water", WATER_LANDMARK_ICONS);
+  setIcons("key-icon-water", WATER_LANDMARK_ICON);
   setIcons("key-icon-landmark", GENERAL_LANDMARK_ICONS);
   setIcons("key-icon-raiders-approaching", "\u{2694}\u{FE0F}");
   setIcons("key-icon-raiders-sighting", RAIDER_LANDMARK_ICONS);
