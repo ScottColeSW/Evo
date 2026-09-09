@@ -2342,7 +2342,7 @@ def _trade(sim, tribe, biome, target):
     chief philosophy that otherwise has nothing to act on. Instant: only works if a
     rival already happens to be within TRADE_PROXIMITY_RADIUS of target_vector right
     now -- SEND_TRADE_EMISSARY is the longer-reach alternative, for a rival already
-    in contact (DIPLOMACY_CONTACT_RADIUS) but too far for this tight a radius. Also
+    discovered (tribe.discovered_rivals) but too far for this tight a radius. Also
     checks for an unaffiliated minor settlement first, the same way RAID does -- a
     safer, smaller, one-sided exchange rather than a real trade."""
     tx, ty = target
@@ -2360,27 +2360,24 @@ def _nearest_rival(sim, tribe, x, y):
     """Explicit correction: "they can't make an ALLIANCE if they have not made
     contact with another Tribe or Settlement." Used to have no radius cutoff at
     all -- a geopolitical stance toward a rival nobody had ever actually gotten
-    close to. config.DIPLOMACY_CONTACT_RADIUS reuses the same "close enough to
-    exchange real information" distance BROADCAST_HEARING_RADIUS already
-    represents for linguistic convergence -- looser than RAID/TRADE's tight
-    physical-encounter radius (an envoy covering that ground is plausible;
-    outright combat/trade goods changing hands isn't at the same range), but
-    still a real contact requirement, not target_vector alone."""
+    close to. Originally enforced with a live config.DIPLOMACY_CONTACT_RADIUS
+    distance check between the two tribes' own positions -- but once both are
+    settled (home position fixed) and spawned far apart by design, that live
+    check could never pass again after founding, even after real contact had
+    already happened. Gated on tribe.discovered_rivals instead (see
+    Simulation._note_rival_discovery): once a rival's camp has genuinely been
+    found -- by home proximity or by a scout physically closing the distance --
+    "we've made contact" is a lasting fact, not a snapshot that a fixed home
+    position could stop satisfying the moment it's checked again. target_vector
+    still only disambiguates *which* discovered rival is meant when more than
+    one exists."""
     best, best_dist = None, None
     for other in sim.tribes.values():
-        if other.id == tribe.id or other.extinct:
+        if other.id == tribe.id or other.extinct or other.id not in tribe.discovered_rivals:
             continue
         dist = (other.x - x) ** 2 + (other.y - y) ** 2
         if best is None or dist < best_dist:
             best, best_dist = other, dist
-    if best is None:
-        return None
-    # The contact check is real distance between the two tribes themselves, not
-    # between target_vector and the candidate -- target_vector only disambiguates
-    # *which* rival is meant when more than one exists, same as before.
-    contact_dist = (best.x - tribe.x) ** 2 + (best.y - tribe.y) ** 2
-    if contact_dist > config.DIPLOMACY_CONTACT_RADIUS ** 2:
-        return None
     return best
 
 
@@ -2440,12 +2437,12 @@ def _send_trade_emissary(sim, tribe, biome, target):
     is, a live run showed it almost always wandering nowhere close and
     reporting "found no one." _declare_alliance/_declare_war solved the exact
     same problem for geopolitical stance by requiring real, already-established
-    contact (_nearest_rival, DIPLOMACY_CONTACT_RADIUS) instead of a guess --
-    this now does the same: instant, contact-gated, no travel to simulate.
-    DIPLOMACY_CONTACT_RADIUS (15) is wider than instant TRADE's own
-    TRADE_PROXIMITY_RADIUS (3), so this remains the deliberate, longer-reach
-    option TRADE isn't, just resolved immediately rather than over several
-    days once contact already exists.
+    contact (_nearest_rival, tribe.discovered_rivals) instead of a guess --
+    this now does the same: instant, contact-gated, no travel to simulate. This
+    remains the deliberate, longer-reach option TRADE isn't (discovery can
+    happen from as far as RIVAL_PRECISE_AWARENESS_RADIUS, wider than instant
+    TRADE's own tight TRADE_PROXIMITY_RADIUS), just resolved immediately rather
+    than over several days once contact already exists.
 
     Explicit request: "it's unwise to Trade before we have a full Wall" --
     unlike instant TRADE (a chance encounter, not a deliberate choice to

@@ -820,6 +820,18 @@ class Tribe:
         # Symmetric: set on both tribes at once, since only one side ever "chooses"
         # this in a given cycle but the declaration is real for both.
         self.stance_toward: dict[str, str] = {}
+        # Explicit request, 2026-09-09: "i suggest they narrow the target as they
+        # get closer." A rival's id lands here the moment its real home camp is
+        # ever confirmed within RIVAL_PRECISE_AWARENESS_RADIUS -- either this
+        # tribe's own position, or a live expedition's -- and stays here for
+        # good, the same once-found-stays-found shape landmarks/hazard_landmarks
+        # already use. Real position is always read live off the other Tribe
+        # object at usage sites (never snapshotted here), so a discovered rival
+        # that later moves is still tracked accurately. See Simulation.
+        # _note_rival_discovery and actions._nearest_rival (now gated on this
+        # instead of a live distance check that a settled tribe -- home position
+        # fixed -- could never re-satisfy once spawned far from its rival).
+        self.discovered_rivals: set[str] = set()
         # Credited to whichever chief is in power the moment each is first earned --
         # see Simulation._check_chief_trophies. [{"name", "chief", "cycle"}, ...]
         self.trophies: list[dict] = []
@@ -1382,6 +1394,7 @@ class Tribe:
             "mine_resource_name": self.mine_resource_name,
             "unique_resources": self.unique_resources,
             "visited_sectors": list(self.visited_sectors),
+            "discovered_rivals": list(self.discovered_rivals),
             "scout_rotation_index": self.scout_rotation_index,
             "landmarks": self.landmarks,
             "hazard_landmarks": self.hazard_landmarks,
@@ -2480,14 +2493,25 @@ class Simulation:
         # RIVAL_DISTANT_SIGHTING_RADIUS) -- without this, the default ~62-tile spawn
         # distance meant tribes had no way to ever notice each other at all, which is
         # the real reason TRADE/RAID never fired in a single run this session.
+        #
+        # Explicit follow-up, 2026-09-09: "i suggest they narrow the target as they
+        # get closer." A live distance check alone meant this fact (and the exact
+        # coordinates it revealed) could vanish the moment the tribe's home camp
+        # ever drifted back outside RIVAL_PRECISE_AWARENESS_RADIUS -- and once both
+        # tribes are settled (home position fixed) and spawned far apart, it could
+        # never fire at all. _note_rival_discovery makes "we found them" a lasting
+        # fact instead (also checked from every expedition's own live position, in
+        # _advance_one_expedition -- a scout physically closing the distance is what
+        # actually narrows the target now, not the home camp).
+        self._note_rival_discovery(tribe, tribe.x, tribe.y)
         for other in self.tribes.values():
             if other.id == tribe.id or other.extinct:
                 continue
             dx, dy = other.x - tribe.x, other.y - tribe.y
             distance = math.hypot(dx, dy)
-            if distance <= config.RIVAL_PRECISE_AWARENESS_RADIUS:
+            if other.id in tribe.discovered_rivals:
                 visible_entities.append(
-                    f"{other.name} is nearby at ({other.x},{other.y}), about {distance:.0f} tiles away"
+                    f"{other.name}'s camp is known to be at ({other.x},{other.y}), about {distance:.0f} tiles away"
                 )
                 # Military branch, step 7 (plan file valiant-forging-falcon.md): "The
                 # Chief has to actually be able to reach DECLARE_CONQUEST -- not just
@@ -3495,10 +3519,14 @@ class Simulation:
         # DECLARE_CONQUEST_NUDGE_MIGHT_RATIO), the same "nudge harder once a real
         # gate is met" shape the COOK_FOOD/CONSTRUCT_WALL nudges above already use.
         if "DECLARE_CONQUEST" in available_actions and tribe.battalion_size > 0:
+            # Gated on discovery (tribe.discovered_rivals), not a live distance
+            # snapshot -- see _note_rival_discovery's own docstring for why a live
+            # check alone could never fire once both tribes are settled and spawned
+            # far apart. Still picks the closest of any known rivals off their real,
+            # current position.
             nearby_rivals = [
                 other for other in self.tribes.values()
-                if other.id != tribe.id and not other.extinct
-                and math.hypot(other.x - tribe.x, other.y - tribe.y) <= config.RIVAL_PRECISE_AWARENESS_RADIUS
+                if other.id != tribe.id and not other.extinct and other.id in tribe.discovered_rivals
             ]
             if nearby_rivals:
                 rival = min(nearby_rivals, key=lambda o: math.hypot(o.x - tribe.x, o.y - tribe.y))
@@ -4232,6 +4260,7 @@ class Simulation:
             mark_visited_sector(tribe, nx, ny)
             exp["pos"] = [nx, ny]
             _append_expedition_path_point(exp, nx, ny)
+            self._note_rival_discovery(tribe, nx, ny)
             # Explicit correction: "the volcano is a Hazard they will die if they
             # go there." Unlike the river's drowning risk (only ever checked on
             # the outbound leg inside the water-sensing branch below, since a
@@ -4479,6 +4508,7 @@ class Simulation:
             mark_visited_sector(tribe, nx, ny)
             exp["pos"] = [nx, ny]
             _append_expedition_path_point(exp, nx, ny)
+            self._note_rival_discovery(tribe, nx, ny)
             if is_new_day:
                 exp["food_gathered"] += config.EXPEDITION_RETURN_DAILY_FOOD
                 if not self._is_settled_near_water(tribe):  # see the matching outbound-leg comment above
@@ -4674,6 +4704,34 @@ class Simulation:
                 if best_dist is None or dist < best_dist:
                     best, best_dist = (wx, wy), dist
         return best
+
+    def _note_rival_discovery(self, tribe: Tribe, x: int, y: int) -> None:
+        """Explicit request, 2026-09-09: "i suggest they narrow the target as they
+        get closer." Records any not-yet-discovered rival whose real home camp is
+        within RIVAL_PRECISE_AWARENESS_RADIUS of (x, y) -- called with the tribe's
+        own position from _prepare_turn's awareness block, and with a live
+        expedition's current position from _advance_one_expedition, so a scout
+        physically closing the distance is what actually narrows the target, not
+        just a static home-to-home check that a settled tribe (position fixed)
+        spawned far from its rival could otherwise never satisfy.
+
+        Explicit follow-up: "make sure to not 'narrow' if they already have an
+        exact/correct target, for efficiency sake." Once every other living tribe
+        is already discovered there is nothing left to find, so the whole scan
+        (called every cycle from every moving expedition) short-circuits before
+        touching sim.tribes at all -- and any individual rival already recorded
+        is skipped rather than recomputed. Real coordinates are never snapshotted
+        here, only the fact of discovery (tribe.discovered_rivals) -- every usage
+        site reads the other Tribe's current x/y live, so a discovered rival that
+        later moves is still tracked accurately, not frozen at first contact."""
+        living_rivals = sum(1 for other in self.tribes.values() if other.id != tribe.id and not other.extinct)
+        if len(tribe.discovered_rivals) >= living_rivals:
+            return
+        for other in self.tribes.values():
+            if other.id == tribe.id or other.extinct or other.id in tribe.discovered_rivals:
+                continue
+            if math.hypot(other.x - x, other.y - y) <= config.RIVAL_PRECISE_AWARENESS_RADIUS:
+                tribe.discovered_rivals.add(other.id)
 
     def _landmark_hazard(self, tribe: Tribe, x: int, y: int, hazard_label: str) -> None:
         """Explicit design spec: "if anyone discovers a hazard, even if no one

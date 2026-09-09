@@ -3721,6 +3721,7 @@ def test_declare_alliance_sets_symmetric_stance():
     sim = _bare_simulation()
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.discovered_rivals.add("tribe_1")
     sim.tribes = {"tribe_0": a, "tribe_1": b}
 
     result = ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
@@ -3750,6 +3751,7 @@ def test_declare_war_sets_symmetric_stance():
     sim = _bare_simulation()
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.discovered_rivals.add("tribe_1")
     sim.tribes = {"tribe_0": a, "tribe_1": b}
 
     result = ACTION_REGISTRY["DECLARE_WAR"](sim, a, "plains", (51, 51))
@@ -3759,15 +3761,18 @@ def test_declare_war_sets_symmetric_stance():
     assert "declares war" in result
 
 
-def test_declare_war_requires_real_contact_range():
-    from backend import config
-
+def test_declare_war_requires_the_rival_to_have_been_discovered():
+    """Explicit correction: "they can't make an ALLIANCE if they have not made
+    contact with another Tribe or Settlement" -- a rival that exists but has
+    never actually been discovered (Tribe.discovered_rivals, see
+    Simulation._note_rival_discovery) shouldn't be a valid target, regardless
+    of target_vector."""
     sim = _bare_simulation()
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    far = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 50 + config.DIPLOMACY_CONTACT_RADIUS + 5, 50, "#fb923c")
-    sim.tribes = {"tribe_0": a, "tribe_1": far}
+    undiscovered = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 55, 50, "#fb923c")
+    sim.tribes = {"tribe_0": a, "tribe_1": undiscovered}
 
-    result = ACTION_REGISTRY["DECLARE_WAR"](sim, a, "plains", (far.x, far.y))
+    result = ACTION_REGISTRY["DECLARE_WAR"](sim, a, "plains", (undiscovered.x, undiscovered.y))
 
     assert "no rival tribe has been encountered" in result
     assert a.stance_toward == {}
@@ -3777,6 +3782,7 @@ def test_declare_war_is_a_no_op_if_already_at_war():
     sim = _bare_simulation()
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.discovered_rivals.add("tribe_1")
     a.stance_toward["tribe_1"] = "WAR"
     b.stance_toward["tribe_0"] = "WAR"
     sim.tribes = {"tribe_0": a, "tribe_1": b}
@@ -3790,6 +3796,7 @@ def test_declare_alliance_ends_a_previously_declared_war():
     sim = _bare_simulation()
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.discovered_rivals.add("tribe_1")
     a.stance_toward["tribe_1"] = "WAR"
     b.stance_toward["tribe_0"] = "WAR"
     sim.tribes = {"tribe_0": a, "tribe_1": b}
@@ -3813,18 +3820,16 @@ def test_declare_alliance_with_no_rival_tribe():
     assert a.stance_toward == {}
 
 
-def test_declare_alliance_requires_real_contact_range():
-    """Explicit correction: "they can't make an ALLIANCE if they have not made
-    contact with another Tribe or Settlement" -- a rival that exists but is far
-    outside config.DIPLOMACY_CONTACT_RADIUS shouldn't be a valid target."""
-    from backend import config
-
+def test_declare_alliance_requires_the_rival_to_have_been_discovered():
+    """Same discovery requirement as DECLARE_WAR (see the test above) -- a
+    rival that exists but was never discovered isn't a valid ALLIANCE target
+    either, no matter how target_vector is aimed."""
     sim = _bare_simulation()
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    far = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 50 + config.DIPLOMACY_CONTACT_RADIUS + 5, 50, "#fb923c")
-    sim.tribes = {"tribe_0": a, "tribe_1": far}
+    undiscovered = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 55, 50, "#fb923c")
+    sim.tribes = {"tribe_0": a, "tribe_1": undiscovered}
 
-    result = ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (far.x, far.y))
+    result = ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (undiscovered.x, undiscovered.y))
 
     assert "no rival tribe has been encountered" in result
     assert a.stance_toward == {}
@@ -3835,6 +3840,7 @@ def test_declare_stance_picks_the_nearest_rival_not_the_first():
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     far = Tribe("tribe_1", "Far Tribe", "gemma2:2b", 90, 90, "#fb923c")
     near = Tribe("tribe_2", "Near Tribe", "gemma2:2b", 52, 52, "#34d399")
+    a.discovered_rivals.update({"tribe_1", "tribe_2"})
     sim.tribes = {"tribe_0": a, "tribe_1": far, "tribe_2": near}
 
     ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (52, 52))
@@ -4393,16 +4399,17 @@ def test_send_trade_emissary_requires_a_known_rival():
 
 
 def test_send_trade_emissary_trades_instantly_with_a_known_rival():
-    """A rival within DIPLOMACY_CONTACT_RADIUS (wider than instant TRADE's own
-    tight TRADE_PROXIMITY_RADIUS) trades immediately -- no travel simulated."""
-    from backend import config
-
+    """A rival already in tribe.discovered_rivals (see Simulation.
+    _note_rival_discovery) trades immediately once contact exists -- no travel
+    simulated, and no live re-check of TRADE_PROXIMITY_RADIUS at resolution
+    time, since discovery is what "contact" means now."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     _settle(sim, tribe)
     _complete_ring0(sim, tribe)
-    rx = tribe.x + config.DIPLOMACY_CONTACT_RADIUS - 1  # in contact, but well past TRADE_PROXIMITY_RADIUS
+    rx = tribe.x + 30  # well past TRADE_PROXIMITY_RADIUS -- discovery, not live distance, gates this now
     rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", rx, tribe.y, "#fb923c")
+    tribe.discovered_rivals.add("tribe_1")
     tribe.wood, rival.wood = 100, 200
     sim.tribes["tribe_1"] = rival
 

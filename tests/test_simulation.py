@@ -673,7 +673,8 @@ def test_precise_rival_awareness_within_radius_gives_exact_coordinates():
 
     request, _ctx = sim._prepare_turn(forest)
 
-    assert f"Mountain Tribe is nearby at ({mountain.x},{mountain.y})" in request["prompt"]
+    assert f"Mountain Tribe's camp is known to be at ({mountain.x},{mountain.y})" in request["prompt"]
+    assert "tribe_1" in forest.discovered_rivals
 
 
 def test_distant_rival_sighting_gives_a_direction_not_coordinates():
@@ -708,6 +709,74 @@ def test_no_rival_awareness_beyond_the_distant_sighting_radius():
     request, _ctx = sim._prepare_turn(forest)
 
     assert "Mountain Tribe" not in request["prompt"]
+
+
+def test_note_rival_discovery_records_a_rival_within_range():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 55, 50, "#fb923c")  # within RIVAL_PRECISE_AWARENESS_RADIUS
+    sim.tribes = {"tribe_0": tribe, "tribe_1": rival}
+
+    sim._note_rival_discovery(tribe, tribe.x, tribe.y)
+
+    assert tribe.discovered_rivals == {"tribe_1"}
+
+
+def test_note_rival_discovery_ignores_a_rival_out_of_range():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 90, 90, "#fb923c")
+    sim.tribes = {"tribe_0": tribe, "tribe_1": rival}
+
+    sim._note_rival_discovery(tribe, tribe.x, tribe.y)
+
+    assert tribe.discovered_rivals == set()
+
+
+def test_note_rival_discovery_skips_the_scan_once_every_rival_is_already_known():
+    """Explicit follow-up, 2026-09-09: "make sure to not 'narrow' if they
+    already have an exact/correct target, for efficiency sake." Once every
+    living rival is already in tribe.discovered_rivals, the whole distance
+    scan -- called every cycle from every moving expedition, see
+    _advance_one_expedition -- short-circuits before touching math.hypot at
+    all, instead of recomputing and re-confirming a rival already found."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 52, 50, "#fb923c")
+    tribe.discovered_rivals.add("tribe_1")
+    sim.tribes = {"tribe_0": tribe, "tribe_1": rival}
+
+    with mock.patch("backend.simulation.math.hypot") as mock_hypot:
+        sim._note_rival_discovery(tribe, tribe.x, tribe.y)
+
+    mock_hypot.assert_not_called()
+
+
+def test_advancing_expedition_discovers_a_rival_it_moves_near():
+    """Explicit request, 2026-09-09: "i suggest they narrow the target as they
+    get closer." A scout's own live position -- not just the tribe's home --
+    can trigger discovery, letting a tribe learn a rival's exact location even
+    when the two home camps are spawned too far apart to ever satisfy
+    RIVAL_PRECISE_AWARENESS_RADIUS on their own."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 10, 10, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 90, 90, "#fb923c")  # far from tribe's own home
+    sim.tribes = {"tribe_0": tribe, "tribe_1": rival}
+    tribe.expeditions = [{
+        "pos": [10, 10], "origin": [10, 10], "target": [95, 95],
+        "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 30, "path": [],
+    }]
+    exp = tribe.expeditions[0]
+
+    # Lands within RIVAL_PRECISE_AWARENESS_RADIUS of the rival's home, nowhere
+    # near tribe's own (10,10) -- the tribe's home distance alone would never
+    # discover this rival.
+    with mock.patch("backend.physics.terrain_aware_step", return_value=(85, 90)):
+        sim._advance_one_expedition(tribe, exp)
+
+    assert "tribe_1" in tribe.discovered_rivals
 
 
 def test_extinct_rival_produces_no_awareness_fact():
@@ -4601,6 +4670,64 @@ def test_prepare_turn_has_no_name_warrior_nudge_without_an_eligible_candidate():
     request, _ctx = sim._prepare_turn(tribe)
 
     assert "NAME_WARRIOR would appoint" not in request["prompt"]
+
+
+def test_prepare_turn_nudges_declare_conquest_against_a_weaker_discovered_rival():
+    """Military branch, step 7: "the Chief has to actually be able to reach
+    DECLARE_CONQUEST -- not just mechanically possible, but visible." Explicit
+    follow-up, 2026-09-09 ("i suggest they narrow the target as they get
+    closer"): this nudge is now gated on tribe.discovered_rivals (see
+    Simulation._note_rival_discovery), not a live distance snapshot -- placing
+    the rival within RIVAL_PRECISE_AWARENESS_RADIUS of home is what makes
+    _prepare_turn discover them, same as the general awareness fact does."""
+    sim = Simulation(
+        [
+            {"name": "Forest Tribe", "model": "gemma2:2b"},
+            {"name": "Mountain Tribe", "model": "qwen2.5:3b"},
+        ]
+    )
+    tribe = sim.tribes["tribe_0"]
+    rival = sim.tribes["tribe_1"]
+    rival.x, rival.y = tribe.x - 10, tribe.y  # within RIVAL_PRECISE_AWARENESS_RADIUS
+    tribe.era = "war_and_world_domination_era"
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.wood, tribe.stone = 200, 200
+    tribe.battalion_size = 20
+    rival.battalion_size = 0  # Might 0 -- any nonzero Might clears the nudge ratio
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "tribe_1" in tribe.discovered_rivals
+    assert "DECLARE_CONQUEST" in request["prompt"]
+    assert "meaningfully weaker" in request["prompt"]
+
+
+def test_prepare_turn_has_no_declare_conquest_nudge_without_discovery():
+    """A rival that exists but was never discovered (too far for
+    RIVAL_PRECISE_AWARENESS_RADIUS to have ever triggered) gets no nudge, even
+    if it would otherwise be a favorable Might matchup."""
+    sim = Simulation(
+        [
+            {"name": "Forest Tribe", "model": "gemma2:2b"},
+            {"name": "Mountain Tribe", "model": "qwen2.5:3b"},
+        ]
+    )
+    tribe = sim.tribes["tribe_0"]
+    rival = sim.tribes["tribe_1"]
+    tribe.x, tribe.y = 0, 0
+    rival.x, rival.y = 99, 99
+    tribe.era = "war_and_world_domination_era"
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.wood, tribe.stone = 200, 200
+    tribe.battalion_size = 20
+    rival.battalion_size = 0
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "tribe_1" not in tribe.discovered_rivals
+    assert "meaningfully weaker" not in request["prompt"]
 
 
 def test_visible_entities_names_might_comparison_against_a_nearby_rival():

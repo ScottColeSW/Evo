@@ -1762,13 +1762,6 @@ EXPEL_RAIDERS_MIN_REWARD_MULTIPLIER = 0.2
 # removed any incentive to actually travel toward another tribe.
 BROADCAST_HEARING_RADIUS = 15
 
-# DECLARE_ALLIANCE/DECLARE_WAR (backend/actions.py._nearest_rival): explicit
-# correction -- "they can't make an ALLIANCE if they have not made contact with
-# another Tribe or Settlement." Reuses BROADCAST_HEARING_RADIUS's own "close
-# enough to exchange real information" distance rather than inventing a second
-# number for the same underlying idea.
-DIPLOMACY_CONTACT_RADIUS = BROADCAST_HEARING_RADIUS
-
 # Cross-tribe proximity awareness, independent of whether the other tribe has ever
 # broadcast anything -- real data this session showed every single run (25/25 tribe-
 # reports) ending with zero trades and zero raids. The default two-tribe spawn distance
@@ -1780,6 +1773,17 @@ DIPLOMACY_CONTACT_RADIUS = BROADCAST_HEARING_RADIUS
 # RIVAL_DISTANT_SIGHTING_RADIUS, set above the real default spawn distance so a fresh
 # two-tribe game is aware of the other from cycle one instead of remaining permanently
 # blind to a rival that's simply never going to wander within 15 tiles by chance.
+#
+# RIVAL_PRECISE_AWARENESS_RADIUS is also the discovery range for
+# Simulation._note_rival_discovery (tribe.discovered_rivals) -- explicit request,
+# 2026-09-09: "i suggest they narrow the target as they get closer." Once a home
+# camp or a live expedition gets this close to a rival, that rival counts as
+# discovered for good, which is also what now gates DECLARE_ALLIANCE/DECLARE_WAR/
+# SEND_TRADE_EMISSARY's "have we made contact" check (backend/actions.py.
+# _nearest_rival) -- the old dedicated DIPLOMACY_CONTACT_RADIUS constant (a live
+# home-to-home distance check) is retired: once both tribes are settled and spawn
+# deliberately far apart, that live check could never pass again after founding,
+# even after real contact had already happened once.
 RIVAL_PRECISE_AWARENESS_RADIUS = 20
 RIVAL_DISTANT_SIGHTING_RADIUS = 70
 
