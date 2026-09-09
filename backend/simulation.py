@@ -282,6 +282,14 @@ def _can_afford_construct_wall(tribe, world) -> bool:
     # reinforce, unlock, or open a new ring) the tribe can actually afford
     # right now," same "hide the guaranteed no-op" shape every other entry in
     # this table already uses.
+    #
+    # Live-run finding, 2026-09-08: unlike Sawmill/Quarry/Tannery/Dock (each
+    # gated on a real proven precedent -- wood_ever_gathered, hunt_ever_succeeded,
+    # etc.), the wall had no such gate -- just a cost check, so it could dump into
+    # the menu the instant a tribe settled, before it had ever actually gathered
+    # anything. Same fix as BUILD_WAREHOUSE/BUILD_BATH_HOUSE/BUILD_WELL just above.
+    if not (tribe.wood_ever_gathered and tribe.stone_ever_gathered):
+        return False
     cost = _wall_next_afford_cost(tribe)
     if cost is not None:
         wood_cost, stone_cost = cost
@@ -387,8 +395,22 @@ AFFORDABILITY_CHECKS = {
         t.eggs_ever_gathered and t.wood >= config.HATCHERY_WOOD_COST and t.stone >= config.HATCHERY_STONE_COST
         and _can_place(t, w, "hatchery")
     ),
+    # Live-run finding, 2026-09-08 ("12 new actions get thrown at the Chief" the
+    # instant a tribe settles): unlike every other building here, BUILD_BATH_HOUSE/
+    # BUILD_WELL/BUILD_WAREHOUSE/CONSTRUCT_WALL had no real precedent gate at all
+    # (Sawmill waits for wood_ever_gathered, Tannery for a hunt, Dock for fishing
+    # learned) -- just a cost check, so they dumped into the menu the instant
+    # has_ever_settled flipped, alongside the whole gather/hunt/explore tier a
+    # freshly-settled tribe should actually be focused on first. Explicit framing:
+    # "Food and Water and Building Materials and Exploration should be next on my
+    # mind. Then when we have resources I want to build." wood_ever_gathered and
+    # stone_ever_gathered -- the same "has this tribe actually done the thing even
+    # once" signal every other building already keys on -- is the natural line
+    # between those two phases: nothing to build yet until there's been real
+    # gathering to show for it.
     "BUILD_BATH_HOUSE": lambda t, w: (
-        t.wood >= config.BATH_HOUSE_WOOD_COST and t.stone >= config.BATH_HOUSE_STONE_COST
+        t.wood_ever_gathered and t.stone_ever_gathered
+        and t.wood >= config.BATH_HOUSE_WOOD_COST and t.stone >= config.BATH_HOUSE_STONE_COST
         and _can_place(t, w, "bath_house")
     ),
     "BUILD_LIBRARY": lambda t, w: (
@@ -397,7 +419,8 @@ AFFORDABILITY_CHECKS = {
         and _can_place(t, w, "library")
     ),
     "BUILD_WELL": lambda t, w: (
-        t.wood >= config.WELL_WOOD_COST and t.stone >= config.WELL_STONE_COST
+        t.wood_ever_gathered and t.stone_ever_gathered
+        and t.wood >= config.WELL_WOOD_COST and t.stone >= config.WELL_STONE_COST
         and _can_place(t, w, "well")
     ),
     # Deliberately NOT gated on the tribe having any memory yet -- same as
@@ -418,7 +441,8 @@ AFFORDABILITY_CHECKS = {
         and t.wood >= config.MOAT_WOOD_COST and t.stone >= config.MOAT_STONE_COST
     ),
     "BUILD_WAREHOUSE": lambda t, w: (
-        t.wood >= config.WAREHOUSE_WOOD_COST and t.stone >= config.WAREHOUSE_STONE_COST
+        t.wood_ever_gathered and t.stone_ever_gathered
+        and t.wood >= config.WAREHOUSE_WOOD_COST and t.stone >= config.WAREHOUSE_STONE_COST
         and _can_place(t, w, "warehouse")
     ),
     # Military branch, step 2 (plan file valiant-forging-falcon.md) -- real

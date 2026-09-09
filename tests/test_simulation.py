@@ -354,6 +354,7 @@ def test_unfinished_wall_hides_long_house_from_the_menu_without_nagging_about_it
     tribe.era = "tribal_synapse"
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.has_ever_settled = True
+    tribe.wood_ever_gathered = tribe.stone_ever_gathered = True
     sim._found_territory(tribe)
     tribe.wall_rings[0]["sections"][0]["unlocked"] = True
     tribe.wall_rings[0]["sections"][0]["progress"] = 40
@@ -1870,6 +1871,7 @@ def test_wall_commitment_narrows_the_menu_to_wall_and_survival_actions():
     tribe.has_ever_settled = True
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"  # unlocks every action, so the filter is doing the work
+    tribe.wood_ever_gathered = tribe.stone_ever_gathered = True
     sim._found_territory(tribe)
     # Unlocked and incomplete -- CONSTRUCT_WALL needs a real target to stay
     # affordable (see _can_afford_construct_wall); this test is about what the
@@ -1966,6 +1968,7 @@ def test_affordability_gate_reappears_once_the_cost_is_covered():
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
+    tribe.wood_ever_gathered = tribe.stone_ever_gathered = True
     sim._found_territory(tribe)  # real game always pairs these -- BUILD_WAREHOUSE's own placement check needs it
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"
@@ -2075,6 +2078,7 @@ def test_affordability_gate_hides_a_buildable_action_once_territory_has_no_room(
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
+    tribe.wood_ever_gathered = tribe.stone_ever_gathered = True
     sim._found_territory(tribe)
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"
@@ -2110,6 +2114,7 @@ def test_affordability_gate_hides_construct_wall_when_the_next_section_is_unaffo
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
+    tribe.wood_ever_gathered = tribe.stone_ever_gathered = True
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"
     tribe.food = tribe.water = 200
@@ -2127,6 +2132,46 @@ def test_affordability_gate_hides_construct_wall_when_the_next_section_is_unaffo
     tribe.wood = tribe.stone = config.WALL_WOOD_COST_TOTAL + config.WALL_STONE_COST_TOTAL
     _, ctx = sim._prepare_turn(tribe)
     assert "CONSTRUCT_WALL" in ctx["available_actions"]
+
+
+def test_settlement_moment_no_longer_dumps_every_building_at_once():
+    """Live-run finding, 2026-09-08: reconstructing available_actions across a
+    real run showed 12 actions landing in the single cycle a tribe settles --
+    unlike every other building (Sawmill waits for wood_ever_gathered, Tannery
+    for a hunt, Dock for fishing learned), BUILD_WAREHOUSE/BUILD_BATH_HOUSE/
+    BUILD_WELL/CONSTRUCT_WALL had no real precedent gate at all, just a cost
+    check, so they dumped in immediately alongside the gather/hunt/explore tier
+    a freshly-settled tribe should actually be focused on first. Explicit
+    framing: "Food and Water and Building Materials and Exploration should be
+    next on my mind. Then when we have resources I want to build." """
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "monolithic_era"  # unlocks every building, so the new gate is what's tested
+    tribe.wood = tribe.stone = 1000  # cost is not the problem here
+    sim._found_territory(tribe)
+    assert tribe.wood_ever_gathered is False and tribe.stone_ever_gathered is False  # fresh settlement, nothing gathered yet
+
+    _, ctx_fresh = sim._prepare_turn(tribe)
+    assert "BUILD_WAREHOUSE" not in ctx_fresh["available_actions"]
+    assert "BUILD_BATH_HOUSE" not in ctx_fresh["available_actions"]
+    assert "BUILD_WELL" not in ctx_fresh["available_actions"]
+    assert "CONSTRUCT_WALL" not in ctx_fresh["available_actions"]
+    # The gather/hunt/explore tier stays fully available -- this only narrows
+    # the "what can I build" half of the menu, not survival/provisioning.
+    assert "GATHER_WOOD" in ctx_fresh["available_actions"]
+    assert "GATHER_STONE" in ctx_fresh["available_actions"]
+    assert "HUNT_DEER" in ctx_fresh["available_actions"]
+
+    tribe.wood_ever_gathered = tribe.stone_ever_gathered = True
+    _, ctx_provisioned = sim._prepare_turn(tribe)
+    assert "BUILD_WAREHOUSE" in ctx_provisioned["available_actions"]
+    assert "BUILD_BATH_HOUSE" in ctx_provisioned["available_actions"]
+    assert "BUILD_WELL" in ctx_provisioned["available_actions"]
+    assert "CONSTRUCT_WALL" in ctx_provisioned["available_actions"]
 
 
 def test_affordability_gate_hides_construct_wall_when_no_territory_exists_yet():
@@ -2172,6 +2217,7 @@ def test_affordability_gate_shows_construct_wall_when_a_ring_exists_with_nothing
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
+    tribe.wood_ever_gathered = tribe.stone_ever_gathered = True
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"
     tribe.wood = tribe.stone = 200  # plenty to afford the expansion cost
@@ -8211,6 +8257,7 @@ def test_construct_wall_stays_available_below_the_wall_ring_cap():
     sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
+    tribe.wood_ever_gathered = tribe.stone_ever_gathered = True
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"
     tribe.territory_center = (40, 37)
