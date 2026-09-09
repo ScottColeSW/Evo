@@ -199,6 +199,30 @@ def _storage_cap(tribe) -> int:
     return config.STORAGE_CAP_BASE + tribe.warehouses_built * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
 
 
+def _sustainable_population(tribe) -> int:
+    """Real, resource-grounded population ceiling -- explicit request,
+    2026-09-09: "so, pop. is unbounded? that's probably the reason for a
+    lot of problems. We need to put a reasonable limit on this." See
+    Simulation._grow_population's own docstring for the full derivation
+    (the "Infinity Food/Water" security mechanics only ever top a tribe up
+    to _storage_cap; population growing past storage_cap * upkeep-divisor
+    means upkeep permanently outpaces even a maxed-out top-up). Every
+    spontaneous-birth trigger in this codebase -- BREED itself, the
+    night-cycle random breed chance, several celebration-linked
+    opportunities -- already gated itself on `population <
+    config.POPULATION_GROWTH_CAP`; that gate just went inert once
+    POPULATION_GROWTH_CAP became infinite (an earlier explicit "no
+    arbitrary cap" request). This is the one real number every one of
+    those call sites should compare against instead, so there's a single
+    source of truth for "does this tribe have real room to grow" rather
+    than a second, parallel population-limit mechanism."""
+    return _storage_cap(tribe) * config.UPKEEP_POPULATION_DIVISOR
+
+
+def _has_room_to_grow(tribe) -> bool:
+    return tribe.population < _sustainable_population(tribe)
+
+
 def _add_capped(sim, tribe, resource: str, amount: int, label: str) -> str | None:
     """Adds `amount` of `resource` up to _storage_cap, returning a real in-fiction
     outcome (like any other action's own result) instead of silently discarding the
@@ -1850,8 +1874,8 @@ def _breed(sim, tribe, biome, target):
     flavor note) isn't decided here -- this only sets tribe.pending_birth; Simulation.
     step() resolves it with a real, non-scripted LLM call (backend/breeding.py) the
     same cycle, the same pattern _install_chief already uses for pending_chief_context."""
-    if tribe.population >= config.POPULATION_GROWTH_CAP:
-        return "no room to raise a family right now -- the tribe is already at capacity"
+    if not _has_room_to_grow(tribe):
+        return "no room to raise a family right now -- the tribe has outgrown what it can currently sustain"
     pair = _eligible_breeding_pair(tribe)
     if pair is None:
         return "no one with enough standing in the tribe yet to start a family"

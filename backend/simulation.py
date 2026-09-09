@@ -8,8 +8,9 @@ from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _created_object_bonus, _eligible_breeding_pair, _eligible_warrior_candidate, _food_multiplier,
-    _generate_raider_name, _item_storage_cap, _labor_multiplier, _long_house_fur_discount,
-    _push_past_visited_ground, _record_combat, _storage_cap,
+    _generate_raider_name, _has_room_to_grow, _item_storage_cap, _labor_multiplier,
+    _long_house_fur_discount, _push_past_visited_ground, _record_combat, _storage_cap,
+    _sustainable_population,
     expedition_capacity,
 )
 from .ancestral_matrix import AncestralTraumaMatrix
@@ -1999,7 +2000,7 @@ class Simulation:
         # of any specific celebration milestone, using the exact same eligibility rule
         # and $0 cost every other breeding path already uses (_eligible_breeding_pair,
         # BREED_FOOD_COST/WATER_COST).
-        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+        if tribe.pending_birth is None and _has_room_to_grow(tribe):
             if random.random() < config.NIGHT_CYCLE_RANDOM_BREED_CHANCE:
                 pair = _eligible_breeding_pair(tribe)
                 if pair is not None:
@@ -5146,7 +5147,7 @@ class Simulation:
                     f"\U0001f389 {scout}'s crew holds a boat party on the water at ({px},{py}), celebrating "
                     f"the discovery of {name} -- {reward} {resource} claimed"
                 )
-                if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+                if tribe.pending_birth is None and _has_room_to_grow(tribe):
                     pair = _eligible_breeding_pair(tribe)
                     if pair is not None:
                         parent_a, parent_b = pair
@@ -5542,11 +5543,10 @@ class Simulation:
         tribe already over the line doesn't lose population through this
         path -- that's still _starve/_dehydrate's own job, this only stops
         digging the hole deeper)."""
-        if tribe.food > config.POPULATION_GROWTH_FOOD_THRESHOLD and tribe.population < config.POPULATION_GROWTH_CAP:
+        if tribe.food > config.POPULATION_GROWTH_FOOD_THRESHOLD and _has_room_to_grow(tribe):
             base_growth = max(1, tribe.population // config.POPULATION_GROWTH_SCALE_DIVISOR)
             physiological = tribe.wellbeing.get("tiers", {}).get("physiological", 0.5)
-            sustainable_population = _storage_cap(tribe) * config.UPKEEP_POPULATION_DIVISOR
-            carrying_capacity_fraction = max(0.0, 1 - tribe.population / sustainable_population)
+            carrying_capacity_fraction = max(0.0, 1 - tribe.population / _sustainable_population(tribe))
             growth = round(
                 base_growth * physiological * config.POPULATION_GROWTH_WELLBEING_MAX_MULTIPLIER
                 * carrying_capacity_fraction
@@ -5703,7 +5703,7 @@ class Simulation:
             f"\U0001f389 {tribe.name} celebrates the wall's completion, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )
         self._award_trophy(tribe, "Wall Warden")
-        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+        if tribe.pending_birth is None and _has_room_to_grow(tribe):
             pair = _eligible_breeding_pair(tribe)
             if pair is not None:
                 parent_a, parent_b = pair
@@ -5792,7 +5792,7 @@ class Simulation:
             f"flow easier from here on, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )
         self._award_trophy(tribe, "Road Warden")
-        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+        if tribe.pending_birth is None and _has_room_to_grow(tribe):
             pair = _eligible_breeding_pair(tribe)
             if pair is not None:
                 parent_a, parent_b = pair
@@ -6393,7 +6393,7 @@ class Simulation:
             f"\U0001f389 {tribe.name} celebrates the discovery of water at ({fx},{fy}), spending {spent} "
             f"food on a {_feast_word(tribe)} -- the tribe will move to settle there soon{_celebration_shout(tribe)}"
         )
-        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+        if tribe.pending_birth is None and _has_room_to_grow(tribe):
             pair = _eligible_breeding_pair(tribe)
             if pair is not None:
                 parent_a, parent_b = pair
@@ -6415,7 +6415,7 @@ class Simulation:
             f"\U0001f389 {tribe.name} celebrates the discovery of a game-rich site at ({tx},{ty}), "
             f"spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )
-        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+        if tribe.pending_birth is None and _has_room_to_grow(tribe):
             pair = _eligible_breeding_pair(tribe)
             if pair is not None:
                 parent_a, parent_b = pair
@@ -6483,7 +6483,7 @@ class Simulation:
             f"\U0001f389 {tribe.name} holds a celebration for {reason}, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )
 
-        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+        if tribe.pending_birth is None and _has_room_to_grow(tribe):
             pair = _eligible_breeding_pair(tribe)
             if pair is not None:
                 parent_a, parent_b = pair
@@ -6506,7 +6506,7 @@ class Simulation:
             f"\U0001f389 {tribe.name} celebrates settling here for good, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )
         tribe.pending_settlement_naming = True
-        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+        if tribe.pending_birth is None and _has_room_to_grow(tribe):
             pair = _eligible_breeding_pair(tribe)
             if pair is not None:
                 parent_a, parent_b = pair
@@ -6527,7 +6527,7 @@ class Simulation:
         tribe.history.append(
             f"\U0001f389 {tribe.name} holds a harvest festival, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )
-        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+        if tribe.pending_birth is None and _has_room_to_grow(tribe):
             pair = _eligible_breeding_pair(tribe)
             if pair is not None:
                 parent_a, parent_b = pair
@@ -6546,7 +6546,7 @@ class Simulation:
         tribe.history.append(
             f"\U0001f389 {tribe.name} celebrates learning to fish, spending {spent} food on a {_feast_word(tribe)}{_celebration_shout(tribe)}"
         )
-        if tribe.pending_birth is None and tribe.population < config.POPULATION_GROWTH_CAP:
+        if tribe.pending_birth is None and _has_room_to_grow(tribe):
             pair = _eligible_breeding_pair(tribe)
             if pair is not None:
                 parent_a, parent_b = pair

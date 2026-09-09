@@ -4039,19 +4039,52 @@ def test_breed_fails_during_a_real_starvation_crisis_now_that_it_has_a_cost():
     assert "too little food and water" in note
 
 
-def test_breed_refuses_at_the_population_cap():
+def test_breed_refuses_once_past_sustainable_capacity():
+    """Explicit request, 2026-09-09: "I'd prefer to use Breed than a flat
+    +1" -- BREED used to check the now-inert config.POPULATION_GROWTH_CAP
+    (an explicitly infinite constant), so this gate never actually fired in
+    practice. Now checks actions._has_room_to_grow, the same real,
+    resource-grounded ceiling (_storage_cap(tribe) * UPKEEP_POPULATION_
+    DIVISOR) Simulation._grow_population's own carrying-capacity brake
+    uses -- a single source of truth for "does this tribe have real room to
+    grow" instead of two population-limit mechanisms, one dead."""
     from backend import config
+    from backend.actions import _sustainable_population
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.chief_name = "Ashgar"
     tribe.trophies = [{"name": "Water Bringer", "chief": "BriMir", "cycle": 1}]
-    tribe.population = config.POPULATION_GROWTH_CAP
+    tribe.food = 200
+    tribe.water = 200
+    tribe.warehouses_built = 0
+    tribe.population = _sustainable_population(tribe)  # already at the real line
 
     note = ACTION_REGISTRY["BREED"](sim, tribe, "plains", (0, 0))
 
     assert "no room" in note
     assert tribe.pending_birth is None
+
+
+def test_breed_still_works_below_sustainable_capacity():
+    """Companion to the refusal test above -- confirms the new gate isn't
+    just always-False; a tribe with real headroom can still start a family."""
+    from backend import config
+    from backend.actions import _sustainable_population
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+    tribe.trophies = [{"name": "Water Bringer", "chief": "BriMir", "cycle": 1}]
+    tribe.food = 200
+    tribe.water = 200
+    tribe.warehouses_built = 0
+    tribe.population = _sustainable_population(tribe) - 100  # real headroom
+
+    note = ACTION_REGISTRY["BREED"](sim, tribe, "plains", (0, 0))
+
+    assert "no room" not in note
+    assert tribe.pending_birth is not None
 
 
 def test_name_warrior_does_nothing_below_the_trophy_threshold():
