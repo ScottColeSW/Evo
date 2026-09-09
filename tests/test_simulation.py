@@ -7488,6 +7488,73 @@ def test_population_growth_stops_entirely_once_past_sustainable_capacity():
     assert tribe.population == 5000
 
 
+def test_population_pressure_culls_a_fraction_of_the_excess_each_cycle():
+    """Explicit request, 2026-09-09: "cull an additional 11% less than the
+    supportable population... naturally, meaning as needed... checked
+    per-cycle." Distinct from _starve/_dehydrate -- fires purely on
+    population vs. _sustainable_population, food/water untouched. Same
+    fixture as test_population_growth_stops_entirely_once_past_sustainable_
+    capacity (population 5000, storage_cap(300)*divisor(10) = sustainable
+    3000): target = round(3000 * 0.89) = 2670, excess = 2330,
+    lost = round(2330 * 0.05) = round(116.5) = 116 (Python's banker's
+    rounding) -- only a fraction, not a snap cull down to the target in one
+    cycle."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 5000
+    tribe.warehouses_built = 0
+
+    sim._advance_population_pressure(tribe)
+
+    assert tribe.population == 5000 - 116
+    assert "culled back to what the land can support" in tribe.history[-1]
+    assert "116" in tribe.history[-1]
+
+
+def test_population_pressure_does_nothing_below_the_target_line():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 100  # nowhere near sustainable(3000) * 0.89
+    tribe.warehouses_built = 0
+
+    sim._advance_population_pressure(tribe)
+
+    assert tribe.population == 100
+    assert tribe.history == []
+
+
+def test_population_pressure_stops_once_back_at_the_target_line():
+    """Confirms the taper actually reaches zero rather than always shaving
+    something off, however small -- right at the target line, excess is 0
+    and nothing is lost."""
+    from backend.actions import _sustainable_population
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.warehouses_built = 0
+    tribe.population = round(_sustainable_population(tribe) * config.POPULATION_CARRYING_CAPACITY_TARGET_FRACTION)
+
+    sim._advance_population_pressure(tribe)
+
+    assert tribe.population == round(_sustainable_population(tribe) * config.POPULATION_CARRYING_CAPACITY_TARGET_FRACTION)
+    assert tribe.history == []
+
+
+def test_population_pressure_does_nothing_to_an_extinct_tribe():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 0
+    tribe.extinct = True
+    tribe.warehouses_built = 0
+
+    sim._advance_population_pressure(tribe)
+
+    assert tribe.history == []
+
+
 def test_population_growth_is_zero_during_a_real_sustained_famine():
     """Regression test for a live-confirmed runaway: an earlier version
     averaged all five Maslow tiers into the growth multiplier with a floor, so

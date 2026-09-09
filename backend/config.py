@@ -1022,6 +1022,23 @@ MATERIAL_SURPLUS_THRESHOLD = 50
 POPULATION_LOSS_DIVISOR = 50
 STARVATION_TRAUMA_MAGNITUDE = -0.4
 STARVATION_TRAUMA_RADIUS = 5
+
+# Simulation._advance_population_pressure: explicit request, 2026-09-09,
+# after real data showed the reactive starvation/thirst drip alone wasn't
+# reliably enough of a check on population -- "cull an additional 11% less
+# than the supportable population... naturally, meaning as needed... checked
+# per-cycle." Distinct from starvation/thirst (reactive, fires only once
+# food/water actually run out): this is proactive, keyed on population
+# alone against _sustainable_population, and catches the real case that
+# growth's own gradual taper can't -- a winning RAID/DECLARE_CONQUEST
+# absorbing a rival's population in one shot, pushing a tribe over its own
+# sustainable line instantly rather than gradually.
+POPULATION_CARRYING_CAPACITY_TARGET_FRACTION = 0.89
+# Only this fraction of the excess (population above the target line) is
+# culled per cycle -- "naturally, as needed," not a one-time snap cull. A
+# large overshoot drains down over several cycles instead of vanishing in
+# one tick.
+POPULATION_PRESSURE_CULL_FRACTION = 0.05
 DEHYDRATION_TRAUMA_MAGNITUDE = -0.4
 DEHYDRATION_TRAUMA_RADIUS = 5
 

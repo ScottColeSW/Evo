@@ -2206,6 +2206,7 @@ class Simulation:
             self._advance_battalion_patrol(tribe)
             self._advance_battalion_readiness_upkeep(tribe)
             self._grow_population(tribe)
+            self._advance_population_pressure(tribe)
             self._advance_era_if_ready(tribe)
             if not tribe.settlement_name and not tribe.pending_settlement_naming and self._is_settled_near_water(tribe):
                 self._celebrate_settling(tribe)
@@ -5707,6 +5708,41 @@ class Simulation:
                 tribe.population += growth
                 tribe.food -= min(tribe.food, config.POPULATION_GROWTH_FOOD_COST * growth)
         tribe.max_population = max(tribe.max_population, tribe.population)
+
+    def _advance_population_pressure(self, tribe: Tribe) -> None:
+        """Explicit request, 2026-09-09: "Population culling due to food
+        shortages are not working effectively. It might need to cull an
+        additional 11% less than the supportable population... It should cull
+        naturally, meaning as needed... This needs to check per-cycle."
+        Distinct from _starve/_dehydrate (reactive -- "the thrashing for
+        doing bad," fires only once food/water actually run out): this is
+        proactive, keyed on population alone against _sustainable_population,
+        and catches what _grow_population's own gradual carrying-capacity
+        taper can't -- a winning RAID/DECLARE_CONQUEST absorbing a rival's
+        population (_merge_tribes) can push a tribe well over its own
+        sustainable line in a single call, bypassing that taper entirely
+        rather than approaching it gradually the way organic growth does.
+
+        Gradual, not a one-time snap cull -- only
+        config.POPULATION_PRESSURE_CULL_FRACTION of the excess (population
+        above config.POPULATION_CARRYING_CAPACITY_TARGET_FRACTION of the
+        sustainable line) is lost per cycle, "naturally, as needed," so a
+        large overshoot drains down over several cycles instead of vanishing
+        in one tick, and stops entirely the moment it's back under the
+        target. Its own distinct cause (for the scoreboard and the history
+        line, distinct from "starvation"/"thirst") keeps this legible as a
+        different phenomenon -- crowding, not hunger or thirst."""
+        if tribe.extinct:
+            return
+        target = round(_sustainable_population(tribe) * config.POPULATION_CARRYING_CAPACITY_TARGET_FRACTION)
+        excess = tribe.population - target
+        if excess <= 0:
+            return
+        lost = max(1, round(excess * config.POPULATION_PRESSURE_CULL_FRACTION))
+        tribe.history.append(
+            f"the population is culled back to what the land can support -- {lost} lost to overcrowding"
+        )
+        self._lose_population(tribe, lost, cause="overcrowding")
 
     def _advance_era_if_ready(self, tribe: Tribe) -> None:
         nxt = next_era(tribe.era)
