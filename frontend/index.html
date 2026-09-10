@@ -3840,8 +3840,29 @@ const TANNERY_YIELD_PER_CYCLE = 4;
 // Mirrors backend/config.py's STORAGE_CAP_BASE/WAREHOUSE_STORAGE_BONUS_PER_BUILDING
 // -- explicit request, after a live run showed unbounded hoarding (200+ wood while
 // starved on stone): a real ceiling per resource, raised by each Warehouse built.
-const STORAGE_CAP_BASE = 150;
-const WAREHOUSE_STORAGE_BONUS_PER_BUILDING = 100;
+//
+// Found stale 2026-09-10 while chasing "sidebar comments on Buildings are not
+// good": these had drifted out of sync with the backend's own values (150/100
+// here vs. the real 300/400) since whenever those constants were last retuned
+// there -- the exact frontend/backend-drift bug class this project has caught
+// before (see evolution2civ-open-threads-and-risks.md section E), just never
+// re-audited for these two specific numbers. The sidebar's own reported
+// storage capacity has been understating the real number this whole time.
+const STORAGE_CAP_BASE = 300;
+const WAREHOUSE_STORAGE_BONUS_PER_BUILDING = 400;
+// Explicit request, 2026-09-10: "sidebar comments on Buildings are not good;
+// not informative about the bonus provided." Mirrors backend/config.py's own
+// KEEP_DEFENSE_BONUS/FORTRESS_DEFENSE_BONUS/CASTLE_DEFENSE_BONUS/
+// MOAT_DEFENSE_BONUS/BATH_HOUSE_UPKEEP_MULTIPLIER/HATCHERY_HATCH_CHANCE_
+// MULTIPLIER -- real numbers for labels that used to just say "a further
+// defense bonus"/"consumption reduced" with nothing quantified.
+const KEEP_DEFENSE_BONUS = 0.10;
+const FORTRESS_DEFENSE_BONUS = 0.20;
+const CASTLE_DEFENSE_BONUS = 0.15;
+const MOAT_DEFENSE_BONUS = 0.08;
+const BATH_HOUSE_UPKEEP_MULTIPLIER = 0.85;
+const HATCHERY_HATCH_CHANCE_MULTIPLIER = 2.0;
+const COOKING_FOOD_MULTIPLIER = 3;
 // Mirrors backend/config.py's UPKEEP_POPULATION_DIVISOR/FISHING_SUPPLY_MULTIPLIER
 // -- fishing's passive supply scales with population the same way upkeep does
 // (bug report: "we have hit a food and water scaling problem"), not a flat number.
@@ -3989,9 +4010,12 @@ function farmingPanel(t) {
     const eggsSurplusThreshold = t.livestock_surplus_threshold ?? 12;
     parts.push(`🥚 Eggs in store — ${t.eggs}${t.eggs > eggsSurplusThreshold ? " · surplus feasted on" : ""}`);
   }
-  if (t.hatchery_built) parts.push("🐣 Hatchery — the flock hatches on its own much more reliably");
-  if (t.bath_house_built) parts.push("🛁 Bath House — daily food and water consumption reduced");
-  if (t.well_built) parts.push("🪣 Well — daily passive water supply flows in faster");
+  if (t.hatchery_built) parts.push(`🐣 Hatchery — flock hatch chance ×${HATCHERY_HATCH_CHANCE_MULTIPLIER}`);
+  if (t.bath_house_built) parts.push(`🛁 Bath House — daily food and water consumption ${Math.round((1 - BATH_HOUSE_UPKEEP_MULTIPLIER) * 100)}% lower`);
+  // Explicit correction, 2026-09-10: a real Well is now a true, complete water
+  // guarantee -- exempt from upkeep entirely (Simulation._apply_upkeep), not
+  // just a faster top-up racing the same ongoing drain every other tribe pays.
+  if (t.well_built) parts.push("🪣 Well — full water security, no more upkeep drain on water at all");
   if (t.library_built) {
     // 4% per research, capped at 50% -- mirrors config.INNOVATION_ERA_DISCOUNT_PER_RESEARCH/_CAP.
     parts.push(`📚 Library — ${t.research_completed} insight${t.research_completed === 1 ? "" : "s"} recorded, next era ${Math.min(50, t.research_completed * 4)}% closer`);
@@ -4030,7 +4054,7 @@ function farmingPanel(t) {
     }
   }
   if (t.fire_ever_built && ring0Reinforced) parts.push("🔥🧱 Torches — lining the wall, a free defense bonus");
-  if (t.moat_built) parts.push("💧 Moat — a further defense bonus");
+  if (t.moat_built) parts.push(`💧 Moat — +${Math.round(MOAT_DEFENSE_BONUS * 100)}% raid defense chance`);
   if (t.long_houses_built > 0) {
     // Explicit request: "It needs to say housed/unhoused... so the Tribe knows
     // how many more they will need to build until everyone is housed
@@ -4050,14 +4074,14 @@ function farmingPanel(t) {
     // (Simulation._prepare_turn). Stays silent until it's actually true.
     parts.push("🏠 Long House — ready to build now that the wall is complete");
   }
-  if (t.keep_built) parts.push("🏯 Keep — a further defense bonus");
-  if (t.fortress_built) parts.push("🏰 Fortress — a further defense bonus");
-  if (t.castle_built) parts.push("🏯 Castle — a further defense bonus");
+  if (t.keep_built) parts.push(`🏯 Keep — +${Math.round(KEEP_DEFENSE_BONUS * 100)}% raid defense chance`);
+  if (t.fortress_built) parts.push(`🏰 Fortress — +${Math.round(FORTRESS_DEFENSE_BONUS * 100)}% raid defense chance`);
+  if (t.castle_built) parts.push(`🏯 Castle — +${Math.round(CASTLE_DEFENSE_BONUS * 100)}% raid defense chance`);
   if (t.road_built) parts.push("🛣️ Road — every future expedition travels faster");
   if (t.dock_built) parts.push("⚓ Dock — boosts every manual fish catch");
   if (t.sawmill_built) parts.push("🪵 Sawmill — every load of gathered wood is worth 6x");
   if (t.quarry_built) parts.push("⛏️ Quarry — every load of harvested stone is worth 3x");
-  if (t.kitchen_built) parts.push("🍲 Kitchen — cooked meals count as excellent food");
+  if (t.kitchen_built) parts.push(`🍲 Kitchen — every hunt, forage, or catch yields ${COOKING_FOOD_MULTIPLIER}x as much food`);
   if (t.mine_built) {
     const amount = (t.unique_resources || {})[t.mine_resource_name] || 0;
     parts.push(`💎 Mine — ${MINE_YIELD_PER_CYCLE} ${escapeHtml(t.mine_resource_name)}/day (${amount} stored)`);
