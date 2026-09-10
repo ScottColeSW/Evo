@@ -409,6 +409,97 @@ def test_build_barracks_auto_fill_never_exceeds_real_population():
     assert tribe.battalion_size == 5
 
 
+def test_build_barracks_unavailable_past_the_count_cap():
+    """Explicit request, 2026-09-10: "we have to scale Barracks like we have
+    done with Warehouse" -- real data showed a tribe build 57 barracks in one
+    run. BUILD_BARRACKS' own AFFORDABILITY_CHECKS entry now caps at
+    config.BARRACKS_MAX_COUNT, the same shape BUILD_WAREHOUSE already uses."""
+    from backend.simulation import AFFORDABILITY_CHECKS
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.kitchen_built = True
+    tribe.keep_built = True
+    tribe.wood = tribe.stone = 1000
+    tribe.barracks_built = config.BARRACKS_MAX_COUNT
+
+    assert AFFORDABILITY_CHECKS["BUILD_BARRACKS"](tribe, sim.world) is False
+
+
+def test_upgrade_barracks_raises_capacity_and_costs_more_each_tier():
+    from backend.actions import _battalion_capacity
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.barracks_built = config.BARRACKS_MAX_COUNT
+    tribe.wood = tribe.stone = 10_000
+    capacity_before = _battalion_capacity(tribe)
+
+    result = ACTION_REGISTRY["UPGRADE_BARRACKS"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.barracks_upgrades == 1
+    assert _battalion_capacity(tribe) == capacity_before + config.BATTALION_CAPACITY_PER_BARRACKS
+    assert "reinforced" in result
+    first_wood_spent = 10_000 - tribe.wood
+
+    wood_before_second = tribe.wood
+    ACTION_REGISTRY["UPGRADE_BARRACKS"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.barracks_upgrades == 2
+    second_wood_spent = wood_before_second - tribe.wood
+    assert second_wood_spent > first_wood_spent  # each tier costs more than the last
+
+
+def test_upgrade_barracks_no_op_when_cannot_afford_it():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.barracks_built = config.BARRACKS_MAX_COUNT
+    tribe.wood = config.BARRACKS_UPGRADE_WOOD_COST_BASE - 1
+    tribe.stone = config.BARRACKS_UPGRADE_STONE_COST_BASE
+
+    assert ACTION_REGISTRY["UPGRADE_BARRACKS"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.barracks_upgrades == 0
+
+
+def test_upgrade_barracks_unavailable_before_the_count_cap_is_reached():
+    """The two barracks actions never overlap -- UPGRADE_BARRACKS only
+    becomes a real choice once BUILD_BARRACKS has stopped offering itself,
+    so the model is never asked to pick between them."""
+    from backend.simulation import AFFORDABILITY_CHECKS
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = tribe.stone = 1000
+    tribe.barracks_built = config.BARRACKS_MAX_COUNT - 1
+
+    assert AFFORDABILITY_CHECKS["UPGRADE_BARRACKS"](tribe, sim.world) is False
+
+
+def test_upgrade_barracks_auto_fills_new_headroom_from_population():
+    """Mirrors BUILD_BARRACKS' own "it auto fills with pop" behavior -- the
+    new capacity an upgrade unlocks is real, immediately-usable headroom, not
+    just a bigger number nothing ever grows into."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.barracks_built = config.BARRACKS_MAX_COUNT
+    tribe.battalion_size = config.BATTALION_CAPACITY_PER_BARRACKS * config.BARRACKS_MAX_COUNT  # already at old capacity
+    tribe.population = 10_000_000
+    tribe.wood = tribe.stone = 10_000
+
+    ACTION_REGISTRY["UPGRADE_BARRACKS"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.battalion_size == config.BATTALION_CAPACITY_PER_BARRACKS * (config.BARRACKS_MAX_COUNT + 1)
+
+
 def test_build_barracks_requires_a_kitchen_first():
     """Explicit request, 2026-09-09: "I don't think they should try to have a
     Military before they have a Kitchen.\""""
@@ -551,13 +642,42 @@ def test_train_battalion_stops_at_capacity_and_announces_full_strength():
     # No further headcount growth past capacity -- but this is no longer a bare
     # no-op: Might's Training factor (config.BATTALION_READINESS_*) switches
     # TRAIN_BATTALION to a cheaper readiness drill instead. See the dedicated
-    # readiness tests below for that branch's own behavior.
+    # readiness tests below for that branch's own behavior. Readiness itself
+    # may already have hit 1.0 during the recruiting loop above now that
+    # BATTALION_READINESS_BOLSTER_PER_ACTION reaches full readiness in just 3
+    # calls (2026-09-10 "3 rounds gives them 100% Might" retune) -- reset it
+    # here so this assertion stays deterministic regardless of exactly how
+    # many recruiting calls the loop above happened to take.
+    tribe.battalion_readiness = 0.0
     food_before, readiness_before = tribe.food, tribe.battalion_readiness
     drill_result = ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
     assert tribe.battalion_size == capacity  # headcount itself never exceeds capacity
     assert tribe.battalion_readiness > readiness_before
     assert tribe.food == food_before - config.BATTALION_READINESS_UPKEEP_FOOD_COST
     assert drill_result is not None
+
+
+def test_three_drills_reach_full_readiness():
+    """Explicit request, 2026-09-10: "they need some bounds around training
+    Might. Say 3 rounds gives them 100% Might (we have build in
+    degradation)." A Battalion already at full headcount (so every call
+    exercises the readiness-drill branch, not recruiting) reaches 1.0
+    readiness in exactly 3 real TRAIN_BATTALION calls."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.barracks_built = 1
+    tribe.battalion_size = config.BATTALION_CAPACITY_PER_BARRACKS
+    tribe.battalion_readiness = 0.0
+    tribe.food = 1000
+
+    for _ in range(2):
+        ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
+        assert tribe.battalion_readiness < 1.0  # not yet, after 1 and after 2
+
+    ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.battalion_readiness == 1.0  # full after the 3rd
 
 
 def test_train_battalion_no_op_when_cannot_afford_the_food_cost():

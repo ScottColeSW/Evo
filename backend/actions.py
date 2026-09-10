@@ -908,12 +908,49 @@ def _build_barracks(sim, tribe, biome, target):
     w, h = config.BUILDING_FOOTPRINTS["barracks"]
     architect.record_building(tribe, "barracks", slot[0], slot[1], w, h, sim.cycle)
     tribe.barracks_built += 1
-    capacity = config.BATTALION_CAPACITY_PER_BARRACKS * tribe.barracks_built
+    capacity = _battalion_capacity(tribe)
     old_size = tribe.battalion_size
     tribe.battalion_size = max(old_size, min(capacity, tribe.population))
     _allocate_battalion_strength(sim, tribe, tribe.battalion_size - old_size)
     sim._award_trophy(tribe, "Drillmaster")
     return f"a barracks rises, staffed at {tribe.battalion_size} strong from the tribe's own population -- a Battalion can grow to {capacity} strong in total"
+
+
+def _battalion_capacity(tribe) -> int:
+    """Total Battalion headcount this tribe's Barracks investment supports --
+    real builds (tribe.barracks_built) plus escalating upgrades past
+    config.BARRACKS_MAX_COUNT (tribe.barracks_upgrades, see _upgrade_barracks),
+    summed as one total the same way Fortress/Castle already count
+    long_houses_built + long_house_upgrades as one real number rather than
+    two independently-drifting checks."""
+    return config.BATTALION_CAPACITY_PER_BARRACKS * (tribe.barracks_built + tribe.barracks_upgrades)
+
+
+def _upgrade_barracks(sim, tribe, biome, target):
+    """Explicit request, 2026-09-10, after real data showed one tribe building
+    57 barracks in a single run: "we have to scale Barracks like we have done
+    with Warehouse, among others." BUILD_BARRACKS now stops offering itself
+    past config.BARRACKS_MAX_COUNT (see its own AFFORDABILITY_CHECKS entry) --
+    this is what a mature military reaches for past that point instead.
+    Mirrors _upgrade_warehouse exactly: no footprint/placement check (improves
+    standing capacity, not a new structure competing for space), escalating
+    cost per tier already banked (tribe.barracks_upgrades) so it tapers off
+    naturally rather than needing its own hardcoded count cap. Still auto-fills
+    from population the same way a fresh BUILD_BARRACKS does -- the new
+    headroom this unlocks is real capacity, not just a number."""
+    tier = tribe.barracks_upgrades
+    wood_cost = round(config.BARRACKS_UPGRADE_WOOD_COST_BASE * (1 + tier * config.BARRACKS_UPGRADE_COST_GROWTH))
+    stone_cost = round(config.BARRACKS_UPGRADE_STONE_COST_BASE * (1 + tier * config.BARRACKS_UPGRADE_COST_GROWTH))
+    if tribe.wood < wood_cost or tribe.stone < stone_cost:
+        return None
+    tribe.wood -= wood_cost
+    tribe.stone -= stone_cost
+    tribe.barracks_upgrades += 1
+    capacity = _battalion_capacity(tribe)
+    old_size = tribe.battalion_size
+    tribe.battalion_size = max(old_size, min(capacity, tribe.population))
+    _allocate_battalion_strength(sim, tribe, tribe.battalion_size - old_size)
+    return f"the standing barracks are reinforced -- a Battalion can grow to {capacity} strong in total"
 
 
 def _train_battalion(sim, tribe, biome, target):
@@ -939,7 +976,7 @@ def _train_battalion(sim, tribe, biome, target):
     regardless of this action)."""
     if tribe.barracks_built <= 0:
         return None
-    capacity = config.BATTALION_CAPACITY_PER_BARRACKS * tribe.barracks_built
+    capacity = _battalion_capacity(tribe)
 
     if tribe.battalion_size < capacity:
         added = min(
@@ -2761,6 +2798,7 @@ ACTION_REGISTRY = {
     "BUILD_WAREHOUSE": _build_warehouse,
     "UPGRADE_WAREHOUSE": _upgrade_warehouse,
     "BUILD_BARRACKS": _build_barracks,
+    "UPGRADE_BARRACKS": _upgrade_barracks,
     "TRAIN_BATTALION": _train_battalion,
     "BUILD_FORGE": _build_forge,
     "FORGE_ITEM": _forge_item,
@@ -2825,7 +2863,8 @@ ACTION_DESCRIPTIONS = {
     "BUILD_WELL": "Build a well using stored wood and stone -- no prerequisite beyond being settled. A one-time, permanent structure at your settlement: the tribe's daily passive water supply flows in faster from then on.",
     "BUILD_WAREHOUSE": "Build a warehouse using stored wood and stone. Raises how much of every resource can be stored at once -- gathering more than storage allows is wasted. Repeatable up to 5 warehouses; UPGRADE_WAREHOUSE takes over from there.",
     "UPGRADE_WAREHOUSE": "Reinforce the warehouses already standing to raise storage capacity further -- only worth considering once 5 warehouses already stand. No new structure, no placement needed. Repeatable, but each upgrade costs more than the last.",
-    "BUILD_BARRACKS": "Build a barracks using stored wood and stone -- only possible once a Keep stands. Repeatable: each one raises how large a Battalion can ever be trained. Real housing for a standing military, the first building of the Military branch.",
+    "BUILD_BARRACKS": "Build a barracks using stored wood and stone -- only possible once a Keep stands. Repeatable up to 5; each one raises how large a Battalion can ever be trained. Real housing for a standing military, the first building of the Military branch.",
+    "UPGRADE_BARRACKS": "Reinforce the barracks already standing to raise Battalion capacity further -- only worth considering once 5 barracks already stand. No new structure, no placement needed. Repeatable, but each upgrade costs more than the last.",
     "TRAIN_BATTALION": "Train soldiers for your Battalion, led by your Warrior -- only possible once a Warrior is named and a Barracks stands. Costs food, not wood/stone. Built up over several turns like a wall section, not finished in one -- more people trains faster. Repeatable up to your Barracks' own capacity.",
     "BUILD_FORGE": "Build a forge using stored wood and stone -- only possible once a mine stands and at least one unit of its ore is already in stock. A one-time, permanent structure: from then on, ore can be worked into real tools, weapons, and inventions.",
     "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. No durability to track: each item just carries a flat value, usable later or given away in a trade.",

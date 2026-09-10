@@ -884,6 +884,21 @@ BARRACKS_WOOD_COST = 25
 BARRACKS_STONE_COST = 25
 BATTALION_CAPACITY_PER_BARRACKS = 20
 
+# Explicit request, 2026-09-10: "Looks like we have to scale Barracks like we
+# have done with Warehouse, among others." Same real problem, same fix shape:
+# a flat-cost, uncapped repeatable BUILD_* let a tribe build 15-57 of these in
+# a single run (confirmed live, the same run that surfaced the Warrior
+# redesign above). Real BUILD_BARRACKS ceiling; UPGRADE_BARRACKS (backend/
+# actions.py._upgrade_barracks) takes over past this point, with an
+# escalating cost (BARRACKS_UPGRADE_COST_GROWTH per tier, tribe.
+# barracks_upgrades) so it doesn't become the same infinite-spam problem
+# under a new name -- mirrors WAREHOUSE_MAX_COUNT/UPGRADE_WAREHOUSE
+# (this file, further down) exactly.
+BARRACKS_MAX_COUNT = 5
+BARRACKS_UPGRADE_WOOD_COST_BASE = 35
+BARRACKS_UPGRADE_STONE_COST_BASE = 35
+BARRACKS_UPGRADE_COST_GROWTH = 0.5
+
 # Military branch, step 3: TRAIN_BATTALION. Staged, like CONSTRUCT_WALL --
 # "built up over several turns, more with more people" -- rather than a
 # one-shot flip; a standing force materializing in one action reads as too
@@ -935,7 +950,16 @@ BATTALION_PATROL_SPEED = 10
 # Simulation._advance_battalion_readiness_upkeep drains it a small fixed
 # amount every cycle regardless -- a standing force goes stale without
 # continued drilling, it isn't just recruited once and forgotten.
-BATTALION_READINESS_BOLSTER_PER_ACTION = 0.15
+# Explicit request, 2026-09-10: "they need some bounds around training Might.
+# Say 3 rounds gives them 100% Might (we have build in degradation)." Was
+# 0.15 (~7 calls to reach full readiness) -- raised so 3 real TRAIN_BATTALION
+# calls reliably clear 1.0 (0.34 * 3 = 1.02, capped). Applies identically to
+# both of TRAIN_BATTALION's branches (recruiting under capacity, or the
+# post-capacity maintenance drill) -- one constant, one bound, for either
+# phase. The "build in degradation" Scott confirmed is already real:
+# BATTALION_READINESS_DECAY_PER_CYCLE just below, applied every cycle
+# regardless (Simulation._advance_battalion_readiness_upkeep) -- unchanged.
+BATTALION_READINESS_BOLSTER_PER_ACTION = 0.34
 BATTALION_READINESS_DECAY_PER_CYCLE = 0.005
 # Deliberately cheaper than BATTALION_TRAINING_FOOD_COST_PER_SOLDIER times a
 # real batch of soldiers -- nobody's being newly fed here, just drilled.

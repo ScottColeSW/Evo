@@ -8,7 +8,7 @@ from collections import deque
 from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
-    _created_object_bonus, _eligible_breeding_pair, _food_multiplier,
+    _battalion_capacity, _created_object_bonus, _eligible_breeding_pair, _food_multiplier,
     _generate_raider_name, _has_room_to_grow, _item_storage_cap, _labor_multiplier,
     _long_house_fur_discount, _push_past_visited_ground, _record_combat, _storage_cap,
     _sustainable_population, _territory_has_nearby_threats,
@@ -202,7 +202,7 @@ WALL_LOCK_ACTIONS = {"CONSTRUCT_WALL", "GATHER_WOOD", "GATHER_STONE", "BUILD_LON
 # can end in Peace").
 ENDGAME_RESOLUTION_ACTIONS = {
     "DECLARE_WAR", "DECLARE_ALLIANCE", "DECLARE_CONQUEST", "RAID", "TRADE", "SEND_TRADE_EMISSARY",
-    "TRAIN_BATTALION", "BUILD_BARRACKS", "SCOUT", "EXPLORATION_PARTY",
+    "TRAIN_BATTALION", "BUILD_BARRACKS", "UPGRADE_BARRACKS", "SCOUT", "EXPLORATION_PARTY",
 } | SURVIVAL_CRISIS_ACTIONS
 
 # See _prepare_turn's affordability filter. A live run showed a tribe stuck at
@@ -543,10 +543,18 @@ AFFORDABILITY_CHECKS = {
     # (TRAIN_BATTALION, DECLARE_WAR/DECLARE_ALLIANCE) flows from a Barracks
     # existing, so gating just this one action keeps feeding the tribe the
     # real priority over arming it.
+    # Real builds cap at config.BARRACKS_MAX_COUNT (2026-09-10, "we have to
+    # scale Barracks like we have done with Warehouse") -- UPGRADE_BARRACKS
+    # just below takes over past that point.
     "BUILD_BARRACKS": lambda t, w: (
-        t.kitchen_built and t.keep_built
+        t.kitchen_built and t.keep_built and t.barracks_built < config.BARRACKS_MAX_COUNT
         and t.wood >= config.BARRACKS_WOOD_COST and t.stone >= config.BARRACKS_STONE_COST
         and _can_place(t, w, "barracks")
+    ),
+    "UPGRADE_BARRACKS": lambda t, w: (
+        t.barracks_built >= config.BARRACKS_MAX_COUNT
+        and t.wood >= round(config.BARRACKS_UPGRADE_WOOD_COST_BASE * (1 + t.barracks_upgrades * config.BARRACKS_UPGRADE_COST_GROWTH))
+        and t.stone >= round(config.BARRACKS_UPGRADE_STONE_COST_BASE * (1 + t.barracks_upgrades * config.BARRACKS_UPGRADE_COST_GROWTH))
     ),
     # Military branch, steps 3 and 5 (plan file valiant-forging-falcon.md) --
     # hides the guaranteed no-ops (no Barracks yet, can't afford even one
@@ -561,9 +569,9 @@ AFFORDABILITY_CHECKS = {
     "TRAIN_BATTALION": lambda t, w: (
         t.barracks_built > 0
         and (
-            (t.battalion_size < config.BATTALION_CAPACITY_PER_BARRACKS * t.barracks_built
+            (t.battalion_size < _battalion_capacity(t)
              and t.food >= config.BATTALION_TRAINING_FOOD_COST_PER_SOLDIER)
-            or (t.battalion_size >= config.BATTALION_CAPACITY_PER_BARRACKS * t.barracks_built
+            or (t.battalion_size >= _battalion_capacity(t)
                 and t.battalion_readiness < 1.0 and t.food >= config.BATTALION_READINESS_UPKEEP_FOOD_COST)
         )
     ),
@@ -1138,8 +1146,13 @@ class Tribe:
         # Military branch, step 2 (plan file valiant-forging-falcon.md,
         # actions.BUILD_BARRACKS) -- repeatable, like warehouses_built: each
         # one raises how large a Battalion can ever be trained
-        # (config.BATTALION_CAPACITY_PER_BARRACKS per Barracks).
+        # (config.BATTALION_CAPACITY_PER_BARRACKS per Barracks). Real builds
+        # cap at config.BARRACKS_MAX_COUNT (2026-09-10, same "they shouldn't
+        # build more than 5" fix already applied to Warehouse/Long House);
+        # actions.UPGRADE_BARRACKS/barracks_upgrades just below takes over
+        # past that point, counted together by actions._battalion_capacity.
         self.barracks_built = 0
+        self.barracks_upgrades = 0
         # Military branch, step 3 (actions.TRAIN_BATTALION) -- current
         # trained headcount, staged up toward config.
         # BATTALION_CAPACITY_PER_BARRACKS * barracks_built the same way a
@@ -1477,6 +1490,7 @@ class Tribe:
             "fortress_built": self.fortress_built,
             "castle_built": self.castle_built,
             "barracks_built": self.barracks_built,
+            "barracks_upgrades": self.barracks_upgrades,
             "battalion_size": self.battalion_size,
             "battalion_readiness": round(self.battalion_readiness, 3),
             "might": compute_might(self),
