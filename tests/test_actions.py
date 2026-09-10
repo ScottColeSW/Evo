@@ -479,23 +479,26 @@ def test_can_afford_build_barracks_matches_the_action_itself():
     assert AFFORDABILITY_CHECKS["BUILD_BARRACKS"](tribe, sim.world) is False  # explicit request: Kitchen before Military
 
 
-def test_train_battalion_does_nothing_without_a_warrior():
+def test_train_battalion_grows_headcount_even_without_an_eligible_leader():
+    """Redesigned 2026-09-10: no more Warrior gate -- recruiting raw
+    headcount doesn't require anyone having proven themselves yet, the same
+    way BUILD_BARRACKS' own auto-fill never required one either. The new
+    strength simply sits unled until a real trophy-holder exists."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.warrior_name = None
     tribe.barracks_built = 1
     tribe.food = 200
 
     result = ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
 
-    assert result is None
-    assert tribe.battalion_size == 0
+    assert result is not None
+    assert tribe.battalion_size > 0
+    assert tribe.battalions == []
 
 
 def test_train_battalion_does_nothing_without_a_barracks():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.warrior_name = "BriMir"
     tribe.barracks_built = 0
     tribe.food = 200
 
@@ -510,7 +513,8 @@ def test_train_battalion_trains_real_soldiers_and_costs_food():
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.warrior_name = "BriMir"
+    tribe.chief_name = "Ashgar"
+    tribe.trophies = [{"name": "Trophy", "chief": "BriMir", "cycle": 1}]
     tribe.barracks_built = 1
     tribe.population = config.POPULATION_YIELD_BASELINE  # labor multiplier 1.0
     tribe.food = 200
@@ -520,6 +524,7 @@ def test_train_battalion_trains_real_soldiers_and_costs_food():
 
     assert tribe.battalion_size == config.BATTALION_TRAINING_PER_ACTION_BASE
     assert tribe.food == food_before - round(config.BATTALION_TRAINING_FOOD_COST_PER_SOLDIER * tribe.battalion_size)
+    assert tribe.battalions == [{"leader": "BriMir", "size": config.BATTALION_TRAINING_PER_ACTION_BASE}]
     assert "BriMir" in result
     assert f"{tribe.battalion_size}/{config.BATTALION_CAPACITY_PER_BARRACKS}" in result
 
@@ -529,7 +534,6 @@ def test_train_battalion_stops_at_capacity_and_announces_full_strength():
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.warrior_name = "BriMir"
     tribe.barracks_built = 1
     tribe.population = config.POPULATION_YIELD_BASELINE
     tribe.food = 1000
@@ -561,7 +565,6 @@ def test_train_battalion_no_op_when_cannot_afford_the_food_cost():
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.warrior_name = "BriMir"
     tribe.barracks_built = 1
     tribe.population = config.POPULATION_YIELD_BASELINE
     tribe.food = config.BATTALION_TRAINING_FOOD_COST_PER_SOLDIER - 1  # short of even one soldier
@@ -580,7 +583,6 @@ def test_train_battalion_bolsters_readiness_while_still_recruiting():
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.warrior_name = "BriMir"
     tribe.barracks_built = 1
     tribe.population = config.POPULATION_YIELD_BASELINE
     tribe.food = 200
@@ -595,7 +597,9 @@ def test_train_battalion_drills_readiness_once_at_full_capacity():
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.warrior_name = "BriMir"
+    tribe.chief_name = "Ashgar"
+    tribe.trophies = [{"name": "Trophy", "chief": "BriMir", "cycle": 1}]
+    tribe.battalions = [{"leader": "BriMir", "size": config.BATTALION_CAPACITY_PER_BARRACKS}]
     tribe.barracks_built = 1
     tribe.battalion_size = config.BATTALION_CAPACITY_PER_BARRACKS
     tribe.battalion_readiness = 0.0
@@ -610,12 +614,30 @@ def test_train_battalion_drills_readiness_once_at_full_capacity():
     assert "BriMir" in result
 
 
+def test_train_battalion_drills_readiness_with_no_named_leader_yet():
+    """Unled headcount (nobody's earned a trophy yet) can still be drilled --
+    the flavor text just falls back to something generic instead of naming
+    anyone."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.barracks_built = 1
+    tribe.battalion_size = config.BATTALION_CAPACITY_PER_BARRACKS
+    tribe.battalion_readiness = 0.0
+    tribe.food = 200
+
+    result = ACTION_REGISTRY["TRAIN_BATTALION"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.battalion_readiness == config.BATTALION_READINESS_BOLSTER_PER_ACTION
+    assert "drill" in result
+
+
 def test_train_battalion_readiness_drill_caps_at_full_and_announces_peak():
     from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.warrior_name = "BriMir"
     tribe.barracks_built = 1
     tribe.battalion_size = config.BATTALION_CAPACITY_PER_BARRACKS
     tribe.battalion_readiness = 1.0 - config.BATTALION_READINESS_BOLSTER_PER_ACTION / 2  # one drill from full
@@ -632,7 +654,6 @@ def test_train_battalion_readiness_drill_no_op_once_readiness_is_maxed():
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.warrior_name = "BriMir"
     tribe.barracks_built = 1
     tribe.battalion_size = config.BATTALION_CAPACITY_PER_BARRACKS
     tribe.battalion_readiness = 1.0
@@ -650,7 +671,6 @@ def test_train_battalion_readiness_drill_no_op_when_cannot_afford_it():
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.warrior_name = "BriMir"
     tribe.barracks_built = 1
     tribe.battalion_size = config.BATTALION_CAPACITY_PER_BARRACKS
     tribe.battalion_readiness = 0.0
@@ -711,9 +731,9 @@ def test_larger_population_trains_battalion_faster():
 
     sim = _bare_simulation()
     small = Tribe("tribe_0", "Small Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    small.warrior_name, small.barracks_built, small.population, small.food = "BriMir", 5, 8, 1000
+    small.barracks_built, small.population, small.food = 5, 8, 1000
     big = Tribe("tribe_1", "Big Tribe", "gemma2:2b", 60, 60, "#f97316")
-    big.warrior_name, big.barracks_built, big.population, big.food = "TalOra", 5, 4000, 1000
+    big.barracks_built, big.population, big.food = 5, 4000, 1000
 
     ACTION_REGISTRY["TRAIN_BATTALION"](sim, small, "plains", _NO_TARGET)
     ACTION_REGISTRY["TRAIN_BATTALION"](sim, big, "plains", _NO_TARGET)
@@ -729,9 +749,8 @@ def test_can_afford_train_battalion_matches_the_action_itself():
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.food = 200
 
-    assert AFFORDABILITY_CHECKS["TRAIN_BATTALION"](tribe, sim.world) is False  # no Warrior/Barracks yet
+    assert AFFORDABILITY_CHECKS["TRAIN_BATTALION"](tribe, sim.world) is False  # no Barracks yet
 
-    tribe.warrior_name = "BriMir"
     tribe.barracks_built = 1
     assert AFFORDABILITY_CHECKS["TRAIN_BATTALION"](tribe, sim.world) is True
 
@@ -4491,115 +4510,104 @@ def test_breed_still_works_below_sustainable_capacity():
     assert tribe.pending_birth is not None
 
 
-def test_name_warrior_does_nothing_below_the_trophy_threshold():
-    from backend import config
+def test_eligible_new_battalion_leader_needs_only_one_trophy():
+    """Explicit redesign, 2026-09-10: "We already name Warriors when they get
+    Trophies. If they have one they can let it lead a battalion." No more
+    NAME_WARRIOR action or a steep 3-trophy threshold -- one personally-
+    credited trophy is enough."""
+    from backend.actions import _eligible_new_battalion_leader
 
-    sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.chief_name = "Ashgar"
-    tribe.trophies = [
-        {"name": t, "chief": "BriMir", "cycle": i}
-        for i, t in enumerate(["Water Bringer", "Master Pathfinder"])
-    ]
-    assert len(tribe.trophies) < config.WARRIOR_TROPHY_THRESHOLD
+    tribe.trophies = [{"name": "Water Bringer", "chief": "BriMir", "cycle": 1}]
 
-    result = ACTION_REGISTRY["NAME_WARRIOR"](sim, tribe, "plains", (0, 0))
-
-    assert result is None
-    assert tribe.warrior_name is None
+    assert _eligible_new_battalion_leader(tribe) == "BriMir"
 
 
-def test_name_warrior_appoints_whoever_clears_the_trophy_threshold():
-    from backend import config
+def test_eligible_new_battalion_leader_never_picks_the_chief():
+    """Even if every trophy this tribe has ever earned happened to
+    default-credit the chief (see _award_trophy's own fallback: `individual
+    or tribe.chief_name`, common for building-completion trophies that don't
+    name a specific individual), the chief leads the tribe, not a Battalion."""
+    from backend.actions import _eligible_new_battalion_leader
 
-    sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.chief_name = "Ashgar"
-    tribe.trophies = [
-        {"name": f"Trophy {i}", "chief": "BriMir", "cycle": i}
-        for i in range(config.WARRIOR_TROPHY_THRESHOLD)
-    ]
+    tribe.trophies = [{"name": "Trophy", "chief": "Ashgar", "cycle": 1}]
 
-    result = ACTION_REGISTRY["NAME_WARRIOR"](sim, tribe, "plains", (0, 0))
-
-    assert tribe.warrior_name == "BriMir"
-    assert "BriMir" in result and "Warrior" in result
-    assert any("BriMir is named Warrior" in e for e in tribe.history)
+    assert _eligible_new_battalion_leader(tribe) is None
 
 
-def test_name_warrior_never_appoints_the_chief():
-    """The Chief appoints a Warrior, doesn't become one -- even if every
-    single trophy this tribe has ever earned happened to default-credit the
-    chief (see _award_trophy's own fallback: `individual or tribe.chief_name`),
-    which is common for building-completion trophies that don't name a
-    specific individual."""
-    from backend import config
+def test_eligible_new_battalion_leader_picks_whoever_has_the_most_trophies():
+    from backend.actions import _eligible_new_battalion_leader
 
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.chief_name = "Ashgar"
-    tribe.trophies = [
-        {"name": f"Trophy {i}", "chief": "Ashgar", "cycle": i}
-        for i in range(config.WARRIOR_TROPHY_THRESHOLD)
-    ]
-
-    result = ACTION_REGISTRY["NAME_WARRIOR"](sim, tribe, "plains", (0, 0))
-
-    assert result is None
-    assert tribe.warrior_name is None
-
-
-def test_name_warrior_picks_the_individual_with_the_most_trophies():
-    from backend import config
-
-    sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.chief_name = "Ashgar"
     tribe.trophies = (
-        [{"name": f"Scout Trophy {i}", "chief": "BriMir", "cycle": i} for i in range(config.WARRIOR_TROPHY_THRESHOLD)]
-        + [{"name": f"Hunt Trophy {i}", "chief": "TalOra", "cycle": 100 + i} for i in range(config.WARRIOR_TROPHY_THRESHOLD + 2)]
+        [{"name": f"Scout Trophy {i}", "chief": "BriMir", "cycle": i} for i in range(1)]
+        + [{"name": f"Hunt Trophy {i}", "chief": "TalOra", "cycle": 100 + i} for i in range(3)]
     )
 
-    result = ACTION_REGISTRY["NAME_WARRIOR"](sim, tribe, "plains", (0, 0))
-
-    assert tribe.warrior_name == "TalOra"  # more trophies than BriMir
-    assert "TalOra" in result
+    assert _eligible_new_battalion_leader(tribe) == "TalOra"  # more trophies than BriMir
 
 
-def test_name_warrior_is_a_one_way_permanent_appointment():
-    from backend import config
+def test_eligible_new_battalion_leader_excludes_anyone_already_leading_one():
+    """"if they have more than 1, they can have many Battallions" -- a new
+    leader has to be a genuinely different individual, not the same person
+    getting credited for a second Battalion."""
+    from backend.actions import _eligible_new_battalion_leader
 
-    sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.chief_name = "Ashgar"
-    tribe.warrior_name = "BriMir"
-    tribe.trophies = [
-        {"name": f"Trophy {i}", "chief": "TalOra", "cycle": i} for i in range(config.WARRIOR_TROPHY_THRESHOLD)
-    ]
+    tribe.trophies = [{"name": "Trophy", "chief": "BriMir", "cycle": 1}]
+    tribe.battalions = [{"leader": "BriMir", "size": 10}]
 
-    result = ACTION_REGISTRY["NAME_WARRIOR"](sim, tribe, "plains", (0, 0))
-
-    assert result is None
-    assert tribe.warrior_name == "BriMir"  # unchanged -- already named, even though TalOra also now qualifies
+    assert _eligible_new_battalion_leader(tribe) is None
 
 
-def test_can_afford_name_warrior_matches_the_action_itself():
-    from backend.simulation import AFFORDABILITY_CHECKS
-    from backend import config
+def test_allocate_battalion_strength_forms_a_new_battalion_for_a_fresh_leader():
+    from backend.actions import _allocate_battalion_strength
 
-    sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.chief_name = "Ashgar"
+    tribe.trophies = [{"name": "Trophy", "chief": "BriMir", "cycle": 1}]
 
-    assert AFFORDABILITY_CHECKS["NAME_WARRIOR"](tribe, sim.world) is False
+    _allocate_battalion_strength(tribe, 10)
 
-    tribe.trophies = [
-        {"name": f"Trophy {i}", "chief": "BriMir", "cycle": i} for i in range(config.WARRIOR_TROPHY_THRESHOLD)
-    ]
-    assert AFFORDABILITY_CHECKS["NAME_WARRIOR"](tribe, sim.world) is True
+    assert tribe.battalions == [{"leader": "BriMir", "size": 10}]
+    assert any("BriMir steps up to lead" in e for e in tribe.history)
 
-    ACTION_REGISTRY["NAME_WARRIOR"](sim, tribe, "plains", (0, 0))
-    assert AFFORDABILITY_CHECKS["NAME_WARRIOR"](tribe, sim.world) is False  # already named
+
+def test_allocate_battalion_strength_grows_the_weakest_existing_battalion_past_the_cap():
+    """"If they have a lot, we need some restrictions" -- config.
+    MAX_CONCURRENT_BATTALIONS caps how many separate leaders a tribe can
+    field at once; further growth reinforces whoever already has the least,
+    rather than forming a new Battalion or piling everything onto one."""
+    from backend import config
+    from backend.actions import _allocate_battalion_strength
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"
+    tribe.battalions = [{"leader": f"Leader{i}", "size": 10} for i in range(config.MAX_CONCURRENT_BATTALIONS)]
+    tribe.battalions[1]["size"] = 3  # the weakest
+    # A brand new eligible individual exists, but the cap is already full.
+    tribe.trophies = [{"name": "Trophy", "chief": "NewLeader", "cycle": 1}]
+
+    _allocate_battalion_strength(tribe, 5)
+
+    assert len(tribe.battalions) == config.MAX_CONCURRENT_BATTALIONS  # no new Battalion formed
+    assert tribe.battalions[1]["size"] == 8  # the weakest one grew instead
+
+
+def test_allocate_battalion_strength_leaves_growth_unled_with_no_leader_and_no_battalion():
+    from backend.actions import _allocate_battalion_strength
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_name = "Ashgar"  # nobody but the chief has ever earned a trophy
+
+    _allocate_battalion_strength(tribe, 10)
+
+    assert tribe.battalions == []
 
 
 def test_can_afford_strike_raider_camp_matches_the_action_itself():

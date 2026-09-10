@@ -47,9 +47,22 @@ def compute_might(tribe) -> int:
     tier = 3 if tribe.castle_built else 2 if tribe.fortress_built else 1 if tribe.keep_built else 0
     tier_bonus = 1 + config.MIGHT_TIER_BONUS_PER_TIER * tier
 
-    warrior_trophies = (
-        sum(1 for t in tribe.trophies if t["chief"] == tribe.warrior_name) if tribe.warrior_name else 0
+    # Explicit redesign, 2026-09-10: "we already name Warriors when they get
+    # Trophies... if they have more than 1, they can have many Battalions."
+    # tribe.battalions (backend/actions.py._allocate_battalion_strength) is
+    # now a list of {"leader": name, "size": int} entries instead of one
+    # tribe-wide Warrior -- this stays a size-weighted average of each
+    # leader's own personal trophy count (not a sum) so a tribe that's spread
+    # its strength across several named leaders isn't credited more Might
+    # than one Warrior of the same total size would have been under the old
+    # formula. Headcount not yet assigned to any named leader (nobody's
+    # proven themselves worthy yet) contributes 0, same as an un-appointed
+    # Warrior always did.
+    weighted_trophies = sum(
+        battalion["size"] * sum(1 for t in tribe.trophies if t["chief"] == battalion["leader"])
+        for battalion in tribe.battalions
     )
+    warrior_trophies = weighted_trophies / tribe.battalion_size
     warrior_bonus = 1 + config.MIGHT_TROPHY_BONUS_PER_TROPHY * warrior_trophies
 
     # tribe.wellbeing is whatever Simulation._prepare_turn last computed (runs every

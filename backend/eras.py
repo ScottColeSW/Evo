@@ -183,7 +183,7 @@ ERAS: tuple[Era, ...] = (
         # (LIBRARY/RESEARCH) -- organized defense, diplomacy, and scholarship, not
         # founding-era survival.
         unlocks_actions=(
-            "STRIKE_RAIDER_CAMP", "EXPEL_RAIDERS_FROM_TERRITORY", "NAME_WARRIOR",
+            "STRIKE_RAIDER_CAMP", "EXPEL_RAIDERS_FROM_TERRITORY",
             "BUILD_BARRACKS", "TRAIN_BATTALION",
             "DECLARE_ALLIANCE", "DECLARE_WAR", "BUILD_MOAT", "BUILD_KEEP",
             "BUILD_LIBRARY", "RESEARCH",

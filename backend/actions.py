@@ -891,8 +891,9 @@ def _build_barracks(sim, tribe, biome, target):
     existing population -- no separate TRAIN_BATTALION action, food cost, or
     named Warrior needed just to reach a first real headcount (confirmed via
     two independent live runs that NAME_WARRIOR/BUILD_BARRACKS/
-    TRAIN_BATTALION had never once fired together in practice). TRAIN_
-    BATTALION still matters afterward: growing the roster further once
+    TRAIN_BATTALION had never once fired together in practice -- NAME_WARRIOR
+    itself was retired entirely on 2026-09-10, see
+    _eligible_new_battalion_leader). TRAIN_BATTALION still matters afterward: growing the roster further once
     capacity rises again (another Barracks), and readiness upkeep once at
     full strength (see its own docstring)."""
     if not tribe.kitchen_built or not tribe.keep_built:
@@ -908,7 +909,9 @@ def _build_barracks(sim, tribe, biome, target):
     architect.record_building(tribe, "barracks", slot[0], slot[1], w, h, sim.cycle)
     tribe.barracks_built += 1
     capacity = config.BATTALION_CAPACITY_PER_BARRACKS * tribe.barracks_built
-    tribe.battalion_size = max(tribe.battalion_size, min(capacity, tribe.population))
+    old_size = tribe.battalion_size
+    tribe.battalion_size = max(old_size, min(capacity, tribe.population))
+    _allocate_battalion_strength(tribe, tribe.battalion_size - old_size)
     sim._award_trophy(tribe, "Drillmaster")
     return f"a barracks rises, staffed at {tribe.battalion_size} strong from the tribe's own population -- a Battalion can grow to {capacity} strong in total"
 
@@ -934,7 +937,7 @@ def _train_battalion(sim, tribe, biome, target):
     isn't recruited once and forgotten (Simulation.
     _advance_battalion_readiness_upkeep drains it a little every cycle
     regardless of this action)."""
-    if tribe.warrior_name is None or tribe.barracks_built <= 0:
+    if tribe.barracks_built <= 0:
         return None
     capacity = config.BATTALION_CAPACITY_PER_BARRACKS * tribe.barracks_built
 
@@ -948,20 +951,21 @@ def _train_battalion(sim, tribe, biome, target):
             return None
         tribe.food -= food_cost
         tribe.battalion_size += added
+        _allocate_battalion_strength(tribe, added)
         tribe.battalion_readiness = min(
             1.0, tribe.battalion_readiness + config.BATTALION_READINESS_BOLSTER_PER_ACTION
         )
         if tribe.battalion_size >= capacity:
-            return f"the Battalion reaches full strength at {tribe.battalion_size}, trained and ready under {tribe.warrior_name}"
-        return f"the Battalion trains further under {tribe.warrior_name} -- {tribe.battalion_size}/{capacity} strong"
+            return f"the Battalion reaches full strength at {tribe.battalion_size}, trained and ready under {_battalion_leaders_text(tribe)}"
+        return f"the Battalion trains further under {_battalion_leaders_text(tribe)} -- {tribe.battalion_size}/{capacity} strong"
 
     if tribe.battalion_readiness >= 1.0 or tribe.food < config.BATTALION_READINESS_UPKEEP_FOOD_COST:
         return None
     tribe.food -= config.BATTALION_READINESS_UPKEEP_FOOD_COST
     tribe.battalion_readiness = min(1.0, tribe.battalion_readiness + config.BATTALION_READINESS_BOLSTER_PER_ACTION)
     if tribe.battalion_readiness >= 1.0:
-        return f"the Battalion drills to peak readiness under {tribe.warrior_name}"
-    return f"the Battalion drills under {tribe.warrior_name} -- readiness at {round(tribe.battalion_readiness * 100)}%"
+        return f"the Battalion drills to peak readiness under {_battalion_leaders_text(tribe)}"
+    return f"the Battalion drills under {_battalion_leaders_text(tribe)} -- readiness at {round(tribe.battalion_readiness * 100)}%"
 
 
 def _build_kitchen(sim, tribe, biome, target):
@@ -1965,44 +1969,74 @@ def _eligible_breeding_pair(tribe) -> tuple[str, str] | None:
     return candidates[0], candidates[1]
 
 
-def _eligible_warrior_candidate(tribe) -> str | None:
-    """The named individual this tribe's Chief could appoint Warrior (see
-    NAME_WARRIOR, plan file valiant-forging-falcon.md): whoever has the most
-    trophies personally credited to them (config.WARRIOR_TROPHY_THRESHOLD or
-    more), excluding the Chief -- the Chief appoints a Warrior, doesn't
-    become one. Ties keep whichever name reached that count first
+def _eligible_new_battalion_leader(tribe) -> str | None:
+    """Military branch, step 1, redesigned 2026-09-10: "We already name
+    Warriors when they get Trophies. If they have one they can let it lead a
+    battalion." No more chief-chosen NAME_WARRIOR action -- whoever has the
+    most trophies personally credited to them (config.
+    BATTALION_LEADER_TROPHY_THRESHOLD or more, now just 1) is automatically
+    eligible to lead a Battalion, excluding the Chief (the Chief leads the
+    tribe, doesn't personally lead troops) and excluding anyone already
+    leading one of tribe.battalions (each named leader gets one Battalion,
+    not several). Ties keep whichever name reached that count first
     (tribe.trophies is already in the order each was actually earned, and
     dict iteration order matches insertion order). Returns None if nobody
-    qualifies yet -- expect this most of the time, since _award_trophy pays
-    out each named trophy only once per tribe's entire lifetime, so the whole
-    pool available to spread across individuals is small and finite."""
+    new qualifies yet -- called from _allocate_battalion_strength whenever
+    growth needs a home, not from any chief-facing action."""
+    already_leading = {b["leader"] for b in tribe.battalions}
     counts: dict[str, int] = {}
     for trophy in tribe.trophies:
         name = trophy["chief"]
-        if name == tribe.chief_name:
+        if name == tribe.chief_name or name in already_leading:
             continue
         counts[name] = counts.get(name, 0) + 1
     best_name, best_count = None, 0
     for name, count in counts.items():
         if count > best_count:
             best_name, best_count = name, count
-    return best_name if best_count >= config.WARRIOR_TROPHY_THRESHOLD else None
+    return best_name if best_count >= config.BATTALION_LEADER_TROPHY_THRESHOLD else None
 
 
-def _name_warrior(sim, tribe, biome, target):
-    """Military branch, step 1 (plan file valiant-forging-falcon.md): the
-    Chief appoints a proven individual as Warrior -- the prerequisite for
-    later training a Battalion, once a Barracks exists. One-way, like
-    chief_name itself; see _eligible_warrior_candidate for exactly who
-    qualifies."""
-    if tribe.warrior_name is not None:
-        return None
-    candidate = _eligible_warrior_candidate(tribe)
-    if candidate is None:
-        return None
-    tribe.warrior_name = candidate
-    tribe.history.append(f"{candidate} is named Warrior of {tribe.name}, proven in battle and ready to lead")
-    return f"{candidate} is named Warrior -- a real leader now, once a Barracks trains a Battalion to follow them"
+def _allocate_battalion_strength(tribe, added: int) -> None:
+    """Military branch, steps 1-2, redesigned 2026-09-10: "if they have more
+    than 1, they can have many Battallions. If they have a lot, we need some
+    restrictions." Called by both _build_barracks and _train_battalion
+    whenever tribe.battalion_size actually grows -- decides whose command
+    that new strength joins. A fresh, not-yet-leading trophy-holder (see
+    _eligible_new_battalion_leader) gets a brand new Battalion of their own,
+    up to config.MAX_CONCURRENT_BATTALIONS concurrent leaders (SECOND-
+    OPINION(Sonnet 5, 2026-09-10): a real leadership hierarchy above this
+    flat cap -- e.g. a General over several Battalion leaders -- was also on
+    the table; deferred as the smaller v1 per Scott's own "possibly" hedge).
+    Once the cap is reached, or nobody's proven themselves yet, the growth
+    reinforces whichever existing Battalion is currently smallest instead.
+    If neither a new leader nor an existing Battalion is available, the
+    strength simply sits unled for now (a real militia headcount,
+    tribe.battalion_size, that's outpaced who's actually stepped up to lead
+    it) -- compute_might already treats unled headcount as contributing no
+    trophy bonus, the same as an unnamed Warrior always did."""
+    if added <= 0:
+        return
+    candidate = _eligible_new_battalion_leader(tribe)
+    if candidate is not None and len(tribe.battalions) < config.MAX_CONCURRENT_BATTALIONS:
+        tribe.battalions.append({"leader": candidate, "size": added})
+        tribe.history.append(
+            f"{candidate} steps up to lead a new Battalion of {added} for {tribe.name}, "
+            f"proven by their own deeds"
+        )
+        return
+    if tribe.battalions:
+        weakest = min(tribe.battalions, key=lambda b: b["size"])
+        weakest["size"] += added
+
+
+def _battalion_leaders_text(tribe) -> str:
+    """Flavor text for _train_battalion's own result string -- "under
+    {warrior_name}" doesn't make sense once a tribe can have several named
+    leaders at once (or none yet, if nobody's earned a trophy)."""
+    if not tribe.battalions:
+        return "its own officers"
+    return ", ".join(b["leader"] for b in tribe.battalions)
 
 
 def _breed(sim, tribe, biome, target):
@@ -2733,7 +2767,6 @@ ACTION_REGISTRY = {
     "HUNTING_PARTY": _hunting_party,
     "RELOCATE": _relocate,
     "BREED": _breed,
-    "NAME_WARRIOR": _name_warrior,
     "RAID": _raid,
     "STRIKE_RAIDER_CAMP": _strike_raider_camp,
     "EXPEL_RAIDERS_FROM_TERRITORY": _expel_raiders_from_territory,
@@ -2799,7 +2832,6 @@ ACTION_DESCRIPTIONS = {
     "HUNTING_PARTY": "Send a hunting party toward target_vector -- shares the same expedition capacity as SCOUT (several parties, scouting or hunting in any mix, can be out at once -- more as your population grows). They travel and hunt on their own supply for up to several days, facing the same wolf-pack risk as an instant hunt on every day out, until they catch something or give up. Any food caught only becomes real, usable food once they've walked all the way home -- a hunt still in the field does nothing for hunger right now, no matter how promising.",
     "RELOCATE": "Move your whole tribe several tiles toward target_vector this cycle, possibly over several cycles for a far destination. Produces no resources while traveling and costs extra food and water for the effort.",
     "BREED": "Your chief and whoever currently holds a trophy start a family together, costing food and water and growing your population by one child if it succeeds. Does nothing if fewer than two named individuals (a chief plus at least one trophy-holder) exist yet, or if food/water can't cover the cost.",
-    "NAME_WARRIOR": f"Appoint your most decorated individual (at least {config.WARRIOR_TROPHY_THRESHOLD} personal trophies, never the chief) as this tribe's Warrior -- the first real step toward a Military branch: a Warrior can later lead a trained Battalion once a Barracks stands. One-time and permanent. Does nothing if already named, or if nobody has earned enough trophies yet.",
     "RAID": "Attempt to raid a rival tribe if one is near target_vector. A win steals some of their stockpile but still costs you people; a loss costs you more. An unaffiliated minor settlement near target_vector is a much safer alternative -- no people of its own, so a raid there always succeeds with no risk, though it can only be raided a few times before it's exhausted and needs time to recover. Does nothing if neither is there.",
     "STRIKE_RAIDER_CAMP": "Attack a raider camp your scouts have already found (see your raider sighting reports) -- only possible once you know where one is. Success destroys it and recovers some food; failure costs a life and leaves the camp standing.",
     "EXPEL_RAIDERS_FROM_TERRITORY": "Turn the whole population out to drive off raiders currently approaching (only possible while raiders are actually inbound). A win seizes real plunder and wins over stragglers, scaled by your own population -- and the raiders are cast off elsewhere, not gone for good. A loss costs people and supplies, but doesn't end the fight: anger fuels an immediate second and third wave in the same breath, each cheaper in reward and costlier in lives than the last.",

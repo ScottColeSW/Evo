@@ -840,14 +840,33 @@ COOKING_FOOD_MULTIPLIER = 3
 MILESTONE_SCOUT_SUCCESSES = 5
 MILESTONE_HUNT_SUCCESSES = 5
 
-# Military branch, step 1 (plan file valiant-forging-falcon.md): NAME_WARRIOR
-# lets the Chief appoint a proven individual (never the Chief themself -- see
-# actions._eligible_warrior_candidate) as this tribe's Warrior, the
-# prerequisite for training a Battalion later. _award_trophy pays out each
-# named trophy type once per tribe's entire lifetime, so the whole tribe only
-# ever has a small, fixed pool to hand out in total -- 3 personally-credited
-# trophies is a real, rare achievement, not a formality.
-WARRIOR_TROPHY_THRESHOLD = 3
+# Military branch, step 1 (plan file valiant-forging-falcon.md) -- redesigned
+# 2026-09-10. Explicit correction: "Name_Warrior is wrong. We already name
+# Warriors when they get Trophies. If they have one they can let it lead a
+# battalion. if they have more than 1, they can have many Battallions." The
+# original design required a separate, chief-chosen NAME_WARRIOR action and a
+# steep 3-trophy threshold -- confirmed via two independent live runs that
+# this whole chain (NAME_WARRIOR/BUILD_BARRACKS/TRAIN_BATTALION) had never
+# fired together, and a later run showed an eligible individual sitting
+# unappointed for 38+ days simply because nothing ever forced the chief to
+# spend a turn on it. Naming is now automatic and implicit the moment a
+# personally-credited trophy exists (actions._eligible_new_battalion_leader)
+# -- no action, no chief decision, no NAME_WARRIOR. Threshold dropped to 1:
+# _award_trophy still only pays out each named trophy type once per tribe's
+# entire lifetime, so this remains a real, earned distinction, just no longer
+# an artificially rare one gating the whole branch behind it.
+BATTALION_LEADER_TROPHY_THRESHOLD = 1
+# "if they have a lot, we need some restrictions" -- a tribe can field this
+# many concurrently-led Battalions at once (actions._allocate_battalion_
+# strength). A flat, invented first-pass default (SECOND-OPINION(Sonnet 5,
+# 2026-09-10): a real leadership hierarchy -- e.g. a General over several
+# Battalion leaders once a tribe has "a lot" of eligible individuals -- was
+# also on the table and explicitly left for a later pass per Scott's own
+# "possibly leadership tiering/structure" hedge; this flat cap is the
+# smaller, easily-retuned v1), not tuned against live data yet -- revisit if
+# a run shows tribes routinely maxing this out with many more eligible
+# individuals going unled.
+MAX_CONCURRENT_BATTALIONS = 3
 
 # Military branch, step 2: BUILD_BARRACKS. Repeatable, like BUILD_WAREHOUSE --
 # each one raises how large a Battalion TRAIN_BATTALION can ever train

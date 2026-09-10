@@ -53,20 +53,40 @@ def test_might_rises_with_defensive_tier():
     assert base < keep < fortress < castle
 
 
-def test_might_rises_with_the_warriors_own_trophies():
-    """Trophy count confirmed worth adding -- but only the Warrior's own
-    personally-credited trophies, not the whole tribe's trophy shelf (see
-    actions._eligible_warrior_candidate's own reasoning for excluding the
-    Chief and crediting individuals)."""
-    no_warrior_trophies = compute_might(_tribe(
-        battalion_size=20, warrior_name="Ash",
+def test_might_rises_with_a_battalion_leaders_own_trophies():
+    """Trophy count confirmed worth adding -- but only a Battalion leader's
+    own personally-credited trophies, not the whole tribe's trophy shelf (see
+    actions._eligible_new_battalion_leader's own reasoning for excluding the
+    Chief and crediting individuals). Redesigned 2026-09-10: tribe.battalions
+    (a list of {"leader": name, "size": int}) replaces the single warrior_name
+    field -- this is a size-weighted average across every named leader, so a
+    tribe with one fully-credited leader for its whole Battalion should behave
+    identically to the old single-Warrior formula."""
+    no_leader_trophies = compute_might(_tribe(
+        battalion_size=20, battalions=[{"leader": "Ash", "size": 20}],
         trophies=[{"name": "First Hunt", "chief": "Someone Else", "cycle": 1}],
     ))
-    with_warrior_trophies = compute_might(_tribe(
-        battalion_size=20, warrior_name="Ash",
+    with_leader_trophies = compute_might(_tribe(
+        battalion_size=20, battalions=[{"leader": "Ash", "size": 20}],
         trophies=[{"name": "First Hunt", "chief": "Ash", "cycle": 1}],
     ))
-    assert with_warrior_trophies > no_warrior_trophies
+    assert with_leader_trophies > no_leader_trophies
+
+
+def test_might_credits_only_the_led_share_of_the_battalion():
+    """Unled headcount (not yet assigned to any named leader in
+    tribe.battalions) contributes no trophy bonus, the same as an
+    un-appointed Warrior never did under the old formula."""
+    fully_led = compute_might(_tribe(
+        battalion_size=20, battalions=[{"leader": "Ash", "size": 20}],
+        trophies=[{"name": "First Hunt", "chief": "Ash", "cycle": 1}],
+    ))
+    half_led = compute_might(_tribe(
+        battalion_size=20, battalions=[{"leader": "Ash", "size": 10}],
+        trophies=[{"name": "First Hunt", "chief": "Ash", "cycle": 1}],
+    ))
+    unled = compute_might(_tribe(battalion_size=20, battalions=[]))
+    assert unled < half_led < fully_led
 
 
 def test_might_rises_with_wellbeing():

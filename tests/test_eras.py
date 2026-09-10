@@ -74,7 +74,7 @@ def test_tribal_synapse_now_holds_only_military_diplomacy_and_knowledge():
     formal knowledge institutions."""
     tribal_synapse = next(e for e in ERAS if e.key == "tribal_synapse")
     assert set(tribal_synapse.unlocks_actions) == {
-        "STRIKE_RAIDER_CAMP", "EXPEL_RAIDERS_FROM_TERRITORY", "NAME_WARRIOR",
+        "STRIKE_RAIDER_CAMP", "EXPEL_RAIDERS_FROM_TERRITORY",
         "BUILD_BARRACKS", "TRAIN_BATTALION",
         "DECLARE_ALLIANCE", "DECLARE_WAR", "BUILD_MOAT", "BUILD_KEEP",
         "BUILD_LIBRARY", "RESEARCH",

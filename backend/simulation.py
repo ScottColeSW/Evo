@@ -8,7 +8,7 @@ from collections import deque
 from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
-    _created_object_bonus, _eligible_breeding_pair, _eligible_warrior_candidate, _food_multiplier,
+    _created_object_bonus, _eligible_breeding_pair, _food_multiplier,
     _generate_raider_name, _has_room_to_grow, _item_storage_cap, _labor_multiplier,
     _long_house_fur_discount, _push_past_visited_ground, _record_combat, _storage_cap,
     _sustainable_population, _territory_has_nearby_threats,
@@ -202,7 +202,7 @@ WALL_LOCK_ACTIONS = {"CONSTRUCT_WALL", "GATHER_WOOD", "GATHER_STONE", "BUILD_LON
 # can end in Peace").
 ENDGAME_RESOLUTION_ACTIONS = {
     "DECLARE_WAR", "DECLARE_ALLIANCE", "DECLARE_CONQUEST", "RAID", "TRADE", "SEND_TRADE_EMISSARY",
-    "TRAIN_BATTALION", "BUILD_BARRACKS", "NAME_WARRIOR", "SCOUT", "EXPLORATION_PARTY",
+    "TRAIN_BATTALION", "BUILD_BARRACKS", "SCOUT", "EXPLORATION_PARTY",
 } | SURVIVAL_CRISIS_ACTIONS
 
 # See _prepare_turn's affordability filter. A live run showed a tribe stuck at
@@ -540,23 +540,26 @@ AFFORDABILITY_CHECKS = {
     # Explicit request, 2026-09-09: "I don't think they should try to have a
     # Military before they have a Kitchen." kitchen_built is the single real
     # entry point into the whole Military branch -- everything else
-    # (NAME_WARRIOR, TRAIN_BATTALION, DECLARE_WAR/DECLARE_ALLIANCE) flows
-    # from a Barracks existing, so gating just this one action keeps feeding
-    # the tribe the real priority over arming it.
+    # (TRAIN_BATTALION, DECLARE_WAR/DECLARE_ALLIANCE) flows from a Barracks
+    # existing, so gating just this one action keeps feeding the tribe the
+    # real priority over arming it.
     "BUILD_BARRACKS": lambda t, w: (
         t.kitchen_built and t.keep_built
         and t.wood >= config.BARRACKS_WOOD_COST and t.stone >= config.BARRACKS_STONE_COST
         and _can_place(t, w, "barracks")
     ),
     # Military branch, steps 3 and 5 (plan file valiant-forging-falcon.md) --
-    # hides the guaranteed no-ops (no Warrior/Barracks yet, can't afford even
-    # one soldier's food cost while still recruiting, or -- once at full
+    # hides the guaranteed no-ops (no Barracks yet, can't afford even one
+    # soldier's food cost while still recruiting, or -- once at full
     # headcount -- readiness already maxed or can't afford the cheaper
     # maintenance-drill cost) the same way every other entry in this table
     # already does. Two real branches, matching actions._train_battalion's
-    # own recruit-vs-drill split.
+    # own recruit-vs-drill split. No Warrior/leader gate here (redesigned
+    # 2026-09-10, see actions._eligible_new_battalion_leader) -- recruiting
+    # raw headcount doesn't require anyone having stepped up to lead it yet,
+    # the same way BUILD_BARRACKS' own auto-fill never did either.
     "TRAIN_BATTALION": lambda t, w: (
-        t.warrior_name is not None and t.barracks_built > 0
+        t.barracks_built > 0
         and (
             (t.battalion_size < config.BATTALION_CAPACITY_PER_BARRACKS * t.barracks_built
              and t.food >= config.BATTALION_TRAINING_FOOD_COST_PER_SOLDIER)
@@ -614,7 +617,6 @@ AFFORDABILITY_CHECKS = {
         and _can_place(t, w, "farm_plot")
     ),
     "BREED": lambda t, w: t.food >= config.BREED_FOOD_COST and t.water >= config.BREED_WATER_COST,
-    "NAME_WARRIOR": lambda t, w: t.warrior_name is None and _eligible_warrior_candidate(t) is not None,
     # Gating audit, 2026-09-08: confirmed via a real run's own chronicle log
     # that both of these failed as a no-op every single time they were ever
     # chosen ("no known raider camp at that location" / "no raiders are
@@ -853,11 +855,17 @@ class Tribe:
         self.chief_philosophy = ""
         self.chief_decree = ""
         self.chief_victory = ""
-        # Military branch, step 1 (plan file valiant-forging-falcon.md,
-        # actions.NAME_WARRIOR) -- a real, permanently-appointed individual,
-        # never the chief. Later steps (Barracks, Battalion, Might) build on
-        # this once it's real.
-        self.warrior_name: str | None = None
+        # Military branch, step 1 (plan file valiant-forging-falcon.md) --
+        # redesigned 2026-09-10: no more single, chief-appointed Warrior.
+        # Each entry is {"leader": name, "size": int} -- a named individual
+        # (never the chief), automatically eligible the moment they have
+        # config.BATTALION_LEADER_TROPHY_THRESHOLD personal trophies (see
+        # actions._eligible_new_battalion_leader/_allocate_battalion_
+        # strength), leading their own share of tribe.battalion_size. Can be
+        # empty (nobody's proven themselves yet, or the tribe has no real
+        # Battalion at all) even while battalion_size > 0 -- unled headcount
+        # is a real, valid state, not an error.
+        self.battalions: list[dict] = []
         # Lifetime counters for backend/scoreboard.py -- what an evaluator actually
         # wants to compare across models isn't just "did it survive," it's how it got
         # there: how often it needed a new leader, how often scouting actually paid
@@ -1525,7 +1533,7 @@ class Tribe:
             "chief_philosophy": self.chief_philosophy,
             "chief_decree": self.chief_decree,
             "chief_victory": self.chief_victory,
-            "warrior_name": self.warrior_name,
+            "battalions": self.battalions,
             "trophies": self.trophies,
             "fame": self.fame,
             "lineage": self.lineage,
@@ -3745,24 +3753,13 @@ class Simulation:
                 "value (USE_ITEM) or handed over in a future trade."
             )
 
-        # Military branch, step 1 (plan file valiant-forging-falcon.md) -- explicit
-        # eligibility nudge, added 2026-09-08 after a live run showed the exact
-        # "isolated gamble, nothing feeding into it" pattern the original
-        # DECLARE_CONQUEST TODO already named, one step earlier than expected:
-        # confirmed via board_history.db that an individual had 9 personally-
-        # credited trophies (WARRIOR_TROPHY_THRESHOLD is 3) for many days straight
-        # across a 38-day run, and NAME_WARRIOR was never chosen even once -- the
-        # entire Military branch stayed permanently unreachable behind it. Same
-        # "nudge harder once a real gate is met" shape COOK_FOOD/CONSTRUCT_WALL's
-        # own nudges above already use.
-        if "NAME_WARRIOR" in available_actions:
-            candidate = _eligible_warrior_candidate(tribe)
-            if candidate is not None:
-                visible_entities.append(
-                    f"{candidate} has earned {config.WARRIOR_TROPHY_THRESHOLD} or more personal trophies -- "
-                    "NAME_WARRIOR would appoint them Warrior, letting them lead a Battalion once a Barracks "
-                    "is built and soldiers are trained."
-                )
+        # Military branch, step 1's original eligibility nudge (added 2026-09-08
+        # after a live run showed an individual sitting eligible for 9+ days with
+        # nothing ever prompting the chief to spend a turn on NAME_WARRIOR) was
+        # retired outright on 2026-09-10 along with the action itself -- naming is
+        # now automatic the moment a trophy exists (actions.
+        # _eligible_new_battalion_leader), so there's no chief decision left to
+        # nudge toward.
 
         # Military branch, step 7 (plan file valiant-forging-falcon.md): "The Chief
         # has to actually be able to reach DECLARE_CONQUEST -- not just mechanically
