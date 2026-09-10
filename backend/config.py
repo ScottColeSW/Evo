@@ -913,6 +913,18 @@ BARRACKS_UPGRADE_COST_GROWTH = 0.5
 BATTALION_TRAINING_PER_ACTION_BASE = 5
 BATTALION_TRAINING_FOOD_COST_PER_SOLDIER = 2
 
+# Explicit confirmation, 2026-09-10, resolving the "how independent should
+# multiple Battalions be" fork from the same-day Warrior redesign: "my idea
+# for simplification presently, they can have a Tribe readiness pool and 1
+# patrol at a time... just make the variables so we can increase those
+# patrols, if we need." Named here so it's a real, deliberate number instead
+# of an implicit fact of tribe.battalion_patrol being a single dict rather
+# than a list -- raising this later would mean converting battalion_patrol
+# into a list of that many concurrent patrol dicts (a real structural
+# change, not just bumping this constant), so it stays at 1 until that's
+# actually built.
+MAX_CONCURRENT_PATROLS = 1
+
 # Military branch, step 4: the autonomous patrol -- explicit request, "I do
 # want to add it as a visual player on the board not just a passthru." A
 # real, moving entity (Simulation._advance_battalion_patrol, tribe.
