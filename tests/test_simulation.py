@@ -7433,6 +7433,17 @@ def test_to_dict_computes_housing_capacity_from_long_houses_built():
     assert tribe.to_dict()["housing_capacity"] == 3 * config.HOUSING_POPULATION_PER_LONG_HOUSE
 
 
+def test_to_dict_exposes_trades_completed():
+    """Explicit follow-up: "panel missing Trade activity" -- trades_completed
+    was tracked (actions._execute_trade/_send_trade_emissary) but never sent
+    to the frontend at all, so the sidebar's combat panel had nothing to show
+    regardless of its own layout."""
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.trades_completed = 4
+
+    assert tribe.to_dict()["trades_completed"] == 4
+
+
 def test_snapshot_surfaces_the_stance_between_two_tribes():
     """Explicit request: "I think they might have an Alliance or even Trading
     with each other now but there is little to no readout of that status and

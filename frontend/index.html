@@ -3917,12 +3917,20 @@ function commercePanel(t) {
 // Elastic like commercePanel above -- a combat kind (Raiding, Raid Defense,
 // Home Defense, Raider Camp Strike, Ambush) this tribe has never faced simply
 // doesn't show a row until it does.
+//
+// Explicit follow-up: "panel missing Trade activity" -- trades_completed was
+// tracked on the backend the whole time (actions._execute_trade/_send_trade_
+// emissary) but never sent to the frontend at all (missing from Tribe.
+// to_dict()), so there was nothing here to show regardless of layout. Trade
+// isn't adversarial (no win/loss the way a raid has), so it gets a plain
+// count row rather than forcing it into the W/L shape every other kind uses.
 function combatPanel(t) {
   const record = t.combat_record || {};
   const kinds = Object.keys(record);
-  if (!kinds.length) return "";
-  const rows = kinds.map(kind => `${escapeHtml(kind)}: ${record[kind].won}W / ${record[kind].lost}L`).join("<br>");
-  return `<div class="combat-panel"><span class="combat-title">⚔️ Combat</span><br>${rows}</div>`;
+  if (!kinds.length && !t.trades_completed) return "";
+  const rows = kinds.map(kind => `${escapeHtml(kind)}: ${record[kind].won}W / ${record[kind].lost}L`);
+  if (t.trades_completed) rows.push(`Trade: ${t.trades_completed} completed`);
+  return `<div class="combat-panel"><span class="combat-title">⚔️ Combat</span><br>${rows.join("<br>")}</div>`;
 }
 
 function farmingPanel(t) {

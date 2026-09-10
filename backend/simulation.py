@@ -1549,6 +1549,7 @@ class Tribe:
             "object_creator_built": self.object_creator_built,
             "created_objects": self.created_objects,
             "conquests_won": self.conquests_won,
+            "trades_completed": self.trades_completed,
             "conquered_tribe_names": self.conquered_tribe_names,
             "warehouses_built": self.warehouses_built,
             "warehouse_upgrades": self.warehouse_upgrades,
