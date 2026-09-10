@@ -10,8 +10,8 @@ from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _battalion_capacity, _created_object_bonus, _eligible_breeding_pair, _food_multiplier,
     _generate_raider_name, _has_room_to_grow, _item_storage_cap, _labor_multiplier,
-    _long_house_fur_discount, _push_past_visited_ground, _record_combat, _storage_cap,
-    _sustainable_population, _territory_has_nearby_threats,
+    _long_house_fur_discount, _mutual_ally_at_top_era, _push_past_visited_ground, _record_combat,
+    _storage_cap, _sustainable_population, _territory_has_nearby_threats,
     expedition_capacity,
 )
 from .ancestral_matrix import AncestralTraumaMatrix
@@ -1831,6 +1831,14 @@ class Simulation:
         # every step() and repopulated fresh, the same one-cycle-lifetime pattern as
         # lightning_strike, so the frontend naturally sees each entry as a brief flash.
         self.recent_encounters: list[dict] = []
+        # Explicit request, 2026-09-10: "I love building the Castle together.
+        # 1 big piece in the middle of the Tribes." A genuinely shared
+        # structure between two mutually-allied, top-era tribes -- lives here
+        # (not on either Tribe) since it belongs to neither one alone.
+        # {"tribe_ids": [id_a, id_b], "x": int, "y": int, "wood": int,
+        # "stone": int} once construction has actually started; None until
+        # then. See actions._build_joint_castle.
+        self.joint_castle: dict | None = None
         self.self_mod = (
             SelfModEngine(self.client, tribe_configs[0]["model"], config.SELF_MOD_COOLDOWN_CYCLES)
             if config.ENABLE_SELF_MODIFICATION
@@ -2247,6 +2255,7 @@ class Simulation:
             "storm_cloud": {"x": self.storm_cloud["x"], "y": self.storm_cloud["y"]} if self.storm_cloud else None,
             "lightning_strike": list(self.lightning_strike) if self.lightning_strike else None,
             "recent_encounters": self.recent_encounters,
+            "joint_castle": self.joint_castle,
             "tribes": {tid: t.to_dict() for tid, t in self.tribes.items()},
             "minor_settlements": self.minor_settlements,
             "structures": [{"x": x, "y": y, **info} for (x, y), info in self.world.constructions.items()],
@@ -2485,11 +2494,37 @@ class Simulation:
             winner = next(iter(self.tribes.values()))
             if winner.castle_built:
                 await self._trigger_game_over("world_domination")
+        # Explicit request, 2026-09-10: "I love building the Castle together.
+        # 1 big piece in the middle of the Tribes." The peaceful mirror of
+        # world_domination just above -- a real, shared Joint Castle
+        # (actions._build_joint_castle) completed by two mutually-allied
+        # top-era tribes together. Checked against self.joint_castle's own
+        # progress directly (not just "both tribes happen to have
+        # castle_built"), since either tribe could in principle also reach
+        # castle_built via the ordinary solo Fortress+long-house ladder
+        # completely unrelated to any alliance -- that must never be
+        # mistaken for this ending.
+        elif (
+            self.joint_castle is not None
+            and self.joint_castle["wood"] >= config.JOINT_CASTLE_WOOD_COST
+            and self.joint_castle["stone"] >= config.JOINT_CASTLE_STONE_COST
+        ):
+            await self._trigger_game_over("golden_age")
         # Explicit request: "we are missing 'the end'" -- every still-living
         # tribe reaching the era ceiling (next_era returns None) is just as
         # real an ending as total extinction; a real run kept stepping 400+
         # cycles past this point with nothing left to progress toward.
-        elif living_tribes and all(next_era(t.era) is None for t in living_tribes):
+        #
+        # Explicit request, 2026-09-10: two top-era tribes mid-way through
+        # building the Joint Castle together (mutually allied, not finished
+        # yet) must not have this fallback preempt that -- the same "the
+        # deferred ending needs the fallback held off too" care world_
+        # domination's own deferral above already needs, just for the
+        # peaceful path instead of the war one.
+        elif (
+            living_tribes and all(next_era(t.era) is None for t in living_tribes)
+            and not self._has_active_alliance_at_top_era()
+        ):
             await self._trigger_game_over("era_ceiling")
 
         if self.self_mod:
@@ -3410,13 +3445,24 @@ class Simulation:
             else:
                 territory_threatened = False
 
+        # Explicit request, 2026-09-10: "If they form an alliance, should we
+        # revise the menu to allow full builds all the way until both reach
+        # Castle-state." Computed before the endgame lock below so a
+        # genuinely, mutually allied pair of top-era tribes can skip that
+        # narrowing entirely -- full builds stay open, and BUILD_JOINT_
+        # CASTLE becomes the one new goal instead. Reuses actions.
+        # _mutual_ally_at_top_era's exact definition (both at the top era,
+        # stance_toward ALLIED both directions, not just this tribe's own
+        # one-sided declaration).
+        mutual_ally = _mutual_ally_at_top_era(self, tribe)
+
         # Explicit request, 2026-09-09: force real convergence once there's
         # nowhere further to grow, instead of letting both tribes drift
         # independently into era_ceiling with nothing resolved. Gated on a
         # living rival actually existing -- see ENDGAME_RESOLUTION_ACTIONS'
         # own comment for why a rival-less tribe is deliberately left alone.
         endgame_locked = False
-        if next_era(tribe.era) is None and any(
+        if mutual_ally is None and next_era(tribe.era) is None and any(
             other.id != tribe.id and not other.extinct for other in self.tribes.values()
         ):
             endgame_only = [a for a in available_actions if a in ENDGAME_RESOLUTION_ACTIONS]
@@ -3425,6 +3471,21 @@ class Simulation:
             if endgame_only:
                 available_actions = endgame_only
                 endgame_locked = True
+
+        # "I love building the Castle together. 1 big piece in the middle of
+        # the Tribes." Added to the (already full, unlocked) menu rather than
+        # filtered out of it, the same way this project's other dynamically-
+        # injected content works -- BUILD_JOINT_CASTLE has no natural home in
+        # any era's own unlocks_actions since it only ever makes sense for
+        # this one specific, cross-tribe condition. Minimal affordability
+        # check inline (some wood or stone on hand) since this bypasses
+        # AFFORDABILITY_CHECKS entirely -- that table only ever sees one
+        # tribe at a time and has no way to ask "is there a mutual ally."
+        joint_castle_active = False
+        if mutual_ally is not None and not (tribe.castle_built and mutual_ally.castle_built):
+            if tribe.wood > 0 or tribe.stone > 0:
+                available_actions = available_actions + ["BUILD_JOINT_CASTLE"]
+                joint_castle_active = True
 
         # Explicit request, 2026-09-10: "I think we should limit the actions
         # available to only Declare_Conquest... when they are both 'battle-
@@ -3489,6 +3550,13 @@ class Simulation:
                 "There is nowhere further to grow -- every stage of development has been reached. What "
                 "remains is settling things with the known rival tribe once and for all: war, alliance, "
                 "or the training to prepare for either."
+            )
+        elif joint_castle_active:
+            visible_entities.append(
+                f"A genuine, mutual alliance stands with {mutual_ally.name} -- normal building stays "
+                "open, and together, a Joint Castle can now be raised as a lasting monument to this "
+                "peace. BUILD_JOINT_CASTLE accepts contributions from either tribe, staged over several "
+                "turns."
             )
         elif tribe.conquests_won > 0 and not tribe.castle_built and len(self.tribes) == 1:
             # Explicit request, 2026-09-10: "After one wins, they can get all
@@ -4355,6 +4423,22 @@ class Simulation:
             memory_text += f" {hazard_note}."
         tribe.memory.remember(memory_text, self.cycle, weight)
 
+    def _has_active_alliance_at_top_era(self) -> bool:
+        """True if any two living, top-era tribes are mutually allied and
+        haven't finished a Joint Castle together yet -- used to hold off the
+        era_ceiling ending while the peaceful path is genuinely still in
+        progress, whether or not BUILD_JOINT_CASTLE has ever actually been
+        chosen yet (checked directly against stance/castle_built, not
+        self.joint_castle, since that dict doesn't exist until the first
+        real contribution lands)."""
+        top_era_tribes = [t for t in self.tribes.values() if not t.extinct and next_era(t.era) is None]
+        for i, a in enumerate(top_era_tribes):
+            for b in top_era_tribes[i + 1:]:
+                if a.stance_toward.get(b.id) == "ALLIED" and b.stance_toward.get(a.id) == "ALLIED":
+                    if not (a.castle_built and b.castle_built):
+                        return True
+        return False
+
     async def _trigger_game_over(self, reason: str) -> None:
         """Ends the run for real -- there will be no more turns, ever, for any
         model this session used, until a fresh ADD_TRIBE clears this back to
@@ -4411,6 +4495,11 @@ class Simulation:
                 "OVERSEER LOG: A single population now accounts for the entire observed civilization. "
                 "Every rival has been absorbed by conquest."
             )
+        elif reason == "golden_age":
+            lines.append(
+                "OVERSEER LOG: Two civilizations, once rivals, have raised a single shared monument "
+                "together. Peace, not conquest, closes this observation."
+            )
         elif reason == "era_ceiling":
             lines.append(
                 "OVERSEER LOG: Every surviving population has exhausted the known stages of "
@@ -4438,6 +4527,12 @@ class Simulation:
             conquered = ", ".join(victor.conquered_tribe_names) or "unknown rivals"
             lines.append(
                 f"Analysis: {victor.name} achieved total domination, conquering {conquered}. "
+                f"Session concluded at cycle {self.cycle}."
+            )
+        elif reason == "golden_age" and living:
+            names = " and ".join(t.name for t in living)
+            lines.append(
+                f"Analysis: {names} completed the Joint Castle together, sealing a lasting alliance. "
                 f"Session concluded at cycle {self.cycle}."
             )
         elif reason in ("era_ceiling", "manual_quit") and living:

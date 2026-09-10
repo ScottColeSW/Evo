@@ -736,9 +736,14 @@ function checkGameOver(state) {
   lastGameOverStatus = isOver;
 }
 
+// golden_age added 2026-09-10: the peaceful mirror of world_domination --
+// two mutually-allied top-era tribes complete a shared Joint Castle together
+// instead of one conquering the other (Simulation.joint_castle,
+// backend/actions.py._build_joint_castle).
 const GAME_OVER_TITLES = {
   extinction: "ALL POPULATIONS LOST",
   world_domination: "WORLD DOMINATION",
+  golden_age: "A GOLDEN AGE",
   era_ceiling: "SIMULATION COMPLETE",
   manual_quit: "RUN STOPPED",
 };
@@ -746,6 +751,7 @@ const GAME_OVER_TITLES = {
 const GAME_OVER_SUBTITLES = {
   extinction: "Every population observed has ceased to exist",
   world_domination: "A single civilization now accounts for the entire observed population",
+  golden_age: "Two rival civilizations completed a lasting monument together",
   era_ceiling: "Every surviving population has exhausted the known stages of development",
   manual_quit: "Observation ended by operator request",
 };
@@ -790,7 +796,7 @@ function goVerdictText(state) {
   return match ? match[0] : summary.split("\n")[0] || "";
 }
 
-const GAME_OVER_VERDICT_ICONS = { extinction: "💀", world_domination: "👑", era_ceiling: "🏛️", manual_quit: "⏸️" };
+const GAME_OVER_VERDICT_ICONS = { extinction: "💀", world_domination: "👑", golden_age: "🕊️", era_ceiling: "🏛️", manual_quit: "⏸️" };
 
 function showGameOverSplash(state) {
   const reason = state.game_over_reason;
@@ -2627,6 +2633,43 @@ function drawMinorSettlements() {
   });
 }
 
+// Explicit request, 2026-09-10: "I love building the Castle together. 1 big
+// piece in the middle of the Tribes." Mirrors drawMinorSettlements' own
+// backing-circle-plus-tag style -- a shared structure that belongs to
+// neither tribe alone, so it gets its own marker rather than being folded
+// into either one's buildings list.
+function drawJointCastle(joint) {
+  const cx = joint.x * TILE + TILE / 2;
+  const cy = joint.y * TILE + TILE / 2;
+  const r = Math.max(10, TILE * 0.75);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+  ctx.fillStyle = "rgba(10,14,26,0.92)";
+  ctx.fill();
+  ctx.strokeStyle = "#fbbf24";
+  ctx.lineWidth = Math.max(1.5, TILE * 0.16);
+  ctx.stroke();
+  ctx.font = `${Math.max(15, TILE * 1.1)}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("🏯", cx, cy + 1);
+
+  ctx.font = `bold ${Math.max(9, TILE * 0.5)}px sans-serif`;
+  const complete = joint.wood >= JOINT_CASTLE_WOOD_COST && joint.stone >= JOINT_CASTLE_STONE_COST;
+  const label = complete ? "Joint Castle complete!" : `Joint Castle ${joint.wood}/${JOINT_CASTLE_WOOD_COST}🪵 ${joint.stone}/${JOINT_CASTLE_STONE_COST}🪨`;
+  const tagWidth = ctx.measureText(label).width + 6;
+  const tagHeight = Math.max(11, TILE * 0.6);
+  const tagX = clampTagX(cx, tagWidth);
+  const tagY = claimBubbleSlot(tagX, cy + r + 2, tagWidth, tagHeight);
+  ctx.fillStyle = "rgba(10,14,26,0.85)";
+  ctx.fillRect(tagX, tagY, tagWidth, tagHeight);
+  ctx.fillStyle = "#fde68a";
+  ctx.textBaseline = "top";
+  ctx.fillText(label, tagX + tagWidth / 2, tagY + 1);
+  ctx.restore();
+}
+
 function drawLandmarks() {
   // Bug report (live playtest): "I'm not sure what landmarks are on the map, I'd
   // like to see those clearly depicted." The old Math.max(3.5, ...) / Math.max(7, ...)
@@ -3672,6 +3715,7 @@ function drawFrame() {
     pendingSpeechBubbles.forEach(draw => draw());
     drawLandmarks();
     drawMinorSettlements();
+    if (latestState.joint_castle) drawJointCastle(latestState.joint_castle);
     // The day/night tint goes over literally everything (tribes, trails, structures
     // included) so night actually reads as night across the whole scene, not just an
     // absent sun icon up top.
@@ -3863,6 +3907,10 @@ const MOAT_DEFENSE_BONUS = 0.08;
 const BATH_HOUSE_UPKEEP_MULTIPLIER = 0.85;
 const HATCHERY_HATCH_CHANCE_MULTIPLIER = 2.0;
 const COOKING_FOOD_MULTIPLIER = 3;
+// Mirrors backend/config.py's JOINT_CASTLE_WOOD_COST/JOINT_CASTLE_STONE_COST
+// -- for drawJointCastle's own progress label.
+const JOINT_CASTLE_WOOD_COST = 80;
+const JOINT_CASTLE_STONE_COST = 100;
 // Mirrors backend/config.py's UPKEEP_POPULATION_DIVISOR/FISHING_SUPPLY_MULTIPLIER
 // -- fishing's passive supply scales with population the same way upkeep does
 // (bug report: "we have hit a food and water scaling problem"), not a flat number.

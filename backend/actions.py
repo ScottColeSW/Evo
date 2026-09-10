@@ -2709,6 +2709,89 @@ def _declare_alliance(sim, tribe, biome, target):
     return f"{tribe.name} declares an alliance with {rival.name}"
 
 
+def _mutual_ally_at_top_era(sim, tribe):
+    """The rival this tribe could build a Joint Castle with -- both at the
+    one era DECLARE_CONQUEST/BUILD_JOINT_CASTLE exist in, and genuinely,
+    mutually allied (not just this tribe's own one-sided declaration).
+    Returns None otherwise. See Simulation._has_active_alliance_at_top_era
+    for the mirrored check step() uses to hold off era_ceiling while this is
+    still in progress."""
+    from .eras import next_era
+    if next_era(tribe.era) is not None:
+        return None
+    for other in sim.tribes.values():
+        if other.id == tribe.id or other.extinct or next_era(other.era) is not None:
+            continue
+        if tribe.stance_toward.get(other.id) == "ALLIED" and other.stance_toward.get(tribe.id) == "ALLIED":
+            return other
+    return None
+
+
+def _build_joint_castle(sim, tribe, biome, target):
+    """Explicit request, 2026-09-10: "If they form an alliance, should we
+    revise the menu to allow full builds all the way until both reach
+    Castle-state... I love building the Castle together. 1 big piece in the
+    middle of the Tribes." A genuinely shared structure, tracked on
+    sim.joint_castle (not either Tribe -- it belongs to neither one alone),
+    positioned at the midpoint between both territories the moment
+    construction actually starts. Staged like CONSTRUCT_WALL/TRAIN_
+    BATTALION -- built up over several calls from EITHER chief, not a
+    one-shot flip, and each call's contribution scales with that tribe's own
+    population the same way actions._labor_multiplier already does
+    everywhere else staged progress exists.
+
+    A deliberately different path to "Castle-state" than the ordinary
+    Fortress+long-house ladder (_build_castle) -- this is the two tribes'
+    shared monument to their alliance, not a bigger version of either one's
+    own defensive works, so it doesn't inherit that ladder's prerequisites.
+    Completion sets castle_built on BOTH tribes (see Simulation.step's own
+    golden_age check, which confirms completion against sim.joint_castle's
+    own progress specifically, not just "both tribes have castle_built" --
+    either could in principle also reach that flag via the ordinary solo
+    ladder, unrelated to any alliance)."""
+    rival = _mutual_ally_at_top_era(sim, tribe)
+    if rival is None:
+        return None
+    if tribe.castle_built and rival.castle_built:
+        return None
+    joint = sim.joint_castle
+    if joint is None or set(joint["tribe_ids"]) != {tribe.id, rival.id}:
+        if tribe.territory_center is None or rival.territory_center is None:
+            return None
+        mx = (tribe.territory_center[0] + rival.territory_center[0]) // 2
+        my = (tribe.territory_center[1] + rival.territory_center[1]) // 2
+        joint = {"tribe_ids": [tribe.id, rival.id], "x": mx, "y": my, "wood": 0, "stone": 0}
+        sim.joint_castle = joint
+
+    contribution = round(config.JOINT_CASTLE_CONTRIBUTION_PER_ACTION_BASE * _labor_multiplier(tribe.population))
+    added_wood = max(0, min(tribe.wood, config.JOINT_CASTLE_WOOD_COST - joint["wood"], contribution))
+    added_stone = max(0, min(tribe.stone, config.JOINT_CASTLE_STONE_COST - joint["stone"], contribution))
+    if added_wood <= 0 and added_stone <= 0:
+        return None
+    tribe.wood -= added_wood
+    tribe.stone -= added_stone
+    joint["wood"] += added_wood
+    joint["stone"] += added_stone
+
+    if joint["wood"] >= config.JOINT_CASTLE_WOOD_COST and joint["stone"] >= config.JOINT_CASTLE_STONE_COST:
+        tribe.castle_built = True
+        rival.castle_built = True
+        sim._award_trophy(tribe, "Architects of Peace")
+        sim._award_trophy(rival, "Architects of Peace")
+        sim.trauma.radiate_event_wave(joint["x"], joint["y"], config.ERA_ADVANCE_PRIDE_MAGNITUDE, config.ERA_ADVANCE_PRIDE_RADIUS)
+        message = (
+            f"the Joint Castle at ({joint['x']},{joint['y']}) is complete -- {tribe.name} and {rival.name} "
+            "raise it together, a lasting monument to their alliance"
+        )
+        tribe.history.append(message)
+        rival.history.append(message)
+        return message
+    return (
+        f"{tribe.name} contributes to the Joint Castle at ({joint['x']},{joint['y']}) with {rival.name} -- "
+        f"{joint['wood']}/{config.JOINT_CASTLE_WOOD_COST} wood, {joint['stone']}/{config.JOINT_CASTLE_STONE_COST} stone"
+    )
+
+
 def _declare_war(sim, tribe, biome, target):
     """The hostile counterpart to _declare_alliance -- same symmetric, state-only
     shape, including the same explicit barracks_built guard (see _declare_
@@ -2805,6 +2888,7 @@ ACTION_REGISTRY = {
     "CREATE_ITEM": _create_item,
     "CREATE_USEFUL_STRUCTURE": _create_useful_structure,
     "DECLARE_CONQUEST": _declare_conquest,
+    "BUILD_JOINT_CASTLE": _build_joint_castle,
     "BUILD_KITCHEN": _build_kitchen,
     "BUILD_MOAT": _build_moat,
     "BUILD_KEEP": _build_keep,
@@ -2871,6 +2955,7 @@ ACTION_DESCRIPTIONS = {
     "CREATE_ITEM": "Design and craft a genuinely new item at the Object Creator -- a real, permanent effect (a bonus to gathering, combat, defense, celebrations, exploration speed, or an immediate population grant), picked for you. Only possible once the Object Creator stands.",
     "CREATE_USEFUL_STRUCTURE": "Design and build a genuinely new structure at the Object Creator -- same real, permanent effects as CREATE_ITEM, but a building instead of a portable item. Only possible once the Object Creator stands.",
     "DECLARE_CONQUEST": "An all-in campaign to fully and immediately conquer a rival tribe near target_vector, in one decisive stroke rather than several raids. A win absorbs them completely; a loss costs far more than an ordinary failed raid. Does nothing if no rival is there.",
+    "BUILD_JOINT_CASTLE": "Contribute wood and stone toward a Joint Castle raised together with a genuinely, mutually allied rival tribe -- a shared monument to the alliance, built up over several turns from either side. Completing it marks both tribes as having reached Castle-state. Only possible once truly allied, not just once one side has declared it.",
     "BUILD_KITCHEN": "Build a kitchen using stored wood and stone -- only possible once cooking is known and a long house stands. A one-time, permanent structure: stacks with cooking for nine times as much food from every future forage, hunt, or catch, instead of only three.",
     "BUILD_MOAT": "Dig a moat using stored wood and stone -- only possible once the wall has been reinforced with a second layer. A one-time, permanent structure, cheaper than another wall layer: a further defense bonus.",
     "BUILD_KEEP": "Build a keep using stored wood and stone -- only possible once enough long houses stand. A one-time, permanent structure: a further defense bonus for the settlement.",

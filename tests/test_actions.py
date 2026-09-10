@@ -15,6 +15,7 @@ def _bare_simulation():
     sim.cycle = 1
     sim.immortality_cycles = 0
     sim.recent_encounters = []
+    sim.joint_castle = None
     sim.minor_settlements = []
     # _found_territory (via _settle, below) now also clears any minor settlement
     # caught inside the fresh territory, which needs to check every OTHER tribe's
@@ -2516,6 +2517,129 @@ def test_declare_conquest_finds_no_rival_returns_a_note_not_a_crash():
     result = ACTION_REGISTRY["DECLARE_CONQUEST"](sim, tribe, "plains", (90, 90))
 
     assert "no rival" in result.lower()
+
+
+def _allied_top_era_pair(sim):
+    """Shared setup for the Joint Castle tests below: two real, settled
+    tribes, both at the top era, genuinely mutually allied."""
+    from backend.simulation import Tribe as _Tribe
+
+    tribe = _Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 20, 20, "#c084fc")
+    rival = _Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 80, 80, "#fb923c")
+    _settle(sim, tribe)
+    _settle(sim, rival)
+    tribe.era = rival.era = "war_and_world_domination_era"
+    tribe.stance_toward[rival.id] = "ALLIED"
+    rival.stance_toward[tribe.id] = "ALLIED"
+    return tribe, rival
+
+
+def test_mutual_ally_at_top_era_finds_a_genuinely_mutual_ally():
+    from backend.actions import _mutual_ally_at_top_era
+
+    sim = _bare_simulation()
+    tribe, rival = _allied_top_era_pair(sim)
+
+    assert _mutual_ally_at_top_era(sim, tribe) is rival
+    assert _mutual_ally_at_top_era(sim, rival) is tribe
+
+
+def test_mutual_ally_at_top_era_ignores_a_one_sided_declaration():
+    from backend.actions import _mutual_ally_at_top_era
+
+    sim = _bare_simulation()
+    tribe, rival = _allied_top_era_pair(sim)
+    rival.stance_toward[tribe.id] = "NEUTRAL"  # only tribe declared it
+
+    assert _mutual_ally_at_top_era(sim, tribe) is None
+
+
+def test_mutual_ally_at_top_era_none_before_the_top_era():
+    from backend.actions import _mutual_ally_at_top_era
+
+    sim = _bare_simulation()
+    tribe, rival = _allied_top_era_pair(sim)
+    tribe.era = "tribal_synapse"
+
+    assert _mutual_ally_at_top_era(sim, tribe) is None
+
+
+def test_build_joint_castle_starts_at_the_midpoint_of_both_territories():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe, rival = _allied_top_era_pair(sim)
+    tribe.wood = tribe.stone = 1000
+
+    ACTION_REGISTRY["BUILD_JOINT_CASTLE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert sim.joint_castle is not None
+    assert set(sim.joint_castle["tribe_ids"]) == {tribe.id, rival.id}
+    expected_x = (tribe.territory_center[0] + rival.territory_center[0]) // 2
+    expected_y = (tribe.territory_center[1] + rival.territory_center[1]) // 2
+    assert (sim.joint_castle["x"], sim.joint_castle["y"]) == (expected_x, expected_y)
+    assert sim.joint_castle["wood"] > 0
+
+
+def test_build_joint_castle_accepts_contributions_from_either_tribe():
+    sim = _bare_simulation()
+    tribe, rival = _allied_top_era_pair(sim)
+    tribe.wood = tribe.stone = 1000
+    rival.wood = rival.stone = 1000
+
+    ACTION_REGISTRY["BUILD_JOINT_CASTLE"](sim, tribe, "plains", _NO_TARGET)
+    wood_after_first = sim.joint_castle["wood"]
+    ACTION_REGISTRY["BUILD_JOINT_CASTLE"](sim, rival, "plains", _NO_TARGET)
+
+    assert sim.joint_castle["wood"] > wood_after_first  # rival's own contribution landed on the same structure
+
+
+def test_build_joint_castle_completes_and_marks_both_tribes():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe, rival = _allied_top_era_pair(sim)
+    tribe.wood = tribe.stone = config.JOINT_CASTLE_WOOD_COST + config.JOINT_CASTLE_STONE_COST
+    tribe.population = 10_000_000  # guarantees a huge per-action contribution
+
+    result = None
+    for _ in range(20):  # plenty of calls to guarantee completion
+        result = ACTION_REGISTRY["BUILD_JOINT_CASTLE"](sim, tribe, "plains", _NO_TARGET)
+        if tribe.castle_built:
+            break
+
+    assert tribe.castle_built is True
+    assert rival.castle_built is True
+    assert "Architects of Peace" in [t["name"] for t in tribe.trophies]
+    assert "Architects of Peace" in [t["name"] for t in rival.trophies]
+    assert "complete" in result
+    assert any("Joint Castle" in e and "complete" in e for e in tribe.history)
+    assert any("Joint Castle" in e and "complete" in e for e in rival.history)
+
+
+def test_build_joint_castle_is_a_no_op_without_a_mutual_ally():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.era = "war_and_world_domination_era"
+    tribe.wood = tribe.stone = 1000
+    sim.tribes = {tribe.id: tribe}
+
+    result = ACTION_REGISTRY["BUILD_JOINT_CASTLE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert result is None
+    assert sim.joint_castle is None
+
+
+def test_build_joint_castle_is_a_no_op_once_both_already_have_a_castle():
+    sim = _bare_simulation()
+    tribe, rival = _allied_top_era_pair(sim)
+    tribe.wood = tribe.stone = 1000
+    tribe.castle_built = rival.castle_built = True
+
+    result = ACTION_REGISTRY["BUILD_JOINT_CASTLE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert result is None
+    assert sim.joint_castle is None
 
 
 def test_trade_exchanges_unique_resources_too():

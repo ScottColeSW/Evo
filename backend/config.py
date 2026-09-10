@@ -1567,6 +1567,22 @@ CASTLE_WOOD_COST = 40
 CASTLE_STONE_COST = 50
 CASTLE_DEFENSE_BONUS = 0.15
 
+# Explicit request, 2026-09-10: "If they form an alliance, should we revise
+# the menu to allow full builds all the way until both reach Castle-state...
+# I love building the Castle together. 1 big piece in the middle of the
+# Tribes." A genuinely shared structure (Simulation.joint_castle,
+# actions._build_joint_castle) -- a separate path to "Castle-state" from the
+# ordinary Fortress+long-house ladder above, open only to two top-era tribes
+# that are mutually allied. Costed higher than a solo Castle (roughly 2x)
+# since it's the two tribes' combined effort, not a bigger footprint for one.
+JOINT_CASTLE_WOOD_COST = 80
+JOINT_CASTLE_STONE_COST = 100
+# Same "bigger tribe contributes more per call" shape BATTALION_TRAINING_
+# PER_ACTION_BASE/CONSTRUCT_WALL's own progress-per-action already use
+# (actions._labor_multiplier) -- staged across several calls from either
+# chief, not a one-shot flip.
+JOINT_CASTLE_CONTRIBUTION_PER_ACTION_BASE = 10
+
 # BUILD_ROAD (backend/actions.py._build_road): a permanent, tribe-built version of
 # the same trail_speed_bonus a well-worn path already grants expeditions (World.
 # trail_speed_bonus) -- flat, not distance-decayed like a trail, since a road exists

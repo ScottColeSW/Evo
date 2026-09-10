@@ -21,6 +21,7 @@ def _bare_simulation():
     sim.game_over_reason = None
     sim.game_over_summary = ""
     sim.recent_encounters = []
+    sim.joint_castle = None
     sim.minor_settlements = []
     # _found_territory now also clears any minor settlement caught inside the
     # fresh territory, which checks every OTHER tribe's own territory too (see
@@ -5772,6 +5773,89 @@ def test_prepare_turn_has_no_castle_nudge_once_the_castle_is_already_built():
     assert "the war is already won" not in request["prompt"]
 
 
+def test_mutual_alliance_reopens_the_full_menu_instead_of_the_endgame_lock():
+    """Explicit request, 2026-09-10: "If they form an alliance, should we
+    revise the menu to allow full builds all the way until both reach
+    Castle-state." A genuinely, mutually allied pair of top-era tribes skip
+    the ordinary endgame narrowing entirely -- normal BUILD_* actions stay
+    available, and BUILD_JOINT_CASTLE is added on top."""
+    from backend import config
+
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe, rival = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = rival.era = "war_and_world_domination_era"
+    tribe.wood = tribe.stone = 1000
+    tribe.stance_toward[rival.id] = "ALLIED"
+    rival.stance_toward[tribe.id] = "ALLIED"
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_JOINT_CASTLE" in ctx["available_actions"]
+    assert "GATHER_WOOD" in ctx["available_actions"]  # full menu, not endgame-narrowed
+    assert "BUILD_LONG_HOUSE" in ctx["available_actions"]
+    assert "genuine, mutual alliance" in request["prompt"]
+
+
+def test_mutual_alliance_hides_joint_castle_once_both_already_have_one():
+    from backend import config
+
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe, rival = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = rival.era = "war_and_world_domination_era"
+    tribe.wood = tribe.stone = 1000
+    tribe.stance_toward[rival.id] = "ALLIED"
+    rival.stance_toward[tribe.id] = "ALLIED"
+    tribe.castle_built = rival.castle_built = True
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_JOINT_CASTLE" not in ctx["available_actions"]
+
+
+def test_one_sided_alliance_declaration_still_gets_the_normal_endgame_lock():
+    """Only tribe declared it -- rival hasn't reciprocated, so this isn't a
+    genuine mutual alliance yet and the ordinary war/peace endgame narrowing
+    still applies."""
+    from backend import config
+
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe, rival = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = rival.era = "war_and_world_domination_era"
+    tribe.wood = tribe.stone = 1000
+    tribe.discovered_rivals.add(rival.id)
+    tribe.barracks_built = 1
+    tribe.stance_toward[rival.id] = "ALLIED"  # one-sided only
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_JOINT_CASTLE" not in ctx["available_actions"]
+    assert "GATHER_WOOD" not in ctx["available_actions"]  # still endgame-narrowed
+
+
 def test_battle_ready_lock_narrows_to_declare_conquest_alone():
     """Explicit request, 2026-09-10: "I think we should limit the actions
     available to only Declare_Conquest... when they are both 'battle-
@@ -10190,6 +10274,82 @@ async def test_step_defers_world_domination_until_the_winner_also_builds_a_castl
 
     assert sim.game_over is False
     assert sim.status != "GAME OVER"
+
+
+@run_async
+async def test_step_triggers_golden_age_when_the_joint_castle_completes():
+    """Explicit request, 2026-09-10: "I love building the Castle together.
+    1 big piece in the middle of the Tribes." The peaceful mirror of
+    world_domination -- checked against sim.joint_castle's own progress
+    directly, not just "both tribes have castle_built" (see the sibling
+    test below for why that distinction matters)."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    tribe_a, tribe_b = list(sim.tribes.values())
+    sim._found_territory(tribe_a)
+    sim._found_territory(tribe_b)
+    tribe_a.era = tribe_b.era = "war_and_world_domination_era"
+    tribe_a.stance_toward[tribe_b.id] = "ALLIED"
+    tribe_b.stance_toward[tribe_a.id] = "ALLIED"
+    sim.joint_castle = {
+        "tribe_ids": [tribe_a.id, tribe_b.id], "x": 50, "y": 50,
+        "wood": config.JOINT_CASTLE_WOOD_COST, "stone": config.JOINT_CASTLE_STONE_COST,
+    }
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch.object(sim.client, "unload_model", mock.AsyncMock()):
+        await sim.step()
+
+    assert sim.game_over is True
+    assert sim.game_over_reason == "golden_age"
+    assert "OVERSEER LOG" in sim.game_over_summary
+
+
+@run_async
+async def test_step_does_not_mistake_two_independent_solo_castles_for_golden_age():
+    """Either tribe could in principle also reach castle_built via the
+    ordinary solo Fortress+long-house ladder, completely unrelated to any
+    alliance -- that must never be read as the golden_age ending. The run
+    still legitimately ends here (both are alive, allied, and at the top
+    era with nothing left in progress -- era_ceiling's own real condition),
+    just not credited to a Joint Castle that was never actually built."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    tribe_a, tribe_b = list(sim.tribes.values())
+    sim._found_territory(tribe_a)
+    sim._found_territory(tribe_b)
+    tribe_a.era = tribe_b.era = "war_and_world_domination_era"
+    tribe_a.stance_toward[tribe_b.id] = "ALLIED"
+    tribe_b.stance_toward[tribe_a.id] = "ALLIED"
+    tribe_a.castle_built = True
+    tribe_b.castle_built = True  # both built their own, no joint_castle exists
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch.object(sim.client, "unload_model", mock.AsyncMock()):
+        await sim.step()
+
+    assert sim.game_over_reason != "golden_age"
+    assert sim.game_over_reason == "era_ceiling"
+
+
+@run_async
+async def test_step_holds_off_era_ceiling_while_the_joint_castle_is_still_in_progress():
+    """The same "the deferred ending needs the fallback held off too" care
+    world_domination's own deferral needs, for the peaceful path instead."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    tribe_a, tribe_b = list(sim.tribes.values())
+    sim._found_territory(tribe_a)
+    sim._found_territory(tribe_b)
+    tribe_a.era = tribe_b.era = "war_and_world_domination_era"
+    tribe_a.stance_toward[tribe_b.id] = "ALLIED"
+    tribe_b.stance_toward[tribe_a.id] = "ALLIED"
+    # No joint_castle started yet, neither has a Castle -- both at the top
+    # era, so era_ceiling's own condition would otherwise be satisfied.
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
+        await sim.step()
+
+    assert sim.game_over is False
 
 
 @run_async
