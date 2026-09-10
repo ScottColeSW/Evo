@@ -4271,6 +4271,25 @@ class Simulation:
                 f"Analysis: {leader.name} attained the highest peak population ({leader.max_population}) "
                 f"among surviving populations. Session concluded at cycle {self.cycle}."
             )
+            # Live report: "that screen did not tell me why the sim ended." The
+            # frontend's verdict line (goVerdictText, index.html) only ever pulls
+            # this one "Analysis:" sentence out of the full summary -- the
+            # per-tribe "never attempted or faced DECLARE_CONQUEST" note just
+            # above was already computed, but sat buried inside the collapsed
+            # "Full Overseer Log" details, invisible unless expanded. For an
+            # era_ceiling ending specifically, whether the era's one real action
+            # ever happened IS the answer to "why did it end this way" -- surfaced
+            # here too so it rides the same already-wired verdict pipeline instead
+            # of needing a separate frontend change (and the drift risk that
+            # would carry, per this project's own repeated frontend/backend-drift
+            # lesson).
+            unresolved = [t.name for t in living if _conquest_record_summary(t)]
+            if unresolved:
+                lines[-1] += (
+                    f" {', '.join(unresolved)} reached War and World Domination, but the session ended "
+                    "before DECLARE_CONQUEST was ever attempted or faced -- no war, conquest, or "
+                    "absorption occurred."
+                )
         else:
             lines.append(f"Analysis: session concluded at cycle {self.cycle}.")
         return "\n".join(lines)

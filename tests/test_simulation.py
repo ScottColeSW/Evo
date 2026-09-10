@@ -9983,6 +9983,28 @@ def test_game_over_summary_flags_a_war_era_tribe_that_never_declared_conquest():
     assert "never attempted or faced DECLARE_CONQUEST" in summary
 
 
+def test_game_over_summary_surfaces_the_unresolved_war_note_in_the_analysis_line():
+    """Live report: "that screen did not tell me why the sim ended." The
+    frontend's verdict (goVerdictText, frontend/index.html) only ever pulls
+    out the one "Analysis:" sentence -- the "never attempted or faced
+    DECLARE_CONQUEST" note (see the sibling test above) was already computed
+    but sat buried in the collapsed Full Overseer Log, invisible unless
+    expanded. For an era_ceiling ending, this rides the same already-wired
+    "Analysis:" line the frontend already surfaces prominently."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.era = "war_and_world_domination_era"
+    tribe.max_population = 90
+    sim.tribes = {"tribe_0": tribe}
+
+    summary = sim._generate_game_over_summary("era_ceiling")
+
+    analysis_line = next(line for line in summary.split("\n") if line.startswith("Analysis:"))
+    assert "Forest Tribe" in analysis_line
+    assert "DECLARE_CONQUEST" in analysis_line
+    assert "no war, conquest, or absorption occurred" in analysis_line
+
+
 def test_game_over_summary_names_an_extinct_tribes_cause():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
