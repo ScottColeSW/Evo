@@ -205,6 +205,20 @@ async def _tick_session(ws: web.WebSocketResponse, session: dict) -> None:
     # stale -- there's simply nothing left to record or broadcast until unpaused.
     if sim.paused:
         return
+    # Same bug class as the pause-mode fix directly above, found the same way
+    # (a live report: "I have not stopped the server yet and it is hitting the
+    # disc. I don't know why. the sim is over."). sim.step() already no-ops
+    # once sim.game_over is True (see step()'s own guard), but nothing here
+    # stopped this function from recomputing an identical snapshot and calling
+    # record_board_state every single tick anyway, forever, for a cycle number
+    # that was never changing -- the exact same wasted-disk-I/O shape the pause
+    # fix already covers, just for a different terminal state. This check runs
+    # BEFORE sim.step() is called, so the one tick where game_over actually
+    # flips True this cycle (inside step() itself) still completes normally
+    # and sends/records that final state -- only every tick after that is now
+    # skipped.
+    if sim.game_over:
+        return
     # Live-bug-adjacent finding: this used to be one try/except around the whole
     # tick, "connection may have dropped between the tick starting and finishing"
     # -- but that same bare except was also silently swallowing genuine

@@ -60,9 +60,31 @@ async def test_tick_session_does_nothing_while_paused():
 
 
 @run_async
+async def test_tick_session_does_nothing_once_the_game_is_over():
+    """Live report: "I have not stopped the server yet and it is hitting the
+    disc. I don't know why. the sim is over." Same bug class as the pause-mode
+    fix directly above (and found the same way) -- sim.step() already no-ops
+    once sim.game_over is True, but this function used to keep recomputing an
+    identical snapshot and writing it to board_history.db every tick anyway,
+    forever, for a cycle number that was never changing again."""
+    sim = mock.Mock()
+    sim.paused = False
+    sim.game_over = True
+    sim.step = mock.AsyncMock()
+
+    with mock.patch("backend.app.record_board_state") as record:
+        await _tick_session(mock.AsyncMock(), {"sim": sim})
+
+    sim.step.assert_not_called()
+    sim.snapshot.assert_not_called()
+    record.assert_not_called()
+
+
+@run_async
 async def test_tick_session_sends_the_snapshot_on_a_normal_tick():
     sim = mock.Mock()
     sim.paused = False
+    sim.game_over = False
     sim.step = mock.AsyncMock()
     sim.snapshot.return_value = {"cycle": 5}
     sim.run_id, sim.cycle = "run_x", 5
@@ -88,6 +110,7 @@ async def test_tick_session_logs_and_never_sends_when_sim_step_itself_fails():
     broadcast loop calling this ticks every other session too)."""
     sim = mock.Mock()
     sim.paused = False
+    sim.game_over = False
     sim.step = mock.AsyncMock(side_effect=RuntimeError("boom"))
     ws = mock.AsyncMock()
 
@@ -137,6 +160,7 @@ async def test_tick_session_still_swallows_a_send_failure_after_a_successful_tic
     drops between the tick finishing and the send going out."""
     sim = mock.Mock()
     sim.paused = False
+    sim.game_over = False
     sim.step = mock.AsyncMock()
     sim.snapshot.return_value = {"cycle": 1}
     sim.run_id, sim.cycle = "run_x", 1
