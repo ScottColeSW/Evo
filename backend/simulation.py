@@ -1341,6 +1341,11 @@ class Tribe:
         # MAX_WALL_RINGS is reached and fully reinforced -- see
         # Simulation._prepare_turn.
         self.walls_complete = False
+        # Same one-way retirement shape, for HUNT_DEER/HUNTING_PARTY/GATHER_EGGS
+        # (and CATCH_FISH, once fishing_learned) once _is_food_secure -- see
+        # Simulation._prepare_turn. Explicit request, 2026-09-10: "we need to
+        # check for infinity food on so we don't offer hunting."
+        self.food_security_actions_retired = False
         # Egg-gathering/flock genetics (backend/actions.py GATHER_EGGS, Simulation.
         # _resolve_hatch, backend/genetics.py hatch()) -- same pending_X/resolve shape
         # as pending_birth/lineage above, applied to a flock instead of the tribe's own
@@ -3089,6 +3094,33 @@ class Simulation:
                     "is retired now that settling here keeps it flowing in on its own"
                 )
             available_actions = [a for a in available_actions if a != "GATHER_WATER"]
+
+        # Explicit request, 2026-09-10: "we need to check for infinity food on
+        # so we don't offer hunting." Same one-way retirement shape as
+        # foraging_retired/watering_retired just above, gated on the fuller
+        # _is_food_secure bar (Kitchen + a genuinely proven source) rather than
+        # foraging_retired's own earlier-triggering condition -- confirmed live
+        # (run_20260910_120500) that a mature, food-secure tribe still spent 33
+        # of 79 endgame-locked cycles on HUNT_DEER and 25 on GATHER_EGGS instead
+        # of ever attempting DECLARE_CONQUEST/DECLARE_ALLIANCE, crowding out the
+        # two actions that actually matter once the menu is already narrowed to
+        # a handful of choices. Safe to retire permanently: hunt_ever_succeeded/
+        # eggs_ever_gathered (the only things HUNT_DEER/GATHER_EGGS ever
+        # permanently unlock -- Tannery, COOK_FOOD, Hatchery) are themselves
+        # one-way flags set well before Kitchen can ever exist (Kitchen itself
+        # requires cooking_learned, which requires hunt_ever_succeeded), so
+        # nothing downstream can still be waiting on either action once food
+        # security is even reachable. CATCH_FISH isn't included here -- it
+        # already has its own, earlier retirement once fishing_learned (below),
+        # independent of full food security.
+        if _is_food_secure(tribe):
+            if not tribe.food_security_actions_retired:
+                tribe.food_security_actions_retired = True
+                tribe.history.append(
+                    f"\U0001f4dc {tribe.name} no longer needs to hunt or gather eggs -- proven food "
+                    "security keeps the tribe fed on its own from here on"
+                )
+            available_actions = [a for a in available_actions if a not in ("HUNT_DEER", "HUNTING_PARTY", "GATHER_EGGS")]
 
         # Explicit correction: PLANT_CROP/GATHER_EGGS/CATCH_FISH used to require the
         # stricter settled_near_water check (a real adjacent water tile) -- "the

@@ -8924,6 +8924,58 @@ def test_gather_food_retires_once_a_harvest_completes():
     assert any("GATHER_FOOD is retired" in e and "farming" in e for e in tribe.history)
 
 
+def test_hunting_and_egg_gathering_stay_available_before_food_security():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "HUNT_DEER" in ctx["available_actions"]
+    assert tribe.food_security_actions_retired is False
+
+
+def test_hunting_and_egg_gathering_retire_once_genuinely_food_secure():
+    """Explicit request, 2026-09-10: "we need to check for infinity food on so
+    we don't offer hunting." Confirmed live (run_20260910_120500): a mature,
+    food-secure tribe still spent 33 of 79 endgame-locked cycles on HUNT_DEER
+    and 25 on GATHER_EGGS instead of ever attempting DECLARE_CONQUEST/
+    DECLARE_ALLIANCE -- crowding out the two actions that actually matter
+    once the menu is already narrowed to a handful of choices."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.kitchen_built = True
+    tribe.fishery_built = True  # _is_food_secure
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "HUNT_DEER" not in ctx["available_actions"]
+    assert "HUNTING_PARTY" not in ctx["available_actions"]
+    assert "GATHER_EGGS" not in ctx["available_actions"]
+    assert tribe.food_security_actions_retired is True
+    assert any("no longer needs to hunt or gather eggs" in e for e in tribe.history)
+
+
+def test_catch_fish_stays_reachable_when_food_secure_via_farming_not_fishing():
+    """The new food-security retirement above deliberately doesn't touch
+    CATCH_FISH -- it already has its own, independent retirement once
+    fishing_learned (test_catch_fish_retires_once_fishing_is_learned). A
+    tribe that reached food security via farming instead of fishing must
+    not be permanently blocked from ever learning to fish (BUILD_DOCK gates
+    on fishing_learned)."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.kitchen_built = True
+    tribe.last_harvest_cycle = 5  # food-secure via farming, not fishing
+    tribe.fishing_learned = False
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "HUNT_DEER" not in ctx["available_actions"]  # food-security retirement applies
+
+
 
 
 def test_gather_food_retirement_is_not_re_archived_every_cycle():
