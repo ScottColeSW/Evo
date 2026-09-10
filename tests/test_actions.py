@@ -4688,37 +4688,36 @@ def test_eligible_new_battalion_leader_excludes_anyone_already_leading_one():
 def test_allocate_battalion_strength_forms_a_new_battalion_for_a_fresh_leader():
     from backend.actions import _allocate_battalion_strength
 
-    sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.chief_name = "Ashgar"
     tribe.trophies = [{"name": "Trophy", "chief": "BriMir", "cycle": 1}]
 
-    _allocate_battalion_strength(sim, tribe, 10)
+    _allocate_battalion_strength(tribe, 10)
 
     assert tribe.battalions == [{"leader": "BriMir", "size": 10}]
-    assert any("BriMir is celebrated" in e for e in tribe.history)
+    assert any("BriMir steps up to lead" in e for e in tribe.history)
 
 
-def test_allocate_battalion_strength_celebrates_a_new_leader():
-    """Explicit follow-up: "It's probably smart to 'promote' the Warrior
-    leaders. The Tribe should know and maybe be happy, maybe even
-    celebrate." A real Fame bump and pride wave, the same peaceful-
-    achievement flavor _celebrate_road_complete's own moments use -- not a
-    new named trophy, since _award_trophy only ever pays out once per tribe
-    lifetime and this can happen up to MAX_CONCURRENT_BATTALIONS times."""
-    from backend import config
+def test_allocate_battalion_strength_queues_a_pending_celebration_instead_of_firing_one():
+    """Explicit correction, 2026-09-10: "I think we are doing celebrations in
+    a very complex way... if there are multiple reasons to celebrate in a
+    day, they are packaged to celebrate all in one big festive party." A new
+    leader no longer fires their own Fame/pride wave immediately -- that
+    would bypass the shared celebration cooldown every other celebration in
+    this project respects. They just join tribe.pending_battalion_
+    celebrations; Simulation._advance_battalion_celebrations is what
+    actually throws the party."""
     from backend.actions import _allocate_battalion_strength
 
-    sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.chief_name = "Ashgar"
     tribe.trophies = [{"name": "Trophy", "chief": "BriMir", "cycle": 1}]
     fame_before = tribe.fame
 
-    _allocate_battalion_strength(sim, tribe, 10)
+    _allocate_battalion_strength(tribe, 10)
 
-    assert tribe.fame == fame_before + config.FAME_PER_CELEBRATION
-    assert "PRIDE" in sim.trauma.bias_string(50, 50)
+    assert tribe.pending_battalion_celebrations == ["BriMir"]
+    assert tribe.fame == fame_before  # no immediate Fame bump
 
 
 def test_allocate_battalion_strength_grows_the_weakest_existing_battalion_past_the_cap():
@@ -4729,7 +4728,6 @@ def test_allocate_battalion_strength_grows_the_weakest_existing_battalion_past_t
     from backend import config
     from backend.actions import _allocate_battalion_strength
 
-    sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.chief_name = "Ashgar"
     tribe.battalions = [{"leader": f"Leader{i}", "size": 10} for i in range(config.MAX_CONCURRENT_BATTALIONS)]
@@ -4737,7 +4735,7 @@ def test_allocate_battalion_strength_grows_the_weakest_existing_battalion_past_t
     # A brand new eligible individual exists, but the cap is already full.
     tribe.trophies = [{"name": "Trophy", "chief": "NewLeader", "cycle": 1}]
 
-    _allocate_battalion_strength(sim, tribe, 5)
+    _allocate_battalion_strength(tribe, 5)
 
     assert len(tribe.battalions) == config.MAX_CONCURRENT_BATTALIONS  # no new Battalion formed
     assert tribe.battalions[1]["size"] == 8  # the weakest one grew instead
@@ -4746,11 +4744,10 @@ def test_allocate_battalion_strength_grows_the_weakest_existing_battalion_past_t
 def test_allocate_battalion_strength_leaves_growth_unled_with_no_leader_and_no_battalion():
     from backend.actions import _allocate_battalion_strength
 
-    sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.chief_name = "Ashgar"  # nobody but the chief has ever earned a trophy
 
-    _allocate_battalion_strength(sim, tribe, 10)
+    _allocate_battalion_strength(tribe, 10)
 
     assert tribe.battalions == []
 

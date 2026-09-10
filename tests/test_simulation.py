@@ -8473,6 +8473,79 @@ def test_advance_battalion_readiness_upkeep_floors_at_zero():
     assert tribe.battalion_readiness == 0.0
 
 
+def test_advance_battalion_celebrations_does_nothing_with_no_pending_names():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    sim._advance_battalion_celebrations(tribe)
+
+    assert tribe.history == []
+
+
+def test_advance_battalion_celebrations_throws_a_party_for_a_single_pending_leader():
+    from backend import config
+
+    sim = _bare_simulation()
+    sim.cycle = 100
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.pending_battalion_celebrations = ["BriMir"]
+    tribe.last_celebration_cycle = 100 - config.CELEBRATION_COOLDOWN_CYCLES  # cooldown just cleared
+    fame_before = tribe.fame
+
+    sim._advance_battalion_celebrations(tribe)
+
+    assert tribe.pending_battalion_celebrations == []
+    assert tribe.last_celebration_cycle == 100
+    assert tribe.fame == fame_before + config.FAME_PER_CELEBRATION
+    assert any("BriMir, newly risen to lead a Battalion" in e for e in tribe.history)
+    assert "PRIDE" in sim.trauma.bias_string(50, 50)
+
+
+def test_advance_battalion_celebrations_bundles_multiple_pending_leaders_into_one_party():
+    """Explicit request: "if there are multiple reasons to celebrate in a
+    day, they are packaged to celebrate all in one big festive party." Fame
+    scales with how many real leaders are being honored at once, but it's
+    still one combined celebration, not one per leader."""
+    from backend import config
+
+    sim = _bare_simulation()
+    sim.cycle = 100
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.pending_battalion_celebrations = ["BriMir", "TalOra", "KolMir"]
+    tribe.last_celebration_cycle = 100 - config.CELEBRATION_COOLDOWN_CYCLES
+    fame_before = tribe.fame
+
+    sim._advance_battalion_celebrations(tribe)
+
+    assert tribe.pending_battalion_celebrations == []
+    assert tribe.fame == fame_before + config.FAME_PER_CELEBRATION * 3
+    assert any(
+        "BriMir, TalOra, and KolMir" in e and "3 new Battalion leaders" in e
+        for e in tribe.history
+    )
+
+
+def test_advance_battalion_celebrations_waits_out_a_shared_cooldown_from_another_celebration():
+    """A leader named while the tribe's shared cooldown is still running from
+    some other celebration (a road, a wall...) just waits in the queue for
+    the next window that's free, rather than forcing its own celebration
+    outside the cooldown every other celebration here respects."""
+    from backend import config
+
+    sim = _bare_simulation()
+    sim.cycle = 100
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.pending_battalion_celebrations = ["BriMir"]
+    tribe.last_celebration_cycle = 100 - config.CELEBRATION_COOLDOWN_CYCLES + 1  # cooldown not clear yet
+    fame_before = tribe.fame
+
+    sim._advance_battalion_celebrations(tribe)
+
+    assert tribe.pending_battalion_celebrations == ["BriMir"]  # still waiting
+    assert tribe.fame == fame_before
+    assert tribe.history == []
+
+
 def test_advance_water_supply_does_nothing_before_settling():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])  # forest, not settled
     tribe = sim.tribes["tribe_0"]

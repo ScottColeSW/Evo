@@ -1411,6 +1411,17 @@ function celebrationReason(t) {
     return match ? `a fresh discovery -- ${match[1].replace(/\.$/, "")}` : "a fresh discovery";
   }
   if (recent.some(e => e.includes("a season of plenty"))) return "a season of plenty";
+  // Explicit correction, 2026-09-10: battalion-leader celebrations are now
+  // batched (Simulation._advance_battalion_celebrations) -- several leaders
+  // named the same day get one combined party, not one banner each.
+  const battalionEntry = recent.find(e => e.includes("newly risen to lead a Battalion") || e.includes("new Battalion leaders, risen together"));
+  if (battalionEntry) {
+    const solo = battalionEntry.match(/celebrates (.+?), newly risen to lead a Battalion/);
+    if (solo) return `${solo[1]} rising to lead a Battalion`;
+    const group = battalionEntry.match(/festive party for (.+?) -- \d+ new Battalion leaders/);
+    if (group) return `${group[1]} rising to lead new Battalions`;
+    return "new Battalion leadership";
+  }
   return "";
 }
 

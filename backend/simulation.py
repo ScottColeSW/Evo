@@ -894,6 +894,19 @@ class Tribe:
         # Battalion at all) even while battalion_size > 0 -- unled headcount
         # is a real, valid state, not an error.
         self.battalions: list[dict] = []
+        # Explicit correction, 2026-09-10: "I think we are doing celebrations in
+        # a very complex way... if there are multiple reasons to celebrate in a
+        # day, they are packaged to celebrate all in one big festive party."
+        # A new Battalion leader no longer celebrates immediately on its own --
+        # their name lands here instead, and Simulation._advance_battalion_
+        # celebrations flushes the whole list into one combined party the next
+        # time the shared celebration cooldown (config.CELEBRATION_COOLDOWN_
+        # CYCLES, tribe.last_celebration_cycle) actually clears, the same
+        # cooldown every other celebration in this file already shares -- so
+        # several leaders named on the same busy day get one party, not one
+        # each (or worse, silently dropped ones under the old always-fire
+        # design this replaces).
+        self.pending_battalion_celebrations: list[str] = []
         # Lifetime counters for backend/scoreboard.py -- what an evaluator actually
         # wants to compare across models isn't just "did it survive," it's how it got
         # there: how often it needed a new leader, how often scouting actually paid
@@ -2342,6 +2355,7 @@ class Simulation:
             self._advance_raider_approach(tribe)
             self._advance_battalion_patrol(tribe)
             self._advance_battalion_readiness_upkeep(tribe)
+            self._advance_battalion_celebrations(tribe)
             self._grow_population(tribe)
             self._advance_population_pressure(tribe)
             self._advance_era_if_ready(tribe)
@@ -6394,6 +6408,46 @@ class Simulation:
         if tribe.battalion_size <= 0 or tribe.battalion_readiness <= 0.0:
             return
         tribe.battalion_readiness = max(0.0, tribe.battalion_readiness - config.BATTALION_READINESS_DECAY_PER_CYCLE)
+
+    def _advance_battalion_celebrations(self, tribe: Tribe) -> None:
+        """Explicit correction, 2026-09-10: "I think we are doing celebrations
+        in a very complex way... if there are multiple reasons to celebrate
+        in a day, they are packaged to celebrate all in one big festive
+        party. i know we added the cooldown because we were getting flooded
+        with Celebrations and spamming the queue. but that was before."
+
+        actions._allocate_battalion_strength queues a new Battalion leader's
+        name here (tribe.pending_battalion_celebrations) instead of throwing
+        its own party immediately -- this is what actually throws it, once
+        per config.CELEBRATION_COOLDOWN_CYCLES window, naming everyone still
+        waiting at once. Several leaders named on the same busy day get one
+        combined party (Fame scales with how many, since each is still a
+        real, individual achievement); a leader named while the tribe's
+        cooldown is still running from some other celebration (a road, a
+        wall...) just waits in the queue for the next window that's free,
+        rather than being dropped or forcing its own celebration outside the
+        shared cooldown every other celebration here already respects.
+        Deliberately lighter than _celebrate_road_complete's own feast (no
+        food cost) -- a new leader is being honored, not fed."""
+        if not tribe.pending_battalion_celebrations:
+            return
+        if self.cycle - tribe.last_celebration_cycle < config.CELEBRATION_COOLDOWN_CYCLES:
+            return
+        names = tribe.pending_battalion_celebrations
+        tribe.pending_battalion_celebrations = []
+        tribe.last_celebration_cycle = self.cycle
+        if len(names) == 1:
+            tribe.history.append(
+                f"\U0001f389 {tribe.name} celebrates {names[0]}, newly risen to lead a Battalion!"
+            )
+        else:
+            joined = ", ".join(names[:-1]) + f", and {names[-1]}"
+            tribe.history.append(
+                f"\U0001f389 {tribe.name} throws one big festive party for {joined} -- "
+                f"{len(names)} new Battalion leaders, risen together!"
+            )
+        self.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.fame += config.FAME_PER_CELEBRATION * len(names)
 
     def _advance_fish_supply(self, tribe: Tribe) -> None:
         """Once fishing is learned (the first successful CATCH_FISH), food flows in
