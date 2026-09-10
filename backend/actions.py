@@ -911,7 +911,7 @@ def _build_barracks(sim, tribe, biome, target):
     capacity = config.BATTALION_CAPACITY_PER_BARRACKS * tribe.barracks_built
     old_size = tribe.battalion_size
     tribe.battalion_size = max(old_size, min(capacity, tribe.population))
-    _allocate_battalion_strength(tribe, tribe.battalion_size - old_size)
+    _allocate_battalion_strength(sim, tribe, tribe.battalion_size - old_size)
     sim._award_trophy(tribe, "Drillmaster")
     return f"a barracks rises, staffed at {tribe.battalion_size} strong from the tribe's own population -- a Battalion can grow to {capacity} strong in total"
 
@@ -951,7 +951,7 @@ def _train_battalion(sim, tribe, biome, target):
             return None
         tribe.food -= food_cost
         tribe.battalion_size += added
-        _allocate_battalion_strength(tribe, added)
+        _allocate_battalion_strength(sim, tribe, added)
         tribe.battalion_readiness = min(
             1.0, tribe.battalion_readiness + config.BATTALION_READINESS_BOLSTER_PER_ACTION
         )
@@ -1997,7 +1997,7 @@ def _eligible_new_battalion_leader(tribe) -> str | None:
     return best_name if best_count >= config.BATTALION_LEADER_TROPHY_THRESHOLD else None
 
 
-def _allocate_battalion_strength(tribe, added: int) -> None:
+def _allocate_battalion_strength(sim, tribe, added: int) -> None:
     """Military branch, steps 1-2, redesigned 2026-09-10: "if they have more
     than 1, they can have many Battallions. If they have a lot, we need some
     restrictions." Called by both _build_barracks and _train_battalion
@@ -2014,16 +2014,30 @@ def _allocate_battalion_strength(tribe, added: int) -> None:
     strength simply sits unled for now (a real militia headcount,
     tribe.battalion_size, that's outpaced who's actually stepped up to lead
     it) -- compute_might already treats unled headcount as contributing no
-    trophy bonus, the same as an unnamed Warrior always did."""
+    trophy bonus, the same as an unnamed Warrior always did.
+
+    Explicit follow-up, 2026-09-10: "It's probably smart to 'promote' the
+    Warrior leaders. The Tribe should know and maybe be happy, maybe even
+    celebrate." A new leader radiates the same real pride wave
+    _celebrate_road_complete's own peaceful-achievement moments do
+    (CELEBRATION_PRIDE_MAGNITUDE/RADIUS, not the combat-flavored RAID_PRIDE_*
+    pair) and a real Fame bump -- deliberately lighter than a full feast
+    (_celebration_cost/_feast_word live in simulation.py and would need a
+    real import cycle to reach from here; skipped rather than duplicated).
+    No new named trophy: _award_trophy pays out each trophy name once per
+    tribe's entire lifetime, which fits a single milestone, not "every one of
+    up to MAX_CONCURRENT_BATTALIONS leaders gets their own"."""
     if added <= 0:
         return
     candidate = _eligible_new_battalion_leader(tribe)
     if candidate is not None and len(tribe.battalions) < config.MAX_CONCURRENT_BATTALIONS:
         tribe.battalions.append({"leader": candidate, "size": added})
         tribe.history.append(
-            f"{candidate} steps up to lead a new Battalion of {added} for {tribe.name}, "
-            f"proven by their own deeds"
+            f"\U0001f389 {candidate} is celebrated as {tribe.name}'s newest Battalion leader, "
+            f"proven by their own deeds -- {added} strong and ready to follow them"
         )
+        sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+        tribe.fame += config.FAME_PER_CELEBRATION
         return
     if tribe.battalions:
         weakest = min(tribe.battalions, key=lambda b: b["size"])
