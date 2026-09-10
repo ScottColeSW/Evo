@@ -3132,6 +3132,25 @@ class Simulation:
                 )
             available_actions = [a for a in available_actions if a not in ("HUNT_DEER", "HUNTING_PARTY", "GATHER_EGGS")]
 
+        # Explicit correction, 2026-09-10: "Declare_Alliance is under
+        # suspicion and I'd like to even reduce when they are allow to use
+        # it." Confirmed live: _declare_alliance's own already_allied check
+        # only ever gated the one-time cultural-crossover side effect --
+        # nothing stopped the action itself from being offered and fully
+        # re-firing (re-setting stance, radiating pride waves, a fresh
+        # "declares an alliance" line) over and over once already allied.
+        # Real logs showed a tribe declare alliance with the same already-
+        # allied rival 20+ times across one run -- the exact "guaranteed
+        # no-op left dangling in the menu" pattern every other one-time
+        # flag in this file already avoids. Hidden once the tribe is
+        # already ALLIED with every currently-known living rival; still
+        # offered while at WAR (suing for peace is real) or before any
+        # alliance has ever been declared with a newly-discovered rival.
+        if "DECLARE_ALLIANCE" in available_actions:
+            living_rivals = [other for other in self.tribes.values() if other.id != tribe.id and not other.extinct]
+            if living_rivals and all(tribe.stance_toward.get(other.id) == "ALLIED" for other in living_rivals):
+                available_actions = [a for a in available_actions if a != "DECLARE_ALLIANCE"]
+
         # Explicit correction: PLANT_CROP/GATHER_EGGS/CATCH_FISH used to require the
         # stricter settled_near_water check (a real adjacent water tile) -- "the
         # requirement of 'real' water is bogus, this is a Settled gate," same general

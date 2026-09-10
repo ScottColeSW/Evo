@@ -5826,6 +5826,72 @@ def test_battle_ready_lock_fails_open_when_declare_conquest_is_unaffordable():
     assert ctx["available_actions"]  # never empty
 
 
+def test_declare_alliance_hides_once_already_allied_with_every_living_rival():
+    """Explicit correction, 2026-09-10: "Declare_Alliance is under suspicion
+    and I'd like to even reduce when they are allow to use it." Confirmed
+    live: a tribe declared alliance with the same already-allied rival 20+
+    times in one run -- _declare_alliance's own already_allied check only
+    ever gated the one-time cultural-crossover side effect, nothing stopped
+    the guaranteed no-op from staying in the menu. Applies generally (not
+    just at the endgame), since DECLARE_ALLIANCE unlocks from tribal_synapse."""
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe, rival = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "tribal_synapse"
+    tribe.wood = tribe.stone = 1000
+    tribe.barracks_built = 1
+    tribe.stance_toward[rival.id] = "ALLIED"
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "DECLARE_ALLIANCE" not in ctx["available_actions"]
+
+
+def test_declare_alliance_stays_available_while_at_war_to_sue_for_peace():
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe, rival = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "tribal_synapse"
+    tribe.wood = tribe.stone = 1000
+    tribe.barracks_built = 1
+    tribe.stance_toward[rival.id] = "WAR"
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "DECLARE_ALLIANCE" in ctx["available_actions"]
+
+
+def test_declare_alliance_stays_available_before_any_stance_is_declared():
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "tribal_synapse"
+    tribe.wood = tribe.stone = 1000
+    tribe.barracks_built = 1
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "DECLARE_ALLIANCE" in ctx["available_actions"]
+
+
 def test_top_era_narrowing_does_not_apply_before_the_final_era():
     from backend import config
 
