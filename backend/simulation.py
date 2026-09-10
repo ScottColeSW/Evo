@@ -2466,8 +2466,25 @@ class Simulation:
         # tribe remains, and it got there via at least one real conquest" is
         # the clean, unambiguous signal that this is a win, not just an empty
         # board left behind by unrelated hazard deaths.
+        #
+        # Explicit request, 2026-09-10: "After one wins, they can get all the
+        # actions (useful only) they still could use. The end is a Full Tribe
+        # Build and a War Win." Deferred from an immediate trigger the instant
+        # conquest succeeds: the winner keeps playing (its own menu already
+        # reopens naturally here -- endgame_locked/battle_ready_locked both
+        # require a living rival, and _merge_tribes just removed the only one)
+        # until it also raises a Castle, the same capstone bar the alliance
+        # path's own peace ending uses. This elif branch still has to be the
+        # one that matches (even when it does nothing) so a lone, Castle-less
+        # conqueror doesn't fall through into the era_ceiling branch below --
+        # it's already at the one era DECLARE_CONQUEST exists in, so era_
+        # ceiling's own "all living tribes at the top era" check would
+        # otherwise end the game anyway the very next cycle, defeating the
+        # whole point of deferring this.
         elif len(self.tribes) == 1 and next(iter(self.tribes.values())).conquests_won > 0:
-            await self._trigger_game_over("world_domination")
+            winner = next(iter(self.tribes.values()))
+            if winner.castle_built:
+                await self._trigger_game_over("world_domination")
         # Explicit request: "we are missing 'the end'" -- every still-living
         # tribe reaching the era ceiling (next_era returns None) is just as
         # real an ending as total extinction; a real run kept stepping 400+
@@ -3472,6 +3489,22 @@ class Simulation:
                 "There is nowhere further to grow -- every stage of development has been reached. What "
                 "remains is settling things with the known rival tribe once and for all: war, alliance, "
                 "or the training to prepare for either."
+            )
+        elif tribe.conquests_won > 0 and not tribe.castle_built and len(self.tribes) == 1:
+            # Explicit request, 2026-09-10: "After one wins, they can get all
+            # the actions (useful only) they still could use. The end is a
+            # Full Tribe Build and a War Win." This project has hit "an
+            # action being merely available doesn't mean a small model
+            # chooses it" every single time so far (Kitchen, NAME_WARRIOR,
+            # the wall, DECLARE_CONQUEST itself) -- just reopening the full
+            # menu after a win is very unlikely to be enough on its own, so
+            # this names the one real remaining goal explicitly, the same
+            # "nudge harder once a real gate is met" shape every prior fix
+            # in this vein has needed.
+            visible_entities.append(
+                "Every rival has been conquered and absorbed -- the war is already won. The one thing "
+                "left to complete this tribe's legacy is a Castle, the final testament of everything "
+                "built here."
             )
         if tribe.throttled_actions:
             # See "should we always keep them in the dark like this?" -- unlike

@@ -5736,6 +5736,42 @@ def test_top_era_menu_stays_normal_when_the_only_rival_is_extinct():
     assert "settling things with the known rival tribe" not in request["prompt"]
 
 
+def test_prepare_turn_nudges_the_lone_conqueror_toward_a_castle():
+    """Explicit request, 2026-09-10: "After one wins, they can get all the
+    actions (useful only) they still could use. The end is a Full Tribe
+    Build and a War Win." Just reopening the menu after a win almost
+    certainly isn't enough on its own (this project has hit "available
+    isn't chosen" every time so far) -- names the Castle goal explicitly."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    tribes = list(sim.tribes.values())
+    winner, loser = tribes[0], tribes[1]
+    winner.has_ever_settled = True
+    sim._found_territory(winner)
+    winner.era = "war_and_world_domination_era"
+    sim._merge_tribes(winner, loser)
+    assert winner.castle_built is False
+
+    request, _ctx = sim._prepare_turn(winner)
+
+    assert "the war is already won" in request["prompt"]
+    assert "Castle" in request["prompt"]
+
+
+def test_prepare_turn_has_no_castle_nudge_once_the_castle_is_already_built():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    tribes = list(sim.tribes.values())
+    winner, loser = tribes[0], tribes[1]
+    winner.has_ever_settled = True
+    sim._found_territory(winner)
+    winner.era = "war_and_world_domination_era"
+    winner.castle_built = True
+    sim._merge_tribes(winner, loser)
+
+    request, _ctx = sim._prepare_turn(winner)
+
+    assert "the war is already won" not in request["prompt"]
+
+
 def test_battle_ready_lock_narrows_to_declare_conquest_alone():
     """Explicit request, 2026-09-10: "I think we should limit the actions
     available to only Declare_Conquest... when they are both 'battle-
@@ -10105,15 +10141,22 @@ async def test_step_triggers_game_over_and_unloads_models_when_all_tribes_die():
 
 
 @run_async
-async def test_step_triggers_game_over_when_one_tribe_conquers_every_rival():
+async def test_step_triggers_game_over_when_one_tribe_conquers_every_rival_and_has_a_castle():
     """War and World Domination era's real victory condition: exactly one
     tribe remains in sim.tribes, having gotten there via at least one real
     conquest (Simulation._merge_tribes physically removes the loser), not
-    just because every rival happened to die of unrelated hazards."""
+    just because every rival happened to die of unrelated hazards.
+
+    Explicit request, 2026-09-10: "After one wins, they can get all the
+    actions (useful only) they still could use. The end is a Full Tribe
+    Build and a War Win." world_domination no longer fires the instant
+    conquest succeeds -- it waits for the winner to also raise a Castle
+    (see the sibling test below for the deferred case)."""
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
     tribes = list(sim.tribes.values())
     winner, loser = tribes[0], tribes[1]
     sim._merge_tribes(winner, loser)
+    winner.castle_built = True
     assert len(sim.tribes) == 1  # confirms the merge really happened before stepping
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
@@ -10126,6 +10169,27 @@ async def test_step_triggers_game_over_when_one_tribe_conquers_every_rival():
     assert "OVERSEER LOG" in sim.game_over_summary
     assert loser.name in sim.game_over_summary
     assert mock_unload.await_count == 1
+
+
+@run_async
+async def test_step_defers_world_domination_until_the_winner_also_builds_a_castle():
+    """A conqueror without a Castle yet keeps playing -- not game-over, and
+    not silently swallowed by the era_ceiling branch either (the winner is
+    already at the one era DECLARE_CONQUEST exists in, so without this
+    elif matching, era_ceiling's own "all living tribes at the top era"
+    check would end the game the very next cycle regardless)."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    tribes = list(sim.tribes.values())
+    winner, loser = tribes[0], tribes[1]
+    winner.era = "war_and_world_domination_era"
+    sim._merge_tribes(winner, loser)
+    assert winner.castle_built is False
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
+        await sim.step()
+
+    assert sim.game_over is False
+    assert sim.status != "GAME OVER"
 
 
 @run_async
