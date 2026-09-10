@@ -194,15 +194,35 @@ WALL_LOCK_ACTIONS = {"CONSTRUCT_WALL", "GATHER_WOOD", "GATHER_STONE", "BUILD_LON
 # tribes alive, thriving, and having never once fought or allied, purely
 # because both independently hit the era ceiling with nothing forcing any
 # real resolution first. Confirmed via AskUserQuestion: peace stays a real
-# option alongside war (not war-only), and SCOUT/EXPLORATION_PARTY stay in
-# so a rival that hasn't been discovered yet can still be found -- this set
-# is only ever applied once a living rival genuinely exists (see
-# _prepare_turn); a tribe truly alone at the top keeps its ordinary menu
-# and ordinary era_ceiling ending untouched ("they have built it all, they
-# can end in Peace").
+# option alongside war (not war-only) -- this set is only ever applied once
+# a living rival genuinely exists (see _prepare_turn); a tribe truly alone
+# at the top keeps its ordinary menu and ordinary era_ceiling ending
+# untouched ("they have built it all, they can end in Peace").
+#
+# Narrowed further, 2026-09-10 (explicit follow-up): "DECLARE_CONQUEST/
+# FORM_ALLIANCE/TRAIN_BATTALION/BUILD_BARRACKS (if not maxed out)/SCOUT +
+# basic survival... I'm not trying to build more actions; just trying to use
+# what we have when it makes sense." Dropped DECLARE_WAR -- confirmed it has
+# no real mechanical effect of its own (AFFORDABILITY_CHECKS["DECLARE_
+# CONQUEST"] has no stance_toward prerequisite at all), so it was pure
+# ceremony a tribe could get stuck repeating without ever reaching the one
+# action that actually resolves anything; DECLARE_CONQUEST alone is both
+# necessary and sufficient. Also dropped RAID/TRADE/SEND_TRADE_EMISSARY
+# (ordinary economic/skirmish actions, not resolution-oriented) and
+# EXPLORATION_PARTY (SCOUT alone already covers "a rival that hasn't been
+# discovered yet can still be found" -- SECOND-OPINION(Sonnet 5, 2026-09-10):
+# EXPLORATION_PARTY's broader search radius could in principle find a rival
+# SCOUT's own rotation misses; kept out per Scott's explicit trimmed list,
+# worth revisiting if a live run shows a tribe stuck with no known rival and
+# nothing left that can find one). "BUILD_BARRACKS (if not maxed out)" falls
+# out automatically from keeping both BUILD_BARRACKS and UPGRADE_BARRACKS in
+# this set -- AFFORDABILITY_CHECKS already stops offering BUILD_BARRACKS past
+# config.BARRACKS_MAX_COUNT and UPGRADE_BARRACKS takes over, exactly the same
+# ordering every other menu-lock in this file already relies on (this set is
+# filtered against available_actions *after* the affordability pass).
 ENDGAME_RESOLUTION_ACTIONS = {
-    "DECLARE_WAR", "DECLARE_ALLIANCE", "DECLARE_CONQUEST", "RAID", "TRADE", "SEND_TRADE_EMISSARY",
-    "TRAIN_BATTALION", "BUILD_BARRACKS", "UPGRADE_BARRACKS", "SCOUT", "EXPLORATION_PARTY",
+    "DECLARE_ALLIANCE", "DECLARE_CONQUEST",
+    "TRAIN_BATTALION", "BUILD_BARRACKS", "UPGRADE_BARRACKS", "SCOUT",
 } | SURVIVAL_CRISIS_ACTIONS
 
 # See _prepare_turn's affordability filter. A live run showed a tribe stuck at

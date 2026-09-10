@@ -5678,8 +5678,16 @@ def test_top_era_narrows_the_menu_to_endgame_resolution_when_a_rival_exists():
 
     assert "GATHER_WOOD" not in ctx["available_actions"]
     assert "BUILD_WAREHOUSE" not in ctx["available_actions"]
-    for real_action in ("DECLARE_WAR", "DECLARE_ALLIANCE", "TRADE", "SCOUT"):
+    # Narrowed further, 2026-09-10: "DECLARE_CONQUEST/FORM_ALLIANCE/
+    # TRAIN_BATTALION/BUILD_BARRACKS/SCOUT... I'm not trying to build more
+    # actions; just trying to use what we have when it makes sense." DECLARE_
+    # WAR dropped (no real mechanical effect of its own -- DECLARE_CONQUEST
+    # has no stance_toward prerequisite), along with RAID/TRADE/
+    # SEND_TRADE_EMISSARY/EXPLORATION_PARTY (not resolution-oriented).
+    for real_action in ("DECLARE_CONQUEST", "DECLARE_ALLIANCE", "TRAIN_BATTALION", "SCOUT"):
         assert real_action in ctx["available_actions"]
+    for retired_from_endgame in ("DECLARE_WAR", "TRADE", "RAID", "SEND_TRADE_EMISSARY", "EXPLORATION_PARTY"):
+        assert retired_from_endgame not in ctx["available_actions"]
     assert "settling things with the known rival tribe once and for all" in request["prompt"]
 
 
