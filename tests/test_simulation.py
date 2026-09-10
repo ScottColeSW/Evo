@@ -8924,6 +8924,8 @@ def test_gather_food_retires_once_a_harvest_completes():
     assert any("GATHER_FOOD is retired" in e and "farming" in e for e in tribe.history)
 
 
+
+
 def test_gather_food_retirement_is_not_re_archived_every_cycle():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
@@ -9472,6 +9474,42 @@ def test_upkeep_consumes_food_and_water_proportional_to_population():
 
     assert tribe.food == 38
     assert tribe.water == 38
+
+
+def test_upkeep_skips_food_drain_once_genuinely_food_secure():
+    """Explicit correction, 2026-09-10: "Tribe 2 didn't get infinity Water but
+    looked to have satisfied the criteria to earn it." Confirmed via real
+    board_history.db data: well_built was True for the rest of a 391-cycle
+    run, yet water still swung wildly instead of sitting flat at the storage
+    cap, because this drain ran unconditionally right after _advance_water_
+    supply/_advance_food_supply had already reset a secure resource to full.
+    A genuinely secure resource is now exempt from upkeep entirely."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 25
+    tribe.food = 40
+    tribe.water = 40
+    tribe.kitchen_built = True
+    tribe.fishery_built = True  # _is_food_secure
+
+    sim._apply_upkeep(tribe)
+
+    assert tribe.food == 40  # untouched
+    assert tribe.water == 38  # water upkeep still applies, unaffected by food security
+
+
+def test_upkeep_skips_water_drain_once_genuinely_water_secure():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 25
+    tribe.food = 40
+    tribe.water = 40
+    tribe.well_built = True  # _is_water_secure
+
+    sim._apply_upkeep(tribe)
+
+    assert tribe.water == 40  # untouched
+    assert tribe.food == 38  # food upkeep still applies, unaffected by water security
 
 
 def test_bath_house_reduces_upkeep():

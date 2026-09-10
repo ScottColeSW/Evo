@@ -5587,19 +5587,37 @@ class Simulation:
         Explicit request: "bath house bolsters Well-Being upkeep once built" --
         a real reduction to this same per-cycle drain (config.
         BATH_HOUSE_UPKEEP_MULTIPLIER), which also directly raises wellbeing.py's
-        physiological tier score since that's computed from this exact buffer."""
+        physiological tier score since that's computed from this exact buffer.
+
+        Explicit correction, 2026-09-10: "Tribe 2 didn't get infinity Water but
+        looked to have satisfied the criteria to earn it." Confirmed via real
+        board_history.db data: well_built was True from cycle 69 onward, yet
+        water swung between roughly 260 and 1900+ over the rest of the run
+        instead of sitting flat at the storage cap. Root cause: _is_water_
+        secure/_is_food_secure only ever short-circuited the passive-income
+        side (_advance_water_supply/_advance_food_supply resetting to
+        _storage_cap) -- this drain ran unconditionally right after, every
+        cycle, regardless of security. At small population that residual is
+        invisible; at the large late-game populations the Military/War-era
+        work is pushing toward (10k-20k+), a single cycle's upkeep can be a
+        real fraction of the storage cap, so "infinity" never actually looked
+        flat. A genuinely secure resource isn't just re-topped every cycle
+        now, it's exempt from this drain entirely -- matching what "infinity"
+        actually implies, and what _is_food_secure/_is_water_secure already
+        guarantee on the income side."""
         upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
         if tribe.bath_house_built:
             upkeep = max(1, round(upkeep * config.BATH_HOUSE_UPKEEP_MULTIPLIER))
-        tribe.food -= upkeep
-        tribe.water -= upkeep
-
-        if tribe.food < 0:
-            tribe.food = 0
-            self._starve(tribe)
-        if tribe.water < 0:
-            tribe.water = 0
-            self._dehydrate(tribe)
+        if not _is_food_secure(tribe):
+            tribe.food -= upkeep
+            if tribe.food < 0:
+                tribe.food = 0
+                self._starve(tribe)
+        if not _is_water_secure(tribe):
+            tribe.water -= upkeep
+            if tribe.water < 0:
+                tribe.water = 0
+                self._dehydrate(tribe)
 
     def _check_raider_attack(self, tribe: Tribe) -> None:
         """Trigger only -- see _resolve_raider_attack for the actual outcome.
