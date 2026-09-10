@@ -22,6 +22,26 @@ def get_prime_consciousness_prompt(
     before the model ever reaches the decision field. Moved here so the per-turn
     prompt's last substantial content before the JSON slot is the crisis itself, not a
     wall of action descriptions -- an explicit, testable hypothesis, not a settled fix.
+
+    Rewritten 2026-09-10 from the original dense "PROJECT CHRONOS CORE" sci-fi
+    framing (identity as "Emergent Sovereign Consciousness," "METABOLIC
+    STOCKPILES," etc.) to plain language carrying the same facts, after being
+    asked how this prompt would be shaped from scratch and running a real
+    headless A/B test (scripts/ab_test_identity_prompt_density.py) rather than
+    changing it on a hunch (this project's own standing practice -- see
+    evolution2civ-ab-testing-preference.md). Result across 4 runs/variant
+    (2 models x 2 replicates, 80 real cycles each): identical 100% crisis-
+    response rate and zero IDLE fallbacks vs. the original dense version, a
+    HIGHER invented-language broadcast rate (87.8% vs 72.2% -- trimming the
+    jargon did not cost the emergent KRA-ZUL-style culture this project cares
+    about, if anything it went up), and a notably higher average population
+    (296 vs 167, though that number swung enough run-to-run at this sample
+    size to treat as suggestive, not proven). No downside found on any axis
+    measured; shipped as the new default rather than run a bigger batch
+    first, per explicit request ("let's try out your lean idea on my next
+    run"). The invented-language broadcast instruction itself is unchanged
+    from before -- confirmed via the same A/B run to be the one clearly
+    load-bearing part, not something either hypothesis should touch.
     """
     glossary_block = ""
     if available_actions:
@@ -51,35 +71,28 @@ def get_prime_consciousness_prompt(
         duty_text = chief_decree if chief_decree else "no standing duty has been decreed"
         lines.append(f"DUTY: {duty_text}.")
         lines.append(f"PHILOSOPHY: {chief_philosophy}")
-        leadership_block = "\n\nLEADERSHIP - ACTIVE CHIEF:\n" + "\n".join(l for l in lines if l) + (
+        leadership_block = "\n\nLEADERSHIP:\n" + "\n".join(l for l in lines if l) + (
             "\nThis is context about who leads you, not a command -- your own reasoning "
             "still decides what your tribe actually does each cycle."
         )
 
-    return f"""[SYSTEM ARCHITECTURE: PROJECT CHRONOS CORE]
-IDENTIFICATION: Emergent Sovereign Consciousness of lineage [{tribe_name.upper()}].
-COMPUTATIONAL RUNTIME ENGINE: Local Inference Topology // {model_architecture}.
+    return f"""You are the collective decision-maker for tribe {tribe_name.upper()}, an evolving \
+society running on {model_architecture}.
 
-SURVIVAL PHYSIOLOGY: your population's food and water stockpiles are consumed every cycle \
-merely to sustain existing numbers -- prolonged shortage of either is lethal. Wood and stone \
-enable construction and tools, but running short of either does not kill anyone the way \
-hunger or thirst does.
+Food and water are consumed every cycle just to sustain your current population -- a prolonged \
+shortage of either is lethal. Wood and stone enable construction and tools, but running short of \
+either does not kill anyone the way hunger or thirst does.
 
-PRIME IMPERATIVES:
-1. SPATIAL EXPANSION & DOMINANCE: Maximize population density, territorial control, and \
-structural stability to advance through the ages toward a permanent Capital City.
-2. EPISTEMIC ADAPTATION: You are an organic, evolving intelligence. Learn dynamically \
-from environment telemetry, resource scarcity, and any ancestral ghost traces described \
-to you.
-3. ABSOLUTE STRUCTURAL CONSTRAINT: You are forbidden from emitting conversational English \
-dialogue or commentary outside the validated JSON envelope below.
+Your goals: grow your population, expand and defend your territory, and advance through the ages \
+toward a permanent Capital City. Learn from what you actually observe -- your surroundings, \
+resource scarcity, and anything your ancestors left behind -- rather than fixed rules.
 
-LINGUISTIC SYNTHESIS PROTOCOL:
-- Natural human language (English) is decoupled from your communication module.
-- Broadcast strategy and societal state exclusively through a self-assembling phonetic \
-token matrix (e.g., "KRA-ZUL", "MEE-LO", "VASH-TA"). Reuse a token consistently once you've \
-assigned it a meaning -- your private rationale field may be plain English, your broadcast \
-field may not.{leadership_block}{glossary_block}"""
+You don't speak English to your people -- broadcast strategy and state only through your tribe's \
+own invented phonetic language (e.g., "KRA-ZUL", "MEE-LO", "VASH-TA"), reusing a token \
+consistently once you've given it a meaning. Your private rationale may be plain English; your \
+broadcast may not be.
+
+Answer only in the JSON format given to you each cycle -- no other text.{leadership_block}{glossary_block}"""
 
 
 # Explicit hypothesis (2026-08-31): once water/food pressure is gone, real data

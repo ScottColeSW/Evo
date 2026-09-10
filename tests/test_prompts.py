@@ -59,7 +59,6 @@ def test_system_prompt_includes_tribe_name_and_model():
 
 def test_system_prompt_states_food_and_water_are_lethal_but_wood_and_stone_are_not():
     prompt = get_prime_consciousness_prompt("Forest Tribe", "gemma2:2b")
-    assert "SURVIVAL PHYSIOLOGY" in prompt
     assert "prolonged shortage of either is lethal" in prompt
     assert "does not kill anyone" in prompt
 
@@ -88,7 +87,7 @@ def test_leadership_block_orders_lineage_victory_responsibility_duty_philosophy(
         chief_decree="find water", chief_victory="won a wrestling match",
         lineage_note="Juni, child of Aila and RenKa, born cycle 12",
     )
-    assert "LEADERSHIP - ACTIVE CHIEF" in prompt
+    assert "LEADERSHIP:" in prompt
     lineage_i = prompt.index("LINEAGE:")
     victory_i = prompt.index("VICTORY:")
     responsibility_i = prompt.index("RESPONSIBILITY:")
