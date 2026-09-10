@@ -5736,6 +5736,96 @@ def test_top_era_menu_stays_normal_when_the_only_rival_is_extinct():
     assert "settling things with the known rival tribe" not in request["prompt"]
 
 
+def test_battle_ready_lock_narrows_to_declare_conquest_alone():
+    """Explicit request, 2026-09-10: "I think we should limit the actions
+    available to only Declare_Conquest... when they are both 'battle-
+    ready'." Once both sides have fully committed (a real Battalion, Barracks
+    maxed out), there's no more reason to keep offering TRAIN_BATTALION/
+    BUILD_BARRACKS/SCOUT/DECLARE_ALLIANCE -- only DECLARE_CONQUEST remains."""
+    from backend import config
+
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe, rival = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "war_and_world_domination_era"
+    tribe.wood = tribe.stone = 1000
+    tribe.discovered_rivals.add(rival.id)
+    tribe.barracks_built = config.BARRACKS_MAX_COUNT
+    tribe.battalion_size = 20
+    rival.barracks_built = config.BARRACKS_MAX_COUNT
+    rival.battalion_size = 20
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert ctx["available_actions"] == ["DECLARE_CONQUEST"]
+    assert "only real choice left" in request["prompt"]
+
+
+def test_battle_ready_lock_stays_at_the_normal_endgame_set_when_only_one_side_is_ready():
+    from backend import config
+
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe, rival = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "war_and_world_domination_era"
+    tribe.wood = tribe.stone = 1000
+    tribe.discovered_rivals.add(rival.id)
+    tribe.barracks_built = config.BARRACKS_MAX_COUNT
+    tribe.battalion_size = 20
+    # rival is not battle-ready (no Battalion at all)
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "DECLARE_CONQUEST" in ctx["available_actions"]
+    assert "DECLARE_ALLIANCE" in ctx["available_actions"]  # normal endgame set, not narrowed further
+    assert "only real choice left" not in request["prompt"]
+
+
+def test_battle_ready_lock_fails_open_when_declare_conquest_is_unaffordable():
+    """Fail-open guard, same shape as every other menu-lock in this function:
+    never cut the menu down to nothing, even when both sides are battle-
+    ready -- if DECLARE_CONQUEST itself can't be afforded this exact cycle,
+    fall back to the normal endgame set instead of stranding the tribe."""
+    from backend import config
+
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe, rival = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "war_and_world_domination_era"
+    tribe.wood = tribe.stone = 0  # can't afford DECLARE_CONQUEST this cycle
+    tribe.discovered_rivals.add(rival.id)
+    tribe.barracks_built = config.BARRACKS_MAX_COUNT
+    tribe.battalion_size = 20
+    rival.barracks_built = config.BARRACKS_MAX_COUNT
+    rival.battalion_size = 20
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "DECLARE_CONQUEST" not in ctx["available_actions"]  # unaffordable
+    assert ctx["available_actions"]  # never empty
+
+
 def test_top_era_narrowing_does_not_apply_before_the_final_era():
     from backend import config
 

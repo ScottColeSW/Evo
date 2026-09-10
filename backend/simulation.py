@@ -279,6 +279,16 @@ def _is_water_secure(tribe) -> bool:
     return tribe.well_built or len(tribe.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD
 
 
+def _is_battle_ready(tribe) -> bool:
+    """Explicit request, 2026-09-10: "limit the actions available to only
+    Declare_Conquest... when they are both 'battle-ready'." A real, checkable
+    bar rather than a vague one: a real Battalion exists (battalion_size > 0)
+    and Barracks investment is fully maxed out (config.BARRACKS_MAX_COUNT) --
+    everything that could be prepared for war has been. Module-level for the
+    same shared-definition reason as _is_food_secure/_is_water_secure above."""
+    return tribe.battalion_size > 0 and tribe.barracks_built >= config.BARRACKS_MAX_COUNT
+
+
 def _is_wood_secure(tribe) -> bool:
     """A Sawmill plus a real, discovered-and-in-use Timber Grove -- see
     Simulation._advance_wood_supply's own docstring. Module-level for the same
@@ -3380,6 +3390,35 @@ class Simulation:
                 available_actions = endgame_only
                 endgame_locked = True
 
+        # Explicit request, 2026-09-10: "I think we should limit the actions
+        # available to only Declare_Conquest... when they are both 'battle-
+        # ready'." Once both sides have fully committed to the military
+        # branch (a real Battalion, Barracks investment maxed out --
+        # config.BARRACKS_MAX_COUNT), there's no more reason to keep offering
+        # TRAIN_BATTALION/BUILD_BARRACKS/SCOUT -- everything that could be
+        # prepared has been. Deliberately excludes DECLARE_ALLIANCE at this
+        # stage (unlike endgame_locked just above, which keeps peace and war
+        # both open): alliance is the earlier off-ramp for a tribe that never
+        # wants to fully arm in the first place (see the separate Castle-race
+        # peace ending), not a last-second way to back out once both armies
+        # are actually ready. Rival lookup mirrors the DECLARE_CONQUEST nudge
+        # below exactly (closest of any tribe.discovered_rivals).
+        battle_ready_locked = False
+        if endgame_locked and _is_battle_ready(tribe):
+            nearby_rivals = [
+                other for other in self.tribes.values()
+                if other.id != tribe.id and not other.extinct and other.id in tribe.discovered_rivals
+            ]
+            rival = min(nearby_rivals, key=lambda o: math.hypot(o.x - tribe.x, o.y - tribe.y)) if nearby_rivals else None
+            if rival is not None and _is_battle_ready(rival):
+                battle_ready_only = [a for a in available_actions if a == "DECLARE_CONQUEST"]
+                # Fail-open guard, same shape as every other menu-lock above --
+                # never cut the menu down to nothing (e.g. DECLARE_CONQUEST
+                # itself is momentarily unaffordable this exact cycle).
+                if battle_ready_only:
+                    available_actions = battle_ready_only
+                    battle_ready_locked = True
+
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         if tribe.wall_commitment_active:
             visible_entities.append(
@@ -3403,7 +3442,13 @@ class Simulation:
                 "Raiders are camped at or just outside the territory boundary -- CLEAR_TERRITORY has "
                 "to drive them off before any real construction (a fire is still fine) can continue."
             )
-        if endgame_locked:
+        if battle_ready_locked:
+            visible_entities.append(
+                "Both this tribe and its rival have fully committed to war -- a real Battalion, every "
+                "Barracks that could be built. There is nothing left to prepare. DECLARE_CONQUEST is the "
+                "only real choice left; the moment for training or diplomacy has passed."
+            )
+        elif endgame_locked:
             visible_entities.append(
                 "There is nowhere further to grow -- every stage of development has been reached. What "
                 "remains is settling things with the known rival tribe once and for all: war, alliance, "
