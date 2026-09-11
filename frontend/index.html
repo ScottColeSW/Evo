@@ -231,6 +231,10 @@
   .survival-warning { color: #f87171; font-size: 11px; margin-top: 4px; }
   .farming-panel { margin-top: 6px; padding: 6px 8px; background: #1a2a1a; border: 1px solid #365d36; border-radius: 5px; font-size: 11px; color: #bbf7d0; }
   .farming-panel .farming-title { color: #86efac; font-weight: bold; }
+  /* Explicit request, 2026-09-11: "a subsection breakout of the list under
+     Establishments... organized into appropriately labeled subsections." */
+  .farming-panel .establishment-subhead { display: block; color: #4ade80; font-weight: 600; font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 7px; opacity: 0.85; }
+  .farming-panel .establishment-subhead:first-of-type { margin-top: 3px; }
 
   /* Explicit request: small sidebar boxes for a running Commerce (given/
      received) and Combat (per-kind W/L) tally -- same box shape as
@@ -4033,36 +4037,43 @@ function commercePanel(t) {
 // isn't adversarial (no win/loss the way a raid has), so it gets a plain
 // count row rather than forcing it into the W/L shape every other kind uses.
 function combatPanel(t) {
+  // Explicit request, 2026-09-11: Barracks/Battalion/Patrol moved out of this panel
+  // into the Establishments panel's own new Military subsection below -- they're
+  // standing infrastructure a tribe builds, the same category as a Keep or a
+  // Warehouse, not a per-encounter combat tally the way W/L records and trade counts
+  // are. This panel is now real-time engagement outcomes only.
   const record = t.combat_record || {};
   const kinds = Object.keys(record);
-  const hasBarracks = t.barracks_built > 0;
-  if (!kinds.length && !t.trades_completed && !hasBarracks) return "";
+  if (!kinds.length && !t.trades_completed) return "";
   const rows = kinds.map(kind => `${escapeHtml(kind)}: ${record[kind].won}W / ${record[kind].lost}L`);
   if (t.trades_completed) rows.push(`Trade: ${t.trades_completed} completed`);
-  if (hasBarracks) {
-    const capacity = (t.barracks_built + (t.barracks_upgrades || 0)) * BATTALION_CAPACITY_PER_BARRACKS;
-    const barracksLabel = t.barracks_built >= BARRACKS_MAX_COUNT
-      ? `Barracks: ${t.barracks_built}/${BARRACKS_MAX_COUNT} (maxed${t.barracks_upgrades ? `, +${t.barracks_upgrades} upgrades` : ""})`
-      : `Barracks: ${t.barracks_built}/${BARRACKS_MAX_COUNT}`;
-    rows.push(barracksLabel);
-    rows.push(`Battalion: ${t.battalion_size}/${capacity} strong · ${Math.round((t.battalion_readiness || 0) * 100)}% readiness`);
-    if (t.battalion_patrol) rows.push(`Patrol: ${t.battalion_patrol.phase}`);
-  }
   return `<div class="combat-panel"><span class="combat-title">⚔️ Combat</span><br>${rows.join("<br>")}</div>`;
 }
 
 function farmingPanel(t) {
   const ring0 = (t.wall_rings || [])[0];
   const ring0Reinforced = !!ring0 && ring0.sections.every(s => s.natural_barrier || s.tier >= WALL_MAX_LAYERS);
+  const hasBarracks = t.barracks_built > 0;
   const hasAny = t.farm_plots || t.flock || t.eggs || t.fishing_learned || t.fishery_built || t.fire_ever_built || ring0
     || t.long_houses_built || t.keep_built || t.fortress_built || t.castle_built
     || t.moat_built || t.road_built || t.dock_built
     || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built || t.tannery_built
     || t.forge_built || t.warehouses_built || t.founded_city || (t.cooking_learned && !t.kitchen_built)
     || t.hatchery_built || t.boat_built || t.bath_house_built || t.library_built || t.well_built
-    || t.object_creator_built || t.conquests_won;
+    || t.object_creator_built || t.conquests_won || hasBarracks;
   if (!hasAny) return "";
-  const parts = [];
+  // Explicit request, 2026-09-11: "a subsection breakout of the list under
+  // Establishments... organized into appropriately labeled subsections." The panel
+  // used to be one long flat list of ~28 possible lines with no grouping at all --
+  // split by real category instead, same items, same per-line logic, just bucketed.
+  // Military is new here (see combatPanel above for why Barracks/Battalion/Patrol
+  // moved out of Combat into this panel instead).
+  const food = [];
+  const comfort = [];
+  const defense = [];
+  const housing = [];
+  const industry = [];
+  const military = [];
   if (t.farm_plots > 0) {
     // Explicit correction: "farm plot yields are showing as x/100 even if they
     // have more than 1 plot" -- crop_growth is one shared clock for the whole
@@ -4072,7 +4083,7 @@ function farmingPanel(t) {
     // plot count.
     const stage = t.crop_growth < 33 ? "🌱 sprouting" : t.crop_growth < 66 ? "🌿 growing" : "🌾 ready to harvest";
     const nextYield = t.farm_plots * CROP_HARVEST_YIELD_PER_PLOT;
-    parts.push(
+    food.push(
       `🌾 Farm — ${t.farm_plots} plot${t.farm_plots > 1 ? "s" : ""} · ${stage} ` +
       `(${t.crop_growth}/100 shared growth → ${nextYield} food at harvest)`
     );
@@ -4089,7 +4100,7 @@ function farmingPanel(t) {
     const last = lineage.length ? lineage[lineage.length - 1] : null;
     const justHatched = last && (latestState.cycle - last.cycle) <= 3;
     if (justHatched) {
-      parts.push(`🥚 An egg just hatched! — ${escapeHtml(last.trait)} (flock now ${t.flock})`);
+      food.push(`🥚 An egg just hatched! — ${escapeHtml(last.trait)} (flock now ${t.flock})`);
     } else {
       // livestock_surplus_threshold comes straight from the backend (Tribe.
       // to_dict, backend/simulation.py's _livestock_surplus_threshold) --
@@ -4097,7 +4108,7 @@ function farmingPanel(t) {
       // what _advance_livestock_feast actually did server-side.
       const surplusThreshold = t.livestock_surplus_threshold ?? 12;
       const surplusNote = t.flock > surplusThreshold ? " · surplus feasted on" : "";
-      parts.push(`🐔 Flock — ${t.flock}${last ? ` · latest: ${escapeHtml(last.trait)}` : ""}${surplusNote}`);
+      food.push(`🐔 Flock — ${t.flock}${last ? ` · latest: ${escapeHtml(last.trait)}` : ""}${surplusNote}`);
     }
   }
   if (t.eggs > 0) {
@@ -4105,31 +4116,34 @@ function farmingPanel(t) {
     // -- a real, separate stockpile from flock (Simulation._advance_flock_eggs),
     // eaten off automatically past the tribe's own scaled surplus threshold.
     const eggsSurplusThreshold = t.livestock_surplus_threshold ?? 12;
-    parts.push(`🥚 Eggs in store — ${t.eggs}${t.eggs > eggsSurplusThreshold ? " · surplus feasted on" : ""}`);
+    food.push(`🥚 Eggs in store — ${t.eggs}${t.eggs > eggsSurplusThreshold ? " · surplus feasted on" : ""}`);
   }
-  if (t.hatchery_built) parts.push(`🐣 Hatchery — flock hatch chance ×${HATCHERY_HATCH_CHANCE_MULTIPLIER}`);
-  if (t.bath_house_built) parts.push(`🛁 Bath House — daily food and water consumption ${Math.round((1 - BATH_HOUSE_UPKEEP_MULTIPLIER) * 100)}% lower`);
+  if (t.hatchery_built) food.push(`🐣 Hatchery — flock hatch chance ×${HATCHERY_HATCH_CHANCE_MULTIPLIER}`);
+  if (t.fishing_learned) food.push("🎣 Fishing — mastered, fish now caught for food");
+  if (t.fishery_built) food.push(`🐟 Fishery — ${fishSupplyPerCycle(t)} food/day flows in automatically`);
+  if (t.fire_ever_built) food.push("🔥 Fire — mastered, enables cooking");
+  if (t.cooking_learned && !t.kitchen_built) food.push("🍳 Cooking — mastered, every forage/hunt/catch worth 3x as much food");
+  if (t.kitchen_built) food.push(`🍲 Kitchen — every hunt, forage, or catch yields ${COOKING_FOOD_MULTIPLIER}x as much food`);
+
+  if (t.bath_house_built) comfort.push(`🛁 Bath House — daily food and water consumption ${Math.round((1 - BATH_HOUSE_UPKEEP_MULTIPLIER) * 100)}% lower`);
   // Explicit correction, 2026-09-10: a real Well is now a true, complete water
   // guarantee -- exempt from upkeep entirely (Simulation._apply_upkeep), not
   // just a faster top-up racing the same ongoing drain every other tribe pays.
-  if (t.well_built) parts.push("🪣 Well — full water security, no more upkeep drain on water at all");
+  if (t.well_built) comfort.push("🪣 Well — full water security, no more upkeep drain on water at all");
+
   if (t.library_built) {
     // 4% per research, capped at 50% -- mirrors config.INNOVATION_ERA_DISCOUNT_PER_RESEARCH/_CAP.
-    parts.push(`📚 Library — ${t.research_completed} insight${t.research_completed === 1 ? "" : "s"} recorded, next era ${Math.min(50, t.research_completed * 4)}% closer`);
+    industry.push(`📚 Library — ${t.research_completed} insight${t.research_completed === 1 ? "" : "s"} recorded, next era ${Math.min(50, t.research_completed * 4)}% closer`);
   }
-  if (t.fishing_learned) parts.push("🎣 Fishing — mastered, fish now caught for food");
-  if (t.fishery_built) parts.push(`🐟 Fishery — ${fishSupplyPerCycle(t)} food/day flows in automatically`);
   // Explicit request: "I love the Boat. Please add it to the Establishments." --
   // boat_built already gated the map icon (drawBoat) and whether this whole panel
   // shows at all (hasAny, above), but never got a descriptive line of its own the
   // way every other Establishment does.
-  if (t.boat_built) parts.push("⛵ Boat — river and lake crossings move at full speed instead of wading through");
-  if (t.fire_ever_built) parts.push("🔥 Fire — mastered, enables cooking");
-  if (t.cooking_learned && !t.kitchen_built) parts.push("🍳 Cooking — mastered, every forage/hunt/catch worth 3x as much food");
+  if (t.boat_built) industry.push("⛵ Boat — river and lake crossings move at full speed instead of wading through");
   if (t.founded_city) {
     const name = t.settlement_name ? escapeHtml(t.settlement_name) : "the city";
     const count = (t.buildings || []).length;
-    parts.push(`🏛️ Town Hall — ${name}, ${count} building${count === 1 ? "" : "s"} strong`);
+    housing.push(`🏛️ Town Hall — ${name}, ${count} building${count === 1 ? "" : "s"} strong`);
   }
   if (ring0 && eraAtLeast(t.era, "tribal_synapse")) {
     // Explicit correction: "we have to separate the natural barriers out so
@@ -4145,13 +4159,17 @@ function farmingPanel(t) {
     const ringNote = rings > 1 ? ` · ${rings} rings` : "";
     const naturalNote = naturalCount > 0 ? ` (+${naturalCount} natural)` : "";
     if (built < realSections.length) {
-      parts.push(`🧱 Wall — ${built}/${realSections.length} sections built${naturalNote}${ringNote}`);
+      defense.push(`🧱 Wall — ${built}/${realSections.length} sections built${naturalNote}${ringNote}`);
     } else {
-      parts.push(`🧱 Wall — complete${naturalNote}${tier > 0 ? ` · tier ${tier} reinforced` : ""}${ringNote}`);
+      defense.push(`🧱 Wall — complete${naturalNote}${tier > 0 ? ` · tier ${tier} reinforced` : ""}${ringNote}`);
     }
   }
-  if (t.fire_ever_built && ring0Reinforced) parts.push("🔥🧱 Torches — lining the wall, a free defense bonus");
-  if (t.moat_built) parts.push(`💧 Moat — +${Math.round(MOAT_DEFENSE_BONUS * 100)}% raid defense chance`);
+  if (t.fire_ever_built && ring0Reinforced) defense.push("🔥🧱 Torches — lining the wall, a free defense bonus");
+  if (t.moat_built) defense.push(`💧 Moat — +${Math.round(MOAT_DEFENSE_BONUS * 100)}% raid defense chance`);
+  if (t.keep_built) defense.push(`🏯 Keep — +${Math.round(KEEP_DEFENSE_BONUS * 100)}% raid defense chance`);
+  if (t.fortress_built) defense.push(`🏰 Fortress — +${Math.round(FORTRESS_DEFENSE_BONUS * 100)}% raid defense chance`);
+  if (t.castle_built) defense.push(`🏯 Castle — +${Math.round(CASTLE_DEFENSE_BONUS * 100)}% raid defense chance`);
+
   if (t.long_houses_built > 0) {
     // Explicit request: "It needs to say housed/unhoused... so the Tribe knows
     // how many more they will need to build until everyone is housed
@@ -4162,35 +4180,31 @@ function farmingPanel(t) {
     const housingNote = unhoused > 0
       ? `${housed}/${t.population} housed, ${unhoused} still need shelter`
       : "everyone housed comfortably";
-    parts.push(`🏠 Long House — ${t.long_houses_built} standing, ${housingNote}`);
+    housing.push(`🏠 Long House — ${t.long_houses_built} standing, ${housingNote}`);
   } else if (ring0 && ring0.sections.every(s => s.natural_barrier || s.progress >= 100)) {
     // Explicit correction: "keep the Long House blocked note hidden until
     // [the wall's done and] they build one" -- this used to also show a
     // "blocked until the wall is complete" line for the entire pre-wall
     // stretch, the same nag already dropped from the backend prompt fact
     // (Simulation._prepare_turn). Stays silent until it's actually true.
-    parts.push("🏠 Long House — ready to build now that the wall is complete");
+    housing.push("🏠 Long House — ready to build now that the wall is complete");
   }
-  if (t.keep_built) parts.push(`🏯 Keep — +${Math.round(KEEP_DEFENSE_BONUS * 100)}% raid defense chance`);
-  if (t.fortress_built) parts.push(`🏰 Fortress — +${Math.round(FORTRESS_DEFENSE_BONUS * 100)}% raid defense chance`);
-  if (t.castle_built) parts.push(`🏯 Castle — +${Math.round(CASTLE_DEFENSE_BONUS * 100)}% raid defense chance`);
-  if (t.road_built) parts.push("🛣️ Road — every future expedition travels faster");
-  if (t.dock_built) parts.push("⚓ Dock — boosts every manual fish catch");
-  if (t.sawmill_built) parts.push("🪵 Sawmill — every load of gathered wood is worth 6x");
-  if (t.quarry_built) parts.push("⛏️ Quarry — every load of harvested stone is worth 3x");
-  if (t.kitchen_built) parts.push(`🍲 Kitchen — every hunt, forage, or catch yields ${COOKING_FOOD_MULTIPLIER}x as much food`);
+  if (t.road_built) industry.push("🛣️ Road — every future expedition travels faster");
+  if (t.dock_built) industry.push("⚓ Dock — boosts every manual fish catch");
+  if (t.sawmill_built) industry.push("🪵 Sawmill — every load of gathered wood is worth 6x");
+  if (t.quarry_built) industry.push("⛏️ Quarry — every load of harvested stone is worth 3x");
   if (t.mine_built) {
     const amount = (t.unique_resources || {})[t.mine_resource_name] || 0;
-    parts.push(`💎 Mine — ${MINE_YIELD_PER_CYCLE} ${escapeHtml(t.mine_resource_name)}/day (${amount} stored)`);
+    industry.push(`💎 Mine — ${MINE_YIELD_PER_CYCLE} ${escapeHtml(t.mine_resource_name)}/day (${amount} stored)`);
   }
   if (t.tannery_built) {
     const amount = (t.unique_resources || {})["Fur"] || 0;
-    parts.push(`🦫 Tannery — ${TANNERY_YIELD_PER_CYCLE} Fur/day (${amount} stored)`);
+    industry.push(`🦫 Tannery — ${TANNERY_YIELD_PER_CYCLE} Fur/day (${amount} stored)`);
   }
   if (t.forge_built) {
     const items = t.items || [];
     const detail = items.length ? items.map(i => escapeHtml(i.name)).join(", ") : "no items crafted yet";
-    parts.push(`🔨 Forge — ${items.length} item(s) on hand (${detail})`);
+    industry.push(`🔨 Forge — ${items.length} item(s) on hand (${detail})`);
   }
   if (t.warehouses_built > 0) {
     // Explicit request, 2026-09-09: BUILD_WAREHOUSE now caps at 5 real builds;
@@ -4201,7 +4215,7 @@ function farmingPanel(t) {
     const upgrades = t.warehouse_upgrades || 0;
     const cap = STORAGE_CAP_BASE + (t.warehouses_built + upgrades) * WAREHOUSE_STORAGE_BONUS_PER_BUILDING;
     const upgradeNote = upgrades ? `, ${upgrades} upgrade${upgrades !== 1 ? "s" : ""}` : "";
-    parts.push(`🏬 Warehouse — ${t.warehouses_built} built${upgradeNote}, storage capacity ${cap} per resource`);
+    industry.push(`🏬 Warehouse — ${t.warehouses_built} built${upgradeNote}, storage capacity ${cap} per resource`);
   }
   if (t.object_creator_built) {
     const objects = t.created_objects || [];
@@ -4209,16 +4223,42 @@ function farmingPanel(t) {
       const detail = objects
         .map(o => `${escapeHtml(o.name)} (${escapeHtml(o.category.replace(/_/g, " "))})`)
         .join(", ");
-      parts.push(`🛠️ Object Creator — ${objects.length} creation(s): ${detail}`);
+      industry.push(`🛠️ Object Creator — ${objects.length} creation(s): ${detail}`);
     } else {
-      parts.push("🛠️ Object Creator — nothing designed yet");
+      industry.push("🛠️ Object Creator — nothing designed yet");
     }
+  }
+
+  // Explicit request, 2026-09-11: "Barracks and Battalion... should be in this new
+  // subsection area, not in the Combat area." Moved here verbatim from the old
+  // combatPanel -- see that function's own comment for why.
+  if (hasBarracks) {
+    const capacity = (t.barracks_built + (t.barracks_upgrades || 0)) * BATTALION_CAPACITY_PER_BARRACKS;
+    const barracksLabel = t.barracks_built >= BARRACKS_MAX_COUNT
+      ? `🎖️ Barracks — ${t.barracks_built}/${BARRACKS_MAX_COUNT} (maxed${t.barracks_upgrades ? `, +${t.barracks_upgrades} upgrades` : ""})`
+      : `🎖️ Barracks — ${t.barracks_built}/${BARRACKS_MAX_COUNT}`;
+    military.push(barracksLabel);
+    military.push(`🪖 Battalion — ${t.battalion_size}/${capacity} strong · ${Math.round((t.battalion_readiness || 0) * 100)}% readiness`);
+    if (t.battalion_patrol) military.push(`🚩 Patrol — ${t.battalion_patrol.phase}`);
   }
   if (t.conquests_won > 0) {
     const conquered = (t.conquered_tribe_names || []).map(escapeHtml).join(", ") || "rival tribes";
-    parts.push(`⚔️ Conquest — ${t.conquests_won} rival(s) absorbed outright (${conquered})`);
+    military.push(`⚔️ Conquest — ${t.conquests_won} rival(s) absorbed outright (${conquered})`);
   }
-  return `<div class="farming-panel"><span class="farming-title">🏘️ Establishments</span><br>${parts.join("<br>")}</div>`;
+
+  const sections = [
+    ["Food & Farming", food],
+    ["Water & Comfort", comfort],
+    ["Defense", defense],
+    ["Housing", housing],
+    ["Industry & Trade", industry],
+    ["Military", military],
+  ];
+  const html = sections
+    .filter(([, lines]) => lines.length)
+    .map(([label, lines]) => `<div class="establishment-subhead">${label}</div>${lines.join("<br>")}`)
+    .join("");
+  return `<div class="farming-panel"><span class="farming-title">🏘️ Establishments</span>${html}</div>`;
 }
 
 // Maslow's-hierarchy read on the tribe's overall condition (see backend/wellbeing.py
