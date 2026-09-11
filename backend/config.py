@@ -158,7 +158,7 @@ MEMORY_CONSOLIDATE_EVERY_N_CYCLES = 40
 # tribes actually play with live, without the 26B extremes of the original gemma4:26b
 # default -- gemma4:26b was removed from this machine as too large to actually use.
 NIGHT_CYCLE_EVERY_N_CYCLES = 30
-NIGHT_CYCLE_REVIEWER_MODEL = "mistral:7b"
+NIGHT_CYCLE_REVIEWER_MODEL = "phi4-mini:latest"
 NIGHT_CYCLE_HISTORY_WINDOW = 20
 
 # Explicit request: "can we have some random breeding in the over-night cycle?" Every
