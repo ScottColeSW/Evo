@@ -276,6 +276,16 @@
   .lineage-row { background: #222232; padding: 8px 10px; border-radius: 6px; border-left: 3px solid; font-size: 12px; margin-bottom: 6px; }
   .lineage-cycle { color: #8a8a9a; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 6px; }
   .lineage-tribe { color: #c7d2fe; font-weight: bold; margin-right: 4px; }
+  /* Explicit follow-up, 2026-09-11: aggregate reporting (family tree + flock
+     trait trends) above the existing flat chronological feed -- same
+     labeled-subsection convention as .establishment-subhead. */
+  .lineage-report { background: #222232; padding: 8px 10px; border-radius: 6px; border-left: 3px solid; font-size: 12px; margin-bottom: 10px; }
+  .lineage-report-subhead { display: block; color: #a5b4fc; font-weight: 600; font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 8px; opacity: 0.85; }
+  .lineage-report-subhead:first-of-type { margin-top: 4px; }
+  .lineage-tree-node { color: #d1d5db; padding: 2px 0; }
+  .lineage-tree-gen { color: #6b7280; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; margin-right: 5px; }
+  .lineage-trophy-badge { cursor: help; }
+  .lineage-trait-list { color: #d1d5db; }
   .score-card { background: #222232; padding: 10px; border-radius: 6px; font-size: 12px; margin-bottom: 8px; border-left: 4px solid #6366f1; }
   .score-card .score-model { font-weight: bold; color: #c7d2fe; }
   .score-card .score-stats { color: #9ca3af; margin-top: 4px; line-height: 1.5; }
@@ -1181,12 +1191,116 @@ function renderEraLadder(state) {
   }).join("");
 }
 
+/* ---------- Lineage reporting: a family tree (tribe.lineage) and flock trait
+   trends (tribe.flock_lineage), aggregated per tribe -- explicit follow-up after
+   "how should breeding/genetics work in an interesting/useful way, scientifically
+   or as a game." Reporting-first: pure client-side aggregation over data the
+   backend already sends every cycle, no new backend fields, no new mechanic. */
+
+// Individuals have no persistent numeric identity anywhere in this codebase (an
+// explicit, already-made design choice -- see project memory: a "real individual
+// identity" system was considered and declined) -- names are matched as plain
+// strings, same as tribe.chief_name/trophy credits already are everywhere else.
+function buildLineageChildMap(tribe) {
+  const lineage = tribe.lineage || [];
+  const childrenOf = {};
+  const childNames = new Set();
+  const allNames = new Set();
+  lineage.forEach(l => {
+    allNames.add(l.child_name);
+    childNames.add(l.child_name);
+    (l.parents || []).forEach(p => {
+      allNames.add(p);
+      (childrenOf[p] = childrenOf[p] || []).push(l.child_name);
+    });
+  });
+  const roots = [...allNames].filter(n => !childNames.has(n));
+  return { childrenOf, roots };
+}
+
+function renderFamilyTree(tribe) {
+  if (!(tribe.lineage || []).length) return "";
+  const { childrenOf, roots } = buildLineageChildMap(tribe);
+
+  function renderNode(name, generation, visited) {
+    // Cycle guard scoped to THIS root's own traversal path, not shared across
+    // roots -- a child with two parents (the normal case, not an edge case)
+    // must still render its full subtree under each parent's branch. A guard
+    // shared globally across every root would silently make the second parent
+    // look childless the moment the first parent's branch reached that child
+    // first, which isn't a rare collision, it's every two-parent family.
+    if (visited.has(name)) return "";
+    visited.add(name);
+    const trophy = (tribe.trophies || []).find(t => t.chief === name);
+    const badge = trophy
+      ? ` <span class="lineage-trophy-badge" title="${escapeHtml(trophy.name)} (cycle ${trophy.cycle})">\u{1F3C6}</span>`
+      : "";
+    let html = `<div class="lineage-tree-node" style="padding-left:${generation * 16}px">` +
+      `<span class="lineage-tree-gen">Gen ${generation}</span>${escapeHtml(name)}${badge}</div>`;
+    (childrenOf[name] || []).forEach(child => { html += renderNode(child, generation + 1, visited); });
+    return html;
+  }
+
+  return roots.map(r => renderNode(r, 0, new Set())).join("");
+}
+
+// A small stopword list so common connective words in LLM-generated trait prose
+// ("with", "that", "have"...) don't drown out the actually-recurring descriptors.
+const LINEAGE_TRAIT_STOPWORDS = new Set([
+  "with", "that", "this", "from", "have", "their", "them", "though", "while",
+  "very", "than", "even", "into", "some", "will", "which", "more", "less", "like",
+]);
+
+function topFlockTraits(tribe, limit = 5) {
+  const lineage = tribe.flock_lineage || [];
+  const counts = {};
+  lineage.forEach(l => {
+    (l.trait || "").toLowerCase().split(/[^a-z]+/).forEach(word => {
+      if (word.length < 4 || LINEAGE_TRAIT_STOPWORDS.has(word)) return;
+      counts[word] = (counts[word] || 0) + 1;
+    });
+  });
+  return Object.entries(counts)
+    .filter(([, count]) => count > 1)  // a word seen once isn't a trend
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit);
+}
+
+function renderTraitFrequency(tribe) {
+  const top = topFlockTraits(tribe);
+  if (!top.length) return "";
+  return top.map(([word, count]) => `${escapeHtml(word)} (${count})`).join(", ");
+}
+
+function renderLineageReports(state) {
+  return Object.values(state.tribes || {})
+    .map(t => {
+      const treeHtml = renderFamilyTree(t);
+      const traitHtml = renderTraitFrequency(t);
+      if (!treeHtml && !traitHtml) return "";
+      const treeSection = treeHtml
+        ? `<div class="lineage-report-subhead">\u{1F333} Family Tree</div>${treeHtml}`
+        : "";
+      const traitSection = traitHtml
+        ? `<div class="lineage-report-subhead">\u{1F414} Flock Trait Trends</div><div class="lineage-trait-list">${traitHtml}</div>`
+        : "";
+      return `
+        <div class="lineage-report" style="border-left-color:${t.color}">
+          <span class="lineage-tribe">${escapeHtml(t.name)}</span>
+          ${treeSection}
+          ${traitSection}
+        </div>`;
+    })
+    .join("");
+}
+
 /* ---------- Lineage: births (tribe.lineage) and hatchlings (tribe.flock_lineage)
    over time, across every tribe -- previously only the single most-recent entry
    showed up inline in the Tribes panel, with no way to browse the whole history. */
 function renderLineage(state) {
   const panel = document.getElementById("lineage-panel");
   if (!panel) return;
+  const reportsHtml = renderLineageReports(state);
   const entries = [];
   Object.values(state.tribes || {}).forEach(t => {
     (t.lineage || []).forEach(l => entries.push({
@@ -1199,11 +1313,11 @@ function renderLineage(state) {
     }));
   });
   if (entries.length === 0) {
-    panel.innerHTML = `<div class="empty-hint">No births or hatchlings recorded yet.</div>`;
+    panel.innerHTML = reportsHtml + `<div class="empty-hint">No births or hatchlings recorded yet.</div>`;
     return;
   }
   entries.sort((a, b) => b.cycle - a.cycle);
-  panel.innerHTML = entries.map(e => `
+  panel.innerHTML = reportsHtml + entries.map(e => `
     <div class="lineage-row" style="border-left-color:${e.tribeColor}">
       <span class="lineage-cycle">Cycle ${e.cycle}</span>
       <span class="lineage-tribe">${e.tribeName}</span>
