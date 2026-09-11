@@ -9576,6 +9576,80 @@ def test_advance_flock_hatchery_boosts_the_natural_hatch_chance():
     assert tribe.pending_hatch == {"parents": None}
 
 
+def test_advance_flock_deterministic_hatch_once_coop_and_hatchery_both_exist():
+    """Explicit follow-up, 2026-09-11: once BOTH buildings exist, a real, earned
+    stockpile of eggs funds a hatch every time -- no dice roll needed."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = config.FLOCK_MIN_SIZE_TO_BREED
+    tribe.food = 1000
+    tribe.coop_built = True
+    tribe.hatchery_built = True
+    tribe.eggs = config.EGGS_PER_HATCH
+
+    with mock.patch("backend.simulation.random.random", return_value=0.999):  # would fail any roll
+        sim._advance_flock(tribe)
+
+    assert tribe.eggs == 0
+    assert tribe.pending_hatch == {"parents": None}
+
+
+def test_advance_flock_deterministic_hatch_waits_for_enough_eggs():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = config.FLOCK_MIN_SIZE_TO_BREED
+    tribe.food = 1000
+    tribe.coop_built = True
+    tribe.hatchery_built = True
+    tribe.eggs = config.EGGS_PER_HATCH - 1
+
+    sim._advance_flock(tribe)
+
+    assert tribe.eggs == config.EGGS_PER_HATCH - 1
+    assert tribe.pending_hatch is None
+
+
+def test_advance_flock_deterministic_hatch_does_not_double_trigger():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = config.FLOCK_MIN_SIZE_TO_BREED
+    tribe.food = 1000
+    tribe.coop_built = True
+    tribe.hatchery_built = True
+    tribe.eggs = config.EGGS_PER_HATCH * 3
+    tribe.pending_hatch = {"parents": None}  # already tending one
+
+    sim._advance_flock(tribe)
+
+    assert tribe.eggs == config.EGGS_PER_HATCH * 3  # untouched -- one hatch at a time
+
+
+def test_advance_flock_coop_alone_without_hatchery_keeps_the_old_random_roll():
+    """Only once BOTH buildings exist does the deterministic loop take over --
+    a Coop with no Hatchery yet falls back to the same random roll a tribe with
+    neither building already has."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = config.FLOCK_MIN_SIZE_TO_BREED
+    tribe.food = 1000
+    tribe.coop_built = True
+    tribe.eggs = config.EGGS_PER_HATCH * 3
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):  # below any chance
+        sim._advance_flock(tribe)
+
+    assert tribe.pending_hatch == {"parents": None}
+    assert tribe.eggs == config.EGGS_PER_HATCH * 3  # the deterministic path never touched it
+
+
 def test_advance_flock_eggs_lays_passively_from_a_living_flock():
     from backend import config
 
@@ -9626,6 +9700,29 @@ def test_advance_livestock_feast_converts_surplus_flock_to_food():
 
     assert tribe.flock == config.LIVESTOCK_SURPLUS_THRESHOLD
     assert tribe.food == 3 * config.FLOCK_FEAST_FOOD_VALUE
+
+
+def test_advance_livestock_feast_applies_the_kitchen_multiplier():
+    """Explicit follow-up, 2026-09-11: "add an automatic Capacity check that allow
+    them to add both eggs and fowl to the food supply chain (goes to Kitchen)." The
+    population-scaled capacity check already existed (_livestock_surplus_threshold);
+    Kitchen's own multiplier -- applied at every other real food-production point --
+    was the piece missing here."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.eggs = config.LIVESTOCK_SURPLUS_THRESHOLD + 2
+    tribe.flock = config.LIVESTOCK_SURPLUS_THRESHOLD + 1
+    tribe.food = 0
+    tribe.cooking_learned = True
+    tribe.kitchen_built = True
+
+    sim._advance_livestock_feast(tribe)
+
+    expected = round(2 * config.EGG_FEAST_FOOD_VALUE * config.COOKING_FOOD_MULTIPLIER * config.KITCHEN_FOOD_MULTIPLIER) \
+        + round(1 * config.FLOCK_FEAST_FOOD_VALUE * config.COOKING_FOOD_MULTIPLIER * config.KITCHEN_FOOD_MULTIPLIER)
+    assert tribe.food == expected
 
 
 def test_advance_livestock_feast_does_nothing_below_the_surplus_threshold():
@@ -9756,6 +9853,23 @@ async def test_resolve_hatch_founding_egg_hatches_without_crossing():
     assert tribe.flock_lineage[0]["parents"] == []
     assert any("hatches" in entry for entry in tribe.history)
     assert any(t["name"] == "Flock Keeper" for t in tribe.trophies)
+
+
+@run_async
+async def test_resolve_hatch_no_longer_places_a_building_automatically():
+    """Explicit follow-up, 2026-09-11: the flock's home used to appear for free
+    the instant the first egg hatched (the old "flock_pen" auto-placement) -- it's
+    now a real, chief-built Coop (BUILD_COOP), so a hatch alone should place
+    nothing on the map any more."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    sim._found_territory(tribe)
+    tribe.pending_hatch = {"parents": None}
+
+    await sim._resolve_hatch(tribe)
+
+    assert tribe.flock == 1
+    assert not any(b["type"] == "coop" for b in tribe.buildings)
 
 
 @run_async

@@ -137,6 +137,7 @@ ONE_TIME_BUILD_FLAGS = {
     "BUILD_CASTLE": "castle_built", "BUILD_TANNERY": "tannery_built",
     "BUILD_MINE": "mine_built", "BUILD_FORGE": "forge_built",
     "BUILD_ROAD": "road_built", "BUILD_HATCHERY": "hatchery_built",
+    "BUILD_COOP": "coop_built",
     "BUILD_BATH_HOUSE": "bath_house_built", "BUILD_LIBRARY": "library_built",
     "BUILD_WELL": "well_built", "BUILD_OBJECT_CREATOR": "object_creator_built",
 }
@@ -501,6 +502,10 @@ AFFORDABILITY_CHECKS = {
     "BUILD_HATCHERY": lambda t, w: (
         t.eggs_ever_gathered and t.wood >= config.HATCHERY_WOOD_COST and t.stone >= config.HATCHERY_STONE_COST
         and _can_place(t, w, "hatchery")
+    ),
+    "BUILD_COOP": lambda t, w: (
+        t.flock > 0 and t.wood >= config.COOP_WOOD_COST and t.stone >= config.COOP_STONE_COST
+        and _can_place(t, w, "coop")
     ),
     # Live-run finding, 2026-09-08 ("12 new actions get thrown at the Chief" the
     # instant a tribe settles): unlike every other building here, BUILD_BATH_HOUSE/
@@ -1378,6 +1383,10 @@ class Tribe:
         # Hatchery's own prerequisite (not flock size alone).
         self.eggs_ever_gathered = False
         self.hatchery_built = False
+        # See actions.py._build_coop -- once this AND hatchery_built are both true,
+        # Simulation._advance_flock switches from a probabilistic natural-hatch roll
+        # to actually consuming stored eggs for a deterministic hatch each cycle.
+        self.coop_built = False
         # Set the first time this tribe genuinely settles next to real water (see
         # Simulation._is_settled_near_water) -- the chief names the place via a real
         # LLM call (backend/leadership.py's name_settlement), the same pending_X/
@@ -1581,6 +1590,7 @@ class Tribe:
             "eggs": self.eggs,
             "livestock_surplus_threshold": _livestock_surplus_threshold(self),
             "hatchery_built": self.hatchery_built,
+            "coop_built": self.coop_built,
             "boat_built": self.boat_built,
             "bath_house_built": self.bath_house_built,
             "library_built": self.library_built,
@@ -1648,7 +1658,7 @@ _ONE_OFF_STRUCTURE_FLAGS: tuple[tuple[str, str], ...] = (
     ("fishery_built", "Fishery"), ("kitchen_built", "Kitchen"), ("tannery_built", "Tannery"),
     ("mine_built", "Mine"), ("forge_built", "Forge"), ("keep_built", "Keep"),
     ("fortress_built", "Fortress"), ("castle_built", "Castle"), ("road_built", "Road"),
-    ("hatchery_built", "Hatchery"), ("bath_house_built", "Bath House"),
+    ("hatchery_built", "Hatchery"), ("coop_built", "Coop"), ("bath_house_built", "Bath House"),
     ("library_built", "Library"), ("well_built", "Well"),
     ("object_creator_built", "Object Creator"),
 )
@@ -1963,15 +1973,11 @@ class Simulation:
         trait = result.get("trait") or "unremarkable but hardy"
         note = result.get("note", "")
 
-        if tribe.flock == 0 and tribe.territory_center is not None:
-            # One-time flock pen, placed the moment the first egg actually hatches --
-            # matches every other building's "the real thing exists now" placement
-            # trigger, not the earlier GATHER_EGGS action that only started the
-            # (possibly multi-cycle) hatch.
-            w, h = config.BUILDING_FOOTPRINTS["flock_pen"]
-            slot = architect.find_free_slot(self.world, tribe, "flock_pen")
-            if slot is not None:
-                architect.record_building(tribe, "flock_pen", slot[0], slot[1], w, h, self.cycle)
+        # No automatic building placement here any more -- explicit follow-up,
+        # 2026-09-11: the flock's home used to appear for free the instant the first
+        # egg hatched. It's now a real, chief-built Coop (actions.py._build_coop),
+        # the same "prove it, then build it for real" pattern every other building
+        # in this file uses.
         tribe.flock += 1
         tribe.flock_lineage.append({
             "trait": trait,
@@ -6884,7 +6890,19 @@ class Simulation:
         """A flock isn't a one-way counter -- it eats, and once established it can
         also breed on its own (the same "passive consequence" category as crop
         growth), without another GATHER_EGGS action. Real stakes both ways: undersized
-        on feed and it shrinks; big enough and fed, and it can grow by itself."""
+        on feed and it shrinks; big enough and fed, and it can grow by itself.
+
+        Explicit follow-up, 2026-09-11: "eggs gathered are put into the Hatchery, the
+        Hatchery incubates the eggs to hatch into the Fowl we have in the Coop... It's
+        the standard Chick and Egg problem except the Tribes get to make it work."
+        Once BOTH a Hatchery and a Coop exist (actions.py._build_coop), this switches
+        from the probabilistic natural-hatch roll below to a real, deterministic
+        production loop: enough stored eggs (config.EGGS_PER_HATCH) genuinely fund a
+        hatch every time, rather than a low-probability dice roll -- the actual payoff
+        that justifies building both, and what makes GATHER_EGGS/_advance_flock_eggs
+        depositing into tribe.eggs (see both, and actions.py._gather_eggs) mean
+        something once the Coop exists. A tribe with a Hatchery but no Coop yet still
+        gets the old boosted-chance roll unchanged below."""
         if tribe.flock <= 0:
             return
         feed_needed = config.FLOCK_UPKEEP_FOOD_PER_MEMBER * tribe.flock
@@ -6893,6 +6911,12 @@ class Simulation:
             tribe.history.append("part of the flock is lost for lack of feed")
             return
         tribe.food -= feed_needed
+        if tribe.coop_built and tribe.hatchery_built:
+            if tribe.pending_hatch is None and tribe.eggs >= config.EGGS_PER_HATCH:
+                tribe.eggs -= config.EGGS_PER_HATCH
+                parents = tribe.flock_lineage[-2:] if len(tribe.flock_lineage) >= 2 else None
+                tribe.pending_hatch = {"parents": parents}
+            return
         hatch_chance = config.FLOCK_NATURAL_HATCH_CHANCE
         if tribe.hatchery_built:
             hatch_chance = min(1.0, hatch_chance * config.HATCHERY_HATCH_CHANCE_MULTIPLIER)
@@ -6917,18 +6941,27 @@ class Simulation:
 
     def _advance_livestock_feast(self, tribe: Tribe) -> None:
         """See config.LIVESTOCK_SURPLUS_THRESHOLD's own comment -- once eggs or
-        flock grow past the tribe's own scaled threshold, the surplus is
-        automatically eaten as food each cycle rather than piling up forever
-        with no payoff."""
+        flock grow past the tribe's own scaled threshold (population // 100,
+        floored at LIVESTOCK_SURPLUS_THRESHOLD -- a real, automatic, population-
+        scaled capacity check, not a flat cap), the surplus is automatically eaten
+        as food each cycle rather than piling up forever with no payoff.
+
+        Explicit follow-up, 2026-09-11: "add an automatic Capacity check that allow
+        them to add both eggs and fowl to the food supply chain (goes to Kitchen)."
+        The capacity check already existed (this threshold); what was missing was
+        Kitchen's own multiplier -- every other real food-production point (GATHER_
+        FOOD, HUNT_DEER, CATCH_FISH, crop harvest) already runs through
+        actions._food_multiplier, and this was the one that didn't."""
         threshold = _livestock_surplus_threshold(tribe)
+        multiplier = _food_multiplier(tribe)
         if tribe.eggs > threshold:
             surplus = tribe.eggs - threshold
             tribe.eggs = threshold
-            self._capped_add(tribe, "food", surplus * config.EGG_FEAST_FOOD_VALUE)
+            self._capped_add(tribe, "food", round(surplus * config.EGG_FEAST_FOOD_VALUE * multiplier))
         if tribe.flock > threshold:
             surplus = tribe.flock - threshold
             tribe.flock = threshold
-            self._capped_add(tribe, "food", surplus * config.FLOCK_FEAST_FOOD_VALUE)
+            self._capped_add(tribe, "food", round(surplus * config.FLOCK_FEAST_FOOD_VALUE * multiplier))
 
     def _advance_city_founding(self, tribe: Tribe) -> None:
         """Real gate on Era.founds_city eligibility (see _advance_era_if_ready): a

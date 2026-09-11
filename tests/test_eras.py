@@ -63,7 +63,7 @@ def test_cognitive_horizon_is_the_agrarian_infrastructure_tier():
     assert set(cognitive_horizon.unlocks_actions) == {
         "CONSTRUCT_WALL", "BUILD_LONG_HOUSE", "UPGRADE_LONG_HOUSE", "BUILD_DOCK", "BUILD_FISHERY",
         "BUILD_SAWMILL", "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_TANNERY", "BUILD_WAREHOUSE",
-        "UPGRADE_WAREHOUSE", "BUILD_HATCHERY", "BUILD_BATH_HOUSE", "BUILD_WELL",
+        "UPGRADE_WAREHOUSE", "BUILD_HATCHERY", "BUILD_COOP", "BUILD_BATH_HOUSE", "BUILD_WELL",
     }
 
 

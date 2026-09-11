@@ -778,7 +778,7 @@ const GO_BUILDING_ICONS = [
   ["object_creator_built", "🛠️"], ["forge_built", "🔨"], ["mine_built", "💎"],
   ["road_built", "🛣️"], ["dock_built", "⚓"], ["fishery_built", "🐟"],
   ["sawmill_built", "🪵"], ["quarry_built", "⛏️"], ["kitchen_built", "🍲"],
-  ["tannery_built", "🦫"], ["hatchery_built", "🐣"], ["bath_house_built", "🛁"],
+  ["tannery_built", "🦫"], ["hatchery_built", "🐣"], ["coop_built", "🐔"], ["bath_house_built", "🛁"],
   ["library_built", "📚"], ["well_built", "💧"],
 ];
 
@@ -3110,7 +3110,7 @@ const BUILDING_ICONS = {
   town_hall: "🏛️", long_house: "🏠", keep: "🏯", fortress: "🏰", castle: "🏯",
   sawmill: "🪵", quarry: "⛏️", mine: "💎", kitchen: "🍲", tannery: "🦫", forge: "🔨",
   warehouse: "🏬",
-  dock: "⚓", fishery: "🎣", farm_plot: "🌾", flock_pen: "🐔", fire: "🔥",
+  dock: "⚓", fishery: "🎣", farm_plot: "🌾", coop: "🐔", fire: "🔥",
   hatchery: "🐣", boat: "⛵", bath_house: "🛁", library: "📚", well: "🪣",
   object_creator: "🛠️", created_structure: "✨",
 };
@@ -3940,6 +3940,9 @@ const CASTLE_DEFENSE_BONUS = 0.15;
 const MOAT_DEFENSE_BONUS = 0.08;
 const BATH_HOUSE_UPKEEP_MULTIPLIER = 0.85;
 const HATCHERY_HATCH_CHANCE_MULTIPLIER = 2.0;
+// Mirrors backend/config.py's EGGS_PER_HATCH -- Hatchery+Coop's deterministic
+// eggs-per-hatch cost, for the Establishments panel's own Coop line.
+const EGGS_PER_HATCH = 5;
 const COOKING_FOOD_MULTIPLIER = 3;
 // Mirrors backend/config.py's JOINT_CASTLE_WOOD_COST/JOINT_CASTLE_STONE_COST
 // -- for drawJointCastle's own progress label.
@@ -4059,7 +4062,7 @@ function farmingPanel(t) {
     || t.moat_built || t.road_built || t.dock_built
     || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built || t.tannery_built
     || t.forge_built || t.warehouses_built || t.founded_city || (t.cooking_learned && !t.kitchen_built)
-    || t.hatchery_built || t.boat_built || t.bath_house_built || t.library_built || t.well_built
+    || t.hatchery_built || t.coop_built || t.boat_built || t.bath_house_built || t.library_built || t.well_built
     || t.object_creator_built || t.conquests_won || hasBarracks;
   if (!hasAny) return "";
   // Explicit request, 2026-09-11: "a subsection breakout of the list under
@@ -4118,7 +4121,21 @@ function farmingPanel(t) {
     const eggsSurplusThreshold = t.livestock_surplus_threshold ?? 12;
     food.push(`🥚 Eggs in store — ${t.eggs}${t.eggs > eggsSurplusThreshold ? " · surplus feasted on" : ""}`);
   }
-  if (t.hatchery_built) food.push(`🐣 Hatchery — flock hatch chance ×${HATCHERY_HATCH_CHANCE_MULTIPLIER}`);
+  if (t.hatchery_built) {
+    // Explicit follow-up, 2026-09-11: once a Coop exists too, the Hatchery stops
+    // being a chance multiplier and actually incubates stored eggs into new flock
+    // deterministically (backend/simulation.py's _advance_flock) -- see the Coop
+    // line just below for the eggs-per-hatch side of the same loop.
+    food.push(t.coop_built
+      ? "🐣 Hatchery — incubating stored eggs into new flock automatically"
+      : `🐣 Hatchery — flock hatch chance ×${HATCHERY_HATCH_CHANCE_MULTIPLIER}`);
+  }
+  if (t.coop_built) {
+    const note = t.hatchery_built
+      ? `every ${EGGS_PER_HATCH} stored eggs hatch into a new fowl`
+      : "build a Hatchery too so stored eggs actually hatch";
+    food.push(`🐔 Coop — home for the flock, ${note}`);
+  }
   if (t.fishing_learned) food.push("🎣 Fishing — mastered, fish now caught for food");
   if (t.fishery_built) food.push(`🐟 Fishery — ${fishSupplyPerCycle(t)} food/day flows in automatically`);
   if (t.fire_ever_built) food.push("🔥 Fire — mastered, enables cooking");

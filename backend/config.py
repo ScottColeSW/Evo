@@ -563,7 +563,7 @@ BUILDING_FOOTPRINTS = {
     "sawmill": (3, 3), "quarry": (3, 3), "mine": (3, 3), "forge": (2, 2),
     "warehouse": (3, 3),
     "kitchen": (2, 2), "tannery": (2, 2), "dock": (2, 2), "fishery": (2, 4),
-    "farm_plot": (3, 3), "flock_pen": (2, 2), "fire": (1, 1), "hatchery": (2, 2),
+    "farm_plot": (3, 3), "coop": (2, 2), "fire": (1, 1), "hatchery": (2, 2),
     "boat": (2, 3), "bath_house": (2, 2), "library": (3, 3), "well": (2, 2),
     "object_creator": (3, 3), "created_structure": (2, 2),
     "barracks": (3, 3),
@@ -718,6 +718,32 @@ FLOCK_FEAST_FOOD_VALUE = 8  # food per surplus flock member eaten
 HATCHERY_WOOD_COST = 15
 HATCHERY_STONE_COST = 10
 HATCHERY_HATCH_CHANCE_MULTIPLIER = 2.0
+
+# BUILD_COOP (backend/actions.py): explicit follow-up, 2026-09-11 -- "eggs gathered
+# are put into the Hatchery, the Hatchery incubates the eggs to hatch into the Fowl
+# we have in the Coop, fowl caught are put into the Coop, fowl breed and lay eggs
+# that go into the Hatchery." Promotes what used to be a free, automatic "flock_pen"
+# placement (Simulation._resolve_hatch, the instant the first egg ever hatched) into
+# a real, chief-built structure -- same "prove it, then build it for real" pattern
+# every other building here uses. Gated on tribe.flock > 0 (a founding fowl already
+# exists), not eggs_ever_gathered like Hatchery -- gating on eggs_ever_gathered would
+# create a bootstrap deadlock, since the very first flock member has to come from
+# somewhere before any building can reasonably require one. Costs match Hatchery's
+# own (a companion building of the same scale), not tuned against live data yet.
+COOP_WOOD_COST = 15
+COOP_STONE_COST = 10
+# Once BOTH Hatchery and Coop exist, Simulation._advance_flock switches from the
+# probabilistic natural-hatch roll (FLOCK_NATURAL_HATCH_CHANCE, above) to consuming
+# this many real eggs from tribe.eggs for a deterministic hatch each time enough are
+# on hand -- "so the Tribes get to make it work," not a slot machine. Picked to
+# roughly match EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR's own scale (a flock of ~25
+# sustains one hatch/cycle from passive laying alone at steady state) -- an invented
+# first-pass default, watch a live run before treating it as tuned.
+EGGS_PER_HATCH = 5
+# GATHER_EGGS deposits this many eggs into the stockpile per success once a Coop
+# exists, instead of instantly hatching (see actions.py._gather_eggs) -- before a
+# Coop exists, GATHER_EGGS still instantly hatches, unchanged (the founding path).
+GATHER_EGGS_STOCKPILE_AMOUNT = 1
 
 # Fishing (backend/actions.py CATCH_FISH, Simulation._advance_fish_supply): gated the
 # same as farming/eggs -- once settled, no separate real-water check (explicit

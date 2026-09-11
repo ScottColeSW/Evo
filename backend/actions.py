@@ -1125,6 +1125,35 @@ def _build_hatchery(sim, tribe, biome, target):
     return "a hatchery is built -- the flock grows on its own much more reliably from now on"
 
 
+def _build_coop(sim, tribe, biome, target):
+    """Explicit follow-up, 2026-09-11: "eggs gathered are put into the Hatchery, the
+    Hatchery incubates the eggs to hatch into the Fowl we have in the Coop, fowl
+    caught are put into the Coop, fowl breed and lay eggs that go into the Hatchery."
+    Promotes what used to be a free, automatic "flock_pen" placement (Simulation.
+    _resolve_hatch, the instant the first egg ever hatched) into a real, chief-built
+    structure -- the same "prove it, then build it for real, not a free ride" pattern
+    Sawmill/Quarry/Dock already established. Gated on tribe.flock > 0 (a founding
+    fowl already exists), not eggs_ever_gathered like Hatchery -- see config.
+    COOP_WOOD_COST's own comment for why that avoids a bootstrap deadlock. Once both
+    this and the Hatchery exist, Simulation._advance_flock switches from a
+    probabilistic natural-hatch roll to actually consuming stored eggs for a
+    deterministic hatch each cycle -- see that method's own docstring."""
+    if tribe.coop_built or tribe.flock <= 0:
+        return None
+    if tribe.wood < config.COOP_WOOD_COST or tribe.stone < config.COOP_STONE_COST:
+        return None
+    slot = architect.find_free_slot(sim.world, tribe, "coop")
+    if slot is None:
+        return None
+    tribe.wood -= config.COOP_WOOD_COST
+    tribe.stone -= config.COOP_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["coop"]
+    architect.record_building(tribe, "coop", slot[0], slot[1], w, h, sim.cycle)
+    tribe.coop_built = True
+    sim._award_trophy(tribe, "Coop Builder")
+    return "a coop is built -- the flock finally has a real home, and a proper Hatchery can put it to use"
+
+
 def _build_bath_house(sim, tribe, biome, target):
     """Explicit request: "bath house bolsters Well-Being upkeep once built."
     No special prerequisite beyond being settled and affordable, the same
@@ -1633,12 +1662,28 @@ def _plant_crop(sim, tribe, biome, target):
 
 def _gather_eggs(sim, tribe, biome, target):
     """Wild fowl near a real water source -- gated the same as PLANT_CROP (Simulation.
-    _is_settled_near_water). A find doesn't hatch here: this only sets
+    _is_settled_near_water).
+
+    Before a Coop exists, a find doesn't hatch here: this only sets
     tribe.pending_hatch; Simulation.step() resolves it with a real, non-scripted LLM
     call (backend/genetics.py's hatch()) the same cycle, the same pattern BREED already
     uses for pending_birth. Once the flock has at least two members, the two most
     recently hatched are what get crossed -- mirrors _eligible_breeding_pair preferring
-    a fresh milestone over the whole population."""
+    a fresh milestone over the whole population. This is the founding path (how a
+    flock starts existing at all) and stays exactly as it always has.
+
+    Once a Coop exists (see actions.py._build_coop), there's a real home for a caught
+    fowl already -- a find now deposits into tribe.eggs (config.
+    GATHER_EGGS_STOCKPILE_AMOUNT) instead of hatching directly. Simulation.
+    _advance_flock is what actually incubates that stockpile into new flock from then
+    on, once a Hatchery exists too. Explicit follow-up, 2026-09-11: "eggs gathered
+    are put into the Hatchery... fowl caught are put into the Coop.\""""
+    if tribe.coop_built:
+        if random.random() >= config.GATHER_EGGS_SUCCESS_CHANCE:
+            return "no eggs found this time"
+        tribe.eggs += config.GATHER_EGGS_STOCKPILE_AMOUNT
+        tribe.eggs_ever_gathered = True
+        return f"an egg is found and brought back to the coop -- {tribe.eggs} now stored for the hatchery"
     if tribe.pending_hatch is not None:
         return "an egg is already being tended -- one thing at a time"
     if random.random() >= config.GATHER_EGGS_SUCCESS_CHANCE:
@@ -2930,6 +2975,7 @@ ACTION_REGISTRY = {
     "GATHER_ORE": _gather_ore,
     "BUILD_TANNERY": _build_tannery,
     "BUILD_HATCHERY": _build_hatchery,
+    "BUILD_COOP": _build_coop,
     "BUILD_BATH_HOUSE": _build_bath_house,
     "BUILD_LIBRARY": _build_library,
     "RESEARCH": _research,
@@ -2997,6 +3043,7 @@ ACTION_DESCRIPTIONS = {
     "GATHER_ORE": "Fetch the Mine's unique resource -- only possible once a mine has been excavated. The first successful fetch also starts a small, permanent daily supply from then on, the same way fishing works once learned.",
     "BUILD_TANNERY": "Build a tannery using stored wood and stone -- only possible once a hunt has actually succeeded. A one-time, permanent structure at your settlement: Fur flows in steadily from then on, and every successful hunt yields extra meat from then on.",
     "BUILD_HATCHERY": "Build a hatchery using stored wood and stone -- only possible once a wild egg has actually been found and hatched. A one-time, permanent structure at your settlement: the flock grows on its own much more reliably from then on.",
+    "BUILD_COOP": "Build a coop using stored wood and stone -- only possible once the flock has at least one member. A one-time, permanent structure: paired with a Hatchery, gathered and laid eggs are actually incubated into new flock automatically from then on, instead of the flock only growing by chance.",
     "BUILD_BATH_HOUSE": "Build a bath house using stored wood and stone -- no prerequisite beyond being settled. A one-time, permanent structure at your settlement: the tribe's daily food and water consumption drops from then on.",
     "BUILD_LIBRARY": "Build a library using stored wood and stone -- only possible once at least one long house stands. A one-time, permanent structure: unlocks RESEARCH, a real way to reach the next era sooner.",
     "RESEARCH": "Study the tribe's own remembered history at the library, using a little stored wood -- only possible once a library stands. Distills what's been lived through into a permanent Library entry, and permanently shortens the path to the next era a little further. Repeatable.",
