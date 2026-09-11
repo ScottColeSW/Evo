@@ -113,7 +113,7 @@ from .world import (
 # for slot 0 (was 59.0) and 2.2 tiles from the lake for slot 1 (was 31.0),
 # each comfortably within a single expedition's reach and 34-42 tiles clear
 # of the untouched slot 2/3 fallbacks.
-SPAWN_POINTS = [(76, 23), (23, 76), (50, 55), (40, 37)]
+SPAWN_POINTS = [(66, 23), (63, 66), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 # Design intent, not just "whichever body is closest": Tribe 1 settles the
 # river, Tribe 2 the lake -- each gets a distinct natural-barrier wall ring
