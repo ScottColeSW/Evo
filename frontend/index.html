@@ -3913,6 +3913,15 @@ const COOKING_FOOD_MULTIPLIER = 3;
 // -- for drawJointCastle's own progress label.
 const JOINT_CASTLE_WOOD_COST = 80;
 const JOINT_CASTLE_STONE_COST = 100;
+// Bug report, 2026-09-11: "Barracks and Battalion did not show in the
+// sidebar" -- the Military branch (backend/actions.py's BUILD_BARRACKS/
+// TRAIN_BATTALION) shipped weeks ago but the sidebar was never updated to
+// surface it, unlike every other building. Mirrors backend/config.py's
+// BATTALION_CAPACITY_PER_BARRACKS/BARRACKS_MAX_COUNT so combatPanel can
+// show real capacity numbers, matching _battalion_capacity's own formula
+// (barracks_built + barracks_upgrades) * BATTALION_CAPACITY_PER_BARRACKS.
+const BATTALION_CAPACITY_PER_BARRACKS = 20;
+const BARRACKS_MAX_COUNT = 5;
 // Mirrors backend/config.py's UPKEEP_POPULATION_DIVISOR/FISHING_SUPPLY_MULTIPLIER
 // -- fishing's passive supply scales with population the same way upkeep does
 // (bug report: "we have hit a food and water scaling problem"), not a flat number.
@@ -3998,9 +4007,19 @@ function commercePanel(t) {
 function combatPanel(t) {
   const record = t.combat_record || {};
   const kinds = Object.keys(record);
-  if (!kinds.length && !t.trades_completed) return "";
+  const hasBarracks = t.barracks_built > 0;
+  if (!kinds.length && !t.trades_completed && !hasBarracks) return "";
   const rows = kinds.map(kind => `${escapeHtml(kind)}: ${record[kind].won}W / ${record[kind].lost}L`);
   if (t.trades_completed) rows.push(`Trade: ${t.trades_completed} completed`);
+  if (hasBarracks) {
+    const capacity = (t.barracks_built + (t.barracks_upgrades || 0)) * BATTALION_CAPACITY_PER_BARRACKS;
+    const barracksLabel = t.barracks_built >= BARRACKS_MAX_COUNT
+      ? `Barracks: ${t.barracks_built}/${BARRACKS_MAX_COUNT} (maxed${t.barracks_upgrades ? `, +${t.barracks_upgrades} upgrades` : ""})`
+      : `Barracks: ${t.barracks_built}/${BARRACKS_MAX_COUNT}`;
+    rows.push(barracksLabel);
+    rows.push(`Battalion: ${t.battalion_size}/${capacity} strong · ${Math.round((t.battalion_readiness || 0) * 100)}% readiness`);
+    if (t.battalion_patrol) rows.push(`Patrol: ${t.battalion_patrol.phase}`);
+  }
   return `<div class="combat-panel"><span class="combat-title">⚔️ Combat</span><br>${rows.join("<br>")}</div>`;
 }
 
