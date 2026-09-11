@@ -931,8 +931,8 @@ function showBattleSplash(battle) {
 const BATTLE_OUTCOME_TEXT = {
   attacker_wins: b => `👑 ${escapeHtml(b.attacker_name)} breaks ${escapeHtml(b.defender_name)} and wins outright -- total conquest!`,
   defender_wins: b => `🛡️ ${escapeHtml(b.defender_name)} repels the invasion and absorbs ${escapeHtml(b.attacker_name)} instead!`,
-  attacker_surrenders: b => `🏳️ Neither side broke outright, but ${escapeHtml(b.defender_name)} is too battered to continue -- ${escapeHtml(b.attacker_name)} accepts their surrender.`,
-  defender_surrenders: b => `🏳️ Neither side broke outright, but ${escapeHtml(b.attacker_name)}'s campaign is too battered to continue -- ${escapeHtml(b.defender_name)} accepts their surrender.`,
+  attacker_surrenders: b => `🏳️ Neither side broke outright, but ${escapeHtml(b.attacker_name)}'s campaign is too battered to continue -- ${escapeHtml(b.defender_name)} accepts their surrender.`,
+  defender_surrenders: b => `🏳️ Neither side broke outright, but ${escapeHtml(b.defender_name)} is too battered to continue -- ${escapeHtml(b.attacker_name)} accepts their surrender.`,
   stalemate: b => `⚖️ Neither side breaks -- a costly stalemate, both battered but standing.`,
 };
 
