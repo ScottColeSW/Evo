@@ -1898,6 +1898,16 @@ DECLARE_CONQUEST_ROUND_LOSS_FRACTION_WINNER = 0.08
 # post-round-cap surrender check.
 DECLARE_CONQUEST_SURRENDER_POPULATION_RATIO = 0.5
 
+# Explicit follow-up, 2026-09-11: "surrender isn't allowed unless you lose 2
+# times already" -- don't let the very first lopsided stalemate against a
+# given rival end the war outright. Tribe.conquest_stalemate_losses tracks,
+# per rival id, how many times this tribe has already been the weaker side
+# in a surrender-eligible stalemate; only once that count reaches this many
+# does the NEXT such stalemate actually resolve as a surrender. Below the
+# threshold it's still a true stalemate (no merge), just with a history note
+# that they're clearly outmatched, so the next loss like this ends it.
+DECLARE_CONQUEST_SURRENDER_AFTER_LOSSES = 2
+
 # Bronze Age counter-offensive (backend/actions.py._strike_raider_camp): a tribe that
 # has scouted a raider camp (raider_sightings) can strike it directly once organized
 # enough -- turning a warning into an actionable target instead of only ever

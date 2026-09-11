@@ -159,6 +159,7 @@
   #battle-splash .battle-meter-fill { height: 100%; border-radius: 6px; transition: width 0.6s ease; }
   #battle-splash .battle-meter-fill.pop { background: linear-gradient(90deg, #34d399, #6ee7b7); }
   #battle-splash .battle-meter-fill.might { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+  #battle-splash .battle-meter-fill.armed { background: linear-gradient(90deg, #a855f7, #d8b4fe); }
   #battle-splash .battle-meter-value { font-size: 11px; color: #c7c7d1; margin-top: 2px; text-align: right; }
   #battle-splash .battle-log { width: 100%; max-height: 130px; overflow-y: auto; background: rgba(0,0,0,0.3); border: 1px solid #2a2a3a; border-radius: 6px; padding: 10px 14px; font-size: 11px; color: #c7d2fe; line-height: 1.6; font-family: monospace; }
   #battle-splash .battle-log div.attacker-line { color: #6ee7b7; }
@@ -354,6 +355,9 @@
               <div class="battle-meter-label">Might</div>
               <div class="battle-meter"><div class="battle-meter-fill might" id="battle-attacker-might-fill"></div></div>
               <div class="battle-meter-value" id="battle-attacker-might-value"></div>
+              <div class="battle-meter-label">Armed</div>
+              <div class="battle-meter"><div class="battle-meter-fill armed" id="battle-attacker-armed-fill"></div></div>
+              <div class="battle-meter-value" id="battle-attacker-armed-value"></div>
             </div>
             <div class="battle-vs">VS</div>
             <div class="battle-side" id="battle-side-defender">
@@ -364,6 +368,9 @@
               <div class="battle-meter-label">Might</div>
               <div class="battle-meter"><div class="battle-meter-fill might" id="battle-defender-might-fill"></div></div>
               <div class="battle-meter-value" id="battle-defender-might-value"></div>
+              <div class="battle-meter-label">Armed</div>
+              <div class="battle-meter"><div class="battle-meter-fill armed" id="battle-defender-armed-fill"></div></div>
+              <div class="battle-meter-value" id="battle-defender-armed-value"></div>
             </div>
           </div>
           <div class="battle-log" id="battle-log"></div>
@@ -903,6 +910,17 @@ function showBattleSplash(battle) {
   document.getElementById("battle-defender-might-fill").style.width = `${(battle.defender_might / maxMight) * 100}%`;
   document.getElementById("battle-attacker-might-value").textContent = battle.attacker_might.toFixed(1);
   document.getElementById("battle-defender-might-value").textContent = battle.defender_might.toFixed(1);
+  // Explicit request, 2026-09-11: "the Battle pop should include Armed (an
+  // indication of how many of the army have weapons or magic from the forge
+  // or object creator." attacker_armed/defender_armed (backend/actions.py's
+  // _declare_conquest) count real Forge-crafted weapons on hand plus
+  // Object Creator's combat_boost creations -- baked into the battle record
+  // once at battle time, same as Might, not a live lookup.
+  const maxArmed = Math.max(1, battle.attacker_armed, battle.defender_armed);
+  document.getElementById("battle-attacker-armed-fill").style.width = `${(battle.attacker_armed / maxArmed) * 100}%`;
+  document.getElementById("battle-defender-armed-fill").style.width = `${(battle.defender_armed / maxArmed) * 100}%`;
+  document.getElementById("battle-attacker-armed-value").textContent = battle.attacker_armed;
+  document.getElementById("battle-defender-armed-value").textContent = battle.defender_armed;
   document.getElementById("battle-round-label").textContent = "Forces are mustering...";
   document.getElementById("battle-log").innerHTML = "";
   document.getElementById("battle-outcome").classList.add("hidden");

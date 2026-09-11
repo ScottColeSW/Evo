@@ -1225,6 +1225,12 @@ class Tribe:
         # separate affordability gate untouched by this ("training has its
         # own controls"). 0 means no patrol has ever run yet.
         self.battalion_cooldown_until_cycle = 0
+        # actions._declare_conquest's post-round-cap surrender check --
+        # rival tribe id -> how many times this tribe has already been the
+        # weaker side in a surrender-eligible stalemate against them.
+        # config.DECLARE_CONQUEST_SURRENDER_AFTER_LOSSES must be reached
+        # before the next such stalemate actually resolves as a surrender.
+        self.conquest_stalemate_losses: dict = {}
         # See actions.py._build_road -- one-way. Adds a flat speed bonus to every
         # future expedition (Simulation._advance_one_expedition), the same shape a
         # well-worn trail already grants.

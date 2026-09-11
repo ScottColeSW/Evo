@@ -2452,18 +2452,11 @@ def test_declare_conquest_stalemate_when_neither_side_breaks():
     assert "stalemate" in result.lower()
 
 
-def test_declare_conquest_lopsided_war_resolves_by_surrender_not_endless_stalemate():
-    """Grounded 2026-09-11 against run_20260911_065718: at the real production
-    constants, DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION (0.10) can never
-    actually fire within DECLARE_CONQUEST_MAX_ROUNDS -- even a side that loses
-    every single round only falls to 0.7 ** 6 ~= 0.1176 of its starting
-    population, just above the threshold. 18/18 real attempts in that run
-    ended "costly stalemate" and the war just reopened next cycle, forever
-    (user: "I don't think anyone will ever win"). This test uses the real,
-    unpatched constants (not the loosened ones the older stalemate/win tests
-    patch in) to reproduce that exact lopsided-but-never-crosses-threshold
-    case, and confirms the post-cap surrender check now resolves it instead
-    of leaving both sides to refight forever."""
+def test_declare_conquest_first_lopsided_stalemate_does_not_surrender_yet():
+    """Explicit follow-up request, 2026-09-11: "surrender isn't allowed unless
+    you lose 2 times already" -- the first time a side ends the war
+    decisively weaker, it's still a true stalemate (no merge), just with a
+    history note that one more defeat like this ends it."""
     from unittest import mock
 
     from backend import config
@@ -2481,6 +2474,42 @@ def test_declare_conquest_lopsided_war_resolves_by_surrender_not_endless_stalema
         # unpatched round-loss fractions -- attacker wins every round (defender
         # is the loser every time), which is the worst case for the in-round
         # defeat threshold and still can't cross it at production values.
+        result = ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
+
+    assert attacker.id in sim.tribes and defender.id in sim.tribes  # nobody absorbed yet
+    assert "stalemate" in result.lower()
+    assert defender.conquest_stalemate_losses[attacker.id] == 1
+
+
+def test_declare_conquest_lopsided_war_resolves_by_surrender_on_the_second_loss():
+    """Grounded 2026-09-11 against run_20260911_065718: at the real production
+    constants, DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION (0.10) can never
+    actually fire within DECLARE_CONQUEST_MAX_ROUNDS -- even a side that loses
+    every single round only falls to 0.7 ** 6 ~= 0.1176 of its starting
+    population, just above the threshold. 18/18 real attempts in that run
+    ended "costly stalemate" and the war just reopened next cycle, forever
+    (user: "I don't think anyone will ever win"). This test uses the real,
+    unpatched constants (not the loosened ones the older stalemate/win tests
+    patch in) to reproduce that exact lopsided-but-never-crosses-threshold
+    case. Per the follow-up "surrender isn't allowed unless you lose 2 times
+    already", the loss counter is pre-seeded at 1 (as the sibling test above
+    confirms a single loss produces) so this call is the deciding second
+    loss and should actually resolve the war."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Strong Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Weak Tribe", "gemma2:2b", 51, 50, "#fb923c")
+    attacker.population = 100
+    defender.population = 100
+    attacker.wood = config.DECLARE_CONQUEST_WOOD_COST
+    attacker.stone = config.DECLARE_CONQUEST_STONE_COST
+    defender.conquest_stalemate_losses[attacker.id] = 1
+    sim.tribes = {attacker.id: attacker, defender.id: defender}
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
         result = ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
 
     assert defender.id not in sim.tribes  # surrender still absorbs the loser
@@ -2517,11 +2546,33 @@ def test_declare_conquest_attaches_a_round_by_round_battle_record():
     assert battle["outcome"] == "attacker_wins"
     assert battle["attacker_name"] == "Strong Tribe"
     assert battle["defender_name"] == "Weak Tribe"
+    assert "attacker_armed" in battle and "defender_armed" in battle
     assert len(battle["rounds"]) >= 1
     first_round = battle["rounds"][0]
     assert first_round["round"] == 1
     assert first_round["attacker_won"] is True
     assert "attacker_population" in first_round and "defender_population" in first_round
+
+
+def test_armed_count_tallies_forge_weapons_and_object_creator_combat_boosts():
+    """Explicit request, 2026-09-11: the battle popup should show "how many
+    of the army have weapons or magic from the forge or object creator."
+    _armed_count sums real Forge-crafted weapons on hand (tools/innovations
+    don't count) plus Object Creator combat_boost creations (the "magic")."""
+    from backend.actions import _armed_count
+
+    tribe = Tribe("tribe_0", "Armed Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.items = [
+        {"name": "Iron Sword", "type": "weapon", "value": 12, "cycle_made": 1},
+        {"name": "Iron Axe", "type": "weapon", "value": 12, "cycle_made": 2},
+        {"name": "Fine Hammer", "type": "tool", "value": 8, "cycle_made": 3},
+    ]
+    tribe.created_objects = [
+        {"name": "War Ward", "category": "combat_boost", "kind": "structure"},
+        {"name": "Bountiful Charm", "category": "gather_boost", "kind": "item"},
+    ]
+
+    assert _armed_count(tribe) == 3  # 2 weapons + 1 combat_boost creation, not the tool or the other category
 
 
 def test_declare_conquest_win_chance_is_boosted_by_a_stronger_battalion():

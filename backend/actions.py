@@ -1312,6 +1312,21 @@ def _created_object_bonus(tribe, category: str) -> float:
     return sum(config.CREATED_OBJECT_MAGNITUDE for obj in tribe.created_objects if obj["category"] == category)
 
 
+def _armed_count(tribe) -> int:
+    """Explicit request, 2026-09-11, for the battle popup: "an indication of
+    how many of the army have weapons or magic from the forge or object
+    creator." Real Forge-crafted weapons currently on hand (tribe.items,
+    type == "weapon" -- tools/innovations don't count, only combat gear)
+    plus every Object Creator combat_boost creation (the "magic" -- the same
+    creations that already drive DECLARE_CONQUEST's effective-population
+    multiplier via _created_object_bonus). Purely a display count for the
+    battle popup, not a new input to the win-chance math -- combat_boost
+    already feeds that separately."""
+    weapons = sum(1 for item in tribe.items if item["type"] == "weapon")
+    magic = sum(1 for obj in tribe.created_objects if obj["category"] == "combat_boost")
+    return weapons + magic
+
+
 def _might_adjusted_win_chance(tribe, rival, base_win_chance: float) -> float:
     """Military branch, step 6 (plan file valiant-forging-falcon.md): layers
     a bounded Might-based adjustment on top of the existing population-share
@@ -1493,6 +1508,8 @@ def _declare_conquest(sim, tribe, biome, target):
     defender_start_population = defender.population
     attacker_might = compute_might(tribe)
     defender_might = compute_might(defender)
+    attacker_armed = _armed_count(tribe)
+    defender_armed = _armed_count(defender)
     rounds = []
     outcome = "stalemate"
 
@@ -1517,6 +1534,7 @@ def _declare_conquest(sim, tribe, biome, target):
             break
 
     resolved_by_surrender = False
+    stalemate_note = None
     if outcome == "stalemate":
         # SURRENDER: DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION never fired within
         # the round cap (see config.py's note on why that check is nearly
@@ -1524,11 +1542,23 @@ def _declare_conquest(sim, tribe, biome, target):
         # an unresolved war just reopen next cycle forever, whichever side ends
         # these MAX_ROUNDS decisively weaker concedes instead of fighting on.
         # A genuinely close fight (both sides within the ratio of each other)
-        # still ends a true stalemate, no merge.
+        # still ends a true stalemate, no merge. Explicit follow-up request:
+        # "surrender isn't allowed unless you lose 2 times already" -- the
+        # first lopsided loss against a given rival is just noted, not
+        # resolved; only the DECLARE_CONQUEST_SURRENDER_AFTER_LOSSES-th one
+        # actually ends the war.
         weaker, stronger = (tribe, defender) if tribe.population <= defender.population else (defender, tribe)
         if weaker.population <= stronger.population * config.DECLARE_CONQUEST_SURRENDER_POPULATION_RATIO:
-            outcome = "defender_wins" if weaker is tribe else "attacker_wins"
-            resolved_by_surrender = True
+            losses = weaker.conquest_stalemate_losses.get(stronger.id, 0) + 1
+            weaker.conquest_stalemate_losses[stronger.id] = losses
+            if losses >= config.DECLARE_CONQUEST_SURRENDER_AFTER_LOSSES:
+                outcome = "defender_wins" if weaker is tribe else "attacker_wins"
+                resolved_by_surrender = True
+            else:
+                stalemate_note = (
+                    f"{weaker.name}'s campaign against {stronger.name} ends in stalemate, battered and "
+                    "clearly outmatched -- one more defeat like this and surrender will be inevitable"
+                )
 
     if resolved_by_surrender:
         battle_outcome_key = "attacker_surrenders" if outcome == "defender_wins" else "defender_surrenders"
@@ -1539,6 +1569,7 @@ def _declare_conquest(sim, tribe, biome, target):
         "attacker_name": attacker_name, "defender_name": defender_name,
         "attacker_start_population": attacker_start_population, "defender_start_population": defender_start_population,
         "attacker_might": attacker_might, "defender_might": defender_might,
+        "attacker_armed": attacker_armed, "defender_armed": defender_armed,
         "rounds": rounds, "outcome": battle_outcome_key,
     }
 
@@ -1574,6 +1605,10 @@ def _declare_conquest(sim, tribe, biome, target):
         "x": defender.x, "y": defender.y, "kind": "tribe_conquest_battle",
         "label": f"{attacker_name} and {defender_name} fight to a standstill", "outcome": "stalemate", "battle": battle_record,
     })
+    if stalemate_note:
+        tribe.history.append(stalemate_note)
+        defender.history.append(stalemate_note)
+        return f"after {config.DECLARE_CONQUEST_MAX_ROUNDS} brutal rounds neither side breaks -- {stalemate_note}"
     return f"after {config.DECLARE_CONQUEST_MAX_ROUNDS} brutal rounds neither side breaks -- {attacker_name}'s campaign against {defender_name} ends in a costly stalemate"
 
 
