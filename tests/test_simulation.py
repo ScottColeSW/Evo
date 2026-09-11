@@ -1809,6 +1809,23 @@ def test_action_repetition_relocate_is_exempt_from_throttling():
     assert tribe.throttled_actions == {}
 
 
+def test_action_repetition_construct_wall_is_exempt_from_throttling():
+    """Live-run evidence (run_20260911_100258): Tribe 1's ring 0 had 5 of 6 real
+    sections fully reinforced, then got benched mid-streak with the last two (W, NW)
+    left permanently unlocked=False. CONSTRUCT_WALL is the only action that can make
+    progress on those -- same exemption shape as RELOCATE above, and for the same
+    reason: a real, necessary multi-call task, not fixation on a substitutable action."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    for _ in range(config.ACTION_REPETITION_THROTTLE_THRESHOLD + 5):
+        sim._track_action_repetition(tribe, "CONSTRUCT_WALL")
+
+    assert tribe.throttled_actions == {}
+
+
 def test_action_repetition_throttle_expires_and_filters_available_actions():
     from backend import config
 

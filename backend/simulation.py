@@ -4275,13 +4275,23 @@ class Simulation:
         49% of all 728 turns (and a different run's tribe choose BREED on 63.8%) while
         other real needs went untouched -- see config.ACTION_REPETITION_THROTTLE_*.
         RELOCATE is exempt: a real, sustained multi-cycle journey is documented,
-        desired behavior (see README), not fixation."""
+        desired behavior (see README), not fixation.
+
+        CONSTRUCT_WALL is exempt for the same reason, confirmed via a live run
+        (run_20260911_100258): it's the only action that can unlock or build a wall
+        section, and a ring with several real (non-natural-barrier) sections needs many
+        calls in a row to finish. Tribe 1's ring 0 got 5 of 6 real sections fully
+        reinforced, then got benched mid-streak ("the Historian insists on a different
+        approach") with the last two (W, NW) left permanently unlocked=False -- there's
+        no alternative action that makes progress on those, so the throttle wasn't
+        redirecting effort toward an under-served need, it was just stalling the one
+        structure that still needed finishing."""
         if action == tribe.action_streak_name:
             tribe.action_streak_count += 1
         else:
             tribe.action_streak_name = action
             tribe.action_streak_count = 1
-        if action == "RELOCATE":
+        if action in ("RELOCATE", "CONSTRUCT_WALL"):
             return
         if tribe.action_streak_count >= config.ACTION_REPETITION_THROTTLE_THRESHOLD:
             tribe.throttled_actions[action] = self.cycle + config.ACTION_REPETITION_THROTTLE_COOLDOWN
