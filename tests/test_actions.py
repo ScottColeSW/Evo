@@ -2452,6 +2452,44 @@ def test_declare_conquest_stalemate_when_neither_side_breaks():
     assert "stalemate" in result.lower()
 
 
+def test_declare_conquest_lopsided_war_resolves_by_surrender_not_endless_stalemate():
+    """Grounded 2026-09-11 against run_20260911_065718: at the real production
+    constants, DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION (0.10) can never
+    actually fire within DECLARE_CONQUEST_MAX_ROUNDS -- even a side that loses
+    every single round only falls to 0.7 ** 6 ~= 0.1176 of its starting
+    population, just above the threshold. 18/18 real attempts in that run
+    ended "costly stalemate" and the war just reopened next cycle, forever
+    (user: "I don't think anyone will ever win"). This test uses the real,
+    unpatched constants (not the loosened ones the older stalemate/win tests
+    patch in) to reproduce that exact lopsided-but-never-crosses-threshold
+    case, and confirms the post-cap surrender check now resolves it instead
+    of leaving both sides to refight forever."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Strong Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Weak Tribe", "gemma2:2b", 51, 50, "#fb923c")
+    attacker.population = 100
+    defender.population = 100
+    attacker.wood = config.DECLARE_CONQUEST_WOOD_COST
+    attacker.stone = config.DECLARE_CONQUEST_STONE_COST
+    sim.tribes = {attacker.id: attacker, defender.id: defender}
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        # unpatched round-loss fractions -- attacker wins every round (defender
+        # is the loser every time), which is the worst case for the in-round
+        # defeat threshold and still can't cross it at production values.
+        result = ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
+
+    assert defender.id not in sim.tribes  # surrender still absorbs the loser
+    assert attacker.conquests_won == 1
+    assert "surrender" in result.lower()
+    entry = sim.recent_encounters[-1]
+    assert entry["battle"]["outcome"] == "defender_surrenders"
+
+
 def test_declare_conquest_attaches_a_round_by_round_battle_record():
     """The frontend replays this as a "play by play blows, meters falling"
     popup -- confirm the structured record actually lands on

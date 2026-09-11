@@ -1516,11 +1516,30 @@ def _declare_conquest(sim, tribe, biome, target):
             outcome = "defender_wins"
             break
 
+    resolved_by_surrender = False
+    if outcome == "stalemate":
+        # SURRENDER: DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION never fired within
+        # the round cap (see config.py's note on why that check is nearly
+        # unreachable by design of the round-loss fractions) -- rather than let
+        # an unresolved war just reopen next cycle forever, whichever side ends
+        # these MAX_ROUNDS decisively weaker concedes instead of fighting on.
+        # A genuinely close fight (both sides within the ratio of each other)
+        # still ends a true stalemate, no merge.
+        weaker, stronger = (tribe, defender) if tribe.population <= defender.population else (defender, tribe)
+        if weaker.population <= stronger.population * config.DECLARE_CONQUEST_SURRENDER_POPULATION_RATIO:
+            outcome = "defender_wins" if weaker is tribe else "attacker_wins"
+            resolved_by_surrender = True
+
+    if resolved_by_surrender:
+        battle_outcome_key = "attacker_surrenders" if outcome == "defender_wins" else "defender_surrenders"
+    else:
+        battle_outcome_key = outcome
+
     battle_record = {
         "attacker_name": attacker_name, "defender_name": defender_name,
         "attacker_start_population": attacker_start_population, "defender_start_population": defender_start_population,
         "attacker_might": attacker_might, "defender_might": defender_might,
-        "rounds": rounds, "outcome": outcome,
+        "rounds": rounds, "outcome": battle_outcome_key,
     }
 
     if outcome == "attacker_wins":
@@ -1533,7 +1552,9 @@ def _declare_conquest(sim, tribe, biome, target):
             "x": defender.x, "y": defender.y, "kind": "tribe_conquest_battle",
             "label": f"{attacker_name} conquers {defender_name}", "outcome": "won", "battle": battle_record,
         })
-        return f"after {len(rounds)} rounds of real fighting, {attacker_name} breaks {defender_name} and wins outright -- {attacker_name} becomes {new_name}!"
+        if not resolved_by_surrender:
+            return f"after {len(rounds)} rounds of real fighting, {attacker_name} breaks {defender_name} and wins outright -- {attacker_name} becomes {new_name}!"
+        return f"after {config.DECLARE_CONQUEST_MAX_ROUNDS} brutal rounds neither side broke outright, but {defender_name} is left too battered to continue and surrenders -- {attacker_name} becomes {new_name}!"
     if outcome == "defender_wins":
         _record_combat(tribe, "Conquest", "lost")
         _record_combat(defender, "Conquest Defense", "won")
@@ -1544,7 +1565,9 @@ def _declare_conquest(sim, tribe, biome, target):
             "x": defender.x, "y": defender.y, "kind": "tribe_conquest_battle",
             "label": f"{defender_name} repels {attacker_name}'s all-in campaign and breaks them", "outcome": "lost", "battle": battle_record,
         })
-        return f"after {len(rounds)} rounds of real fighting, {defender_name} breaks the campaign and absorbs {attacker_name} instead -- {defender_name} becomes {new_name}!"
+        if not resolved_by_surrender:
+            return f"after {len(rounds)} rounds of real fighting, {defender_name} breaks the campaign and absorbs {attacker_name} instead -- {defender_name} becomes {new_name}!"
+        return f"after {config.DECLARE_CONQUEST_MAX_ROUNDS} brutal rounds neither side broke outright, but {attacker_name}'s campaign is left too battered to continue and surrenders -- {defender_name} becomes {new_name}!"
     _record_combat(tribe, "Conquest", "lost")
     _record_combat(defender, "Conquest Defense", "won")
     sim.recent_encounters.append({

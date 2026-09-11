@@ -1882,6 +1882,22 @@ DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION = 0.10
 DECLARE_CONQUEST_ROUND_LOSS_FRACTION_LOSER = 0.30
 DECLARE_CONQUEST_ROUND_LOSS_FRACTION_WINNER = 0.08
 
+# Grounded 2026-09-11 against run_20260911_065718 (758 cycles): with the
+# constants above, even a side that loses every single one of the 6 rounds
+# only falls to 0.7 ** 6 ~= 0.1176 of its starting population -- ABOVE
+# DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION (0.10), so the in-round defeat
+# check above can never actually fire. Confirmed live: 18/18 real
+# DECLARE_CONQUEST attempts in that run ended "costly stalemate", none
+# ever decisive, while population repeatedly crashed to single/low double
+# digits and rebuilt between wars -- an endless grind, never a resolution.
+# User's diagnosis watching it happen: "we need to add a surrender...
+# I don't think anyone will ever win." Rather than re-tuning the round
+# math itself (loss fractions above look deliberately chosen), a side that
+# ends the war meaningfully weaker than the other concedes instead of the
+# battle silently reopening next cycle -- see _declare_conquest's
+# post-round-cap surrender check.
+DECLARE_CONQUEST_SURRENDER_POPULATION_RATIO = 0.5
+
 # Bronze Age counter-offensive (backend/actions.py._strike_raider_camp): a tribe that
 # has scouted a raider camp (raider_sightings) can strike it directly once organized
 # enough -- turning a warning into an actionable target instead of only ever
