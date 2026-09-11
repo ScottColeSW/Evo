@@ -778,7 +778,7 @@ const GO_BUILDING_ICONS = [
   ["object_creator_built", "🛠️"], ["forge_built", "🔨"], ["mine_built", "💎"],
   ["road_built", "🛣️"], ["dock_built", "⚓"], ["fishery_built", "🐟"],
   ["sawmill_built", "🪵"], ["quarry_built", "⛏️"], ["kitchen_built", "🍲"],
-  ["tannery_built", "🦫"], ["hatchery_built", "🐣"], ["coop_built", "🐔"], ["bath_house_built", "🛁"],
+  ["tannery_built", "🦫"], ["deer_pen_built", "🦌"], ["hatchery_built", "🐣"], ["coop_built", "🐔"], ["bath_house_built", "🛁"],
   ["library_built", "📚"], ["well_built", "💧"],
 ];
 
@@ -3108,7 +3108,7 @@ function drawFarmPlot(t) {
 // wherever the City Architect actually placed them.
 const BUILDING_ICONS = {
   town_hall: "🏛️", long_house: "🏠", keep: "🏯", fortress: "🏰", castle: "🏯",
-  sawmill: "🪵", quarry: "⛏️", mine: "💎", kitchen: "🍲", tannery: "🦫", forge: "🔨",
+  sawmill: "🪵", quarry: "⛏️", mine: "💎", kitchen: "🍲", tannery: "🦫", deer_pen: "🦌", forge: "🔨",
   warehouse: "🏬",
   dock: "⚓", fishery: "🎣", farm_plot: "🌾", coop: "🐔", fire: "🔥",
   hatchery: "🐣", boat: "⛵", bath_house: "🛁", library: "📚", well: "🪣",
@@ -3943,6 +3943,10 @@ const HATCHERY_HATCH_CHANCE_MULTIPLIER = 2.0;
 // Mirrors backend/config.py's EGGS_PER_HATCH -- Hatchery+Coop's deterministic
 // eggs-per-hatch cost, for the Establishments panel's own Coop line.
 const EGGS_PER_HATCH = 5;
+// Mirrors backend/config.py's DEER_PEN_DAILY_FEED_MIN/_MAX/FUR_PER_DEER_FED --
+// the Deer Pen's own daily feed-into-Tannery range, for its Establishments line.
+const DEER_PEN_DAILY_FEED_MIN = 1;
+const DEER_PEN_DAILY_FEED_MAX = 3;
 const COOKING_FOOD_MULTIPLIER = 3;
 // Mirrors backend/config.py's JOINT_CASTLE_WOOD_COST/JOINT_CASTLE_STONE_COST
 // -- for drawJointCastle's own progress label.
@@ -4060,7 +4064,7 @@ function farmingPanel(t) {
   const hasAny = t.farm_plots || t.flock || t.eggs || t.fishing_learned || t.fishery_built || t.fire_ever_built || ring0
     || t.long_houses_built || t.keep_built || t.fortress_built || t.castle_built
     || t.moat_built || t.road_built || t.dock_built
-    || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built || t.tannery_built
+    || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built || t.tannery_built || t.deer_pen_built
     || t.forge_built || t.warehouses_built || t.founded_city || (t.cooking_learned && !t.kitchen_built)
     || t.hatchery_built || t.coop_built || t.boat_built || t.bath_house_built || t.library_built || t.well_built
     || t.object_creator_built || t.conquests_won || hasBarracks;
@@ -4217,6 +4221,11 @@ function farmingPanel(t) {
   if (t.tannery_built) {
     const amount = (t.unique_resources || {})["Fur"] || 0;
     industry.push(`🦫 Tannery — ${TANNERY_YIELD_PER_CYCLE} Fur/day (${amount} stored)`);
+  }
+  if (t.deer_pen_built) {
+    industry.push(
+      `🦌 Deer Pen — ${t.deer} deer, feeding ${DEER_PEN_DAILY_FEED_MIN}-${DEER_PEN_DAILY_FEED_MAX}/cycle into the tannery`
+    );
   }
   if (t.forge_built) {
     const items = t.items || [];

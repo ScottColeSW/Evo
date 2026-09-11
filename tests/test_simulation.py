@@ -9085,6 +9085,113 @@ def test_advance_in_territory_site_yields_does_nothing_before_territory_exists()
     assert tribe.wood == 0
 
 
+def test_advance_deer_pen_consumes_feed():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.deer = 3
+    tribe.food = 100
+
+    with mock.patch("backend.simulation.random.random", return_value=0.999):  # no natural breed
+        sim._advance_deer_pen(tribe)
+
+    assert tribe.food == 100 - config.DEER_UPKEEP_FOOD_PER_MEMBER * 3
+    assert tribe.deer == 3
+
+
+def test_advance_deer_pen_shrinks_without_enough_feed():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.deer = 2
+    tribe.food = 0
+
+    sim._advance_deer_pen(tribe)
+
+    assert tribe.deer == 1
+    assert any("lost for lack of feed" in entry for entry in tribe.history)
+
+
+def test_advance_deer_pen_can_naturally_breed_once_established_and_fed():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.deer = config.DEER_MIN_SIZE_TO_BREED
+    tribe.food = 1000
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):  # below any chance
+        sim._advance_deer_pen(tribe)
+
+    assert tribe.deer == config.DEER_MIN_SIZE_TO_BREED + 1
+
+
+def test_advance_deer_pen_does_nothing_with_an_empty_herd():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.food = 100
+
+    sim._advance_deer_pen(tribe)
+
+    assert tribe.food == 100
+    assert tribe.deer == 0
+
+
+def test_advance_tannery_yield_feeds_deer_into_extra_fur_once_pen_exists():
+    """Explicit follow-up, 2026-09-11: "DEER_PEN that will auto-feed the Tannery
+    1-3 deer a day" -- additive on top of the flat yield, never replacing it."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.tannery_built = True
+    tribe.deer_pen_built = True
+    tribe.deer = 10
+
+    with mock.patch("backend.simulation.random.randint", return_value=3):
+        sim._advance_tannery_yield(tribe)
+
+    assert tribe.deer == 7  # 3 fed in
+    assert tribe.unique_resources["Fur"] == config.TANNERY_YIELD_PER_CYCLE + 3 * config.FUR_PER_DEER_FED
+
+
+def test_advance_tannery_yield_feed_is_capped_by_the_actual_herd_size():
+    from unittest import mock
+
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.tannery_built = True
+    tribe.deer_pen_built = True
+    tribe.deer = 2
+
+    with mock.patch("backend.simulation.random.randint", return_value=3):  # would ask for more than exists
+        sim._advance_tannery_yield(tribe)
+
+    assert tribe.deer == 0
+    assert tribe.unique_resources["Fur"] == config.TANNERY_YIELD_PER_CYCLE + 2 * config.FUR_PER_DEER_FED
+
+
+def test_advance_tannery_yield_does_nothing_extra_without_a_deer_pen():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.tannery_built = True
+    tribe.deer = 10  # a herd with no pen shouldn't happen in practice, but prove it's inert regardless
+
+    sim._advance_tannery_yield(tribe)
+
+    assert tribe.deer == 10
+    assert tribe.unique_resources["Fur"] == config.TANNERY_YIELD_PER_CYCLE
+
+
 def test_advance_tannery_yield_flows_in_once_built_and_settled():
     from backend import config
 

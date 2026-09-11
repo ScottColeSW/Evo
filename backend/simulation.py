@@ -135,6 +135,7 @@ ONE_TIME_BUILD_FLAGS = {
     "BUILD_KITCHEN": "kitchen_built", "BUILD_MOAT": "moat_built",
     "BUILD_KEEP": "keep_built", "BUILD_FORTRESS": "fortress_built",
     "BUILD_CASTLE": "castle_built", "BUILD_TANNERY": "tannery_built",
+    "BUILD_DEER_PEN": "deer_pen_built",
     "BUILD_MINE": "mine_built", "BUILD_FORGE": "forge_built",
     "BUILD_ROAD": "road_built", "BUILD_HATCHERY": "hatchery_built",
     "BUILD_COOP": "coop_built",
@@ -498,6 +499,11 @@ AFFORDABILITY_CHECKS = {
     "BUILD_TANNERY": lambda t, w: (
         t.hunt_ever_succeeded and t.wood >= config.TANNERY_WOOD_COST and t.stone >= config.TANNERY_STONE_COST
         and _can_place(t, w, "tannery")
+    ),
+    "BUILD_DEER_PEN": lambda t, w: (
+        t.tannery_built and t.hunt_deer_success_count >= config.DEER_PEN_HUNT_THRESHOLD
+        and t.wood >= config.DEER_PEN_WOOD_COST and t.stone >= config.DEER_PEN_STONE_COST
+        and _can_place(t, w, "deer_pen")
     ),
     "BUILD_HATCHERY": lambda t, w: (
         t.eggs_ever_gathered and t.wood >= config.HATCHERY_WOOD_COST and t.stone >= config.HATCHERY_STONE_COST
@@ -1130,6 +1136,10 @@ class Tribe:
         # catch) and a successfully-built fire, ever. One-way, same shape as every
         # other "proven once" flag here.
         self.hunt_ever_succeeded = False
+        # See actions.py._build_deer_pen -- a real count, distinct from
+        # hunt_ever_succeeded's single flip, since the Deer Pen's own gate is
+        # "3-5 successful hunts," not just one.
+        self.hunt_deer_success_count = 0
         # See Simulation._advance_automatic_fire -- the other real "found food"
         # prerequisite fire can ignite from, alongside a successful hunt. GATHER_FOOD
         # never has a hazard/failure branch (see actions.py._forage), so this is set
@@ -1299,6 +1309,13 @@ class Tribe:
         # unique_resources dict rather than a second parallel system.
         self.tannery_built = False
         self.tannery_site: tuple[int, int] | None = None
+        # See actions.py._build_deer_pen -- a live, breeding captive herd (same
+        # feed-or-shrink/natural-breed shape as tribe.flock, see Simulation.
+        # _advance_deer_pen), feeding Fur into the Tannery above on top of its
+        # existing flat passive yield.
+        self.deer_pen_built = False
+        self.deer = 0
+        self.deer_pen_site: tuple[int, int] | None = None
         # See actions.py._build_forge/_forge_item/_use_item -- the natural next step
         # once a Mine actually produces something (explicit request: "we skipped a
         # beat" between mining ore and doing anything with it). Gated on mine_built
@@ -1574,6 +1591,8 @@ class Tribe:
             "hazard_landmarks": self.hazard_landmarks,
             "kitchen_built": self.kitchen_built,
             "tannery_built": self.tannery_built,
+            "deer_pen_built": self.deer_pen_built,
+            "deer": self.deer,
             "forge_built": self.forge_built,
             "items": self.items,
             "object_creator_built": self.object_creator_built,
@@ -1656,6 +1675,7 @@ class Tribe:
 _ONE_OFF_STRUCTURE_FLAGS: tuple[tuple[str, str], ...] = (
     ("sawmill_built", "Sawmill"), ("quarry_built", "Quarry"), ("dock_built", "Dock"),
     ("fishery_built", "Fishery"), ("kitchen_built", "Kitchen"), ("tannery_built", "Tannery"),
+    ("deer_pen_built", "Deer Pen"),
     ("mine_built", "Mine"), ("forge_built", "Forge"), ("keep_built", "Keep"),
     ("fortress_built", "Fortress"), ("castle_built", "Castle"), ("road_built", "Road"),
     ("hatchery_built", "Hatchery"), ("coop_built", "Coop"), ("bath_house_built", "Bath House"),
@@ -2400,6 +2420,7 @@ class Simulation:
                 self._celebrate_settling(tribe)
             self._advance_mine_yield(tribe)
             self._advance_in_territory_site_yields(tribe)
+            self._advance_deer_pen(tribe)
             self._advance_tannery_yield(tribe)
             self._advance_resource_trails(tribe)
             self._advance_flock(tribe)
@@ -6778,12 +6799,44 @@ class Simulation:
         if quarry_count:
             self._capped_add(tribe, "stone", per_site * quarry_count)
 
+    def _advance_deer_pen(self, tribe: Tribe) -> None:
+        """A captive herd isn't a one-way counter -- it eats, and once established
+        can breed on its own, the same feed-or-shrink/natural-breed shape
+        _advance_flock already uses for the tribe's flock. No genetics/lineage
+        crossover here, unlike hatching -- "breed to recursively have the
+        resources automagically" describes population growth, not named
+        individuals with inherited traits, so this stays a flat +1 roll."""
+        if tribe.deer <= 0:
+            return
+        feed_needed = config.DEER_UPKEEP_FOOD_PER_MEMBER * tribe.deer
+        if tribe.food < feed_needed:
+            tribe.deer -= 1
+            tribe.history.append("part of the deer herd is lost for lack of feed")
+            return
+        tribe.food -= feed_needed
+        if tribe.deer >= config.DEER_MIN_SIZE_TO_BREED and random.random() < config.DEER_NATURAL_BREED_CHANCE:
+            tribe.deer += 1
+
     def _advance_tannery_yield(self, tribe: Tribe) -> None:
         """Once a tannery is built (actions.py._build_tannery), Fur flows in
         daily -- mirrors _advance_mine_yield exactly, into the same
-        unique_resources dict."""
+        unique_resources dict.
+
+        Explicit follow-up, 2026-09-11: "DEER_PEN that will auto-feed the Tannery
+        1-3 deer a day." Once a Deer Pen exists too (which already implies a
+        Tannery -- see actions.py._build_deer_pen's own gate), this feeds a real
+        number of captive deer into extra Fur each cycle, additive on top of the
+        flat yield above, never replacing it -- a tribe with a Pen is strictly
+        better off, never worse. The herd's own upkeep/breeding (_advance_deer_pen,
+        called just before this in step()) is what makes this sustainable
+        ("automagically") instead of a one-time drain."""
         if tribe.tannery_built and self._is_camped(tribe):
             self._capped_unique_add(tribe, "Fur", config.TANNERY_YIELD_PER_CYCLE)
+        if tribe.deer_pen_built and tribe.deer > 0:
+            fed = min(tribe.deer, random.randint(config.DEER_PEN_DAILY_FEED_MIN, config.DEER_PEN_DAILY_FEED_MAX))
+            if fed > 0:
+                tribe.deer -= fed
+                self._capped_unique_add(tribe, "Fur", fed * config.FUR_PER_DEER_FED)
 
     def _advance_resource_trails(self, tribe: Tribe) -> None:
         """Explicit request: "if they have found a Quarry, Mine, Stand of Trees
@@ -6810,7 +6863,7 @@ class Simulation:
         every single cycle."""
         if self.cycle % config.DAY_LENGTH_CYCLES != 0:
             return
-        for site in (tribe.lumber_site, tribe.quarry_site, tribe.mine_site, tribe.tannery_site):
+        for site in (tribe.lumber_site, tribe.quarry_site, tribe.mine_site, tribe.tannery_site, tribe.deer_pen_site):
             if site is None:
                 continue
             for px, py in _interpolated_path(tribe.x, tribe.y, site[0], site[1]):

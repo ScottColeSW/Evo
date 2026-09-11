@@ -325,6 +325,10 @@ def _hunt_deer(sim, tribe, biome, target):
         base += config.TANNERY_MEAT_BONUS_PER_HUNT
     amount = round(base * _food_multiplier(tribe))
     tribe.hunt_ever_succeeded = True  # see actions.py._cook_food's own prerequisite
+    # See actions.py._build_deer_pen -- a real hunt-success count, distinct from
+    # hunt_ever_succeeded's single flip, since the Deer Pen's own gate is "3-5
+    # successful hunts," not just one.
+    tribe.hunt_deer_success_count += 1
     return _add_capped(sim, tribe, "food", amount, "food")
 
 
@@ -1099,6 +1103,43 @@ def _build_tannery(sim, tribe, biome, target):
         tribe.tannery_site = (chosen_site["x"], chosen_site["y"])
     sim._award_trophy(tribe, "Tanner")
     return "a tannery is built -- Fur will flow in steadily from now on"
+
+
+def _build_deer_pen(sim, tribe, biome, target):
+    """Explicit follow-up, 2026-09-11: "if they successfully HUNT_DEER 3-5 they
+    can build a DEER_PEN that will auto-feed the Tannery 1-3 deer a day. The Deer
+    can breed to recursively have the resources automagically." Same shape as the
+    Fowl Coop (see actions.py._build_coop), applied to deer/Fur instead of fowl/
+    flock. Gated on tribe.tannery_built (feeding an existing Tannery is the whole
+    point) plus a real hunt-success count (tribe.hunt_deer_success_count, see
+    _hunt_deer above), not just Tannery's own single-success hunt_ever_succeeded.
+
+    Unlike GATHER_EGGS, HUNT_DEER has no live-capture precedent -- it's pure
+    lethal harvest, so there's no existing action to bootstrap a captive herd
+    from. Building the Pen is itself the founding moment (config.
+    DEER_PEN_FOUNDING_COUNT): trapping a couple of deer alive during
+    construction, the same way GATHER_EGGS already narrates finding a live egg."""
+    if tribe.deer_pen_built or not tribe.tannery_built:
+        return None
+    if tribe.hunt_deer_success_count < config.DEER_PEN_HUNT_THRESHOLD:
+        return None
+    if tribe.wood < config.DEER_PEN_WOOD_COST or tribe.stone < config.DEER_PEN_STONE_COST:
+        return None
+    slot = architect.find_free_slot(sim.world, tribe, "deer_pen")
+    if slot is None:
+        return None
+    tribe.wood -= config.DEER_PEN_WOOD_COST
+    tribe.stone -= config.DEER_PEN_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["deer_pen"]
+    architect.record_building(tribe, "deer_pen", slot[0], slot[1], w, h, sim.cycle)
+    tribe.deer_pen_built = True
+    tribe.deer = config.DEER_PEN_FOUNDING_COUNT
+    stand_sites = [s for s in tribe.wildlife_sites if s["type"] == "Deer Stand"]
+    if stand_sites:
+        chosen_site = stand_sites[-1]
+        tribe.deer_pen_site = (chosen_site["x"], chosen_site["y"])
+    sim._award_trophy(tribe, "Deer Keeper")
+    return f"a deer pen is built -- {tribe.deer} deer trapped alive to start the herd, feeding the tannery from now on"
 
 
 def _build_hatchery(sim, tribe, biome, target):
@@ -2974,6 +3015,7 @@ ACTION_REGISTRY = {
     "BUILD_MINE": _build_mine,
     "GATHER_ORE": _gather_ore,
     "BUILD_TANNERY": _build_tannery,
+    "BUILD_DEER_PEN": _build_deer_pen,
     "BUILD_HATCHERY": _build_hatchery,
     "BUILD_COOP": _build_coop,
     "BUILD_BATH_HOUSE": _build_bath_house,
@@ -3042,6 +3084,7 @@ ACTION_DESCRIPTIONS = {
     "BUILD_MINE": "Excavate a mine at a vein your scouts have already found, using stored wood and stone -- only possible once a quarry stands and at least one vein is known. A one-time, permanent structure, but its unique resource has to actually be fetched (GATHER_ORE) before it starts flowing in steadily.",
     "GATHER_ORE": "Fetch the Mine's unique resource -- only possible once a mine has been excavated. The first successful fetch also starts a small, permanent daily supply from then on, the same way fishing works once learned.",
     "BUILD_TANNERY": "Build a tannery using stored wood and stone -- only possible once a hunt has actually succeeded. A one-time, permanent structure at your settlement: Fur flows in steadily from then on, and every successful hunt yields extra meat from then on.",
+    "BUILD_DEER_PEN": "Build a deer pen using stored wood and stone -- only possible once a tannery already stands and several hunts have actually succeeded. A one-time, permanent structure: a small captive herd starts immediately, breeds on its own if fed, and feeds the tannery extra Fur every cycle on top of what it already produces.",
     "BUILD_HATCHERY": "Build a hatchery using stored wood and stone -- only possible once a wild egg has actually been found and hatched. A one-time, permanent structure at your settlement: the flock grows on its own much more reliably from then on.",
     "BUILD_COOP": "Build a coop using stored wood and stone -- only possible once the flock has at least one member. A one-time, permanent structure: paired with a Hatchery, gathered and laid eggs are actually incubated into new flock automatically from then on, instead of the flock only growing by chance.",
     "BUILD_BATH_HOUSE": "Build a bath house using stored wood and stone -- no prerequisite beyond being settled. A one-time, permanent structure at your settlement: the tribe's daily food and water consumption drops from then on.",

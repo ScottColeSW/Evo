@@ -148,7 +148,7 @@ ERAS: tuple[Era, ...] = (
         # grouped, not because either still depends on the other.
         unlocks_actions=(
             "CONSTRUCT_WALL", "BUILD_LONG_HOUSE", "UPGRADE_LONG_HOUSE", "BUILD_DOCK", "BUILD_FISHERY",
-            "BUILD_SAWMILL", "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_TANNERY", "BUILD_WAREHOUSE",
+            "BUILD_SAWMILL", "BUILD_QUARRY", "BUILD_KITCHEN", "BUILD_TANNERY", "BUILD_DEER_PEN", "BUILD_WAREHOUSE",
             "UPGRADE_WAREHOUSE", "BUILD_HATCHERY", "BUILD_COOP", "BUILD_BATH_HOUSE", "BUILD_WELL",
         ),
         announcement="{tribe} crosses into the Cognitive Horizon -- reflection begins to compound into wisdom.",

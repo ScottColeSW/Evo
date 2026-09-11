@@ -1824,6 +1824,58 @@ def test_build_tannery_uses_a_scouted_rabbit_warren_opportunistically():
     assert tribe.tannery_site == (10, 12)
 
 
+def test_build_deer_pen_requires_a_tannery_and_enough_successful_hunts():
+    """Explicit follow-up, 2026-09-11: "if they successfully HUNT_DEER 3-5 they
+    can build a DEER_PEN." Gated on tribe.tannery_built (feeding an existing
+    Tannery is the whole point) plus a real hunt-success count, not just
+    Tannery's own single-success hunt_ever_succeeded."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = config.DEER_PEN_WOOD_COST
+    tribe.stone = config.DEER_PEN_STONE_COST
+    tribe.hunt_deer_success_count = config.DEER_PEN_HUNT_THRESHOLD
+
+    # No tannery yet -- refused even with enough hunts.
+    assert ACTION_REGISTRY["BUILD_DEER_PEN"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.deer_pen_built is False
+
+    tribe.tannery_built = True
+    tribe.hunt_deer_success_count = config.DEER_PEN_HUNT_THRESHOLD - 1
+    # Tannery exists now, but not enough hunts yet.
+    assert ACTION_REGISTRY["BUILD_DEER_PEN"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.deer_pen_built is False
+
+    tribe.hunt_deer_success_count = config.DEER_PEN_HUNT_THRESHOLD
+    result = ACTION_REGISTRY["BUILD_DEER_PEN"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.deer_pen_built is True
+    assert tribe.deer == config.DEER_PEN_FOUNDING_COUNT
+    assert "deer pen is built" in result
+    assert any(t["name"] == "Deer Keeper" for t in tribe.trophies)
+
+
+def test_build_deer_pen_uses_a_scouted_deer_stand_opportunistically():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = config.DEER_PEN_WOOD_COST
+    tribe.stone = config.DEER_PEN_STONE_COST
+    tribe.tannery_built = True
+    tribe.hunt_deer_success_count = config.DEER_PEN_HUNT_THRESHOLD
+    # A Rabbit Warren alone doesn't count -- only a Deer Stand is relevant here.
+    tribe.wildlife_sites.append({"x": 7, "y": 9, "type": "Rabbit Warren"})
+    tribe.wildlife_sites.append({"x": 14, "y": 20, "type": "Deer Stand"})
+
+    ACTION_REGISTRY["BUILD_DEER_PEN"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.deer_pen_site == (14, 20)
+
+
 def test_hunt_deer_yields_a_meat_bonus_once_tannery_is_built():
     """Explicit request: "it also gives the meat to the kitchen (2 meat per
     catch) which cooks it (multiplier)"."""
@@ -3046,6 +3098,34 @@ def test_hunt_deer_wolf_attack_does_not_mark_hunt_ever_succeeded():
         ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "forest", _NO_TARGET)
 
     assert tribe.hunt_ever_succeeded is False
+
+
+def test_hunt_deer_success_increments_the_deer_pen_hunt_count():
+    """Explicit follow-up, 2026-09-11: "if they successfully HUNT_DEER 3-5 they
+    can build a DEER_PEN" -- a real count, distinct from hunt_ever_succeeded's
+    single flip."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    with mock.patch("backend.actions.random.random", return_value=0.99):  # miss the wolf hazard
+        ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "forest", _NO_TARGET)
+        ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "forest", _NO_TARGET)
+
+    assert tribe.hunt_deer_success_count == 2
+
+
+def test_hunt_deer_wolf_attack_does_not_increment_the_deer_pen_hunt_count():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # trigger the wolf hazard
+        ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "forest", _NO_TARGET)
+
+    assert tribe.hunt_deer_success_count == 0
 
 
 def test_hunt_deer_wolf_attack_marks_a_map_encounter():

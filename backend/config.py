@@ -562,7 +562,7 @@ BUILDING_FOOTPRINTS = {
     "keep": (4, 4), "fortress": (6, 6), "castle": (8, 8),
     "sawmill": (3, 3), "quarry": (3, 3), "mine": (3, 3), "forge": (2, 2),
     "warehouse": (3, 3),
-    "kitchen": (2, 2), "tannery": (2, 2), "dock": (2, 2), "fishery": (2, 4),
+    "kitchen": (2, 2), "tannery": (2, 2), "deer_pen": (2, 2), "dock": (2, 2), "fishery": (2, 4),
     "farm_plot": (3, 3), "coop": (2, 2), "fire": (1, 1), "hatchery": (2, 2),
     "boat": (2, 3), "bath_house": (2, 2), "library": (3, 3), "well": (2, 2),
     "object_creator": (3, 3), "created_structure": (2, 2),
@@ -1778,6 +1778,35 @@ TANNERY_YIELD_PER_CYCLE = 4
 # Simulation._report_hunting_party_home), on the theory that a real tannery
 # means less of the catch goes to waste.
 TANNERY_MEAT_BONUS_PER_HUNT = 2
+
+# BUILD_DEER_PEN (backend/actions.py): explicit follow-up, 2026-09-11 -- "if they
+# successfully HUNT_DEER 3-5 they can build a DEER_PEN that will auto-feed the
+# Tannery 1-3 deer a day. The Deer can breed to recursively have the resources
+# automagically." Same shape as the Fowl Coop (a real, chief-built structure
+# housing a live, breeding population that feeds a companion building), applied
+# to deer/Fur instead of fowl/flock. Unlike GATHER_EGGS, HUNT_DEER has no live-
+# capture precedent (it's pure lethal harvest) -- building the Pen is itself the
+# founding moment (DEER_PEN_FOUNDING_COUNT), not something bootstrapped from an
+# existing action. Gated on tribe.tannery_built (feeding an existing Tannery is
+# the whole point) plus a real hunt-success count (tribe.hunt_deer_success_count,
+# distinct from Tannery's own single-success hunt_ever_succeeded gate). All
+# invented first-pass defaults, not tuned against live data yet.
+DEER_PEN_HUNT_THRESHOLD = 3
+DEER_PEN_WOOD_COST = 15
+DEER_PEN_STONE_COST = 15
+DEER_PEN_FOUNDING_COUNT = 2
+# Mirrors FLOCK_UPKEEP_FOOD_PER_MEMBER/FLOCK_MIN_SIZE_TO_BREED/
+# FLOCK_NATURAL_HATCH_CHANCE's own shape -- deer eat more per head than fowl.
+DEER_UPKEEP_FOOD_PER_MEMBER = 2
+DEER_MIN_SIZE_TO_BREED = 2
+DEER_NATURAL_BREED_CHANCE = 0.15
+# The literal "1-3 deer a day" -- Simulation._advance_tannery_yield feeds this
+# many captive deer (capped by however many actually exist) into Fur production
+# each cycle, on top of the existing flat TANNERY_YIELD_PER_CYCLE, never
+# replacing it.
+DEER_PEN_DAILY_FEED_MIN = 1
+DEER_PEN_DAILY_FEED_MAX = 3
+FUR_PER_DEER_FED = 2
 
 # BUILD_KITCHEN (backend/actions.py): explicit follow-up -- "we might have to let
 # them build a kitchen which improves cooked food to excellent food yielding 3
