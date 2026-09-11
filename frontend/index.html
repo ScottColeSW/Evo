@@ -883,10 +883,20 @@ function checkConquestBattle(state) {
 }
 
 function battleLogLineForRound(battle, round) {
-  const winnerName = round.attacker_won ? battle.attacker_name : battle.defender_name;
-  const cls = round.attacker_won ? "attacker-line" : "defender-line";
-  return `<div class="${cls}">Round ${round.round}: ${escapeHtml(winnerName)} strikes true -- `
-    + `${escapeHtml(battle.attacker_name)} ${round.attacker_population} / ${escapeHtml(battle.defender_name)} ${round.defender_population}</div>`;
+  // Explicit request, 2026-09-11: "I would like it to show the Turn alternating in
+  // the text description... Tribe 1 attacks, Tribe 2 attacks, Tribe 1 attacks..."
+  // The round's winner already rotates round to round (backend/actions.py's
+  // _declare_conquest rolls a fresh population-share/Might-adjusted chance every
+  // round) -- this was always a real back-and-forth, just narrated as a single
+  // "X strikes true" line naming only that round's winner. Both sides now get their
+  // own attack line every round, win or lose, so the exchange reads as one.
+  const attackerResult = round.attacker_won ? "strikes true" : "but the blow glances off";
+  const defenderResult = round.attacker_won ? "but the blow glances off" : "and strikes true";
+  return (
+    `<div class="attacker-line">Round ${round.round}: ${escapeHtml(battle.attacker_name)} attacks -- ${attackerResult}</div>`
+    + `<div class="defender-line">Round ${round.round}: ${escapeHtml(battle.defender_name)} attacks back -- ${defenderResult} -- `
+    + `${escapeHtml(battle.attacker_name)} ${round.attacker_population} / ${escapeHtml(battle.defender_name)} ${round.defender_population}</div>`
+  );
 }
 
 function renderBattleMeters(battle, attackerPop, defenderPop) {
