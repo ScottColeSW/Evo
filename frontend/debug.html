@@ -170,18 +170,35 @@ function escapeHtml(s) {
 // columns." tribe.to_dict() is sent whole (see Simulation.debug_snapshot's
 // own comment) -- picks the same core fields the main board's own sidebar
 // leads with, so this never has to re-derive a second field list.
+//
+// Live report, 2026-09-11: "Headers on the LLM Console are partially
+// incomplete" -- confirmed, this list only ever covered 7 buildings and was
+// never updated as the roster grew (Coop/Hatchery/Deer Pen/Sawmill/Quarry/
+// Mine/Dock/Keep/Fortress/Castle/Barracks/Forge/Library/Object Creator all
+// missing). frontend/index.html's own GO_BUILDING_ICONS is the maintained,
+// canonical list, but this is a separate static page with no shared JS module
+// between them -- this has to be its own copy. Any future building's flag
+// needs adding to BOTH lists, the same "frontend/backend logic drift" bug
+// class this project already tracks, just frontend-to-frontend this time.
+const BUILD_HEADER_FLAGS = [
+  ["kitchen_built", "Kitchen"], ["fishery_built", "Fishery"], ["dock_built", "Dock"],
+  ["sawmill_built", "Sawmill"], ["quarry_built", "Quarry"], ["mine_built", "Mine"],
+  ["tannery_built", "Tannery"], ["deer_pen_built", "Deer Pen"],
+  ["hatchery_built", "Hatchery"], ["coop_built", "Coop"],
+  ["bath_house_built", "Bath House"], ["well_built", "Well"], ["library_built", "Library"],
+  ["keep_built", "Keep"], ["fortress_built", "Fortress"], ["castle_built", "Castle"],
+  ["moat_built", "Moat"], ["road_built", "Road"], ["forge_built", "Forge"],
+  ["object_creator_built", "Object Creator"],
+];
+
 function buildHeaderText(t) {
   const pop = t.population ?? 0;
   const era = t.era_label ?? "?";
   const res = `🪵${t.wood ?? 0} 🪨${t.stone ?? 0} 🍖${t.food ?? 0} 💧${t.water ?? 0}`;
-  const buildings = [];
-  if (t.kitchen_built) buildings.push("Kitchen");
+  const buildings = BUILD_HEADER_FLAGS.filter(([flag]) => t[flag]).map(([, label]) => label);
   if (t.long_houses_built) buildings.push(`${t.long_houses_built} Long House`);
-  if (t.fishery_built) buildings.push("Fishery");
-  if (t.tannery_built) buildings.push("Tannery");
   if (t.warehouses_built) buildings.push(`${t.warehouses_built} Warehouse${t.warehouse_upgrades ? `+${t.warehouse_upgrades}up` : ""}`);
-  if (t.bath_house_built) buildings.push("Bath House");
-  if (t.well_built) buildings.push("Well");
+  if (t.barracks_built) buildings.push(`${t.barracks_built} Barracks${t.barracks_upgrades ? `+${t.barracks_upgrades}up` : ""}`);
   const buildLine = buildings.length ? buildings.join(", ") : "no structures yet";
   return { pop, era, res, buildLine };
 }
