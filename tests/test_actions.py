@@ -3794,7 +3794,11 @@ def test_advance_exploration_party_outbound_spots_a_nearby_rival_settlement():
 
 def test_advance_exploration_party_outbound_discovers_a_landmark():
     """Explicit request: "leave Landmarks (with a reason to go there - maybe a
-    fun unique resource but not ore) as they find them.\""""
+    fun unique resource but not ore) as they find them." Discovery is
+    world.find_nearby_site("landmark", ...) now (2026-09-11 fix -- see
+    Simulation._advance_exploration_party_outbound's own comment), mocked the
+    same way sibling site discoveries already are, not an independent
+    random.random() roll."""
     from unittest import mock
 
     from backend import config
@@ -3807,7 +3811,7 @@ def test_advance_exploration_party_outbound_discovers_a_landmark():
         "food_gathered": 0, "water_gathered": 0, "phase": "outbound", "lead_scout": "Rivenna",
     }
 
-    with mock.patch("backend.simulation.random.random", return_value=0.0):
+    with mock.patch("backend.simulation.find_nearby_site", return_value=(50, 50)):
         sim._advance_exploration_party_outbound(tribe, exp, "plains", "Rivenna")
 
     assert len(tribe.landmarks) == 1

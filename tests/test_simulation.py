@@ -1627,7 +1627,11 @@ def test_every_celebration_awards_fame():
 def test_landmark_discovery_holds_a_boat_party_while_on_the_water_with_a_boat():
     """Explicit request: "When a Boat encounters a Landmark, it has a Boat
     Party (same look-effect as Settlement Celebration) celebrating the
-    Landmark.\""""
+    Landmark." Landmark discovery is world.find_nearby_site("landmark", ...)
+    now (2026-09-11 fix, see Simulation._advance_exploration_party_outbound's
+    own comment) -- mocked the same way sibling site discoveries already are
+    (test_discover_sites_along_route_*), not an independent random.random()
+    roll."""
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
     tribe = sim.tribes["tribe_0"]
     sim._found_territory(tribe)
@@ -1635,7 +1639,7 @@ def test_landmark_discovery_holds_a_boat_party_while_on_the_water_with_a_boat():
     exp = {"pos": [tribe.x, tribe.y], "wood_gathered": 0, "stone_gathered": 0, "food_gathered": 0, "water_gathered": 0,
            "day": 0, "max_days": 6}
 
-    with mock.patch("backend.simulation.random.random", return_value=0.0):
+    with mock.patch("backend.simulation.find_nearby_site", return_value=(tribe.x, tribe.y)):
         sim._advance_exploration_party_outbound(tribe, exp, "river", "Test Scout")
 
     assert any("holds a boat party" in entry for entry in tribe.history)
@@ -1650,11 +1654,28 @@ def test_landmark_discovery_is_the_plain_report_without_a_boat_on_water():
     exp = {"pos": [tribe.x, tribe.y], "wood_gathered": 0, "stone_gathered": 0, "food_gathered": 0, "water_gathered": 0,
            "day": 0, "max_days": 6}
 
-    with mock.patch("backend.simulation.random.random", return_value=0.0):
+    with mock.patch("backend.simulation.find_nearby_site", return_value=(tribe.x, tribe.y)):
         sim._advance_exploration_party_outbound(tribe, exp, "river", "Test Scout")
 
     assert not any("holds a boat party" in entry for entry in tribe.history)
     assert any("exploration party discovers" in entry for entry in tribe.history)
+
+
+def test_landmark_discovery_finds_nothing_when_no_seed_point_is_nearby():
+    """No mocking of find_nearby_site here -- confirms the real, unmocked lookup
+    (a genuinely nearby pre-seeded landmark, or none) is what gates discovery
+    now, not an independent chance roll."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    sim._found_territory(tribe)
+    exp = {"pos": [tribe.x, tribe.y], "wood_gathered": 0, "stone_gathered": 0, "food_gathered": 0, "water_gathered": 0,
+           "day": 0, "max_days": 6}
+
+    with mock.patch("backend.simulation.find_nearby_site", return_value=None):
+        sim._advance_exploration_party_outbound(tribe, exp, "plains", "Test Scout")
+
+    assert tribe.landmarks == []
+    assert not any("discovers" in entry for entry in tribe.history)
 
 
 def test_landmark_discovery_awards_more_fame_inside_own_territory():
@@ -1671,7 +1692,7 @@ def test_landmark_discovery_awards_more_fame_inside_own_territory():
     exp = {"pos": list(tribe.territory_center), "wood_gathered": 0, "stone_gathered": 0, "food_gathered": 0,
            "water_gathered": 0, "day": 0, "max_days": 6}
 
-    with mock.patch("backend.simulation.random.random", return_value=0.0):
+    with mock.patch("backend.simulation.find_nearby_site", return_value=tuple(tribe.territory_center)):
         sim._advance_exploration_party_outbound(tribe, exp, "plains", "Test Scout")
 
     assert tribe.fame == config.FAME_PER_LANDMARK_IN_TERRITORY  # landed right on the town center -- inside territory
@@ -1687,7 +1708,7 @@ def test_landmark_discovery_outside_territory_awards_the_smaller_amount():
     exp = {"pos": [far_x, far_y], "wood_gathered": 0, "stone_gathered": 0, "food_gathered": 0, "water_gathered": 0,
            "day": 0, "max_days": 6}
 
-    with mock.patch("backend.simulation.random.random", return_value=0.0):
+    with mock.patch("backend.simulation.find_nearby_site", return_value=(far_x, far_y)):
         sim._advance_exploration_party_outbound(tribe, exp, "plains", "Test Scout")
 
     assert tribe.fame == config.FAME_PER_LANDMARK
@@ -4792,6 +4813,74 @@ def test_confirmed_water_sites_are_surfaced_as_a_durable_fact():
 
     assert "confirmed water source at (12,34)" in entities
     assert "confirmed water source at (40,37)" in entities
+
+
+def test_build_coop_nudge_fires_once_a_flock_exists():
+    """Live-run finding, 2026-09-11: BUILD_COOP was never chosen even once
+    across a 619-cycle run despite the flock growing to 52 -- the same
+    isolated-action gap already fixed for BUILD_TANNERY/BUILD_KITCHEN. The
+    nudge lives in _prepare_turn (not _build_visible_entities), same shape and
+    same test fixture as its sibling test_sawmill_nudge_requires_a_real_
+    successful_wood_gather just above -- BUILD_COOP's own placement check
+    needs a real founded territory, not just the era unlocked."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.flock = 3
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "coop built at the settlement" in request["prompt"]
+
+
+def test_build_coop_nudge_is_silent_without_a_flock_or_once_already_built():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "coop built at the settlement" not in request["prompt"]
+
+    tribe.flock = 3
+    tribe.coop_built = True
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "coop built at the settlement" not in request["prompt"]
+
+
+def test_build_deer_pen_nudge_fires_once_eligible():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.tannery_built = True
+    tribe.hunt_deer_success_count = config.DEER_PEN_HUNT_THRESHOLD
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "deer pen built at the settlement" in request["prompt"]
+
+
+def test_build_deer_pen_nudge_is_silent_below_the_hunt_threshold():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.tannery_built = True
+    tribe.hunt_deer_success_count = config.DEER_PEN_HUNT_THRESHOLD - 1
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "deer pen built at the settlement" not in request["prompt"]
 
 
 def test_water_security_progress_nudge_names_sites_and_the_well_alternative():

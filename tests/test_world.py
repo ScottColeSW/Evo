@@ -1,6 +1,8 @@
 from backend import config
 from backend.simulation import Tribe
-from backend.world import Landscape, biome_at, find_nearby_site, mark_visited_sector, sector_of, site_seed_points
+from backend.world import (
+    SITE_SEED_TYPES, Landscape, biome_at, find_nearby_site, mark_visited_sector, sector_of, site_seed_points,
+)
 
 
 def test_sector_of_buckets_by_the_configured_size():
@@ -45,9 +47,20 @@ def test_site_seed_points_are_sparse_not_every_cell_filled():
 
 
 def test_site_seed_points_never_land_on_an_unbuildable_biome():
-    for seed_type in ("lumber", "wildlife", "quarry", "mine"):
+    # Iterates SITE_SEED_TYPES itself (not a hardcoded copy) so a future new
+    # seed type is covered automatically -- explicit follow-up, 2026-09-11,
+    # after "landmark" was added to this exact list to fix a real live-run
+    # report of landmarks appearing on river/lake tiles.
+    for seed_type in SITE_SEED_TYPES:
         for x, y in site_seed_points(seed_type, 100):
             assert biome_at(x, y) not in config.UNBUILDABLE_BIOMES
+
+
+def test_landmark_seed_points_are_sparser_than_the_resource_sites():
+    """Live report, 2026-09-11: "we can reduce the number too" -- landmarks get
+    their own, lower SITE_SEED_FILL_PROBABILITY_OVERRIDES entry, distinct from
+    the resource sites' own tuned density."""
+    assert len(site_seed_points("landmark", 100)) < len(site_seed_points("quarry", 100))
 
 
 def test_find_nearby_site_returns_none_when_nothing_is_within_radius():

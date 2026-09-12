@@ -347,9 +347,23 @@ def mark_visited_sector(tribe, x: int, y: int) -> None:
 # itself sits on (world.UNIQUE_RESOURCE_BY_BIOME), preserving the one deliberate
 # exception -- ore is still biome-tied, just the location is now a real place, not a
 # fresh roll.
-SITE_SEED_TYPES = ("lumber", "wildlife", "quarry", "mine")
+SITE_SEED_TYPES = ("lumber", "wildlife", "quarry", "mine", "landmark")
 SITE_SEED_GRID_CELL_SIZE = 18
 SITE_SEED_FILL_PROBABILITY = 0.55
+# Live report, 2026-09-11: "Objects placed on the board (landmarks, hazards,
+# etc.)... need to be reorganized/redistributed. Ideally, they would not be in
+# the Water to start. There are plenty of open spaces just don't cluster and we
+# can reduce the number too." Confirmed root cause: reward landmarks
+# (Simulation._advance_exploration_party_outbound, tribe.landmarks) used to be
+# an independent random.random() roll at a party's current position every
+# single outbound day, with zero biome check at all -- unlike this pre-seeded
+# system, which already excludes UNBUILDABLE_BIOMES (river/lake/ocean/cliffs/
+# shoals/volcano) and is naturally declustered (one point max per grid cell).
+# "landmark" now rides this exact system instead of its own separate roll,
+# inheriting both properties for free. Given its own (lower) fill probability,
+# distinct from the resource sites' own tuned density, directly addressing
+# "reduce the number too" without touching lumber/wildlife/quarry/mine.
+SITE_SEED_FILL_PROBABILITY_OVERRIDES = {"landmark": 0.25}
 SITE_DISCOVERY_RADIUS = 8
 
 
@@ -357,10 +371,11 @@ SITE_DISCOVERY_RADIUS = 8
 def site_seed_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], ...]:
     rng = random.Random(f"site_seed:{seed_type}:{grid_size}")
     cell = SITE_SEED_GRID_CELL_SIZE
+    fill_probability = SITE_SEED_FILL_PROBABILITY_OVERRIDES.get(seed_type, SITE_SEED_FILL_PROBABILITY)
     points = []
     for cell_y in range(0, grid_size, cell):
         for cell_x in range(0, grid_size, cell):
-            if rng.random() >= SITE_SEED_FILL_PROBABILITY:
+            if rng.random() >= fill_probability:
                 continue
             x = min(grid_size - 1, cell_x + rng.randint(0, cell - 1))
             y = min(grid_size - 1, cell_y + rng.randint(0, cell - 1))

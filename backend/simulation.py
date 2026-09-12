@@ -3986,6 +3986,31 @@ class Simulation:
                         "A hunt has already succeeded -- a tannery built at the settlement would bring "
                         "in a steady supply of Fur, and extra meat from every future hunt."
                     )
+        # NUDGE (2026-09-11, live-run finding): confirmed via board_history.db + the
+        # run's own jsonl that BUILD_COOP was never chosen even once across 619
+        # cycles despite the flock growing to 52 -- the exact "isolated action,
+        # nobody picks it" failure this project already hit for BUILD_TANNERY/
+        # BUILD_KITCHEN/NAME_WARRIOR, same fix shape as BUILD_TANNERY's own nudge
+        # just above. Without a Coop, GATHER_EGGS/_advance_flock_eggs keeps
+        # depositing into tribe.eggs with nothing ever consuming it -- the Coop is
+        # what switches the flock over to a real, deterministic hatch-from-eggs
+        # loop (see Simulation._advance_flock's own docstring).
+        if "BUILD_COOP" in available_actions and not tribe.coop_built and tribe.flock > 0:
+            visible_entities.append(
+                "The flock has grown -- a coop built at the settlement would give it a real home, "
+                "letting stored eggs hatch into new fowl reliably instead of by chance."
+            )
+        # NUDGE (2026-09-11, same finding): BUILD_DEER_PEN has the identical gap --
+        # gated on a real hunt-success count (see actions._hunt_deer) plus an
+        # existing Tannery, but nothing ever told the chief it had become reachable.
+        if (
+            "BUILD_DEER_PEN" in available_actions and not tribe.deer_pen_built
+            and tribe.tannery_built and tribe.hunt_deer_success_count >= config.DEER_PEN_HUNT_THRESHOLD
+        ):
+            visible_entities.append(
+                "Enough hunts have succeeded -- a deer pen built at the settlement would start a real "
+                "herd, feeding the tannery extra Fur every cycle on top of what it already produces."
+            )
         if "BUILD_KITCHEN" in available_actions and not tribe.kitchen_built:
             if tribe.cooking_learned and tribe.long_houses_built > 0:
                 visible_entities.append(
@@ -5769,30 +5794,46 @@ class Simulation:
                 break
 
         # A Landmark -- a real, persistent discovery with its own one-time
-        # reward, distinct from Mine's ore (explicit request).
-        if random.random() < config.LANDMARK_DISCOVERY_CHANCE and not any(
-            lm["x"] == px and lm["y"] == py for lm in tribe.landmarks
-        ):
+        # reward, distinct from Mine's ore (explicit request). Live report,
+        # 2026-09-11: this used to be an independent random.random() roll
+        # checked at the party's own current position every outbound day, with
+        # no biome check -- could land on a river/lake tile crossed en route,
+        # and nothing stopped several landing close together along one
+        # well-traveled corridor. Now rides the same pre-seeded, water-excluded,
+        # naturally-declustered system lumber/wildlife/quarry/mine sites already
+        # use (world.site_seed_points/find_nearby_site) -- a real landmark is
+        # a fixed, discoverable place, not a fresh dice roll on wherever a party
+        # happens to be standing. A boat can still discover one this way while
+        # its own current tile is water (see the boat-party branch below) --
+        # only the landmark's own location is now land-only, not the
+        # discovering party's.
+        known_landmarks = {(lm["x"], lm["y"]) for lm in tribe.landmarks}
+        landmark_found = find_nearby_site("landmark", px, py, self.world.grid_size, known_landmarks)
+        if landmark_found is not None:
+            lx, ly = landmark_found
             name = random.choice(config.LANDMARK_NAMES)
             resource = random.choice(config.LANDMARK_RESOURCE_NAMES)
             reward = random.randint(config.LANDMARK_REWARD_MIN, config.LANDMARK_REWARD_MAX)
-            tribe.landmarks.append({"x": px, "y": py, "resource": name})
+            tribe.landmarks.append({"x": lx, "y": ly, "resource": name})
             self._capped_unique_add(tribe, resource, reward)
-            self.trauma.radiate_event_wave(px, py, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
+            self.trauma.radiate_event_wave(lx, ly, config.CELEBRATION_PRIDE_MAGNITUDE, config.CELEBRATION_PRIDE_RADIUS)
             # Explicit request: "Finding and marking Landmarks increases Fame...
             # A Landmark in your Territory gives you even more Fame."
-            in_territory = self._site_in_own_territory(tribe, px, py)
+            in_territory = self._site_in_own_territory(tribe, lx, ly)
             tribe.fame += config.FAME_PER_LANDMARK_IN_TERRITORY if in_territory else config.FAME_PER_LANDMARK
             # Explicit request: "When a Boat encounters a Landmark, it has a Boat
             # Party (same look-effect as Settlement Celebration) celebrating the
             # Landmark." Same shared cooldown/breeding-opportunity shape
             # _celebrate_water_discovery/_celebrate_game_discovery already use
-            # for their own one-time discoveries.
+            # for their own one-time discoveries. Checks the PARTY's own current
+            # biome (still `current_biome`, the boat's real position) -- the
+            # landmark itself is always on land now, but a boat cruising nearby
+            # water can still be the one that spots it.
             if tribe.boat_built and current_biome in config.BOAT_WATER_BIOMES:
                 tribe.last_celebration_cycle = self.cycle
                 tribe.history.append(
-                    f"\U0001f389 {scout}'s crew holds a boat party on the water at ({px},{py}), celebrating "
-                    f"the discovery of {name} -- {reward} {resource} claimed"
+                    f"\U0001f389 {scout}'s crew holds a boat party on the water, celebrating "
+                    f"the discovery of {name} at ({lx},{ly}) -- {reward} {resource} claimed"
                 )
                 if tribe.pending_birth is None and _has_room_to_grow(tribe):
                     pair = _eligible_breeding_pair(tribe)
@@ -5802,7 +5843,7 @@ class Simulation:
                         tribe.history.append(f"amid the celebration, {parent_a} and {parent_b} decide to start a family together")
             else:
                 tribe.history.append(
-                    f"{scout}'s exploration party discovers {name} at ({px},{py}) -- {reward} {resource} claimed"
+                    f"{scout}'s exploration party discovers {name} at ({lx},{ly}) -- {reward} {resource} claimed"
                 )
         return False
 

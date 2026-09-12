@@ -2272,7 +2272,10 @@ SETTLEMENT_SIGHTING_RADIUS = 12
 # resource, deliberately not ore (Mine already owns that niche). The place
 # name and the thing found there are separate on purpose: you don't carry
 # home "12 units of a sacred spring," you carry home a relic found near one.
-LANDMARK_DISCOVERY_CHANCE = 0.08  # per outbound day
+# Discovery itself is world.site_seed_points("landmark", ...) now (2026-09-11
+# fix -- see Simulation._advance_exploration_party_outbound's own comment),
+# not an independent per-day chance roll; the old LANDMARK_DISCOVERY_CHANCE
+# constant is retired along with that roll.
 LANDMARK_REWARD_MIN = 10
 LANDMARK_REWARD_MAX = 25
 LANDMARK_NAMES = (
