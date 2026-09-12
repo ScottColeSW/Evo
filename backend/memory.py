@@ -15,9 +15,27 @@ class TribeMemory:
     /api/embeddings with a model like nomic-embed-text, but that's an async network
     call and today's remember()/recall() call sites are synchronous -- left as a
     follow-up, not bundled into this fix.
-    """
+
+    Found and fixed 2026-09-12: every memory in this game is phrased from a small
+    set of narrative templates ("Scouts confirmed X at (x,y)", "X near (x,y) is
+    known dangerous ground") that all share common connector words -- "at", "near",
+    "toward". A live call site (Simulation._prepare_turn's `tribe.memory.recall(
+    f"{biome} at {tribe.x},{tribe.y}")`) proved this concretely: querying a location
+    with zero real relation to any stored memory still matched one, purely because
+    both phrases contained the word "at". Jaccard overlap on raw tokens can't tell a
+    genuine topical match from two sentences sharing only grammatical scaffolding --
+    worse than the hash-seeded bug this class already replaced once, since it looks
+    like a real match instead of obviously not one. _STOPWORDS strips exactly that
+    scaffolding before scoring, so overlap only ever counts substantive words (biome
+    names, event nouns, and real coordinates, which still tokenize and match
+    correctly -- only the connectors around them are filtered)."""
 
     _WORD_RE = re.compile(r"[a-z0-9]+")
+    _STOPWORDS = frozenset({
+        "a", "an", "the", "at", "in", "on", "of", "to", "is", "are", "was", "were",
+        "and", "or", "near", "toward", "off", "our", "there", "one", "for", "with",
+        "it", "this", "that",
+    })
 
     def __init__(self, tribe_id: str, max_episodes: int = 40):
         self.tribe_id = tribe_id
@@ -26,7 +44,7 @@ class TribeMemory:
         self.taboos: list[str] = []
 
     def _tokenize(self, text: str) -> set[str]:
-        return set(self._WORD_RE.findall(text.lower()))
+        return set(self._WORD_RE.findall(text.lower())) - self._STOPWORDS
 
     def remember(self, text: str, cycle: int, weight: float = 0.5) -> None:
         self.entries.append({

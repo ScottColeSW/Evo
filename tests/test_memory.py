@@ -38,6 +38,32 @@ def test_recall_ranks_stronger_overlap_above_weaker_overlap():
     assert results[0]["text"].startswith("forest danger wolf")
 
 
+def test_recall_does_not_match_on_shared_connector_words_alone():
+    """Regression, 2026-09-12: every memory in this game is phrased from a small
+    set of templates ("X at (x,y)", "X near (x,y)") that all share words like "at"/
+    "near" -- Jaccard overlap on raw tokens used to score a nonzero, spurious match
+    between two sentences that share nothing but that grammatical scaffolding.
+    Reproduced live via the real Simulation._prepare_turn query shape
+    (f"{biome} at {x},{y}") before this fix: a location with zero real relation to
+    the stored memory still matched it, purely on the shared word "at"."""
+    memory = TribeMemory("tribe_0")
+    memory.remember("Scouts confirmed fresh water at (52,58).", cycle=10, weight=0.9)
+
+    assert memory.recall("mountains at 10,10") == []
+
+
+def test_recall_still_matches_on_a_shared_real_coordinate():
+    """The fix must not throw out genuine signal along with the noise -- an exact
+    coordinate match is real, substantive overlap, not grammatical scaffolding."""
+    memory = TribeMemory("tribe_0")
+    memory.remember("Scouts confirmed fresh water at (52,58).", cycle=10, weight=0.9)
+
+    results = memory.recall("plains at 52,58")
+
+    assert len(results) == 1
+    assert "52,58" in results[0]["text"] or "(52,58)" in results[0]["text"]
+
+
 def test_consolidate_distills_high_weight_memories_into_taboos():
     memory = TribeMemory("tribe_0")
     memory.remember("a catastrophic flood destroyed the settlement", cycle=1, weight=0.9)
