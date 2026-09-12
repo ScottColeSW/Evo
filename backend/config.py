@@ -181,7 +181,14 @@ DAY_LENGTH_CYCLES = 20
 
 # Rough pre-flight sanity check against a model's on-disk size (backend/vram_guard.py).
 # Not a live enforcement layer -- see that module's docstring for why.
-VRAM_LIMIT_GB = 14.0
+#
+# Confirmed live via nvidia-smi 2026-09-12: the actual card is an RTX 2080, 8GB total,
+# with Windows/WDDM already claiming ~0.9GB at idle before Ollama loads anything -- the
+# old 14.0 value was sized for a GPU this machine doesn't have, making the guard a no-op
+# (every model in use is well under even the wrong ceiling). 6.0 leaves headroom for that
+# desktop/driver overhead plus the fact that a model's real resident footprint runs
+# higher than its on-disk size once KV-cache buffers (scaling with num_ctx) are added.
+VRAM_LIMIT_GB = 6.0
 
 # Inference temperature: bumped when a tribe stands on ancestrally traumatic ground,
 # so panic/urgency actually reads as less predictable model output, not just flavor text.
