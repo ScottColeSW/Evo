@@ -606,6 +606,51 @@ def test_long_house_count_nudges_toward_keep_then_fortress_then_castle():
     assert "a castle is now worth building" in request["prompt"]
 
 
+def test_long_house_upgrade_nudge_fires_once_capped_on_raw_builds():
+    """Live report, 2026-09-12: a real run sat at long_house_tier=5 (the
+    LONG_HOUSE_MAX_COUNT cap) with a Keep built, 2300 wood/2300 stone banked,
+    and UPGRADE_LONG_HOUSE never chosen once in 764 cycles -- confirmed via
+    the action histogram. Every other long-house nudge only ever fires once a
+    tier threshold is ALREADY met (see test_long_house_count_nudges_toward_
+    keep_then_fortress_then_castle above, which sets long_houses_built past
+    FORTRESS_LONG_HOUSES_REQUIRED directly -- something the real build cap
+    below would never actually allow); nothing told the chief the raw-build
+    cap was reached and upgrading is the only way to raise the tier further."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "monolithic_era"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    sim.world.add_construction(tribe.x, tribe.y, "wall", sim.cycle, progress=100)
+    tribe.long_houses_built = config.LONG_HOUSE_MAX_COUNT
+    tribe.keep_built = True
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert f"Long houses are at their built limit ({config.LONG_HOUSE_MAX_COUNT})" in request["prompt"]
+    assert "UPGRADE_LONG_HOUSE is the only way" in request["prompt"]
+    assert f"toward the {config.FORTRESS_LONG_HOUSES_REQUIRED} needed for a fortress" in request["prompt"]
+
+
+def test_long_house_upgrade_nudge_is_silent_once_the_next_tier_is_already_met():
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "monolithic_era"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    sim.world.add_construction(tribe.x, tribe.y, "wall", sim.cycle, progress=100)
+    tribe.long_houses_built = config.LONG_HOUSE_MAX_COUNT
+    tribe.keep_built = True
+    tribe.long_house_upgrades = config.FORTRESS_LONG_HOUSES_REQUIRED - config.LONG_HOUSE_MAX_COUNT
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Long houses are at their built limit" not in request["prompt"]
+    assert "a fortress is now worth building" in request["prompt"]
+
+
 def test_torches_and_moat_nudge_once_wall_is_fully_reinforced():
     from backend import config
 

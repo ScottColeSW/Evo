@@ -4063,6 +4063,29 @@ class Simulation:
                     f"{long_house_tier} long houses' worth of shelter stand and the fortress is complete "
                     "-- a castle is now worth building for a further defense bonus."
                 )
+            # Live report, 2026-09-12: a real run sat at long_house_tier=5 (the
+            # LONG_HOUSE_MAX_COUNT cap) with a Keep built, 2300 wood/2300 stone
+            # banked, and UPGRADE_LONG_HOUSE never chosen once in 764 cycles --
+            # confirmed via the action histogram. Every branch above only ever
+            # nudges once a tier threshold is ALREADY met; nothing told the
+            # chief the raw-build cap was reached and upgrading is the only way
+            # to keep raising the tier at all, unlike every other "here's the
+            # real cost and payoff" nudge this file already uses (matches
+            # ACTION_DESCRIPTIONS["UPGRADE_LONG_HOUSE"]'s own "only worth
+            # considering once 5 long houses already stand").
+            elif tribe.long_houses_built >= config.LONG_HOUSE_MAX_COUNT:
+                next_tier = (
+                    ("keep", config.KEEP_LONG_HOUSES_REQUIRED) if not tribe.keep_built
+                    else ("fortress", config.FORTRESS_LONG_HOUSES_REQUIRED) if not tribe.fortress_built
+                    else ("castle", config.CASTLE_LONG_HOUSES_REQUIRED) if not tribe.castle_built
+                    else None
+                )
+                if next_tier is not None and long_house_tier < next_tier[1]:
+                    visible_entities.append(
+                        f"Long houses are at their built limit ({tribe.long_houses_built}) -- "
+                        f"UPGRADE_LONG_HOUSE is the only way to raise that {long_house_tier}-tier shelter "
+                        f"further, toward the {next_tier[1]} needed for a {next_tier[0]}."
+                    )
 
         if "BUILD_SAWMILL" in available_actions and not tribe.sawmill_built:
             if tribe.wood_ever_gathered:
