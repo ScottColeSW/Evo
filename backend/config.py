@@ -1209,6 +1209,17 @@ SCOUT_PATROL_DISTANCE = 25
 # considered.
 EXPLORATION_PARTY_PATROL_DISTANCE = 45
 
+# Live report, 2026-09-11: "they keep sending the same coordinates over and
+# over... resource sites deplete." HUNTING_PARTY used to trust the model's own
+# target_vector directly instead of a computed heading -- confirmed via a real
+# run that this collapsed to "toward the tribe's own home coordinate" 15+
+# times, the same "model echoes its current position back" failure already
+# fixed once for RELOCATE/SCOUT. Now rotates like its siblings; sized shorter
+# than SCOUT's own patrol (HUNTING_PARTY_MAX_DAYS=4 is already tighter than
+# SCOUT's own day budget, and a catch needs to walk all the way home again
+# before it's real food) -- an invented first-pass default, not tuned yet.
+HUNTING_PARTY_PATROL_DISTANCE = 18
+
 # A wandering storm cloud (Simulation._advance_weather) -- weather that exists whether
 # or not any tribe is watching, not triggered by or aimed at anyone. Rare to spawn
 # (checked once per cycle only while no storm is active), rare to strike once present,

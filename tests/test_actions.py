@@ -3479,20 +3479,25 @@ def test_scout_launches_from_current_position_before_any_territory_exists():
     assert tribe.expeditions[0]["origin"] == [50, 50]
 
 
-def test_hunting_party_launches_from_the_territory_edge_toward_its_own_target():
-    """HUNTING_PARTY trusts the model's own target_vector rather than a compass
-    heading, so the launch-point heading has to be derived from tribe -> target
-    instead of reusing scout_rotation_index."""
+def test_hunting_party_launches_from_the_territory_edge_once_it_exists():
+    """Explicit request: "All Scouting, Hunting, Exploration, etc. should use
+    starting points off the edge of the Territory boundary, not the center."
+    Live report, 2026-09-11: HUNTING_PARTY used to trust the model's own
+    target_vector (unlike SCOUT/EXPLORATION_PARTY's own computed heading) --
+    confirmed via a real run this collapsed to "toward the tribe's own home
+    coordinate" 15+ times. Now rotates like its siblings; target is ignored."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     _settle(sim, tribe)
 
-    ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "plains", (99, 50))  # due east
+    ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "plains", (99, 50))
 
     lx, ly = tribe.expeditions[0]["origin"]
-    assert (lx, ly) != (tribe.x, tribe.y)
+    assert [lx, ly] == tribe.expeditions[0]["pos"]
+    assert (lx, ly) != (tribe.x, tribe.y)  # not fanning out from the exact camp tile
     cx, cy = tribe.territory_center
-    assert lx > cx  # launched toward the east, same direction as the target
+    dist = ((lx - cx) ** 2 + (ly - cy) ** 2) ** 0.5
+    assert abs(dist - tribe.territory_radius) <= 1  # right at the wall's own edge (rounding)
 
 
 def test_push_past_visited_ground_extends_distance_past_an_already_visited_sector():
@@ -5189,6 +5194,9 @@ def test_scout_allows_a_second_party_of_the_same_kind_within_capacity():
 
 
 def test_hunting_party_does_not_move_the_tribe_but_launches_an_expedition():
+    """target_vector ((10,10) here) is deliberately ignored for HUNTING_PARTY,
+    same as SCOUT -- see test_hunting_party_rotation_ignores_target_vector_
+    entirely below."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
 
@@ -5197,25 +5205,42 @@ def test_hunting_party_does_not_move_the_tribe_but_launches_an_expedition():
     assert (tribe.x, tribe.y) == (50, 50)
     assert len(tribe.expeditions) == 1
     assert tribe.expeditions[0]["kind"] == "hunt"
-    assert tribe.expeditions[0]["target"] == [10, 10]
+    assert tribe.expeditions[0]["target"] != [10, 10]
     assert tribe.expeditions[0]["day"] == 0
     assert tribe.expeditions[0]["phase"] == "outbound"
     assert tribe.expeditions[0]["food_caught"] == 0
     assert "depart" in note
 
 
-def test_hunting_party_bounces_an_out_of_range_target_instead_of_clamping_to_the_edge():
-    """Live feedback: "the bounds-safe function is too loose at the edges of our
-    board." A plain clamp collapsed every overshoot onto the identical boundary
-    tile -- the same bug _reflect_into_grid already fixed for SCOUT. HUNTING_PARTY
-    trusts the model's own target_vector (unlike SCOUT's compass math), so it needs
-    the same treatment for whatever wild coordinate a small model might submit."""
+def test_hunting_party_rotation_ignores_target_vector_entirely():
+    sim = _bare_simulation()
+    same_target = (77, 3)
+    headings = []
+    for _ in range(3):
+        tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+        ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", same_target)
+        headings.append(tuple(tribe.expeditions[0]["target"]))
+
+    assert len(set(headings)) == 1  # same tribe.hunt_rotation_index (0) each time -> same heading
+    assert same_target not in headings
+
+
+def test_hunting_party_dispatches_with_its_own_rotation_offset_from_its_siblings():
+    """Live report, 2026-09-11: "they keep sending the same coordinates over and
+    over" -- HUNTING_PARTY now rotates like SCOUT/EXPLORATION_PARTY, offset from
+    both (+90 degrees) so all three spread across the compass instead of
+    retracing each other."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
 
-    ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (-9, 108))
+    result = ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (0, 0))
 
-    assert tribe.expeditions[0]["target"] == [9, 90]  # -9 -> 9; 108 -> 2*99 - 108 = 90
+    assert len(tribe.expeditions) == 1
+    assert tribe.expeditions[0]["kind"] == "hunt"
+    assert tribe.hunt_rotation_index == 1
+    assert tribe.scout_rotation_index == 0  # its own separate counter, untouched
+    assert tribe.explore_rotation_index == 0
+    assert "hunting party" in result
 
 
 def test_hunting_party_launch_uses_its_own_max_days_baseline():

@@ -1106,6 +1106,16 @@ class Tribe:
         # ground. landmarks: {"x", "y", "resource"} entries, one per Landmark
         # actually found (Simulation._advance_exploration_party_outbound).
         self.explore_rotation_index = stagger
+        # Live report, 2026-09-11: "they keep sending the same coordinates over
+        # and over... resource sites deplete." Confirmed: HUNTING_PARTY used to
+        # trust the model's own target_vector directly (see actions.py.
+        # _hunting_party's old docstring) instead of a computed heading like
+        # SCOUT/EXPLORATION_PARTY -- a live run showed 15+ hunting parties sent
+        # "toward" the tribe's own home coordinate, the exact same "the model
+        # echoes its current position back" failure this project already fixed
+        # once for RELOCATE/SCOUT (see README.md's own account of that bug).
+        # Its own rotating heading now, offset from both siblings' sweeps.
+        self.hunt_rotation_index = stagger
         self.landmarks: list[dict] = []
         # Explicit design spec: "if anyone discovers a hazard, even if no one
         # dies, they landmark it." Same {"x", "y", "name"} shape as landmarks
@@ -1505,6 +1515,7 @@ class Tribe:
         ) % steps_per_full_rotation
         self.scout_rotation_index = step
         self.explore_rotation_index = step
+        self.hunt_rotation_index = step
 
     def to_dict(self) -> dict:
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)

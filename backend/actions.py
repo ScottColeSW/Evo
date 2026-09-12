@@ -2023,35 +2023,38 @@ def _hunting_party(sim, tribe, biome, target):
     """A multi-day alternative to instant HUNT_DEER, sharing the exact same expedition
     list and day-by-day travel machinery as SCOUT (up to config.MAX_CONCURRENT_
     EXPEDITIONS parties out at once, any mix of hunting and scouting). Persists day
-    over day -- moving toward target_vector, camping under its own supply -- rolling a
-    fresh catch chance each day (scaled by wherever they currently stand's own game
-    yield) until something is caught or config.HUNTING_PARTY_MAX_DAYS runs out, and
-    carries the same wolf-pack hazard risk as an instant hunt on every single day out,
-    not just once.
+    over day, camping under its own supply -- rolling a fresh catch chance each day
+    (scaled by wherever they currently stand's own game yield) until something is
+    caught or config.HUNTING_PARTY_MAX_DAYS runs out, and carries the same wolf-pack
+    hazard risk as an instant hunt on every single day out, not just once.
 
     The catch only becomes real food the moment the party walks back into camp -- same
     "findings aren't real until you're home" rule as SCOUT. That's the deliberate,
     testable tension: a tribe that's starving *right now* gets no relief from a hunt
     that's still out in the field, no matter how promising, and every extra day spent
-    searching is another chance at a hazard, not a free wait."""
+    searching is another chance at a hazard, not a free wait.
+
+    Live report, 2026-09-11: "they keep sending the same coordinates over and over...
+    resource sites deplete." This used to trust the model's own target_vector
+    directly, ignoring target entirely, instead of a computed heading like SCOUT/
+    EXPLORATION_PARTY -- confirmed via a real run that this collapsed to "toward the
+    tribe's own home coordinate" 15+ times, the exact "model echoes its current
+    position back" failure this project already fixed once for RELOCATE/SCOUT. Own
+    rotating heading now (tribe.hunt_rotation_index), offset from both siblings'
+    sweeps so all three spread across the compass instead of retracing each other."""
     blocked = _expedition_dispatch_blocked(tribe, "hunt")
     if blocked is not None:
         return blocked
 
-    tx, ty = target
-    # Explicit request: "the bounds-safe function is too loose at the edges of our
-    # board." A plain clamp here collapsed any model-chosen overshoot onto the exact
-    # boundary tile -- the same class of bug _reflect_into_grid was already built to
-    # fix for SCOUT/EXPLORATION_PARTY's own targets.
-    tx = _reflect_into_grid(tx, sim.world.grid_size)
-    ty = _reflect_into_grid(ty, sim.world.grid_size)
-    # Explicit request: "All Scouting, Hunting, Exploration, etc. should use
-    # starting points off the edge of the Territory boundary, not the center."
-    # HUNTING_PARTY trusts the model's own target_vector rather than a computed
-    # compass heading (see this function's own docstring), so the heading used
-    # for the launch point is derived from tribe -> target instead.
-    angle_radians = math.atan2(ty - tribe.y, tx - tribe.x)
+    angle_degrees = (
+        config.SCOUT_ROTATION_START_ANGLE_DEGREES
+        + config.SCOUT_ROTATION_STEP_DEGREES * tribe.hunt_rotation_index
+        + 90  # offset from SCOUT (0) and EXPLORATION_PARTY (180) so all three spread out
+    ) % 360
+    tribe.hunt_rotation_index += 1
+    angle_radians = math.radians(angle_degrees)
     lx, ly = _expedition_launch_point(tribe, angle_radians, sim.world.grid_size)
+    tx, ty = _push_past_visited_ground(tribe, lx, ly, angle_radians, config.HUNTING_PARTY_PATROL_DISTANCE, sim.world.grid_size)
     scout = _generate_scout(tribe, sim.cycle, base_days=config.HUNTING_PARTY_MAX_DAYS)
     tribe.expeditions.append({
         "kind": "hunt",
