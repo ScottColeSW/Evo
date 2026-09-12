@@ -377,8 +377,17 @@ def site_seed_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], .
         for cell_x in range(0, grid_size, cell):
             if rng.random() >= fill_probability:
                 continue
-            x = min(grid_size - 1, cell_x + rng.randint(0, cell - 1))
-            y = min(grid_size - 1, cell_y + rng.randint(0, cell - 1))
+            # Live report, 2026-09-11: "objects landed along the boards of the
+            # map... in a line." The grid's last row/column is usually smaller
+            # than a full cell (grid_size doesn't evenly divide by cell), but
+            # this used to still roll a full-size jitter and clamp any overshoot
+            # onto the exact boundary value (grid_size - 1) -- collapsing many
+            # different rolls onto one repeated edge coordinate instead of
+            # spreading them across that cell's own real, smaller span.
+            x_span = min(cell, grid_size - cell_x)
+            y_span = min(cell, grid_size - cell_y)
+            x = cell_x + rng.randint(0, x_span - 1)
+            y = cell_y + rng.randint(0, y_span - 1)
             if biome_at(x, y) in config.UNBUILDABLE_BIOMES:
                 continue
             points.append((x, y))

@@ -56,6 +56,19 @@ def test_site_seed_points_never_land_on_an_unbuildable_biome():
             assert biome_at(x, y) not in config.UNBUILDABLE_BIOMES
 
 
+def test_site_seed_points_last_row_and_column_do_not_pile_up_on_the_boundary():
+    """Live report, 2026-09-11: "objects landed along the boards of the map...
+    in a line." grid_size (100) doesn't evenly divide SITE_SEED_GRID_CELL_SIZE
+    (18), so the last row/column's cells are smaller than a full cell -- used to
+    still roll a full-size jitter and clamp any overshoot onto the exact edge
+    value (99), collapsing many different rolls onto one repeated coordinate
+    instead of spreading them across that cell's own real, smaller span."""
+    for seed_type in SITE_SEED_TYPES:
+        coords = site_seed_points(seed_type, 100)
+        on_boundary = [p for p in coords if p[0] == 99 or p[1] == 99]
+        assert len(on_boundary) <= 1, f"{seed_type} piled up on the map edge: {on_boundary}"
+
+
 def test_landmark_seed_points_are_sparser_than_the_resource_sites():
     """Live report, 2026-09-11: "we can reduce the number too" -- landmarks get
     their own, lower SITE_SEED_FILL_PROBABILITY_OVERRIDES entry, distinct from
