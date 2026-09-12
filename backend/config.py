@@ -149,17 +149,31 @@ SELF_MOD_COOLDOWN_CYCLES = 20
 
 MEMORY_CONSOLIDATE_EVERY_N_CYCLES = 40
 
-# The "night cycle" (backend/reflection.py): periodically, a larger model reviews a
-# tribe's own recent history and decides for itself whether its guiding philosophy
-# should change -- distinct from the fast small model handling every live turn. The
-# reviewer model is deliberately not configurable per-tribe -- it's meant to be a
-# consistently larger, slower, less-often-run reviewer regardless of which small model
-# a tribe actually plays with. mistral:7b is a real step up from the 2-3B models
-# tribes actually play with live, without the 26B extremes of the original gemma4:26b
-# default -- gemma4:26b was removed from this machine as too large to actually use.
+# The "night cycle" (backend/reflection.py): periodically, a tribe reviews its own
+# recent history and decides for itself whether its guiding philosophy should change.
+#
+# Reversed 2026-09-12 from a dedicated, separately-loaded reviewer model (this
+# constant used to be NIGHT_CYCLE_REVIEWER_MODEL, holding a consistently larger model
+# than whatever a tribe played live with) to self-review with the tribe's own model
+# (Simulation._run_night_cycle now passes tribe.model, not this constant). Grounded in
+# a real run's data: nvidia-smi confirmed this machine's actual card is an 8GB RTX
+# 2080, and logs/run_20260912_062221.jsonl showed one of gemma2:2b's three exact-120s
+# HTTP timeouts landing precisely on a night-cycle tick -- a third model loading
+# mid-run, on a card already running two, is a real contention risk here, not a
+# theoretical one. This constant is kept, renamed, for ENDGAME_SUMMARY_MODEL below
+# instead: a single LLM call at game-over, when the sim has already stopped ticking
+# and nothing else needs the GPU, is free to use a bigger/different model with none of
+# that risk.
 NIGHT_CYCLE_EVERY_N_CYCLES = 30
-NIGHT_CYCLE_REVIEWER_MODEL = "phi4-mini:latest"
 NIGHT_CYCLE_HISTORY_WINDOW = 20
+
+# One-time narrative synthesis at game-over (Simulation._trigger_game_over), distinct
+# from the plain factual _generate_game_over_summary (no model call, just string
+# templating) -- an actual outside voice telling the whole game's story once, when
+# there's no VRAM contention risk left to worry about. Deliberately left an easy,
+# clearly-isolated constant to swap: not committed to phi4-mini specifically, worth
+# trying a few candidates against real game-over data before settling on one.
+ENDGAME_SUMMARY_MODEL = "phi4-mini:latest"
 
 # Explicit request: "can we have some random breeding in the over-night cycle?" Every
 # existing breeding side-effect (Simulation._celebrate_*) fires off a specific

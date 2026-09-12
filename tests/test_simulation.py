@@ -7434,8 +7434,7 @@ async def test_night_cycle_passes_the_tribes_own_recent_history_and_philosophy()
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
         await sim._run_night_cycle(tribe)
 
-    from backend import config
-    assert captured["reviewer_model"] == config.NIGHT_CYCLE_REVIEWER_MODEL
+    assert captured["reviewer_model"] == tribe.model
     assert captured["tribe_name"] == "Forest Tribe"
     assert captured["current_philosophy"] == "expand aggressively"
     assert "starvation claimed lives" in captured["recent_events"]

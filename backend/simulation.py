@@ -2209,18 +2209,21 @@ class Simulation:
         return " ".join(lines)
 
     async def _run_night_cycle(self, tribe: "Tribe") -> None:
-        """The "night cycle" (backend/reflection.py): a larger reviewing model looks
-        back at this tribe's own recent history and decides for itself whether its
-        guiding philosophy should change. Runs far less often than a live turn (see
-        config.NIGHT_CYCLE_EVERY_N_CYCLES) and with a different, larger model than
-        whatever the tribe plays live with -- the piece from the original design
+        """The "night cycle" (backend/reflection.py): the tribe reviews its own recent
+        history and decides for itself whether its guiding philosophy should change.
+        Runs far less often than a live turn (see config.NIGHT_CYCLE_EVERY_N_CYCLES).
+
+        Self-review with the tribe's own model (below), not a dedicated reviewer --
+        see config.py's own comment above ENDGAME_SUMMARY_MODEL for why: a third
+        model loading mid-run was a real, measured VRAM-contention risk on real
+        hardware, not just a design nicety. The piece from the original design
         transcript that gives a tribe's own accumulated experience a chance to
         compound into wisdom over time, distinct from breed()/breed_individuals'
         cross-tribe/cross-individual crossover."""
         recent_events = list(tribe.history)[-config.NIGHT_CYCLE_HISTORY_WINDOW:]
         inventory = self._build_night_inventory(tribe)
         result = await reflect_on_history(
-            self.client, config.NIGHT_CYCLE_REVIEWER_MODEL, tribe.name,
+            self.client, tribe.model, tribe.name,
             tribe.chief_philosophy, recent_events, inventory,
         )
         # The chief's own reasoning for this reflection -- kept even when the

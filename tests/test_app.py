@@ -101,9 +101,11 @@ async def test_tick_session_sends_the_snapshot_on_a_normal_tick():
 @run_async
 async def test_tick_session_logs_and_never_sends_when_sim_step_itself_fails():
     """Regression: a bare except around the whole tick used to swallow a real
-    simulation-logic crash (confirmed live: config.NIGHT_CYCLE_REVIEWER_MODEL
-    pointing at a model that was never pulled crashed _run_night_cycle every
-    NIGHT_CYCLE_EVERY_N_CYCLES, invisibly, for the life of this project) the
+    simulation-logic crash (confirmed live: config.NIGHT_CYCLE_REVIEWER_MODEL --
+    since renamed to ENDGAME_SUMMARY_MODEL, night cycle now self-reviews with
+    tribe.model instead -- pointing at a model that was never pulled crashed
+    _run_night_cycle every NIGHT_CYCLE_EVERY_N_CYCLES, invisibly, for the life
+    of this project) the
     exact same way it swallowed an ordinary dropped websocket connection. A
     sim.step() failure must never reach ws.send_str -- there's no real
     snapshot to send -- and must not propagate out of _tick_session (the

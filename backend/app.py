@@ -222,9 +222,11 @@ async def _tick_session(ws: web.WebSocketResponse, session: dict) -> None:
     # Live-bug-adjacent finding: this used to be one try/except around the whole
     # tick, "connection may have dropped between the tick starting and finishing"
     # -- but that same bare except was also silently swallowing genuine
-    # simulation-logic crashes (confirmed: config.NIGHT_CYCLE_REVIEWER_MODEL
-    # pointing at a model that was never pulled crashed _run_night_cycle every
-    # NIGHT_CYCLE_EVERY_N_CYCLES for the life of this project, invisibly -- the
+    # simulation-logic crashes (confirmed: config.NIGHT_CYCLE_REVIEWER_MODEL --
+    # since renamed to ENDGAME_SUMMARY_MODEL, night cycle now self-reviews with
+    # tribe.model instead -- pointing at a model that was never pulled crashed
+    # _run_night_cycle every NIGHT_CYCLE_EVERY_N_CYCLES for the life of this
+    # project, invisibly -- the
     # whole tick, including record_board_state, silently never happened that
     # cycle, was never logged, and looked identical to an ordinary dropped
     # connection). Split in two: a real sim.step()/snapshot/record failure is
