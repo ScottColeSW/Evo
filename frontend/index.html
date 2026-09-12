@@ -4012,6 +4012,11 @@ function landmarkCounts(t) {
     ["🌲", (t.lumber_sites || []).length],
     ["🐾", (t.wildlife_sites || []).length],
     ["⛏️", (t.quarry_sites || []).length],
+    // Live report, 2026-09-11: "I didn't see one Mine location" -- mine_sites was
+    // discovered and tracked correctly the whole time (confirmed via board_
+    // history.db, both tribes had real veins on record), it just never had an
+    // entry in this tally, unlike every other discovery type.
+    ["💎", (t.mine_sites || []).length],
     ["\u{2694}\u{FE0F}", (t.raider_sightings || []).length],
     // Live report: "Foraging is supposed to include all so-far-discovered
     // items they find" -- tribe.hazard_landmarks (real, populated data since
@@ -4172,7 +4177,7 @@ function farmingPanel(t) {
   const ring0 = (t.wall_rings || [])[0];
   const ring0Reinforced = !!ring0 && ring0.sections.every(s => s.natural_barrier || s.tier >= WALL_MAX_LAYERS);
   const hasBarracks = t.barracks_built > 0;
-  const hasAny = t.farm_plots || t.flock || t.eggs || t.fishing_learned || t.fishery_built || t.fire_ever_built || ring0
+  const hasAny = t.farm_plots || t.flock || (t.flock_lineage || []).length || t.eggs || t.fishing_learned || t.fishery_built || t.fire_ever_built || ring0
     || t.long_houses_built || t.keep_built || t.fortress_built || t.castle_built
     || t.moat_built || t.road_built || t.dock_built
     || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built || t.tannery_built || t.deer_pen_built
@@ -4206,7 +4211,16 @@ function farmingPanel(t) {
       `(${t.crop_growth}/100 shared growth → ${nextYield} food at harvest)`
     );
   }
-  if (t.flock > 0) {
+  // Live report, 2026-09-11: "The Flock line is flickering on and off." Confirmed
+  // real, not a rendering glitch -- a small flock genuinely bounces 0/1/0/1 at the
+  // edge of starvation (Simulation._advance_flock's feed-or-shrink), and gating
+  // this whole line on the LIVE count meant it vanished every time that happened.
+  // Same "permanent proof, once true never false" pattern wood_ever_gathered/
+  // hunt_ever_succeeded already use -- flock_lineage records every hatch that's
+  // ever resolved, so its own presence is a durable "this tribe has had a flock"
+  // fact independent of whatever the count happens to be this exact cycle.
+  const flockLineage = t.flock_lineage || [];
+  if (t.flock > 0 || flockLineage.length > 0) {
     // Explicit request: "we should see an 'eggs hatching' line in the sidebar
     // since these follow a similar pattern to the farm." A hatch resolves
     // entirely within one backend cycle (GATHER_EGGS sets pending_hatch, the same
@@ -4214,12 +4228,11 @@ function farmingPanel(t) {
     // way crop_growth has -- but flock_lineage already records which cycle each
     // hatch happened on, which is enough to give the hatch MOMENT itself the same
     // "ready to harvest" visual weight the farm gets, not just a buried stat.
-    const lineage = t.flock_lineage || [];
-    const last = lineage.length ? lineage[lineage.length - 1] : null;
+    const last = flockLineage.length ? flockLineage[flockLineage.length - 1] : null;
     const justHatched = last && (latestState.cycle - last.cycle) <= 3;
     if (justHatched) {
       food.push(`🥚 An egg just hatched! — ${escapeHtml(last.trait)} (flock now ${t.flock})`);
-    } else {
+    } else if (t.flock > 0) {
       // livestock_surplus_threshold comes straight from the backend (Tribe.
       // to_dict, backend/simulation.py's _livestock_surplus_threshold) --
       // population-scaled, not a fixed dozen, so this can never drift from
@@ -4227,6 +4240,8 @@ function farmingPanel(t) {
       const surplusThreshold = t.livestock_surplus_threshold ?? 12;
       const surplusNote = t.flock > surplusThreshold ? " · surplus feasted on" : "";
       food.push(`🐔 Flock — ${t.flock}${last ? ` · latest: ${escapeHtml(last.trait)}` : ""}${surplusNote}`);
+    } else {
+      food.push(`🐔 Flock — lost to lack of feed${last ? ` · last was ${escapeHtml(last.trait)}` : ""}`);
     }
   }
   if (t.eggs > 0) {
