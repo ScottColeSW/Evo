@@ -18,7 +18,9 @@ treated as comparable to trials under a new one.
 
 from dataclasses import dataclass
 
-SCENARIO_VERSION = 1
+# Bumped 2026-09-12: survival's starting_resources changed (see that scenario's own
+# comment) -- a materially different definition from SCENARIO_VERSION 1's trials.
+SCENARIO_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,11 @@ class Scenario:
     spawn_positions: tuple[tuple[int, int], ...]
     cycle_budget: int
     description: str
+    # None means "use the game's own normal starting values" (Tribe.__init__'s
+    # defaults: 50 wood, 50 stone, 40 food, config.STARTING_WATER). Set per-scenario
+    # to deliberately override them -- run_benchmark.py applies this to every tribe
+    # in the trial right after Simulation.create(...).
+    starting_resources: dict[str, int] | None = None
 
 
 # Cycle budget grounded in real data, not guessed: logs/board_history.db's
@@ -49,7 +56,16 @@ SCENARIOS: dict[str, Scenario] = {
         # isolated. Tests bare "don't starve" competence, nothing else.
         spawn_positions=((65, 74),),
         cycle_budget=_CYCLE_BUDGET,
-        description="One tribe, a harsh isolated desert spawn far from water. Tests survival alone.",
+        description="One tribe, a harsh isolated desert spawn far from water, starting with almost nothing on hand. Tests survival alone.",
+        # Added 2026-09-12, SCENARIO_VERSION bumped: the first real batch run showed
+        # this scenario had a ceiling effect -- every trial scored 100/100 (zero
+        # extinctions, population in the hundreds by cycle 200) even on the harsh
+        # spawn above, because Tribe.__init__'s normal starting stock (50 wood, 50
+        # stone, 40 food, config.STARTING_WATER=30) already buys ~30-40 cycles of
+        # upkeep before a single successful gather is required. Cutting this to
+        # near-nothing forces a real early decision within the first 1-2 cycles
+        # instead of a long, risk-free runway.
+        starting_resources={"wood": 3, "stone": 3, "food": 3, "water": 3},
     ),
     "settlement": Scenario(
         key="settlement",

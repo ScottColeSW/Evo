@@ -19,6 +19,18 @@ from backend.benchmark_scenarios import SCENARIO_VERSION, SCENARIOS
 from backend.simulation import Simulation
 
 
+def _apply_starting_resources(sim: Simulation, scenario) -> None:
+    """Overrides every tribe's starting stock to scenario.starting_resources, when
+    set -- None (the default for every scenario but survival) leaves Tribe.__init__'s
+    own normal defaults untouched. Kept as its own function so the override logic is
+    directly unit-testable without needing a real Simulation.create() call."""
+    if scenario.starting_resources is None:
+        return
+    for tribe in sim.tribes.values():
+        for resource, amount in scenario.starting_resources.items():
+            setattr(tribe, resource, amount)
+
+
 async def run_trial(scenario_key: str, models: list[str], trial_seed: int) -> dict:
     scenario = SCENARIOS[scenario_key]
     random.seed(trial_seed)  # sufficient for every gameplay roll -- see the plan's own note on scope/limits
@@ -29,6 +41,7 @@ async def run_trial(scenario_key: str, models: list[str], trial_seed: int) -> di
     ]
     started_ts = time.time()
     sim = await Simulation.create(tribe_configs)
+    _apply_starting_resources(sim, scenario)
     try:
         while sim.cycle < scenario.cycle_budget and not sim.game_over:
             await sim.step()

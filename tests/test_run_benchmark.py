@@ -2,7 +2,8 @@ import dataclasses
 from unittest import mock
 
 from backend import benchmark_db
-from backend.benchmark_scenarios import SCENARIOS
+from backend.benchmark_scenarios import SCENARIOS, Scenario
+from backend.simulation import Simulation
 from tests.conftest import run_async
 
 import run_benchmark
@@ -26,6 +27,33 @@ def _small_budget_scenario(key, cycles=5):
     NIGHT_CYCLE_EVERY_N_CYCLES (30), so a mocked run doesn't also need to stub
     reflect_on_history's own real LLM call."""
     return dataclasses.replace(SCENARIOS[key], cycle_budget=cycles)
+
+
+def test_apply_starting_resources_overrides_every_tribe_when_set():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    scenario = Scenario(
+        key="test", category="survival", tribe_count=2, spawn_positions=((0, 0), (1, 1)),
+        cycle_budget=1, description="", starting_resources={"wood": 3, "stone": 3, "food": 3, "water": 3},
+    )
+
+    run_benchmark._apply_starting_resources(sim, scenario)
+
+    for tribe in sim.tribes.values():
+        assert (tribe.wood, tribe.stone, tribe.food, tribe.water) == (3, 3, 3, 3)
+
+
+def test_apply_starting_resources_leaves_defaults_untouched_when_none():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    before = (tribe.wood, tribe.stone, tribe.food, tribe.water)
+    scenario = Scenario(
+        key="test", category="settlement", tribe_count=1, spawn_positions=((0, 0),),
+        cycle_budget=1, description="", starting_resources=None,
+    )
+
+    run_benchmark._apply_starting_resources(sim, scenario)
+
+    assert (tribe.wood, tribe.stone, tribe.food, tribe.water) == before
 
 
 @run_async
