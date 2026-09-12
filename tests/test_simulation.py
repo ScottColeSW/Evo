@@ -20,6 +20,7 @@ def _bare_simulation():
     sim.lightning_strike = None
     sim.game_over_reason = None
     sim.game_over_summary = ""
+    sim.game_over_narrative = ""
     sim.recent_encounters = []
     sim.joint_castle = None
     sim.minor_settlements = []
@@ -10753,6 +10754,7 @@ async def test_step_triggers_game_over_and_unloads_models_when_all_tribes_die():
         tribe.extinct = True
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch("backend.simulation.generate_endgame_narrative", mock.AsyncMock(return_value="")), \
          mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
         await sim.step()
 
@@ -10760,7 +10762,73 @@ async def test_step_triggers_game_over_and_unloads_models_when_all_tribes_die():
     assert sim.status == "GAME OVER"
     assert sim.game_over_reason == "extinction"
     assert "OVERSEER LOG" in sim.game_over_summary
-    assert {c.args[0] for c in mock_unload.call_args_list} == {"gemma2:2b", "qwen2.5:3b"}
+    from backend import config
+    assert {c.args[0] for c in mock_unload.call_args_list} == {"gemma2:2b", "qwen2.5:3b", config.ENDGAME_SUMMARY_MODEL}
+
+
+@run_async
+async def test_trigger_game_over_generates_and_stores_the_endgame_narrative():
+    """The freed-up "distinct outside voice" (see config.py's comment on
+    ENDGAME_SUMMARY_MODEL) is used exactly once, here, with the already-computed
+    game_over_summary as its facts -- not re-derived, and not another in-fiction
+    tribe voice."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    sim.tribes["tribe_0"].extinct = True
+    sim.tribes["tribe_0"].population = 0
+    captured = {}
+
+    async def fake_narrative(client, model, summary_facts):
+        captured["model"] = model
+        captured["summary_facts"] = summary_facts
+        return "A short chronicle of what came to pass."
+
+    with mock.patch("backend.simulation.generate_endgame_narrative", fake_narrative), \
+         mock.patch.object(sim.client, "unload_model", mock.AsyncMock()):
+        await sim._trigger_game_over("extinction")
+
+    assert captured["model"] == config.ENDGAME_SUMMARY_MODEL
+    assert captured["summary_facts"] == sim.game_over_summary
+    assert sim.game_over_narrative == "A short chronicle of what came to pass."
+
+
+@run_async
+async def test_trigger_game_over_still_shuts_down_if_the_narrative_call_fails():
+    """Best-effort: a narrative failure (model not pulled, empty response, a real
+    network error) must never block the game from actually ending and unloading
+    every model -- the whole reason _trigger_game_over exists."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    sim.tribes["tribe_0"].extinct = True
+    sim.tribes["tribe_0"].population = 0
+
+    async def failing_narrative(client, model, summary_facts):
+        raise RuntimeError("model not pulled")
+
+    with mock.patch("backend.simulation.generate_endgame_narrative", failing_narrative), \
+         mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
+        await sim._trigger_game_over("extinction")
+
+    assert sim.game_over_narrative == ""
+    assert sim.game_over is True  # the game still ended
+    mock_unload.assert_any_call("gemma2:2b")  # shutdown() still ran
+
+
+@run_async
+async def test_shutdown_alone_never_touches_the_endgame_summary_model():
+    """A manual STOP or tab-close mid-game (Simulation.shutdown called directly,
+    not via _trigger_game_over) never used ENDGAME_SUMMARY_MODEL at all -- it must
+    not pay a wasted load-then-evict round trip for a model it never touched."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+
+    with mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
+        await sim.shutdown()
+
+    called = {c.args[0] for c in mock_unload.call_args_list}
+    assert called == {"gemma2:2b", "qwen2.5:3b"}
+    assert config.ENDGAME_SUMMARY_MODEL not in called
 
 
 @run_async
@@ -10783,6 +10851,7 @@ async def test_step_triggers_game_over_when_one_tribe_conquers_every_rival_and_h
     assert len(sim.tribes) == 1  # confirms the merge really happened before stepping
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch("backend.simulation.generate_endgame_narrative", mock.AsyncMock(return_value="")), \
          mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
         await sim.step()
 
@@ -10791,7 +10860,7 @@ async def test_step_triggers_game_over_when_one_tribe_conquers_every_rival_and_h
     assert sim.game_over_reason == "world_domination"
     assert "OVERSEER LOG" in sim.game_over_summary
     assert loser.name in sim.game_over_summary
-    assert mock_unload.await_count == 1
+    assert mock_unload.await_count == 2  # the winner's own model + ENDGAME_SUMMARY_MODEL
 
 
 @run_async
@@ -10837,6 +10906,7 @@ async def test_step_triggers_golden_age_when_the_joint_castle_completes():
     }
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch("backend.simulation.generate_endgame_narrative", mock.AsyncMock(return_value="")), \
          mock.patch.object(sim.client, "unload_model", mock.AsyncMock()):
         await sim.step()
 
@@ -10864,6 +10934,7 @@ async def test_step_does_not_mistake_two_independent_solo_castles_for_golden_age
     tribe_b.castle_built = True  # both built their own, no joint_castle exists
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch("backend.simulation.generate_endgame_narrative", mock.AsyncMock(return_value="")), \
          mock.patch.object(sim.client, "unload_model", mock.AsyncMock()):
         await sim.step()
 
@@ -10918,6 +10989,7 @@ async def test_step_triggers_game_over_when_every_living_tribe_hits_the_era_ceil
         tribe.era = ERAS[-1].key
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch("backend.simulation.generate_endgame_narrative", mock.AsyncMock(return_value="")), \
          mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
         await sim.step()
 
@@ -10925,7 +10997,7 @@ async def test_step_triggers_game_over_when_every_living_tribe_hits_the_era_ceil
     assert sim.status == "GAME OVER"
     assert sim.game_over_reason == "era_ceiling"
     assert "OVERSEER LOG" in sim.game_over_summary
-    assert mock_unload.await_count == 2
+    assert mock_unload.await_count == 3  # both tribes' models + ENDGAME_SUMMARY_MODEL
 
 
 @run_async
@@ -11223,6 +11295,8 @@ async def test_add_tribe_after_game_over_resumes_the_simulation():
     sim.tribes["tribe_0"].extinct = True
     sim.game_over = True
     sim.status = "GAME OVER"
+    sim.game_over_summary = "OVERSEER LOG: stale from the previous run"
+    sim.game_over_narrative = "stale narrative from the previous run"
 
     with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls, \
          mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=_FAKE_CHIEF)):
@@ -11231,6 +11305,8 @@ async def test_add_tribe_after_game_over_resumes_the_simulation():
 
     assert sim.game_over is False
     assert sim.status == "OPERATIONAL"
+    assert sim.game_over_summary == ""
+    assert sim.game_over_narrative == ""
 
 
 def test_drowning_hazard_on_river_tile():

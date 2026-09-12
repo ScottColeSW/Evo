@@ -74,3 +74,34 @@ Reply with ONLY JSON:
             "proposed_award": None,
         }
     return result
+
+
+async def generate_endgame_narrative(client: OllamaClient, model: str, summary_facts: str) -> str:
+    """A one-time narrative synthesis of the whole game at Simulation.
+    _trigger_game_over, distinct from the plain-templated, no-model-call
+    _generate_game_over_summary (the "OVERSEER LOG" facts this reads) -- an actual
+    outside voice telling the whole civilization's story once, not another data
+    table. Reversed 2026-09-12 from a dedicated reviewer model resident during live
+    play (see config.py's own comment above ENDGAME_SUMMARY_MODEL, and _run_night_
+    cycle's switch to self-review) -- this is where that freed-up "distinct outside
+    voice" actually earns its keep instead: the sim has already stopped ticking by
+    the time this runs, so a bigger/different model here costs nothing in VRAM
+    contention, unlike one resident during ordinary turns.
+
+    Same "facts only, model decides what to say" shape as reflect_on_history: the
+    simulation states what genuinely happened (final stats, trophies, chief
+    lineage, combat record -- already assembled into summary_facts), the model
+    decides how to tell it. Plain narrative text, not JSON -- there's nothing here
+    for the caller to act on mechanically, only prose the frontend's end-of-run
+    splash displays."""
+    prompt = f"""You are a chronicler looking back on a civilization simulation that has just \
+ended. Here is the factual record of what happened, exactly as observed:
+
+{summary_facts}
+
+Write a short narrative account of this civilization's story -- three to six sentences, \
+grounded only in the facts above. Do not invent specific events, names, or numbers beyond \
+what's given; you may interpret and characterize what happened, not add to it. Write it as \
+a story's closing, not another log entry."""
+    narrative = await client.generate_text(model, prompt, temperature=0.7)
+    return narrative.strip()

@@ -1,4 +1,4 @@
-from backend.reflection import AWARD_CATEGORIES, reflect_on_history
+from backend.reflection import AWARD_CATEGORIES, generate_endgame_narrative, reflect_on_history
 from tests.conftest import run_async
 
 
@@ -10,6 +10,18 @@ class _FakeClient:
     async def generate_json(self, model, prompt, temperature=0.7, **kwargs):
         self.last_prompt = prompt
         return self._response
+
+
+class _FakeTextClient:
+    def __init__(self, response_text):
+        self._response_text = response_text
+        self.last_model = None
+        self.last_prompt = None
+
+    async def generate_text(self, model, prompt, temperature=0.5, **kwargs):
+        self.last_model = model
+        self.last_prompt = prompt
+        return self._response_text
 
 
 @run_async
@@ -120,3 +132,33 @@ async def test_prompt_asks_for_honest_judgment_not_a_scripted_outcome():
 
     assert "not what should have happened" in client.last_prompt
     assert "That judgment is yours to make" in client.last_prompt
+
+
+@run_async
+async def test_generate_endgame_narrative_returns_the_models_stripped_text():
+    client = _FakeTextClient("  A civilization rose, thrived, and faded.  \n")
+
+    narrative = await generate_endgame_narrative(client, "mistral:7b", "OVERSEER LOG: ...")
+
+    assert narrative == "A civilization rose, thrived, and faded."
+
+
+@run_async
+async def test_generate_endgame_narrative_passes_the_model_and_facts_through():
+    client = _FakeTextClient("a tale")
+
+    await generate_endgame_narrative(client, "mistral:7b", "OVERSEER LOG: Tribe A reached the Bronze Age.")
+
+    assert client.last_model == "mistral:7b"
+    assert "OVERSEER LOG: Tribe A reached the Bronze Age." in client.last_prompt
+
+
+@run_async
+async def test_generate_endgame_narrative_does_not_invite_invented_specifics():
+    """Same "facts only, model decides what to say" shape as reflect_on_history --
+    the model may interpret the given facts, not add new ones."""
+    client = _FakeTextClient("a tale")
+
+    await generate_endgame_narrative(client, "mistral:7b", "OVERSEER LOG: ...")
+
+    assert "Do not invent specific events, names, or numbers" in client.last_prompt

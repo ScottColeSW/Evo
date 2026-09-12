@@ -136,6 +136,7 @@
   #game-over-splash details.go-log summary { cursor: pointer; letter-spacing: 0.5px; text-transform: uppercase; padding: 4px 0; }
   #game-over-splash details.go-log summary:hover { color: #c7d2fe; }
   #game-over-splash .game-over-summary { color: #c7d2fe; font-size: 12px; font-family: monospace; line-height: 1.6; white-space: pre-wrap; max-width: 100%; background: rgba(0,0,0,0.3); border: 1px solid #2a2a3a; border-radius: 6px; padding: 14px 16px; margin: 8px 0 0; }
+  #game-over-splash .game-over-narrative { color: #e2e2e7; font-size: 13px; font-family: Georgia, serif; line-height: 1.7; white-space: pre-wrap; max-width: 100%; background: rgba(99, 102, 241, 0.08); border: 1px solid #3730a3; border-radius: 6px; padding: 14px 16px; margin: 8px 0 0; }
   #game-over-splash .game-over-actions { display: flex; gap: 12px; margin-top: 4px; }
   #game-over-splash .game-over-actions button { padding: 10px 26px; font-size: 13px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; letter-spacing: 0.5px; }
   #btn-try-again { background: #4338ca; color: #e0e7ff; }
@@ -341,6 +342,13 @@
           <div class="go-subtitle" id="game-over-subtitle"></div>
           <div class="go-verdict" id="game-over-verdict"></div>
           <div class="go-cards" id="game-over-cards"></div>
+          <!-- A separate, one-time LLM narrative synthesis of the whole game
+               (Simulation._trigger_game_over/generate_endgame_narrative), distinct
+               from the plain-templated Overseer Log below -- an actual outside
+               voice telling the story once, not another data table. Hidden
+               entirely (not just empty) on an older save/replay with no
+               game_over_narrative field, rather than showing an empty box. -->
+          <pre class="game-over-narrative hidden" id="game-over-narrative"></pre>
           <details class="go-log">
             <summary>Full Overseer Log</summary>
             <pre class="game-over-summary" id="game-over-summary"></pre>
@@ -866,6 +874,9 @@ function showGameOverSplash(state) {
   document.getElementById("game-over-verdict").innerHTML =
     `${GAME_OVER_VERDICT_ICONS[reason] || "📜"} ${escapeHtml(goVerdictText(state)).replace(/^Analysis:\s*/, "")}`;
   document.getElementById("game-over-summary").textContent = state.game_over_summary || "";
+  const narrativeEl = document.getElementById("game-over-narrative");
+  narrativeEl.textContent = state.game_over_narrative || "";
+  narrativeEl.hidden = !state.game_over_narrative;
 
   const tribes = Object.values(state.tribes || {});
   document.getElementById("game-over-cards").innerHTML = tribes.map(t => {

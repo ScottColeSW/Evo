@@ -17,7 +17,7 @@ from .actions import (
 from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
 from .genetics import breed, hatch
-from .reflection import AWARD_CATEGORIES, reflect_on_history
+from .reflection import AWARD_CATEGORIES, generate_endgame_narrative, reflect_on_history
 from .eras import ERAS, era_index, next_era, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
@@ -1905,6 +1905,14 @@ class Simulation:
         # retrospective the frontend's end-of-run splash actually displays.
         self.game_over_reason: str | None = None
         self.game_over_summary: str = ""
+        # A separate, one-time narrative synthesis (backend/reflection.py.
+        # generate_endgame_narrative) using config.ENDGAME_SUMMARY_MODEL -- an actual
+        # outside voice telling the whole game's story once, set alongside
+        # game_over_summary in _trigger_game_over. Safe to afford a bigger/different
+        # model here specifically because the sim has already stopped ticking by the
+        # time this runs -- no VRAM contention risk left, unlike a model resident
+        # during live play (see config.py's own comment on this reversal).
+        self.game_over_narrative: str = ""
         # A wandering storm cloud (see Simulation._advance_weather) -- world weather,
         # independent of any tribe. None when no storm is active; otherwise
         # {"x", "y", "heading", "cycles_left"}. lightning_strike is only ever set for
@@ -2323,6 +2331,7 @@ class Simulation:
         self.game_over = False
         self.game_over_reason = None
         self.game_over_summary = ""
+        self.game_over_narrative = ""
         if self.status == "GAME OVER":
             self.status = "OPERATIONAL"
         return None
@@ -2351,6 +2360,7 @@ class Simulation:
             "status": self.status,
             "game_over_reason": self.game_over_reason,
             "game_over_summary": self.game_over_summary,
+            "game_over_narrative": self.game_over_narrative,
             "paused": self.paused,
             "immortality_cycles": self.immortality_cycles,
             "storm_cloud": {"x": self.storm_cloud["x"], "y": self.storm_cloud["y"]} if self.storm_cloud else None,
@@ -4689,6 +4699,22 @@ class Simulation:
         self.game_over_reason = reason
         self.status = "GAME OVER"
         self.game_over_summary = self._generate_game_over_summary(reason)
+        # Awaited before shutdown() below, while every model is still loaded/
+        # loadable -- see generate_endgame_narrative's own docstring for why this
+        # specific call is where a bigger/different model is safe to use. Best-
+        # effort: a narrative failure (model not pulled, empty response) shouldn't
+        # block the game from actually ending.
+        try:
+            self.game_over_narrative = await generate_endgame_narrative(
+                self.client, config.ENDGAME_SUMMARY_MODEL, self.game_over_summary,
+            )
+        except Exception:
+            self.game_over_narrative = ""
+        # Unloaded explicitly here, not folded into shutdown()'s own tribe-model set
+        # below -- see that method's own comment for why an unconditional include
+        # there would cost every ordinary stop a wasted load-then-evict round trip
+        # for a model most sessions never touch at all.
+        await self.client.unload_model(config.ENDGAME_SUMMARY_MODEL)
         await self.shutdown()
 
     def _generate_game_over_summary(self, reason: str) -> str:
@@ -4808,7 +4834,15 @@ class Simulation:
         regardless of how the requests arrive, so concurrency here was buying nothing
         but a chance for the second request to collide with the first mid-eviction.
         Sequential now -- shutdown only ever runs once, as a session ends, so a few
-        extra seconds costs nothing that matters."""
+        extra seconds costs nothing that matters.
+
+        Deliberately does NOT include config.ENDGAME_SUMMARY_MODEL here -- unlike a
+        tribe's own model, it's not drawn from any live tribe.model, and most calls
+        to shutdown() (a manual STOP or tab-close mid-game) never touch it at all.
+        unload_model's own /api/generate call would still load the model just to
+        evict it again if it were included unconditionally here -- a real, wasted
+        round-trip on every ordinary stop, not a free no-op. _trigger_game_over
+        unloads it explicitly instead, right after actually using it."""
         models = {tribe.model for tribe in self.tribes.values()}
         for model in models:
             await self.client.unload_model(model)
