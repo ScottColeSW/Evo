@@ -506,6 +506,14 @@ let TILE = 6;
 let tribeCount = 0;
 let socket = null;
 let latestState = null;
+// Explicit follow-up, 2026-09-12: "I'd like the visual aspect of the game to
+// become smooth (not a ticking game)." See interpolatedTilePos below -- these
+// three track the previous snapshot and real arrival timing needed to glide
+// a moving entity's drawn position between two known states, instead of
+// snapping the instant a new one arrives.
+let previousState = null;
+let lastStateArrivedAt = 0;
+let stateIntervalMs = 500;
 let animFrame = 0;
 // Bug report (live playtest): a raid resolving flashed by "but didn't do anything I
 // can see... one long line and don't stay around." Root cause: recent_encounters is
@@ -693,6 +701,20 @@ function startSimulation(tribes, immortalCycles) {
       console.error("Failed to parse a state message from the server -- dropping this update.", err);
       return;
     }
+    // Explicit follow-up, 2026-09-12: "the visual aspect of the game should
+    // become smooth (not a ticking game)." Real per-message intervals are NOT
+    // the nominal TICK_SECONDS (0.5s) -- actual LLM turn latency (1.5-3s+,
+    // see the LLM Console's own per-turn timing) dominates real-world tick
+    // spacing, so the interpolation window has to be measured from the actual
+    // gap between the last two arrivals, not assumed from the backend
+    // constant. Clamped so one freak fast/slow gap (a pause, a reconnect)
+    // doesn't produce a jarringly fast or slow glide next time.
+    const now = performance.now();
+    if (latestState && lastStateArrivedAt) {
+      stateIntervalMs = Math.min(8000, Math.max(200, now - lastStateArrivedAt));
+    }
+    previousState = latestState;
+    lastStateArrivedAt = now;
     latestState = state;
     if (!firstStateReceived) {
       firstStateReceived = true;
@@ -1884,6 +1906,59 @@ function landAnchor(x, y) {
   return [x, y]; // surrounded by water on all sides within range -- nothing better to do
 }
 
+// Explicit follow-up, 2026-09-12: "I'd like the visual aspect of the game to
+// become smooth (not a ticking game)." Real per-tick movement is already
+// small and gradual server-side (EXPEDITION_SPEED/MOVEMENT_SPEED/
+// BATTALION_PATROL_SPEED are 10 tiles/DAY, a day is 20 cycles -- roughly
+// 0.5-1 tile of real movement per cycle in the ordinary case), but positions
+// are plain integer tiles -- the visible effect was "hold at one tile for a
+// few ticks while sub-tile progress silently accumulates server-side, then
+// jump one tile at once." Interpolating the drawn position between the last
+// two known snapshots (over stateIntervalMs, the REAL measured gap between
+// arrivals -- see socket.onmessage -- not the nominal TICK_SECONDS) turns
+// that into a continuous glide instead.
+//
+// MAX_INTERPOLATE_TILES is the "don't tween a teleport" guard: pre-settlement
+// RELOCATE can legitimately move up to MOVEMENT_SPEED (10) plus a trail bonus
+// in one cycle, comfortably under this, so an ordinary march still glides --
+// while a genuine discontinuity (a settlement founding snap, an injected
+// synthetic-state jump) snaps instantly instead of a cross-map glide.
+const MAX_INTERPOLATE_TILES = 20;
+
+function interpolatedTilePos(prevXY, curXY) {
+  if (!prevXY) return curXY;
+  const dx = curXY[0] - prevXY[0], dy = curXY[1] - prevXY[1];
+  if (Math.hypot(dx, dy) > MAX_INTERPOLATE_TILES) return curXY;
+  const progress = Math.min(1, (performance.now() - lastStateArrivedAt) / stateIntervalMs);
+  return [prevXY[0] + dx * progress, prevXY[1] + dy * progress];
+}
+
+// The four moving-entity lookups interpolatedTilePos needs a "previous"
+// counterpart for -- each keyed by something stable across two snapshots,
+// not list index (an expedition's own index shifts when an earlier one in
+// the list completes and is removed).
+function previousTribePos(tribeId) {
+  const t = previousState && previousState.tribes && previousState.tribes[tribeId];
+  return t ? [t.x, t.y] : null;
+}
+
+function previousExpeditionPos(tribeId, exp) {
+  const t = previousState && previousState.tribes && previousState.tribes[tribeId];
+  if (!t) return null;
+  const match = (t.expeditions || []).find(e => e.lead_scout === exp.lead_scout && e.kind === exp.kind);
+  return match ? match.pos : null;
+}
+
+function previousBattalionPatrolPos(tribeId) {
+  const t = previousState && previousState.tribes && previousState.tribes[tribeId];
+  return t && t.battalion_patrol ? t.battalion_patrol.pos : null;
+}
+
+function previousRaidersApproachingPos(tribeId) {
+  const t = previousState && previousState.tribes && previousState.tribes[tribeId];
+  return t && t.raiders_approaching ? [t.raiders_approaching.x, t.raiders_approaching.y] : null;
+}
+
 function biomeColor(biome) {
   switch (biome) {
     case "ocean": return "#0b3d5c";
@@ -2217,7 +2292,8 @@ function drawCelebrationFireworks(centerX, centerY) {
 }
 
 function drawTribeIndividuals(tribeId, t) {
-  const [landX, landY] = landAnchor(t.x, t.y);
+  const [ix, iy] = interpolatedTilePos(previousTribePos(tribeId), [t.x, t.y]);
+  const [landX, landY] = landAnchor(Math.round(ix), Math.round(iy));
   const centerX = landX * TILE + TILE / 2;
   const centerY = landY * TILE + TILE / 2;
 
@@ -2406,7 +2482,8 @@ const expeditionPathReveal = {};
 const PATH_REVEAL_FRAMES = 24;
 
 function drawExpedition(t, tribeId, exp, expIndex) {
-  const fx = exp.pos[0] * TILE + TILE / 2, fy = exp.pos[1] * TILE + TILE / 2;
+  const [ix, iy] = interpolatedTilePos(previousExpeditionPos(tribeId, exp), exp.pos);
+  const fx = ix * TILE + TILE / 2, fy = iy * TILE + TILE / 2;
   const path = exp.path || [];
   const revealKey = `${tribeId}:${expIndex}`;
   const expColor = pathColorForExpedition(t.color, expIndex);
@@ -2527,7 +2604,8 @@ function drawExpedition(t, tribeId, exp, expIndex) {
 // "returning" vs. actively closing on a raider camp is legible without opening the
 // sidebar.
 function drawBattalionPatrol(t, tribeId, patrol) {
-  const fx = patrol.pos[0] * TILE + TILE / 2, fy = patrol.pos[1] * TILE + TILE / 2;
+  const [ix, iy] = interpolatedTilePos(previousBattalionPatrolPos(tribeId), patrol.pos);
+  const fx = ix * TILE + TILE / 2, fy = iy * TILE + TILE / 2;
   const seed = stringSeed(`${tribeId}:battalion`);
   const bob = Math.sin(animFrame * 0.05 + hashUnit(seed) * Math.PI * 2) * 3;
   const size = Math.max(4, TILE * 0.32);
@@ -3801,11 +3879,12 @@ function drawFrame() {
     // Explicit request: "I do want to see RAIDERs ride in over time" -- a real,
     // moving marker for the whole multi-cycle approach (Simulation._advance_
     // raider_approach), not just a flash once it resolves.
-    Object.values(latestState.tribes || {}).forEach(t => {
+    Object.entries(latestState.tribes || {}).forEach(([tribeId, t]) => {
       const approach = t.raiders_approaching;
       if (!approach) return;
-      const cx = approach.x * TILE + TILE / 2;
-      const cy = approach.y * TILE + TILE / 2;
+      const [ix, iy] = interpolatedTilePos(previousRaidersApproachingPos(tribeId), [approach.x, approach.y]);
+      const cx = ix * TILE + TILE / 2;
+      const cy = iy * TILE + TILE / 2;
       // Explicit request: "the raider invasion forces should look a lot bigger on
       // the approach (like 1.5x house size)" -- a real, growing threat reads better
       // as visibly imposing than as a same-size-as-everything-else icon. Raised
