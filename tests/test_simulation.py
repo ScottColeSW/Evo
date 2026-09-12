@@ -652,6 +652,186 @@ def test_long_house_upgrade_nudge_is_silent_once_the_next_tier_is_already_met():
     assert "a fortress is now worth building" in request["prompt"]
 
 
+def test_barracks_nudge_fires_once_kitchen_and_keep_both_stand():
+    """Action-legibility audit finding, 2026-09-12: BUILD_BARRACKS's own
+    AFFORDABILITY_CHECKS gate (kitchen_built and keep_built) is structurally
+    identical to BUILD_KITCHEN's own gate, which already earns a dedicated
+    nudge -- this one never had an equivalent, despite being the single gate
+    behind the entire Military/diplomacy tree."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "tribal_synapse"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.kitchen_built = True
+    tribe.keep_built = True
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "a barracks built now would open up training a real battalion" in request["prompt"]
+
+
+def test_barracks_nudge_silent_with_only_one_prerequisite():
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "tribal_synapse"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.kitchen_built = True
+    tribe.keep_built = False
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "a barracks built now would open up" not in request["prompt"]
+
+
+def test_upgrade_warehouse_nudge_fires_at_the_build_cap_when_still_needed():
+    """Mirrors the UPGRADE_LONG_HOUSE cap-transition fix -- same gap, never
+    mirrored to its closest sibling."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "monolithic_era"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT
+    tribe.population = config.STORAGE_CAP_BASE + config.WAREHOUSE_MAX_COUNT * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+    tribe.wood = tribe.stone = tribe.food = tribe.water = 5000
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert f"Warehouses are at their built limit ({config.WAREHOUSE_MAX_COUNT})" in request["prompt"]
+    assert "UPGRADE_WAREHOUSE is the only way" in request["prompt"]
+
+
+def test_upgrade_warehouse_nudge_silent_when_storage_has_room_to_spare():
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "monolithic_era"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT
+    tribe.population = 10  # far under the storage cap -- no real pressure
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Warehouses are at their built limit" not in request["prompt"]
+
+
+def test_upgrade_barracks_nudge_fires_at_the_build_cap_when_battalion_is_full():
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "war_and_world_domination_era"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.barracks_built = config.BARRACKS_MAX_COUNT
+    tribe.battalion_size = config.BARRACKS_MAX_COUNT * config.BATTALION_CAPACITY_PER_BARRACKS
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert f"Barracks are at their built limit ({config.BARRACKS_MAX_COUNT})" in request["prompt"]
+    assert "UPGRADE_BARRACKS is the only way" in request["prompt"]
+
+
+def test_upgrade_barracks_nudge_silent_when_battalion_has_room_to_grow():
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "war_and_world_domination_era"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.barracks_built = config.BARRACKS_MAX_COUNT
+    tribe.battalion_size = 1  # well under capacity
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Barracks are at their built limit" not in request["prompt"]
+
+
+def test_gather_ore_nudge_fires_once_the_mine_stands_but_never_yet_fetched():
+    """Mirrors the already-fixed BUILD_TANNERY/BUILD_COOP/BUILD_DEER_PEN
+    first-use nudges -- the BUILD_MINE nudge goes silent the instant
+    mine_built flips true, but nothing picks up the baton to say GATHER_ORE
+    now actually produces something."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "monolithic_era"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.mine_built = True
+    tribe.mine_resource_name = "Iron"
+    tribe.ore_ever_gathered = False
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "The mine stands ready" in request["prompt"]
+    assert "Iron" in request["prompt"]
+
+
+def test_gather_ore_nudge_silent_once_ore_has_ever_been_gathered():
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "monolithic_era"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.mine_built = True
+    tribe.mine_resource_name = "Iron"
+    tribe.ore_ever_gathered = True
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "The mine stands ready" not in request["prompt"]
+
+
+def test_strike_raider_camp_nudge_names_the_exact_coordinates_to_aim_at():
+    """STRIKE_RAIDER_CAMP needs target_vector to match a raider_sightings entry
+    exactly (actions._strike_raider_camp) -- a stricter aim requirement than
+    RAID/TRADE's rough-radius targeting, making a bare descriptive fact worse
+    than for those actions."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.raider_sightings = [(60, 62)]
+    sim.tribes = {"tribe_0": tribe}
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], ["STRIKE_RAIDER_CAMP", "GATHER_WOOD"])
+
+    assert any("Aiming target_vector exactly at (60,62) would strike that known raider camp" in e for e in entities)
+
+
+def test_strike_raider_camp_nudge_absent_when_action_not_available():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.raider_sightings = [(60, 62)]
+    sim.tribes = {"tribe_0": tribe}
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], ["GATHER_WOOD"])
+
+    assert not any("would strike that known raider camp" in e for e in entities)
+    assert any("raiders reported near (60,62)" in e for e in entities)  # the plain fact still stands
+
+
 def test_torches_and_moat_nudge_once_wall_is_fully_reinforced():
     from backend import config
 
@@ -848,6 +1028,24 @@ def test_discovered_rival_reachable_list_only_names_actions_actually_offered():
     assert fact is not None
     assert "RAID" in fact and "TRADE" in fact
     assert "DECLARE_ALLIANCE" not in fact and "DECLARE_WAR" not in fact
+
+
+def test_discovered_rival_reachable_list_includes_spy_and_send_trade_emissary():
+    """Action-legibility audit finding, 2026-09-12: SPY and SEND_TRADE_EMISSARY
+    share the identical discovered_rivals prerequisite as RAID/TRADE/
+    DECLARE_ALLIANCE/DECLARE_WAR but were missing from this nudge purely because
+    it predates both actions, not by design."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 55, 50, "#fb923c")
+    tribe.discovered_rivals.add("tribe_1")
+    sim.tribes = {"tribe_0": tribe, "tribe_1": rival}
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], [], ["SPY", "SEND_TRADE_EMISSARY", "GATHER_WOOD"])
+
+    fact = next((e for e in entities if e.startswith("Aiming directly at")), None)
+    assert fact is not None
+    assert "SPY" in fact and "SEND_TRADE_EMISSARY" in fact
 
 
 def test_discovered_rival_reachable_fact_absent_when_nothing_is_available():

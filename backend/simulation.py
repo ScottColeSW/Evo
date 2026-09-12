@@ -2799,6 +2799,18 @@ class Simulation:
             f"a vein of {site['resource']} was found at ({site['x']},{site['y']})" for site in tribe.mine_sites
         ]
         visible_entities += [f"raiders reported near ({x},{y})" for x, y in tribe.raider_sightings]
+        # NUDGE (2026-09-12, action-legibility audit): the fact above was purely
+        # descriptive, same "informed but not told it's actionable" gap the
+        # rival-contact nudge above already exists to fix -- never extended here.
+        # STRIKE_RAIDER_CAMP needs target_vector to match a raider_sightings entry
+        # exactly (actions._strike_raider_camp), a stricter aim requirement than
+        # RAID/TRADE's rough-radius targeting, which makes the missing instruction
+        # worse than for those actions.
+        if "STRIKE_RAIDER_CAMP" in available_actions:
+            visible_entities += [
+                f"Aiming target_vector exactly at ({x},{y}) would strike that known raider camp right now."
+                for x, y in tribe.raider_sightings
+            ]
 
         # Bug report: "one is not exploring and one only explores in one
         # direction." A real, honest fact about how lopsided (or absent) a
@@ -2931,7 +2943,15 @@ class Simulation:
                 # Filtered to available_actions so this never dangles
                 # something not actually offered yet (DECLARE_ALLIANCE/
                 # DECLARE_WAR are Tribal Synapse-only).
-                reachable = [a for a in ("RAID", "TRADE", "DECLARE_ALLIANCE", "DECLARE_WAR") if a in available_actions]
+                # SPY/SEND_TRADE_EMISSARY added 2026-09-12 (action-legibility audit) --
+                # both share this exact discovered_rivals prerequisite (see their own
+                # ACTION_DESCRIPTIONS/AFFORDABILITY_CHECKS entries) but were missing from
+                # this list purely because the fix above predates both actions, not by
+                # design.
+                reachable = [
+                    a for a in ("RAID", "TRADE", "DECLARE_ALLIANCE", "DECLARE_WAR", "SPY", "SEND_TRADE_EMISSARY")
+                    if a in available_actions
+                ]
                 if reachable:
                     visible_entities.append(
                         f"Aiming directly at {other.name}'s coordinates would reach them right now for: "
@@ -4125,6 +4145,30 @@ class Simulation:
                         f"further, toward the {next_tier[1]} needed for a {next_tier[0]}."
                     )
 
+        # NUDGE (2026-09-12, action-legibility audit): the exact same cap-transition
+        # gap UPGRADE_LONG_HOUSE was just fixed for above, unmirrored to its closest
+        # sibling. _warehouse_needed already gates UPGRADE_WAREHOUSE's own
+        # AFFORDABILITY_CHECKS entry (raising the cap only matters if storage is
+        # actually pressured), reused here so this never fires for a warehouse-capped
+        # tribe that genuinely has room to spare.
+        if "UPGRADE_WAREHOUSE" in available_actions and tribe.warehouses_built >= config.WAREHOUSE_MAX_COUNT and _warehouse_needed(tribe):
+            visible_entities.append(
+                f"Warehouses are at their built limit ({tribe.warehouses_built}) and storage is still "
+                "under real pressure -- UPGRADE_WAREHOUSE is the only way to raise that ceiling further."
+            )
+        # NUDGE (2026-09-12, same audit): identical shape, one tier further down the
+        # same pattern -- a Barracks caps how large a battalion can ever grow
+        # (actions._battalion_capacity), and nothing announces the moment that cap is
+        # actually reached.
+        if (
+            "UPGRADE_BARRACKS" in available_actions and tribe.barracks_built >= config.BARRACKS_MAX_COUNT
+            and tribe.battalion_size >= _battalion_capacity(tribe)
+        ):
+            visible_entities.append(
+                f"Barracks are at their built limit ({tribe.barracks_built}) and the battalion is at its "
+                "full capacity -- UPGRADE_BARRACKS is the only way to train a larger one."
+            )
+
         if "BUILD_SAWMILL" in available_actions and not tribe.sawmill_built:
             if tribe.wood_ever_gathered:
                 if tribe.lumber_sites:
@@ -4184,6 +4228,20 @@ class Simulation:
                     "Cooking is known and real shelter stands -- a kitchen would turn cooked meals into "
                     "excellent food, stretching stores even further."
                 )
+        # NUDGE (2026-09-12, action-legibility audit): BUILD_BARRACKS's own
+        # AFFORDABILITY_CHECKS gate (kitchen_built and keep_built) is structurally
+        # identical to BUILD_KITCHEN's own gate just above, which already earns a
+        # dedicated nudge -- this one never had an equivalent. The stakes are real:
+        # a Barracks is the single gate behind TRAIN_BATTALION, DECLARE_WAR,
+        # DECLARE_ALLIANCE, and SPY (see their own AFFORDABILITY_CHECKS entries), so
+        # a chief that just finished its Keep has no in-context signal that this one
+        # building just opened the entire diplomacy/war tree.
+        if "BUILD_BARRACKS" in available_actions and not tribe.barracks_built:
+            if tribe.kitchen_built and tribe.keep_built:
+                visible_entities.append(
+                    "A kitchen feeds the tribe and a keep stands watch -- a barracks built now would open "
+                    "up training a real battalion, and formal diplomacy or espionage toward any known rival."
+                )
         if "BUILD_QUARRY" in available_actions and not tribe.quarry_built:
             if tribe.stone_ever_gathered:
                 if tribe.quarry_sites:
@@ -4211,6 +4269,17 @@ class Simulation:
                     "Quarrying is mastered, but no vein of a unique resource has been found yet -- "
                     "scouting may turn one up."
                 )
+        # NUDGE (2026-09-12, action-legibility audit): the BUILD_MINE nudge just
+        # above goes permanently silent the instant mine_built flips true (guarded
+        # by `not tribe.mine_built`), but nothing picks up the baton to say the
+        # mine now actually produces something -- the identical gap already fixed
+        # for BUILD_TANNERY/BUILD_COOP/BUILD_DEER_PEN's own first-use milestones,
+        # just never extended to the mine's own fetch step.
+        if "GATHER_ORE" in available_actions and tribe.mine_built and not tribe.ore_ever_gathered:
+            visible_entities.append(
+                f"The mine stands ready -- gathering ore here would bring in the first real supply of "
+                f"{tribe.mine_resource_name}."
+            )
         if "BUILD_FORGE" in available_actions and not tribe.forge_built and tribe.mine_built:
             ore_in_stock = tribe.unique_resources.get(tribe.mine_resource_name, 0)
             if ore_in_stock >= config.FORGE_ITEM_ORE_COST:
