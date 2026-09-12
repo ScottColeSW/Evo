@@ -9,13 +9,21 @@ a given number -- bump it whenever a formula changes materially.
 
 from .eras import ERAS, era_index
 
-SCORING_VERSION = 1
+SCORING_VERSION = 2
 
 # A tribe that ever settled permanently near water (backend.simulation.Tribe.
-# settled_permanently_near_water) gets this flat bonus on top of its raw survival
-# fraction -- surviving by luck alone (never truly secure) shouldn't score the same
-# as surviving by actually solving the water problem.
+# settled_permanently_near_water) gets this flat bonus on top of the weighted score
+# below -- surviving by luck alone (never truly secure) shouldn't score the same as
+# surviving by actually solving the water problem.
 _SURVIVAL_SETTLED_BONUS = 10
+
+# Reference population for score_survival's own population_fraction -- deliberately
+# NOT reusing score_settlement's 200 (tribal_synapse's own requirement). Real batch
+# data (2026-09-12, the fixed near-zero-starting-resources scenario) showed
+# survivors reaching populations from 215 to 1253 within one 200-cycle budget --
+# 200 saturates almost immediately at those real scales and stops differentiating
+# right where it matters. 1500 is picked from that same real range, not guessed cold.
+_SURVIVAL_POPULATION_REFERENCE = 1500
 
 # A population meaningfully ahead of a rival's -- used only to judge whether a raid
 # was a reasonable gamble, not to score population directly.
@@ -23,10 +31,22 @@ _CONFLICT_STRONGER_RIVAL_POPULATION_RATIO = 1.5
 
 
 def score_survival(tribe: dict, cycle_budget: int) -> int:
-    base = 100 * min(1.0, tribe["cycles_run"] / cycle_budget) if cycle_budget > 0 else 0
+    """Explicit fix, 2026-09-12: the first real batch run showed two trials that
+    both survived the full cycle_budget (the only thing v1 of this formula ever
+    measured) landing on wildly different outcomes underneath that -- one reached
+    population 215 at cognitive_horizon, the other 1253 at tribal_synapse. v1 scored
+    both 100, blind to that real difference. Now a weighted mix, same shape
+    score_settlement already uses: surviving the budget is still the dominant signal
+    (0.6) -- this is the survival scenario, not settlement -- with era progress and
+    population as real, but secondary, differentiators (0.25/0.15) among however far
+    a tribe got, whether or not it survived to the end."""
+    survival_fraction = min(1.0, tribe["cycles_run"] / cycle_budget) if cycle_budget > 0 else 0.0
+    era_fraction = era_index(tribe["era_reached"]) / max(1, len(ERAS) - 1)
+    population_fraction = min(1.0, tribe["max_population"] / _SURVIVAL_POPULATION_REFERENCE)
+    score = 100 * (0.6 * survival_fraction + 0.25 * era_fraction + 0.15 * population_fraction)
     if tribe["settled_permanently_near_water"]:
-        base += _SURVIVAL_SETTLED_BONUS
-    return round(min(100.0, base))
+        score += _SURVIVAL_SETTLED_BONUS
+    return round(min(100.0, score))
 
 
 def score_settlement(tribe: dict) -> int:
