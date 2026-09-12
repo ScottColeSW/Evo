@@ -241,7 +241,7 @@ ENDGAME_RESOLUTION_ACTIONS = {
 # extended to a fact only Simulation (not a lone Tribe/Landscape pair) can
 # check.
 RIVAL_DEPENDENT_ACTIONS = (
-    "RAID", "TRADE", "SEND_TRADE_EMISSARY", "DECLARE_ALLIANCE", "DECLARE_WAR", "DECLARE_CONQUEST",
+    "RAID", "TRADE", "SEND_TRADE_EMISSARY", "DECLARE_ALLIANCE", "DECLARE_WAR", "DECLARE_CONQUEST", "SPY",
 )
 
 # See _prepare_turn's affordability filter. A live run showed a tribe stuck at
@@ -647,6 +647,10 @@ AFFORDABILITY_CHECKS = {
     # can only ever have reached WAR in the first place via this same gate.
     "DECLARE_WAR": lambda t, w: t.barracks_built > 0,
     "DECLARE_ALLIANCE": lambda t, w: t.barracks_built > 0,
+    # Same barracks_built gate as ALLIANCE/WAR -- espionage reads as a military/
+    # intelligence capability, not a scholarly one, and this needs no new
+    # prerequisite plumbing beyond what already exists.
+    "SPY": lambda t, w: t.barracks_built > 0,
     # long_houses_built + long_house_upgrades, not long_houses_built alone --
     # explicit request, 2026-09-09: "modify long houses to scale like
     # warehouse." Real builds cap at LONG_HOUSE_MAX_COUNT (5); Fortress/
@@ -963,6 +967,8 @@ class Tribe:
         self.raids_won = 0
         self.raids_lost = 0
         self.raids_defended = 0
+        self.spy_missions_run = 0
+        self.spy_missions_caught = 0
         self.trades_completed = 0
         # Explicit request: sidebar boxes for "an elastic and running total of
         # things traded away/received" and "each type of combat with W/L
@@ -992,6 +998,11 @@ class Tribe:
         # instead of a live distance check that a settled tribe -- home position
         # fixed -- could never re-satisfy once spawned far from its rival).
         self.discovered_rivals: set[str] = set()
+        # See actions.py._spy -- one entry per rival ever successfully spied on,
+        # overwritten (not appended) by a newer mission against the same rival.
+        # Feeds Simulation._build_night_inventory so self-review has something real
+        # to compare against besides its own history -- the whole point of SPY.
+        self.rival_intel: dict[str, dict] = {}
         # Credited to whichever chief is in power the moment each is first earned --
         # see Simulation._check_chief_trophies. [{"name", "chief", "cycle"}, ...]
         self.trophies: list[dict] = []
@@ -2206,6 +2217,20 @@ class Simulation:
                     gaps.append(f"{resource} {have}/{minimum}")
             if gaps:
                 lines.append(f"To reach {nxt.label}, still short on: {', '.join(gaps)}.")
+        # actions.py._spy's payoff: real, current-at-the-time facts about a rival to
+        # weigh against the tribe's own state above, not just its own history. Looked
+        # up fresh in self.tribes rather than trusted as still accurate -- a rival that
+        # went extinct or merged away since being spied on has nothing left to compare.
+        for rival_id, intel in tribe.rival_intel.items():
+            rival = self.tribes.get(rival_id)
+            if rival is None or rival.extinct:
+                continue
+            lines.append(
+                f"Last known intelligence on {rival.name} (gathered cycle {intel['cycle']}): "
+                f"population {intel['population']}, era {intel['era']}, "
+                f"{intel['wood']} wood/{intel['stone']} stone/{intel['food']} food/{intel['water']} water, "
+                f"{intel['long_houses_built']} long houses, {intel['wall_ring_count']} wall rings."
+            )
         return " ".join(lines)
 
     async def _run_night_cycle(self, tribe: "Tribe") -> None:

@@ -2713,6 +2713,24 @@ def test_rival_dependent_actions_stay_available_with_a_living_rival():
     assert "DECLARE_CONQUEST" in ctx["available_actions"]
 
 
+def test_spy_is_offered_once_a_barracks_and_a_living_rival_both_exist():
+    """SPY isn't in ENDGAME_RESOLUTION_ACTIONS (not resolution-oriented, same
+    bucket as RAID/TRADE/SEND_TRADE_EMISSARY), so a top-era fixture can't prove
+    it stays offered with a living rival -- needs its own, earlier-era check."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    tribe, rival = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    for t in (tribe, rival):
+        t.has_ever_settled = True
+        sim._found_territory(t)
+        t.era = "tribal_synapse"
+        t.barracks_built = 1
+    tribe.discovered_rivals.add(rival.id)
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "SPY" in ctx["available_actions"]
+
+
 def test_fresh_tribe_has_only_pre_settlement_actions_available():
     """Explicit request: a weak model faced with the full Stone Age action list from
     cycle one has no structural push toward the single most important early decision
@@ -5950,7 +5968,7 @@ def test_top_era_narrows_the_menu_to_endgame_resolution_when_a_rival_exists():
     # SEND_TRADE_EMISSARY/EXPLORATION_PARTY (not resolution-oriented).
     for real_action in ("DECLARE_CONQUEST", "DECLARE_ALLIANCE", "TRAIN_BATTALION", "SCOUT"):
         assert real_action in ctx["available_actions"]
-    for retired_from_endgame in ("DECLARE_WAR", "TRADE", "RAID", "SEND_TRADE_EMISSARY", "EXPLORATION_PARTY"):
+    for retired_from_endgame in ("DECLARE_WAR", "TRADE", "RAID", "SEND_TRADE_EMISSARY", "EXPLORATION_PARTY", "SPY"):
         assert retired_from_endgame not in ctx["available_actions"]
     assert "settling things with the known rival tribe once and for all" in request["prompt"]
 
@@ -7474,6 +7492,44 @@ def test_night_inventory_reports_settlement_when_actually_settled():
     inventory = sim._build_night_inventory(tribe)
 
     assert "camped on farmable ground" in inventory
+
+
+def test_night_inventory_includes_spied_rival_intelligence():
+    """actions.py._spy's whole payoff: self-review needs something real to
+    compare against besides the tribe's own history."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    tribe, rival = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    rival.population, rival.era = 42, "bronze_dawn"
+    tribe.rival_intel[rival.id] = {
+        "cycle": 300, "population": 42, "era": "bronze_dawn",
+        "wood": 5, "stone": 6, "food": 7, "water": 8,
+        "long_houses_built": 2, "wall_ring_count": 1,
+    }
+
+    inventory = sim._build_night_inventory(tribe)
+
+    assert f"Last known intelligence on {rival.name} (gathered cycle 300)" in inventory
+    assert "population 42, era bronze_dawn" in inventory
+    assert "5 wood/6 stone/7 food/8 water" in inventory
+    assert "2 long houses, 1 wall rings" in inventory
+
+
+def test_night_inventory_drops_intelligence_on_a_rival_that_no_longer_exists():
+    """A stale reference shouldn't leak a stale fact -- looked up fresh in
+    self.tribes rather than trusted, matching how _build_night_inventory reads
+    every other live value off the tribe/world rather than a cached copy."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    tribe, rival = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    tribe.rival_intel[rival.id] = {
+        "cycle": 300, "population": 42, "era": "bronze_dawn",
+        "wood": 5, "stone": 6, "food": 7, "water": 8,
+        "long_houses_built": 2, "wall_ring_count": 1,
+    }
+    rival.extinct = True
+
+    inventory = sim._build_night_inventory(tribe)
+
+    assert "Last known intelligence" not in inventory
 
 
 @run_async

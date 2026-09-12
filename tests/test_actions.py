@@ -5360,6 +5360,110 @@ def test_send_trade_emissary_can_reach_a_minor_settlement_too():
     assert tribe.expeditions == []  # instant, no expedition ever created
 
 
+def test_spy_requires_a_barracks():
+    """Same belt-and-suspenders shape as _declare_alliance/_declare_war -- a real
+    guard in the function body, not just the AFFORDABILITY_CHECKS menu filter."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    rival = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 60, 50, "#fb923c")
+    tribe.discovered_rivals.add("tribe_1")
+    sim.tribes = {"tribe_0": tribe, "tribe_1": rival}
+
+    note = ACTION_REGISTRY["SPY"](sim, tribe, "plains", (60, 50))
+
+    assert "barracks must be built" in note
+    assert tribe.rival_intel == {}
+
+
+def test_spy_requires_a_known_rival():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.barracks_built = 1
+    sim.tribes = {"tribe_0": tribe}
+
+    note = ACTION_REGISTRY["SPY"](sim, tribe, "plains", (60, 50))
+
+    assert "no rival tribe has been encountered" in note
+    assert tribe.rival_intel == {}
+
+
+def test_spy_undetected_reveals_real_rival_facts_and_costs_nothing():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.barracks_built = 1
+    tribe.food, tribe.water, tribe.population = 40, 40, 20
+    rival = Tribe("tribe_1", "Mountain Tribe", "qwen2.5:3b", 60, 50, "#fb923c")
+    rival.population, rival.era = 55, "tribal_synapse"
+    rival.wood, rival.stone, rival.food, rival.water = 10, 20, 30, 40
+    rival.long_houses_built = 3
+    rival.wall_rings = [{"ring": 0}, {"ring": 1}]
+    tribe.discovered_rivals.add("tribe_1")
+    sim.tribes = {"tribe_0": tribe, "tribe_1": rival}
+
+    with mock.patch("backend.actions.random.random", return_value=0.99):  # >= SPY_DETECTION_CHANCE
+        note = ACTION_REGISTRY["SPY"](sim, tribe, "plains", (60, 50))
+
+    assert "undetected" in note
+    assert tribe.spy_missions_run == 1
+    assert tribe.spy_missions_caught == 0
+    assert tribe.population == 20  # no cost on success
+    assert tribe.food == 40 and tribe.water == 40  # no cost on success
+    intel = tribe.rival_intel["tribe_1"]
+    assert intel["population"] == 55
+    assert intel["era"] == "tribal_synapse"
+    assert intel["wood"] == 10 and intel["stone"] == 20 and intel["food"] == 30 and intel["water"] == 40
+    assert intel["long_houses_built"] == 3
+    assert intel["wall_ring_count"] == 2
+    assert "tribe_0" not in rival.discovered_rivals  # undetected -- rival never learns
+
+
+def test_spy_caught_costs_a_life_and_supplies_and_reveals_the_tribe_to_the_rival():
+    """Explicit design: getting caught isn't just a failed roll -- the tribe loses
+    the spy itself, its own small carried supplies (not the tribe's stockpile),
+    and the rival now genuinely knows this tribe exists."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.barracks_built = 1
+    tribe.food, tribe.water, tribe.population = 40, 40, 20
+    rival = Tribe("tribe_1", "Mountain Tribe", "qwen2.5:3b", 60, 50, "#fb923c")
+    tribe.discovered_rivals.add("tribe_1")
+    sim.tribes = {"tribe_0": tribe, "tribe_1": rival}
+
+    with mock.patch("backend.actions.random.random", return_value=0.1):  # < SPY_DETECTION_CHANCE
+        note = ACTION_REGISTRY["SPY"](sim, tribe, "plains", (60, 50))
+
+    assert "caught" in note
+    assert tribe.spy_missions_run == 1
+    assert tribe.spy_missions_caught == 1
+    assert tribe.population == 19  # SPY_CAUGHT_POPULATION_LOSS
+    assert tribe.food == 35 and tribe.water == 35  # SPY_CAUGHT_SUPPLY_FOOD/WATER
+    assert "tribe_0" in rival.discovered_rivals  # the actual point of the risk
+    assert tribe.rival_intel == {}  # a caught mission learns nothing
+    assert any(e["kind"] == "spy_caught" for e in sim.recent_encounters)
+    assert any("caught snooping" in h for h in rival.history)
+
+
+def test_spy_caught_supplies_lost_are_capped_at_what_the_tribe_actually_has():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.barracks_built = 1
+    tribe.food, tribe.water, tribe.population = 2, 1, 20  # less than the fixed loss amounts
+    rival = Tribe("tribe_1", "Mountain Tribe", "qwen2.5:3b", 60, 50, "#fb923c")
+    tribe.discovered_rivals.add("tribe_1")
+    sim.tribes = {"tribe_0": tribe, "tribe_1": rival}
+
+    with mock.patch("backend.actions.random.random", return_value=0.1):
+        ACTION_REGISTRY["SPY"](sim, tribe, "plains", (60, 50))
+
+    assert tribe.food == 0 and tribe.water == 0  # never goes negative
+
+
 def test_execute_trade_is_reused_identically_by_instant_trade_and_the_emissary():
     """Both TRADE and SEND_TRADE_EMISSARY resolve a found partner through the same
     _execute_trade helper -- confirms the refactor didn't change instant TRADE's

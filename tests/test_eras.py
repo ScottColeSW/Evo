@@ -76,7 +76,7 @@ def test_tribal_synapse_now_holds_only_military_diplomacy_and_knowledge():
     assert set(tribal_synapse.unlocks_actions) == {
         "STRIKE_RAIDER_CAMP", "EXPEL_RAIDERS_FROM_TERRITORY",
         "BUILD_BARRACKS", "UPGRADE_BARRACKS", "TRAIN_BATTALION",
-        "DECLARE_ALLIANCE", "DECLARE_WAR", "BUILD_MOAT", "BUILD_KEEP",
+        "DECLARE_ALLIANCE", "DECLARE_WAR", "SPY", "BUILD_MOAT", "BUILD_KEEP",
         "BUILD_LIBRARY", "RESEARCH",
     }
 

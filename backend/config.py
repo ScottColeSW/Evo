@@ -1350,6 +1350,27 @@ TRIBE_MAP_SECTOR_SIZE = 10
 NEGOTIATE_PRIDE_MAGNITUDE = 0.3
 NEGOTIATE_PRIDE_RADIUS = 4
 
+# SPY (backend/actions.py._spy): a discovered rival only, instant, no travel
+# simulation -- same "no guessed target_vector" shape SEND_TRADE_EMISSARY was
+# rebuilt into after a live 986-cycle run showed a guessed travel target almost
+# always wandering nowhere close. Genuinely risky, not a free lookup: on detection
+# the tribe loses the spy's own small carried supplies (not the tribe's stockpile)
+# and, the actual point of the risk, the rival now knows this tribe exists
+# (rival.discovered_rivals) -- a real, permanent fact, not flavor text. A new
+# trauma/pride category, not reused from RAID's: espionage discovered reads as an
+# intrigue/diplomacy event, the same category DECLARE_ALLIANCE/DECLARE_WAR's own
+# NEGOTIATE_PRIDE_* already carved out, not "mechanically the same kind" of
+# violence RAIDER_DEFENSE's own reuse of RAID_TRAUMA_*/RAID_PRIDE_* is (see that
+# constant's own comment for the distinction).
+SPY_DETECTION_CHANCE = 0.35
+SPY_CAUGHT_POPULATION_LOSS = 1
+SPY_CAUGHT_SUPPLY_FOOD = 5
+SPY_CAUGHT_SUPPLY_WATER = 5
+SPY_CAUGHT_TRAUMA_MAGNITUDE = -0.5
+SPY_CAUGHT_TRAUMA_RADIUS = 6
+SPY_CAUGHT_PRIDE_MAGNITUDE = 0.4
+SPY_CAUGHT_PRIDE_RADIUS = 5
+
 # backend/threat.py -- the reconciled, non-overriding version of the Agentic
 # Evolution spec's Module A (calculate_threat_proximity). Same distance-weighted
 # exponential-decay shape the spec itself proposed (w_r * exp(-alpha * dist)),

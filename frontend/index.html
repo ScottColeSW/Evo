@@ -3908,6 +3908,7 @@ function drawFrame() {
         : e.kind === "wolf_attack" ? "🐺"
         : e.kind === "hazard_death" ? "☠️"
         : e.kind === "hazard_landmark" ? "⚠️"
+        : e.kind === "spy_caught" ? "🕵️"
         : "\u{1F3F4}";
       ctx.fillText(encounterIcon, cx + shakeX, cy + shakeY);
       ctx.font = `bold ${Math.max(8, TILE * 0.35)}px sans-serif`;

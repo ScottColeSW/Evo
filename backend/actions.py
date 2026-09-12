@@ -2998,6 +2998,73 @@ def _send_trade_emissary(sim, tribe, biome, target):
     return _execute_trade(sim, tribe, rival)
 
 
+def _spy(sim, tribe, biome, target):
+    """Send a covert agent to a discovered rival's camp -- what self-review
+    (Simulation._run_night_cycle, now the tribe's own model rather than a
+    dedicated reviewer -- see config.py's own comment above ENDGAME_SUMMARY_MODEL)
+    needs to have something real to compare itself against instead of pure
+    introspection. Contact-gated, instant, no travel simulation, same shape
+    _nearest_rival already gives SEND_TRADE_EMISSARY/DECLARE_ALLIANCE/
+    DECLARE_WAR -- deliberately not a multi-day expedition guessing a target
+    vector, the exact anti-pattern SEND_TRADE_EMISSARY was rebuilt away from
+    after a live 986-cycle run showed that almost always wandering nowhere
+    close to a real rival.
+
+    Explicit design, 2026-09-12: genuinely risky, not a free lookup. On
+    detection (config.SPY_DETECTION_CHANCE) the tribe loses the spy itself
+    (a real population cost, not just a failed roll) and whatever small,
+    fixed supply the spy personally carried -- not a fraction of the tribe's
+    home stockpile, the mission's own kit, sized the same way regardless of
+    how wealthy the tribe is. The real cost of getting caught isn't the
+    resources, though: the rival now knows this tribe exists
+    (rival.discovered_rivals), a permanent, real fact revealed by the rival's
+    own genuine detection, not scripted flavor text -- see
+    Tribe.discovered_rivals's own docstring for why this is the same
+    once-found-stays-found shape landmarks already use. An undetected mission
+    costs nothing and reveals real, current facts about the rival (population,
+    era, resources, key buildings) into tribe.rival_intel, read by
+    Simulation._build_night_inventory the next time self-review runs.
+
+    Same belt-and-suspenders barracks_built guard as _declare_alliance/
+    _declare_war (see that docstring) -- not just the AFFORDABILITY_CHECKS menu
+    filter, a real check here too, since anything invoking this action
+    function directly must not bypass the same prerequisite the menu enforces."""
+    if tribe.barracks_built <= 0:
+        return "a barracks must be built before any espionage mission is worth sending"
+    tx, ty = target
+    rival = _nearest_rival(sim, tribe, tx, ty)
+    if rival is None:
+        return "no rival tribe has been encountered nearby yet to send a spy toward"
+
+    tribe.spy_missions_run += 1
+    if random.random() < config.SPY_DETECTION_CHANCE:
+        tribe.spy_missions_caught += 1
+        sim._lose_population(tribe, config.SPY_CAUGHT_POPULATION_LOSS, cause="spy_caught")
+        tribe.food -= min(tribe.food, config.SPY_CAUGHT_SUPPLY_FOOD)
+        tribe.water -= min(tribe.water, config.SPY_CAUGHT_SUPPLY_WATER)
+        rival.discovered_rivals.add(tribe.id)
+        sim.trauma.radiate_event_wave(rival.x, rival.y, config.SPY_CAUGHT_PRIDE_MAGNITUDE, config.SPY_CAUGHT_PRIDE_RADIUS)
+        sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.SPY_CAUGHT_TRAUMA_MAGNITUDE, config.SPY_CAUGHT_TRAUMA_RADIUS)
+        sim.recent_encounters.append({
+            "x": rival.x, "y": rival.y, "kind": "spy_caught",
+            "label": f"{tribe.name}'s spy caught by {rival.name}", "outcome": "lost",
+        })
+        rival.history.append(f"a spy from {tribe.name} was caught snooping near camp")
+        if tribe.extinct:
+            return f"the spy sent toward {rival.name} was caught and did not survive"
+        return f"the spy sent toward {rival.name} was caught -- {rival.name} now knows of {tribe.name}"
+
+    tribe.rival_intel[rival.id] = {
+        "cycle": sim.cycle,
+        "population": rival.population,
+        "era": rival.era,
+        "wood": rival.wood, "stone": rival.stone, "food": rival.food, "water": rival.water,
+        "long_houses_built": rival.long_houses_built,
+        "wall_ring_count": len(rival.wall_rings),
+    }
+    return f"a spy returns from {rival.name}'s camp with fresh intelligence, undetected"
+
+
 ACTION_REGISTRY = {
     "GATHER_WOOD": _gather_wood,
     "GATHER_STONE": _gather_stone,
@@ -3058,6 +3125,7 @@ ACTION_REGISTRY = {
     "DECLARE_ALLIANCE": _declare_alliance,
     "DECLARE_WAR": _declare_war,
     "SEND_TRADE_EMISSARY": _send_trade_emissary,
+    "SPY": _spy,
 }
 
 # Plain mechanical facts about what each verb does, handed to the model in the prompt
@@ -3127,4 +3195,5 @@ ACTION_DESCRIPTIONS = {
     "DECLARE_ALLIANCE": "Declare a lasting alliance with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember, not a one-time exchange. Also ends a war you'd previously declared with that same rival. Only possible once a Barracks stands. Does nothing if no rival tribe exists.",
     "DECLARE_WAR": "Declare a lasting state of war with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember. Does not attack them directly (see RAID for that); this only sets how the two tribes now stand. Only possible once a Barracks stands. Does nothing if no rival tribe exists, or if already at war with them.",
     "SEND_TRADE_EMISSARY": "Reach out to open trade with a rival tribe already in contact (a much longer reach than TRADE's tight radius, but requires the rival to have actually been encountered before -- same requirement as ALLIANCE/DECLARE_WAR). An unaffiliated minor settlement near target_vector can also be traded with, the same as TRADE -- safer than RAIDing it, and it never depletes the way raiding does. Instant: goods exchange immediately if either is found.",
+    "SPY": "Send a covert agent toward whichever rival tribe is nearest target_vector, already in contact (same requirement as ALLIANCE/DECLARE_WAR/SEND_TRADE_EMISSARY). Instant, and real risk: about a 1-in-3 chance of being caught, costing the spy's own small carried supplies and telling that rival your tribe exists, whether or not they knew before. If undetected, reveals their real population, era, resources, and key buildings for your own next reflection to weigh. Only possible once a Barracks stands. Does nothing if no rival tribe exists.",
 }
