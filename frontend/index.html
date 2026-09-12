@@ -4134,15 +4134,19 @@ function commerceIcon(resource) {
 function commercePanel(t) {
   const given = t.trade_given || {};
   const received = t.trade_received || {};
-  if (Object.keys(given).length === 0 && Object.keys(received).length === 0) return "";
+  if (Object.keys(given).length === 0 && Object.keys(received).length === 0 && !t.trades_completed) return "";
   const line = (arrow, dict) => {
     const entries = Object.entries(dict);
     if (!entries.length) return `${arrow} —`;
     return `${arrow} ` + entries.map(([res, amt]) => `${commerceIcon(res)}${amt}`).join(" ");
   };
+  // Explicit follow-up, 2026-09-11: "Trades (from the sidebar Combat area)
+  // should be in the Commerce area" -- trade isn't a combat encounter (no
+  // win/loss), it belongs with the rest of this tribe's trade activity.
+  const tradeLine = t.trades_completed ? `<br>Trade: ${t.trades_completed} completed` : "";
   return (
     `<div class="commerce-panel"><span class="commerce-title">🤝 Commerce</span><br>` +
-    `${line("📤", given)}<br>${line("📥", received)}</div>`
+    `${line("📤", given)}<br>${line("📥", received)}${tradeLine}</div>`
   );
 }
 
@@ -4150,24 +4154,17 @@ function commercePanel(t) {
 // Elastic like commercePanel above -- a combat kind (Raiding, Raid Defense,
 // Home Defense, Raider Camp Strike, Ambush) this tribe has never faced simply
 // doesn't show a row until it does.
-//
-// Explicit follow-up: "panel missing Trade activity" -- trades_completed was
-// tracked on the backend the whole time (actions._execute_trade/_send_trade_
-// emissary) but never sent to the frontend at all (missing from Tribe.
-// to_dict()), so there was nothing here to show regardless of layout. Trade
-// isn't adversarial (no win/loss the way a raid has), so it gets a plain
-// count row rather than forcing it into the W/L shape every other kind uses.
 function combatPanel(t) {
   // Explicit request, 2026-09-11: Barracks/Battalion/Patrol moved out of this panel
   // into the Establishments panel's own new Military subsection below -- they're
   // standing infrastructure a tribe builds, the same category as a Keep or a
   // Warehouse, not a per-encounter combat tally the way W/L records and trade counts
-  // are. This panel is now real-time engagement outcomes only.
+  // are. Trade itself moved out to commercePanel above the same day, for the same
+  // reason -- this panel is now real-time engagement outcomes only.
   const record = t.combat_record || {};
   const kinds = Object.keys(record);
-  if (!kinds.length && !t.trades_completed) return "";
+  if (!kinds.length) return "";
   const rows = kinds.map(kind => `${escapeHtml(kind)}: ${record[kind].won}W / ${record[kind].lost}L`);
-  if (t.trades_completed) rows.push(`Trade: ${t.trades_completed} completed`);
   return `<div class="combat-panel"><span class="combat-title">⚔️ Combat</span><br>${rows.join("<br>")}</div>`;
 }
 
