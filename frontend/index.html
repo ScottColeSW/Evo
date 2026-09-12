@@ -1959,6 +1959,25 @@ function previousRaidersApproachingPos(tribeId) {
   return t && t.raiders_approaching ? [t.raiders_approaching.x, t.raiders_approaching.y] : null;
 }
 
+function previousStormCloudPos() {
+  return previousState && previousState.storm_cloud ? [previousState.storm_cloud.x, previousState.storm_cloud.y] : null;
+}
+
+// Explicit follow-up, 2026-09-12: "the interpolation works great on the
+// board. can we do the same on the sun and moon? and cloud." Same idea as
+// interpolatedTilePos above, but for a single scalar (the sim cycle number
+// drawCelestialLighting/drawDayNightOverlay already turn into a smooth arc
+// position via cycle % DAY_LENGTH_CYCLES / DAY_LENGTH_CYCLES) -- the math was
+// already continuous, it was just being fed a discrete integer that only
+// changed once per real snapshot, producing the same "hold, then jump"
+// stepping the board's own entities had.
+function interpolatedCycle() {
+  if (!latestState) return 0;
+  if (!previousState || previousState.cycle == null) return latestState.cycle;
+  const progress = Math.min(1, (performance.now() - lastStateArrivedAt) / stateIntervalMs);
+  return previousState.cycle + (latestState.cycle - previousState.cycle) * progress;
+}
+
 function biomeColor(biome) {
   switch (biome) {
     case "ocean": return "#0b3d5c";
@@ -3697,7 +3716,8 @@ function drawWeather() {
     // radius/offset separately, so the puffs' relative layout stays proportional.
     const STORM_SCALE = 3;
     const { x, y } = latestState.storm_cloud;
-    const cx = x * TILE + TILE / 2, cy = y * TILE + TILE / 2;
+    const [ix, iy] = interpolatedTilePos(previousStormCloudPos(), [x, y]);
+    const cx = ix * TILE + TILE / 2, cy = iy * TILE + TILE / 2;
     const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, TILE * 4 * STORM_SCALE);
     glow.addColorStop(0, "rgba(120,130,150,0.5)");
     glow.addColorStop(1, "rgba(120,130,150,0)");
@@ -3806,7 +3826,7 @@ function drawFrame() {
   pendingSpeechBubbles.length = 0;
 
   if (latestState) {
-    drawCelestialLighting(latestState.cycle);
+    drawCelestialLighting(interpolatedCycle());
     drawWeather();
     // Explicit request: "a visual on how much land they have staked out... its
     // expansion dynamically as they grow." Drawn early so it reads as ground the
@@ -3952,7 +3972,7 @@ function drawFrame() {
     // The day/night tint goes over literally everything (tribes, trails, structures
     // included) so night actually reads as night across the whole scene, not just an
     // absent sun icon up top.
-    drawDayNightOverlay(latestState.cycle);
+    drawDayNightOverlay(interpolatedCycle());
   }
   requestAnimationFrame(drawFrame);
 }
