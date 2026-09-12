@@ -4792,21 +4792,29 @@ class Simulation:
         on the existing map"): these are real, fixed locations a scout discovers by
         landing within world.SITE_DISCOVERY_RADIUS of one, not an independent chance
         roll on their exact tile -- each site type has its own independent seed set,
-        so two types can't stack on the same coordinate by construction."""
+        so two types can't stack on the same coordinate by construction.
+
+        Live report, 2026-09-12: a wild resource site shouldn't be discoverable
+        inside a tribe's own walled-in territory -- reuses _inside_any_territory
+        (already built for minor-settlement placement, checks real distance to any
+        settled tribe's territory_center/territory_radius). Not a permanent block:
+        a candidate that falls inside someone's territory this attempt just isn't
+        reported as found, the same way any other out-of-range candidate isn't --
+        a scout will pass other real, pre-seeded points on later trips."""
         grid_size = self.world.grid_size
         lumber_found = find_nearby_site("lumber", x, y, grid_size, set(tribe.lumber_sites))
-        if lumber_found is not None:
+        if lumber_found is not None and not self._inside_any_territory(*lumber_found):
             tribe.lumber_sites.append(lumber_found)
         known_wildlife = {(s["x"], s["y"]) for s in tribe.wildlife_sites}
         wildlife_found = find_nearby_site("wildlife", x, y, grid_size, known_wildlife)
-        if wildlife_found is not None:
+        if wildlife_found is not None and not self._inside_any_territory(*wildlife_found):
             wx, wy = wildlife_found
             site_type = random.choice(WILDLIFE_SITE_TYPES)
             tribe.wildlife_sites.append({"x": wx, "y": wy, "type": site_type})
             if tribe.last_celebration_cycle != self.cycle:
                 self._celebrate_game_discovery(tribe, wx, wy)
         quarry_found = find_nearby_site("quarry", x, y, grid_size, set(tribe.quarry_sites))
-        if quarry_found is not None:
+        if quarry_found is not None and not self._inside_any_territory(*quarry_found):
             tribe.quarry_sites.append(quarry_found)
         # Explicit request: "Mines can [also] contain the Unique Resource of the
         # Biome (these locations are scattered about the map)." Same pre-seeded
@@ -4815,7 +4823,7 @@ class Simulation:
         # sits on (world.UNIQUE_RESOURCE_BY_BIOME), not the scout's own tile.
         known_mines = {(site["x"], site["y"]) for site in tribe.mine_sites}
         mine_found = find_nearby_site("mine", x, y, grid_size, known_mines)
-        if mine_found is not None:
+        if mine_found is not None and not self._inside_any_territory(*mine_found):
             mx, my = mine_found
             mine_biome = biome_at(mx, my)
             resource_name = UNIQUE_RESOURCE_BY_BIOME.get(mine_biome, "Unknown Ore")

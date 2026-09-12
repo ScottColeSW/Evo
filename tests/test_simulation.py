@@ -5157,6 +5157,50 @@ def test_forest_terrain_report_can_discover_lumber_and_wildlife_together():
     assert tribe.quarry_sites == []
 
 
+def test_discover_sites_along_route_skips_a_candidate_inside_the_tribes_own_territory():
+    """Live report, 2026-09-12: a wild resource site shouldn't be discoverable
+    inside a tribe's own walled-in territory -- reuses _inside_any_territory
+    (already built for minor-settlement placement). Not a permanent block: the
+    candidate just isn't reported as found this attempt, the same as any other
+    out-of-range candidate -- confirmed real by mocking find_nearby_site to
+    return a point that genuinely falls inside the tribe's own founded
+    territory_radius."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    sim._found_territory(tribe)
+    cx, cy = tribe.territory_center
+    exp = _returning_scout_exp((60, 60), "forest")
+    tribe.expeditions = [exp]
+
+    # find_nearby_site call order per arrival: lumber, wildlife, quarry, mine --
+    # lumber's own candidate lands right on the tribe's own territory center.
+    with mock.patch("backend.simulation.find_nearby_site", side_effect=[(cx, cy), None, None, None]):
+        sim._advance_one_expedition(tribe, exp)
+
+    assert tribe.lumber_sites == []
+
+
+def test_discover_sites_along_route_still_finds_a_candidate_outside_any_territory():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim.tribes = {"tribe_0": tribe}
+    sim._found_territory(tribe)
+    far_x = tribe.territory_center[0] + tribe.territory_radius + 20
+    far_y = tribe.territory_center[1]
+    exp = _returning_scout_exp((60, 60), "forest")
+    tribe.expeditions = [exp]
+
+    with mock.patch("backend.simulation.find_nearby_site", side_effect=[(far_x, far_y), None, None, None]):
+        sim._advance_one_expedition(tribe, exp)
+
+    assert tribe.lumber_sites == [(far_x, far_y)]
+
+
 def test_celebration_shout_reuses_the_tribes_own_last_broadcast():
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.last_broadcast = "KRA-ZUL"

@@ -328,16 +328,32 @@ def mark_visited_sector(tribe, x: int, y: int) -> None:
 # construction (they used to). Explicit follow-up request: "a twisted sparse matrix
 # assignment based on the existing map."
 #
-# This scatters a real, fixed set of site locations across the map ONCE, up front --
-# a coarse grid of cells (SITE_SEED_GRID_CELL_SIZE), each with SITE_SEED_FILL_
-# PROBABILITY odds of holding exactly one site, placed at a random jittered offset
-# within its own cell rather than a fixed grid intersection (the "twist" -- the same
-# organic-irregularity idea the coastline/mountain-boundary sine distortion above
-# already uses, just via jitter instead of a wave). Sparse because most cells end up
-# empty; a matrix because it's still grid-structured, not a purely uniform random
-# scatter that could clump by chance. Deterministic per (seed_type, grid_size) via a
-# string-seeded RNG -- same "pure function of coordinates" philosophy biome_at
-# itself already follows, so this needs no persisted state anywhere.
+# This scatters a real, fixed set of site locations across the map ONCE, up front,
+# deterministic per (seed_type, grid_size) via a string-seeded RNG -- same "pure
+# function of coordinates" philosophy biome_at itself already follows, so this needs
+# no persisted state anywhere.
+#
+# 2026-09-12 rework: replaced the original coarse-grid-plus-jitter scatter (one slot
+# per SITE_SEED_GRID_CELL_SIZE cell) with real Poisson-disc sampling (Bridson's
+# algorithm). Live report, with a screenshot: "objects landed along the boards of the
+# map... in a line" -- confirmed as the grid system showing its own seams. With only
+# ~5-6 cells per axis on a 100-tile map, a whole row of independent per-cell hits near
+# an edge reads as a straight line, not organic scatter -- inherent to a grid-cell
+# scatter, not something the earlier same-day edge-clamping fix (still a real, separate
+# bug) could ever fully solve. Poisson-disc sampling guarantees real minimum spacing
+# between every pair of points with genuinely organic (non-gridded) coverage,
+# everywhere, including edges.
+#
+# Also folds in a second live request: "no Mine location" turned out to be bad luck
+# the old system did nothing to prevent (sites had zero awareness of where any tribe
+# actually spawns), plus an explicit follow-up to bias density toward each spawn
+# point with a smooth falloff rather than a hard "guarantee N nearby" cliff ("fair
+# distribution not just a bunch locally easy"). _site_spacing_radius below makes the
+# minimum spacing itself a smooth function of distance to the nearest spawn point --
+# small (dense) near a spawn, relaxing to a larger (sparse) background value as that
+# distance grows -- so every candidate is checked against its own local density
+# requirement, not one constant. One continuous gradient, the same shape for every
+# spawn, no special-cased zone.
 #
 # Explicit steer, matching the earlier discovery-chance fairness fix: seed points are
 # placed on ANY buildable biome, not tied to matching terrain (forest for
@@ -348,50 +364,92 @@ def mark_visited_sector(tribe, x: int, y: int) -> None:
 # exception -- ore is still biome-tied, just the location is now a real place, not a
 # fresh roll.
 SITE_SEED_TYPES = ("lumber", "wildlife", "quarry", "mine", "landmark")
-SITE_SEED_GRID_CELL_SIZE = 18
-SITE_SEED_FILL_PROBABILITY = 0.55
-# Live report, 2026-09-11: "Objects placed on the board (landmarks, hazards,
-# etc.)... need to be reorganized/redistributed. Ideally, they would not be in
-# the Water to start. There are plenty of open spaces just don't cluster and we
-# can reduce the number too." Confirmed root cause: reward landmarks
-# (Simulation._advance_exploration_party_outbound, tribe.landmarks) used to be
-# an independent random.random() roll at a party's current position every
-# single outbound day, with zero biome check at all -- unlike this pre-seeded
-# system, which already excludes UNBUILDABLE_BIOMES (river/lake/ocean/cliffs/
-# shoals/volcano) and is naturally declustered (one point max per grid cell).
-# "landmark" now rides this exact system instead of its own separate roll,
-# inheriting both properties for free. Given its own (lower) fill probability,
-# distinct from the resource sites' own tuned density, directly addressing
-# "reduce the number too" without touching lumber/wildlife/quarry/mine.
-SITE_SEED_FILL_PROBABILITY_OVERRIDES = {"landmark": 0.25}
+# Per-type minimum spacing in tiles: (r_near, r_far) -- r_near applies right at a
+# spawn point, r_far once far enough from every spawn that the bias has fully
+# relaxed to background density. Smaller r = denser. Landmark's own much larger
+# pair keeps it the sparsest type, matching the earlier explicit "reduce the
+# number" request. All four invented first-pass defaults (loosely anchored to the
+# old system's real per-type counts -- lumber ~15, wildlife ~12, quarry/mine ~9,
+# landmark ~2 out of 10,000 tiles), not tuned against live data yet.
+SITE_DENSITY_BY_TYPE = {
+    "lumber": (10, 22),
+    "wildlife": (12, 26),
+    "quarry": (14, 30),
+    "mine": (14, 30),
+    "landmark": (22, 48),
+}
+# How quickly the spawn bias relaxes to background, in tiles -- roughly "how far
+# from home the map still feels noticeably richer." Loosely anchored to
+# EXPLORATION_PARTY_PATROL_DISTANCE (45): comfortably reachable in one real trip.
+SPAWN_BIAS_FALLOFF_DISTANCE = 30
+# Bridson's algorithm's own "how many tries before giving up on this active point"
+# constant -- higher finds tighter packings but costs more rejected candidates.
+_POISSON_DISC_CANDIDATE_ATTEMPTS = 30
 SITE_DISCOVERY_RADIUS = 8
+
+
+def _site_spacing_radius(x: float, y: float, seed_type: str, spawn_points: tuple[tuple[int, int], ...]) -> float:
+    r_near, r_far = SITE_DENSITY_BY_TYPE[seed_type]
+    nearest = min(math.hypot(x - sx, y - sy) for sx, sy in spawn_points)
+    falloff = math.exp(-nearest / SPAWN_BIAS_FALLOFF_DISTANCE)
+    return r_far - (r_far - r_near) * falloff
 
 
 @functools.lru_cache(maxsize=None)
 def site_seed_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], ...]:
+    # Deferred import: simulation.py imports from this module at load time, so a
+    # top-level import here would be circular -- safe deferred to call time, well
+    # after both modules have finished loading (this is never called from either
+    # module's own top-level init).
+    from .simulation import SPAWN_POINTS
+
     rng = random.Random(f"site_seed:{seed_type}:{grid_size}")
-    cell = SITE_SEED_GRID_CELL_SIZE
-    fill_probability = SITE_SEED_FILL_PROBABILITY_OVERRIDES.get(seed_type, SITE_SEED_FILL_PROBABILITY)
-    points = []
-    for cell_y in range(0, grid_size, cell):
-        for cell_x in range(0, grid_size, cell):
-            if rng.random() >= fill_probability:
-                continue
-            # Live report, 2026-09-11: "objects landed along the boards of the
-            # map... in a line." The grid's last row/column is usually smaller
-            # than a full cell (grid_size doesn't evenly divide by cell), but
-            # this used to still roll a full-size jitter and clamp any overshoot
-            # onto the exact boundary value (grid_size - 1) -- collapsing many
-            # different rolls onto one repeated edge coordinate instead of
-            # spreading them across that cell's own real, smaller span.
-            x_span = min(cell, grid_size - cell_x)
-            y_span = min(cell, grid_size - cell_y)
-            x = cell_x + rng.randint(0, x_span - 1)
-            y = cell_y + rng.randint(0, y_span - 1)
-            if biome_at(x, y) in config.UNBUILDABLE_BIOMES:
-                continue
-            points.append((x, y))
-    return tuple(points)
+
+    def spacing_at(x: float, y: float) -> float:
+        return _site_spacing_radius(x, y, seed_type, SPAWN_POINTS)
+
+    def valid(x: int, y: int, placed: list[tuple[int, int, float]]) -> bool:
+        if not (0 <= x < grid_size and 0 <= y < grid_size):
+            return False
+        if biome_at(x, y) in config.UNBUILDABLE_BIOMES:
+            return False
+        r_here = spacing_at(x, y)
+        return all(math.hypot(x - ox, y - oy) >= max(r_here, o_r) for ox, oy, o_r in placed)
+
+    # Bridson's algorithm: seed with one valid point, then grow outward -- each
+    # active point tries a bounded number of random candidates in its own local
+    # annulus [r, 2r] before giving up, guaranteeing every accepted point is at
+    # least its own (and its neighbor's) minimum spacing away from anything else.
+    placed: list[tuple[int, int, float]] = []
+    active: list[tuple[int, int]] = []
+    for _ in range(200):  # bounded search for a valid starting point
+        x, y = rng.randrange(grid_size), rng.randrange(grid_size)
+        if valid(x, y, placed):
+            r = spacing_at(x, y)
+            placed.append((x, y, r))
+            active.append((x, y))
+            break
+
+    while active:
+        idx = rng.randrange(len(active))
+        px, py = active[idx]
+        found = False
+        for _ in range(_POISSON_DISC_CANDIDATE_ATTEMPTS):
+            angle = rng.uniform(0, 2 * math.pi)
+            r_here = spacing_at(px, py)
+            dist = rng.uniform(r_here, 2 * r_here)
+            x = round(px + math.cos(angle) * dist)
+            y = round(py + math.sin(angle) * dist)
+            if valid(x, y, placed):
+                r = spacing_at(x, y)
+                placed.append((x, y, r))
+                active.append((x, y))
+                found = True
+                break
+        if not found:
+            active.pop(idx)
+
+    return tuple((x, y) for x, y, _ in placed)
 
 
 def find_nearby_site(
