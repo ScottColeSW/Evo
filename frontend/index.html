@@ -2848,7 +2848,13 @@ function drawLandmarks() {
         ctx.font = `${Math.max(13, TILE * 0.95)}px sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(emoji, cx, cy + 1);
+        // Live report, 2026-09-12: "Raiders objects on the board have the string
+        // of icons as their icon." pickLandmarkIcon exists precisely to resolve
+        // a pool (RAIDER_LANDMARK_ICONS/GENERAL_LANDMARK_ICONS are arrays) down
+        // to one deterministic icon, but this call was never actually wired in --
+        // fillText on a raw array stringifies it (comma-joined), rendering the
+        // whole pool as literal text instead of one icon.
+        ctx.fillText(pickLandmarkIcon(emoji, field, x, y), cx, cy + 1);
 
         // A persistent, always-on name tag -- not just legible in the instant a
         // discovery is celebrated, so a landmark found long ago still identifies
