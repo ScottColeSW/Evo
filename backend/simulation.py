@@ -227,6 +227,23 @@ ENDGAME_RESOLUTION_ACTIONS = {
     "TRAIN_BATTALION", "BUILD_BARRACKS", "UPGRADE_BARRACKS", "SCOUT",
 } | SURVIVAL_CRISIS_ACTIONS
 
+# Live report, 2026-09-12: "After one Tribe was eliminated, the actions
+# offered still included Conquest, and others that were not relevant any
+# longer." Confirmed: none of these have any "a living rival actually
+# exists" check anywhere -- DECLARE_CONQUEST/DECLARE_ALLIANCE/DECLARE_WAR's
+# own AFFORDABILITY_CHECKS entries only ever check cost/barracks, and RAID/
+# TRADE/SEND_TRADE_EMISSARY have no entry there at all, so they stay listed
+# purely off era-unlock forever, guaranteed no-ops the instant the last rival
+# is gone (DECLARE_CONQUEST's own handler already says as much: "found no
+# rival civilization there to conquer"). Filtered out in _prepare_turn once
+# no other living tribe exists -- the exact "guaranteed no-op dangling in the
+# menu" class AFFORDABILITY_CHECKS's own docstring already names, just never
+# extended to a fact only Simulation (not a lone Tribe/Landscape pair) can
+# check.
+RIVAL_DEPENDENT_ACTIONS = (
+    "RAID", "TRADE", "SEND_TRADE_EMISSARY", "DECLARE_ALLIANCE", "DECLARE_WAR", "DECLARE_CONQUEST",
+)
+
 # See _prepare_turn's affordability filter. A live run showed a tribe stuck at
 # wood=1 for 150+ cycles, cycling BUILD_WAREHOUSE/BUILD_FISHERY/BREED without
 # ever choosing GATHER_WOOD -- BUILD_WAREHOUSE and BUILD_FISHERY both cost wood
@@ -2357,6 +2374,16 @@ class Simulation:
         # this cycle" gets detected without hooking every one of those call sites
         # individually.
         previously_extinct = {tid for tid, tribe in self.tribes.items() if tribe.extinct}
+        # Live report, 2026-09-12: "make sure we are unloading the loser model if
+        # they are eliminated." Confirmed gap: the newly_extinct sweep below only
+        # ever finds a tribe that's still IN self.tribes with extinct=True (an
+        # ordinary hazard/starvation death) -- DECLARE_CONQUEST's own win path
+        # (_merge_tribes) instead deletes the loser from self.tribes outright, so
+        # it can never appear in that sweep at all; its model sat resident
+        # forever. Captured here (id -> model, for every tribe alive at the start
+        # of this cycle) so a later id missing from self.tribes can still be
+        # traced back to the model it used.
+        previous_models_by_tid = {tid: tribe.model for tid, tribe in self.tribes.items()}
         self.cycle += 1
         self.event_log.current_cycle = self.cycle
         self.translation.decay()
@@ -2398,7 +2425,18 @@ class Simulation:
 
         results = await self.scheduler.run_batch(requests)
 
-        for tid, tribe in self.tribes.items():
+        # Live crash report, 2026-09-12: "RuntimeError: dictionary changed size
+        # during iteration" -- a real one, not theoretical: DECLARE_CONQUEST's
+        # winning side calls _merge_tribes partway through this exact loop
+        # (via _apply_turn below), which does `del self.tribes[defender.id]`.
+        # If the defeated tribe's own turn hasn't been reached yet in iteration
+        # order, mutating self.tribes mid-iteration over it crashes outright.
+        # list(...) snapshots the (tid, tribe) pairs up front -- the defeated
+        # tribe's own entry still gets visited (same Tribe object, snapshotted
+        # before removal), but the existing `if tribe.extinct: continue` guard
+        # right below already correctly skips it (_merge_tribes sets
+        # defender.extinct = True before deleting it from the dict).
+        for tid, tribe in list(self.tribes.items()):
             if tribe.extinct:
                 continue
             outcome = results.get(tid, {"intent": {}, "latency_ms": 0.0})
@@ -2515,10 +2553,18 @@ class Simulation:
         # ever call it again unless a fresh ADD_TRIBE reuses the same model choice).
         # Only unloads a model no other still-living tribe is also using.
         newly_extinct = {tid for tid, tribe in self.tribes.items() if tribe.extinct and tid not in previously_extinct}
-        if newly_extinct:
+        # Conquered this cycle: present at the top of step() (previous_models_by_
+        # tid), gone from self.tribes now -- _merge_tribes's own removal, not an
+        # ordinary extinction the newly_extinct sweep above can see.
+        conquered_this_cycle = previous_models_by_tid.keys() - self.tribes.keys()
+        if newly_extinct or conquered_this_cycle:
             still_used = {t.model for t in self.tribes.values() if not t.extinct}
             for tid in newly_extinct:
                 model = self.tribes[tid].model
+                if model not in still_used:
+                    await self.client.unload_model(model)
+            for tid in conquered_this_cycle:
+                model = previous_models_by_tid[tid]
                 if model not in still_used:
                     await self.client.unload_model(model)
 
@@ -3182,6 +3228,12 @@ class Simulation:
             available_actions = sorted(unlocked_actions_through(tribe.era))
         if not camped:
             available_actions = [a for a in available_actions if a not in ("GATHER_WOOD", "GATHER_STONE")]
+        # Live report, 2026-09-12: RAID/TRADE/DECLARE_CONQUEST/etc. all need a
+        # real rival to mean anything -- see RIVAL_DEPENDENT_ACTIONS's own
+        # comment. Checked the same way ENDGAME_RESOLUTION_ACTIONS's own gate
+        # confirms a rival DOES exist, just inverted.
+        if not any(other.id != tribe.id and not other.extinct for other in self.tribes.values()):
+            available_actions = [a for a in available_actions if a not in RIVAL_DEPENDENT_ACTIONS]
         # Regression: RELOCATE used to lock out on the same looser `settled` check
         # GATHER_WOOD uses (any farmable ground, long enough) -- but farming/eggs need
         # the *stricter* settled_near_water condition, and a tribe that settles on

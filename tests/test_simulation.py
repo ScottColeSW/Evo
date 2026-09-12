@@ -2629,6 +2629,45 @@ def test_no_farming_nudge_once_a_plot_and_flock_already_exist():
     assert "A flock of 3 is being kept" in request["prompt"]
 
 
+def test_rival_dependent_actions_hidden_once_the_last_rival_is_gone():
+    """Live report, 2026-09-12: "After one Tribe was eliminated, the actions
+    offered still included Conquest, and others that were not relevant any
+    longer." RAID/TRADE/DECLARE_CONQUEST/etc. are guaranteed no-ops with no
+    rival to target -- confirmed none of them had any "does a rival exist"
+    check anywhere before this fix."""
+    from backend.simulation import RIVAL_DEPENDENT_ACTIONS
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    survivor, gone = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    for t in (survivor, gone):
+        t.has_ever_settled = True
+        sim._found_territory(t)
+        t.era = "war_and_world_domination_era"
+        t.wood = t.stone = 500
+        t.barracks_built = 1
+
+    gone.extinct = True
+    _request, ctx = sim._prepare_turn(survivor)
+
+    for action in RIVAL_DEPENDENT_ACTIONS:
+        assert action not in ctx["available_actions"], f"{action} should be hidden with no living rival"
+
+
+def test_rival_dependent_actions_stay_available_with_a_living_rival():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    tribe, rival = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    for t in (tribe, rival):
+        t.has_ever_settled = True
+        sim._found_territory(t)
+        t.era = "war_and_world_domination_era"
+        t.wood = t.stone = 500
+        t.barracks_built = 1
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "DECLARE_CONQUEST" in ctx["available_actions"]
+
+
 def test_fresh_tribe_has_only_pre_settlement_actions_available():
     """Explicit request: a weak model faced with the full Stone Age action list from
     cycle one has no structural push toward the single most important early decision
@@ -2644,11 +2683,16 @@ def test_fresh_tribe_has_only_pre_settlement_actions_available():
 
     # RELOCATE is further gated behind having confirmed a real water source (see
     # test_unsettled_tribe_cannot_relocate_without_confirmed_water) -- not offered
-    # yet for a brand-new tribe that hasn't scouted anything.
-    assert set(ctx["available_actions"]) == set(config.PRE_SETTLEMENT_ACTIONS) - {"RELOCATE"}
+    # yet for a brand-new tribe that hasn't scouted anything. RAID is also absent
+    # here -- this Simulation has only one tribe, so RIVAL_DEPENDENT_ACTIONS'
+    # own "a living rival must exist" gate correctly filters it out (2026-09-12
+    # fix: RAID/TRADE/DECLARE_CONQUEST/etc. are guaranteed no-ops with nobody to
+    # target, the same "dangling menu option" class this project already fixes
+    # everywhere else).
+    assert set(ctx["available_actions"]) == set(config.PRE_SETTLEMENT_ACTIONS) - {"RELOCATE", "RAID"}
     assert "HUNT_DEER" not in ctx["available_actions"]
-    # BREED and RAID are explicitly never locked behind settling -- see the set
-    # equality assertion above, which already accounts for both being present.
+    # BREED is explicitly never locked behind settling -- see the set equality
+    # assertion above, which already accounts for it being present.
     assert "only survival and exploration actions are available" in request["prompt"]
 
 
@@ -10991,6 +11035,57 @@ async def test_step_does_not_unload_a_model_still_used_by_a_surviving_tribe():
 
     assert dying.extinct is True
     mock_unload.assert_not_called()
+
+
+@run_async
+async def test_step_survives_a_conquest_merge_mid_loop_and_unloads_the_losers_model():
+    """Live crash report, 2026-09-12: "RuntimeError: dictionary changed size
+    during iteration." Confirmed root cause: DECLARE_CONQUEST's winning side
+    calls _merge_tribes (which does `del self.tribes[defender.id]`) from
+    inside step()'s own `for tid, tribe in self.tribes.items()` loop -- if the
+    defeated tribe's turn hasn't been reached yet in iteration order, mutating
+    the dict mid-iteration over it crashes outright. Also confirmed a second,
+    related gap while grounding this: the defeated tribe is removed from
+    self.tribes entirely (unlike an ordinary hazard/starvation extinction,
+    which stays in the dict with extinct=True), so the existing "newly
+    extinct" model-unload sweep could never see it -- its model sat resident
+    forever. Mocks ACTION_REGISTRY["DECLARE_CONQUEST"] directly to call
+    _merge_tribes deterministically (see project memory on how unreachable the
+    real round-based defeat math is with small test populations) -- this
+    isolates exactly the scenario that matters: a real self.tribes mutation
+    happening mid-loop, not the surrounding battle-chance math."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    winner, loser = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    # DECLARE_CONQUEST only unlocks at the top era and needs real wood/stone --
+    # neither tribe's own settlement/proximity state matters here since the
+    # patched handler below bypasses the real target-lookup entirely.
+    for t in (winner, loser):
+        t.has_ever_settled = True
+        sim._found_territory(t)
+        t.era = "war_and_world_domination_era"
+        t.wood = config.DECLARE_CONQUEST_WOOD_COST
+        t.stone = config.DECLARE_CONQUEST_STONE_COST
+
+    def fake_declare_conquest(sim, tribe, biome, target):
+        other = loser if tribe is winner else winner
+        return sim._merge_tribes(tribe, other)
+
+    async def fake_run_batch(requests):
+        return {
+            r["id"]: {"intent": {"visual_action": "DECLARE_CONQUEST", "target_vector": [55, 55]}, "latency_ms": 0.0}
+            for r in requests
+        }
+
+    with mock.patch.dict("backend.simulation.ACTION_REGISTRY", {"DECLARE_CONQUEST": fake_declare_conquest}), \
+         mock.patch.object(sim.scheduler, "run_batch", fake_run_batch), \
+         mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
+        await sim.step()  # would raise RuntimeError before the list(...) fix
+
+    assert loser.extinct is True
+    assert "tribe_1" not in sim.tribes
+    mock_unload.assert_called_once_with("qwen2.5:3b")
 
 
 @run_async
