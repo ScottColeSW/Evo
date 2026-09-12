@@ -1433,6 +1433,19 @@ class Tribe:
         # PRE_SETTLEMENT_ACTIONS. Distinct from currently-settled (which can toggle)
         # because the point is to have proven the tribe CAN settle, once.
         self.has_ever_settled = False
+        # A narrower, permanent proof than has_ever_settled above, added
+        # 2026-09-12: has_ever_settled's own comment says it's set only when
+        # settled_near_water is true, but two existing tests deliberately
+        # construct has_ever_settled=True without real water (isolating a real
+        # historical bug: a tribe settled on merely-farmable, non-water ground
+        # needs to keep RELOCATE/GATHER_WATER available) -- so has_ever_settled
+        # alone isn't safe to treat as permanent proof of water specifically.
+        # This flag is set in the same real founding branch, only when water
+        # genuinely was there, and is what the RELOCATE lockout keys off (see
+        # its own comment) instead of a live settled_near_water recheck, which
+        # can flip back False as tribe.x/y drifts within the territory after
+        # settling -- the actual live-run bug this flag exists to fix.
+        self.settled_permanently_near_water = False
         # The cycle has_ever_settled flipped True -- explicit request ("suspend
         # crisis for 10 cycles beyond Territory lock"): the march to reach
         # confirmed water is itself expensive (RELOCATE's own food/water cost,
@@ -2959,10 +2972,16 @@ class Simulation:
         original design spec for farming. Keeps the "settled" name -- unlike
         _is_camped, this is the real "putting down roots near water" signal
         (drives the "Settling" celebration/naming and the RELOCATE lockout).
-        Note has_ever_settled/_found_territory deliberately still key off the
-        looser _is_camped (plus not still_journeying, see _prepare_turn) rather
-        than this stricter check -- requiring real water there would permanently
-        strand a tribe that genuinely never finds any."""
+
+        Note (corrected 2026-09-12, was stale/wrong): has_ever_settled DOES require
+        this exact check at the moment it's set (see _prepare_turn's own founding
+        block, `camped and not still_journeying and not tribe.has_ever_settled and
+        settled_near_water`) -- confirmed by grep, there's no other call site that
+        sets it. This is exactly why the RELOCATE lockout can safely key off
+        has_ever_settled alone once True: that flag already proves real water was
+        there at founding, permanently, unlike this method's own live position
+        recheck (which can flip back False as tribe.x/y drifts within the
+        territory after settling)."""
         if tribe.cycles_since_relocate < config.SETTLEMENT_STABILITY_CYCLES:
             return False
         return (
@@ -3133,6 +3152,7 @@ class Simulation:
         # existence-based OR added nothing but this bug.
         if camped and not still_journeying and not tribe.has_ever_settled and settled_near_water:
             tribe.has_ever_settled = True
+            tribe.settled_permanently_near_water = True
             tribe.settled_at_cycle = self.cycle
             self._found_territory(tribe)
 
@@ -3179,7 +3199,21 @@ class Simulation:
         # available_actions, crashing _resolve_action's own fallback. This lockout
         # is only meant for a tribe that has actually settled and shouldn't
         # casually uproot -- gate it on that, not just current proximity.
-        if settled_near_water and tribe.has_ever_settled:
+        #
+        # Third regression, live report 2026-09-12: "RELOCATE come up as an option
+        # for a Tribe late game... they already settled." tribe.x/y drifts up to
+        # territory_radius away from territory_center after settling (documented
+        # elsewhere in this file), so settled_near_water -- a LIVE recheck of the
+        # tribe's current position -- could flip back to False for a tribe that
+        # has been genuinely settled the whole time, silently reopening RELOCATE.
+        # Fixed with a dedicated, permanent flag (tribe.settled_permanently_near_
+        # water, set once alongside has_ever_settled -- see Tribe.__init__'s own
+        # comment) instead of has_ever_settled itself, since two existing tests
+        # deliberately construct has_ever_settled=True without real water
+        # (isolating the OTHER two regressions above) -- has_ever_settled alone
+        # isn't safe to treat as permanent proof of water specifically, even
+        # though the real founding path never sets it without water.
+        if tribe.settled_permanently_near_water:
             # A tribe that has genuinely put down roots next to real water --
             # invested in long enough to be gathering wood and stone and farming here
             # -- shouldn't be one bad turn away from uprooting the whole settlement on
@@ -3187,18 +3221,27 @@ class Simulation:
             # whatever the tribe would otherwise decide.
             available_actions = [a for a in available_actions if a != "RELOCATE"]
 
+        if settled_near_water and tribe.has_ever_settled:
             # Live-run finding: the fact-only nudge ("manually gathering more here is
             # no longer necessary," below) didn't stop models from still picking
             # GATHER_WATER after settling near real water -- the same reflexive-default
             # failure mode GATHER_FOOD showed before it got the same one-way
             # retirement treatment. Explicit follow-up request confirmed doing the
             # same thing here. One-way, like foraging_retired -- see Tribe.__init__.
+            #
+            # Fixed alongside the RELOCATE fix above, 2026-09-12: this used to
+            # filter GATHER_WATER back out only while this whole condition stayed
+            # true, with watering_retired gating just the one-time announcement --
+            # the exact same "silently reappears if the live recheck flips" shape
+            # RELOCATE just had, just never reported live yet. Now genuinely
+            # one-way, matching foraging_retired's own real pattern (see below).
             if not tribe.watering_retired:
                 tribe.watering_retired = True
                 tribe.history.append(
                     f"\U0001f4dc {tribe.name} no longer needs to manually gather water -- GATHER_WATER "
                     "is retired now that settling here keeps it flowing in on its own"
                 )
+        if tribe.watering_retired:
             available_actions = [a for a in available_actions if a != "GATHER_WATER"]
 
         # Explicit request, 2026-09-10: "we need to check for infinity food on

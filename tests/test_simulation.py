@@ -2748,6 +2748,30 @@ def test_settled_tribe_can_no_longer_relocate():
     assert "no longer considering relocating" in _request["prompt"]
 
 
+def test_settled_tribe_stays_locked_out_of_relocate_even_if_position_drifts_from_water():
+    """Live report, 2026-09-12: "RELOCATE come up as an option for a Tribe late
+    game... they already settled." Root cause: the lockout used to recheck
+    settled_near_water (a LIVE position check) every cycle instead of trusting
+    has_ever_settled (a permanent, one-way fact) -- tribe.x/y drifts up to
+    territory_radius from territory_center after settling, so settled_near_water
+    could flip back to False for a tribe that has been genuinely settled the
+    whole time, silently reopening RELOCATE."""
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = 999999  # config.SETTLEMENT_STABILITY_CYCLES and then some
+    sim._prepare_turn(tribe)  # first pass: genuinely settles near water, has_ever_settled flips True
+    assert tribe.has_ever_settled is True
+
+    # Simulate the tribe's own live position later drifting away from water,
+    # within its own territory -- has_ever_settled itself never changes.
+    tribe.x, tribe.y = 65, 65
+    assert sim._is_settled_near_water(tribe) is False  # the live recheck really does flip
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "RELOCATE" not in ctx["available_actions"]
+
+
 def test_settled_but_not_near_water_can_still_relocate():
     """Regression: RELOCATE used to lock out on the same looser check GATHER_WOOD
     uses (any farmable ground, long enough) -- a live run caught a tribe that settled
