@@ -515,6 +515,24 @@ let previousState = null;
 let lastStateArrivedAt = 0;
 let stateIntervalMs = 500;
 let animFrame = 0;
+
+// Explicit follow-up, 2026-09-12: "we should catch the unexpected tab close
+// in the browser, we just want to make our app close cleanly when that
+// happens." backend/app.py's ws_handler already has a `finally:` block that
+// unloads every model a session's own Simulation was using the moment its
+// websocket connection ends, for exactly this case -- that part was already
+// real and already worked (aiohttp's own read loop notices a dropped
+// connection, clean or abrupt, and finally always fires). What was actually
+// missing: nothing on the frontend side ever proactively closed the socket
+// when the tab itself was closing, so cleanup depended entirely on however
+// promptly the browser/OS got around to tearing down the underlying
+// connection on its own. A real close() call here sends an explicit close
+// frame the instant the tab starts unloading, so the server-side cleanup
+// fires immediately and deterministically instead of whenever the network
+// layer happens to notice.
+window.addEventListener("beforeunload", () => {
+  if (socket) { try { socket.close(); } catch (e) { /* already closing */ } }
+});
 // Bug report (live playtest): a raid resolving flashed by "but didn't do anything I
 // can see... one long line and don't stay around." Root cause: recent_encounters is
 // cleared and rebuilt fresh every backend cycle (Simulation.step's reset, matching
