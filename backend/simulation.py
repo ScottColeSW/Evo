@@ -3050,15 +3050,34 @@ class Simulation:
         era_gap_note = ""
         nxt = next_era(tribe.era)
         if nxt is not None:
+            # Explicit fix, 2026-09-13 (action-legibility audit): this used to show
+            # the raw, undiscounted era thresholds even for a tribe that had already
+            # earned a real RESEARCH discount (see _advance_era_if_ready, the actual
+            # gate this fact is describing) -- a falsely pessimistic gap that made
+            # research's real, already-banked benefit invisible. Same discount
+            # formula, applied here too, so the numbers shown are the numbers that
+            # actually gate advancement, not a stale ceiling.
+            discount = min(
+                config.INNOVATION_ERA_DISCOUNT_CAP,
+                tribe.research_completed * config.INNOVATION_ERA_DISCOUNT_PER_RESEARCH,
+            )
+            population_threshold = round(nxt.requires_population * (1 - discount))
             gaps = []
-            if tribe.population < nxt.requires_population:
-                gaps.append(f"population {tribe.population}/{nxt.requires_population}")
+            if tribe.population < population_threshold:
+                gaps.append(f"population {tribe.population}/{population_threshold}")
             for resource, minimum in nxt.requires_resources.items():
                 have = _era_resource_amount(tribe, resource)
-                if have < minimum:
-                    gaps.append(f"{resource} {have}/{minimum}")
+                threshold = round(minimum * (1 - discount))
+                if have < threshold:
+                    gaps.append(f"{resource} {have}/{threshold}")
             if gaps:
                 era_gap_note = f"To reach {nxt.label}, still short on: {', '.join(gaps)}."
+                # RESEARCH's real payoff (actions.py._research) is invisible unless
+                # it's tied to the exact gap it shrinks -- a model staring at a
+                # stated shortfall has no signal that a building it may not have
+                # prioritized directly reduces the number it's staring at.
+                if tribe.library_built and discount < config.INNOVATION_ERA_DISCOUNT_CAP:
+                    era_gap_note += " Research at the library would shrink these thresholds further."
 
         if not visible_entities:
             visible_entities = ["none"]
@@ -4296,6 +4315,18 @@ class Simulation:
                 visible_entities.append(
                     "Cooking is known and real shelter stands -- a kitchen would turn cooked meals into "
                     "excellent food, stretching stores even further."
+                )
+        # NUDGE (2026-09-13, action-legibility audit): BUILD_LIBRARY's own
+        # AFFORDABILITY_CHECKS gate (long_houses_built > 0) is the same single-flag
+        # shape as BUILD_KITCHEN's own gate just above, which already earns a
+        # dedicated nudge -- this one never had an equivalent at all. RESEARCH's own
+        # real payoff (permanently shrinking the next era's thresholds) is surfaced
+        # separately, tied directly to era_gap_note above, once the library exists.
+        if "BUILD_LIBRARY" in available_actions and not tribe.library_built:
+            if tribe.long_houses_built > 0:
+                visible_entities.append(
+                    "Real shelter stands -- a library would let the tribe research its own hard-won "
+                    "experience, permanently easing the path to the next era."
                 )
         # NUDGE (2026-09-12, action-legibility audit): BUILD_BARRACKS's own
         # AFFORDABILITY_CHECKS gate (kitchen_built and keep_built) is structurally

@@ -3279,6 +3279,94 @@ def test_era_progress_fact_absent_once_the_next_era_is_fully_met():
     assert "To reach Cognitive Horizon" not in request["prompt"]
 
 
+def test_era_gap_note_reflects_a_real_research_discount_not_the_raw_threshold():
+    """Explicit fix, 2026-09-13 (action-legibility audit): this used to show the
+    raw, undiscounted era thresholds even for a tribe that had already earned a
+    real RESEARCH discount (_advance_era_if_ready, the actual gate this fact
+    describes) -- a falsely pessimistic gap that hid research's already-banked
+    benefit."""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "cognitive_horizon"
+    tribe.population = 15
+    tribe.research_completed = 5  # 5 * 0.04 = 0.20 discount
+    discounted_population = round(50 * (1 - 5 * config.INNOVATION_ERA_DISCOUNT_PER_RESEARCH))
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert f"population {tribe.population}/{discounted_population}" in request["prompt"]
+    assert f"population {tribe.population}/50" not in request["prompt"]
+
+
+def test_era_gap_note_mentions_research_once_a_library_stands_and_more_would_help():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "cognitive_horizon"
+    tribe.population = 15
+    tribe.library_built = True
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Research at the library would shrink these thresholds further" in request["prompt"]
+
+
+def test_era_gap_note_omits_the_research_mention_without_a_library():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "cognitive_horizon"
+    tribe.population = 15
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Research at the library" not in request["prompt"]
+
+
+def test_era_gap_note_omits_the_research_mention_once_the_discount_is_already_capped():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "cognitive_horizon"
+    tribe.population = 5
+    tribe.library_built = True
+    tribe.research_completed = round(config.INNOVATION_ERA_DISCOUNT_CAP / config.INNOVATION_ERA_DISCOUNT_PER_RESEARCH) + 5
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "still short on" in request["prompt"]  # confirms a real gap remains
+    assert "Research at the library" not in request["prompt"]  # but more research wouldn't help
+
+
+def test_build_library_nudge_fires_once_a_long_house_stands():
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "tribal_synapse"
+    tribe.long_houses_built = 1
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_LIBRARY" in ctx["available_actions"]
+    assert "a library would let the tribe research its own hard-won experience" in request["prompt"]
+
+
+def test_build_library_nudge_silent_with_no_long_house_yet():
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "tribal_synapse"
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "a library would let the tribe research" not in request["prompt"]
+
+
 def test_translation_matrix_is_updated_on_apply_turn():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
     tribe_a = sim.tribes["tribe_0"]
