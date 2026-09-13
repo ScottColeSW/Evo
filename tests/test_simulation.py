@@ -1181,20 +1181,27 @@ def test_extinct_rival_produces_no_awareness_fact():
     assert "Mountain Tribe" not in request["prompt"]
 
 
-def test_visible_taboos_show_the_most_recent_not_the_oldest():
-    """Regression test: taboos accumulates for a tribe's whole lifetime, and slicing
-    the first 3 meant a fact learned later (e.g. a hard-won water location) could never
-    surface again once 3 earlier ones already existed."""
+def test_visible_taboos_show_the_most_important_not_just_the_most_recent():
+    """Regression test, updated 2026-09-13: taboos accumulates for a tribe's whole
+    lifetime. Originally fixed a "first 3 ever" bug by showing the most recent 3
+    instead -- but recency isn't importance either, so this now checks the real
+    fix: an old, high-weight lesson keeps its slot over newer, lower-stakes ones
+    (see TribeMemory.top_taboos)."""
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
-    tribe.memory.taboos = ["oldest taboo", "second taboo", "third taboo", "newest taboo"]
+    tribe.memory.taboos = [
+        {"text": "an old but critical volcano warning", "weight": 0.9, "cycle": 5},
+        {"text": "second taboo", "weight": 0.75, "cycle": 500},
+        {"text": "third taboo", "weight": 0.75, "cycle": 600},
+        {"text": "newest taboo", "weight": 0.75, "cycle": 700},
+    ]
 
     request, _ctx = sim._prepare_turn(tribe)
 
+    assert "taboo: an old but critical volcano warning" in request["prompt"]
     assert "taboo: newest taboo" in request["prompt"]
     assert "taboo: third taboo" in request["prompt"]
-    assert "taboo: second taboo" in request["prompt"]
-    assert "taboo: oldest taboo" not in request["prompt"]
+    assert "taboo: second taboo" not in request["prompt"]  # loses out on the weight tie's recency tiebreak
 
 
 def test_material_surplus_is_surfaced_alongside_a_real_food_or_water_warning():
@@ -3425,6 +3432,37 @@ def test_build_library_nudge_silent_with_no_long_house_yet():
     request, _ctx = sim._prepare_turn(tribe)
 
     assert "a library would let the tribe research" not in request["prompt"]
+
+
+def test_known_hazard_landmarks_are_durably_surfaced_to_the_tribes_own_turn():
+    """Explicit fix, 2026-09-13 (memory/retrieval follow-up): hazard_landmarks was
+    never surfaced to the tribe's own live reasoning at all before this -- it only
+    ever reached the map and TribeMemory's own best-effort recall()/taboo path. A
+    known danger shouldn't depend on a lucky vocabulary match or a high enough
+    weight to win a taboo slot."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.hazard_landmarks = [{"x": 10, "y": 20, "name": "The Bleeding Ground", "hazard_label": "a volcano"}]
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "The Bleeding Ground at (10,20) is a known danger -- a volcano." in request["prompt"]
+
+
+def test_hazard_landmarks_surfaced_are_capped_to_the_nearest_five():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tx, ty = tribe.x, tribe.y
+    # 6 hazards at increasing distance -- only the 5 nearest should surface.
+    tribe.hazard_landmarks = [
+        {"x": tx + i, "y": ty, "name": f"Hazard {i}", "hazard_label": "a volcano"} for i in range(1, 7)
+    ]
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Hazard 1 at" in request["prompt"]
+    assert "Hazard 5 at" in request["prompt"]
+    assert "Hazard 6 at" not in request["prompt"]  # farthest, cut by the cap
 
 
 def test_translation_matrix_is_updated_on_apply_turn():
@@ -12160,6 +12198,7 @@ def test_landmark_hazard_records_a_dangerous_sounding_name():
     entry = tribe.hazard_landmarks[0]
     assert (entry["x"], entry["y"]) == (10, 20)
     assert entry["name"] in config.HAZARD_LANDMARK_NAMES
+    assert entry["hazard_label"] == "a volcano"
     assert any(entry["name"] in e for e in tribe.history)
     assert any(e["kind"] == "hazard_landmark" and e["label"] == entry["name"] for e in sim.recent_encounters)
 

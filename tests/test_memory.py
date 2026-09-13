@@ -71,5 +71,48 @@ def test_consolidate_distills_high_weight_memories_into_taboos():
 
     memory.consolidate()
 
-    assert "a catastrophic flood destroyed the settlement" in memory.taboos
-    assert "gathered a little wood" not in memory.taboos
+    texts = [t["text"] for t in memory.taboos]
+    assert "a catastrophic flood destroyed the settlement" in texts
+    assert "gathered a little wood" not in texts
+
+
+def test_consolidate_does_not_duplicate_an_already_known_taboo():
+    memory = TribeMemory("tribe_0")
+    memory.remember("a catastrophic flood destroyed the settlement", cycle=1, weight=0.9)
+    memory.consolidate()
+    memory.remember("a catastrophic flood destroyed the settlement", cycle=50, weight=0.9)
+
+    memory.consolidate()
+
+    texts = [t["text"] for t in memory.taboos]
+    assert texts.count("a catastrophic flood destroyed the settlement") == 1
+
+
+def test_top_taboos_ranks_by_weight_not_recency():
+    """Explicit fix, 2026-09-13: a genuinely critical early lesson must not lose
+    its slot to newer but lower-stakes ones -- weight is the real severity signal
+    remember()'s own callers already provide, recency is only the tiebreak."""
+    memory = TribeMemory("tribe_0")
+    memory.taboos = [
+        {"text": "an old but critical volcano warning", "weight": 0.9, "cycle": 5},
+        {"text": "a newer, lower-stakes warning", "weight": 0.75, "cycle": 500},
+        {"text": "an even newer, lower-stakes warning", "weight": 0.75, "cycle": 600},
+        {"text": "the newest warning of all", "weight": 0.75, "cycle": 700},
+    ]
+
+    top = memory.top_taboos(3)
+
+    assert top[0] == "an old but critical volcano warning"  # wins on weight despite being oldest by far
+    assert "a newer, lower-stakes warning" not in top  # the lowest-cycle of the tied-weight group loses the last slot
+
+
+def test_top_taboos_breaks_a_weight_tie_by_recency():
+    memory = TribeMemory("tribe_0")
+    memory.taboos = [
+        {"text": "older, same weight", "weight": 0.8, "cycle": 5},
+        {"text": "newer, same weight", "weight": 0.8, "cycle": 500},
+    ]
+
+    top = memory.top_taboos(2)
+
+    assert top[0] == "newer, same weight"

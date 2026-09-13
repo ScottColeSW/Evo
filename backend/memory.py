@@ -41,7 +41,11 @@ class TribeMemory:
         self.tribe_id = tribe_id
         self.max_episodes = max_episodes
         self.entries: list[dict] = []
-        self.taboos: list[str] = []
+        # {"text", "weight", "cycle"} per entry -- weight/cycle carried forward from
+        # the original remembered episode (see consolidate()) specifically so
+        # top_taboos() can rank by real importance, not just insertion order. Plain
+        # strings before 2026-09-13; see that method's own docstring for why.
+        self.taboos: list[dict] = []
 
     def _tokenize(self, text: str) -> set[str]:
         return set(self._WORD_RE.findall(text.lower())) - self._STOPWORDS
@@ -83,7 +87,26 @@ class TribeMemory:
     def consolidate(self) -> None:
         """Distills high-weight memories into permanent taboos, then trims the log."""
         ranked = sorted(self.entries, key=lambda e: e["weight"], reverse=True)
+        known_texts = {t["text"] for t in self.taboos}
         for e in ranked[:3]:
-            if e["weight"] >= 0.75 and e["text"] not in self.taboos:
-                self.taboos.append(e["text"])
+            if e["weight"] >= 0.75 and e["text"] not in known_texts:
+                self.taboos.append({"text": e["text"], "weight": e["weight"], "cycle": e["cycle"]})
+                known_texts.add(e["text"])
         self.entries = self.entries[-self.max_episodes:]
+
+    def top_taboos(self, n: int = 3) -> list[str]:
+        """The n most important taboos, not the n most recently learned.
+
+        Found while grounding a live "learning about this over and over seems
+        hindering" report, 2026-09-13: the caller (Simulation._prepare_turn) used to
+        slice tribe.memory.taboos[-3:] -- most-recently-added, since consolidate()
+        only ever appends. That itself replaced an even older "first 3 ever" bug
+        (see this method's own comment history in git blame), but recency isn't
+        importance either: a genuinely critical early lesson (a volcano that's
+        killed twice) could silently lose its permanent slot to three newer, lower-
+        stakes taboos, and never surface again. Ranked by weight first (a real,
+        already-tracked severity signal from remember()'s own callers), cycle as
+        the tiebreak among equally-weighted ones -- so recency still wins between
+        two equally important facts, but no longer overrides importance itself."""
+        ranked = sorted(self.taboos, key=lambda t: (t["weight"], t["cycle"]), reverse=True)
+        return [t["text"] for t in ranked[:n]]

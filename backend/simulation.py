@@ -2787,13 +2787,12 @@ class Simulation:
                 else:
                     visible_entities.append(f"lightning struck nearby, at ({lx},{ly})")
         # taboos accumulates for a tribe's whole lifetime (see TribeMemory.consolidate,
-        # which can add up to 3 more every MEMORY_CONSOLIDATE_EVERY_N_CYCLES) -- slicing
-        # the first 3 meant that once any 3 existed, nothing learned later ever surfaced
-        # again, however important (e.g. a hard-won confirmed water location, discovered
-        # after an early wolf-attack warning already claimed those 3 slots). The most
-        # recently learned facts are shown instead, so new knowledge isn't permanently
-        # buried by old.
-        visible_entities += [f"taboo: {t}" for t in tribe.memory.taboos[-3:]]
+        # which can add up to 3 more every MEMORY_CONSOLIDATE_EVERY_N_CYCLES). Used to
+        # slice the most recently learned 3 -- fixed a real "new knowledge buries old"
+        # bug, but recency isn't importance: a genuinely critical early lesson could
+        # still lose its slot to newer but lower-stakes ones. top_taboos() ranks by
+        # real weight first, recency only as the tiebreak -- see its own docstring.
+        visible_entities += [f"taboo: {t}" for t in tribe.memory.top_taboos(3)]
         # Explicit request: "make sure they remember all the important discover
         # sites when they are making decisions. those locations are important
         # to the progress of the Tribe and civilization." These six lists used
@@ -2805,6 +2804,23 @@ class Simulation:
         # these lists only grow as large as genuinely distinct real finds --
         # not the unbounded, ever-repeating kind of list slicing exists to cap.
         visible_entities += [f"confirmed water source at ({x},{y})" for x, y in tribe.confirmed_water_sites]
+        # Explicit fix, 2026-09-13 (memory/retrieval follow-up): hazard_landmarks was
+        # never surfaced to the tribe's own live reasoning at all before this -- it
+        # only ever reached the map (frontend) and TribeMemory's own recall()/taboo
+        # path, both a best-effort match rather than a guarantee. A known danger is
+        # exactly the kind of fact that shouldn't depend on a lucky vocabulary
+        # overlap or a high enough weight to win a taboo slot. Capped to the 5
+        # nearest (not all of them, and not most-recent) -- unlike confirmed_water_
+        # sites, this list can grow large over a long run purely from how much
+        # exploring happened, and "nearest to where the tribe stands right now" is
+        # the actually-actionable subset, not an arbitrary cut.
+        nearest_hazards = sorted(
+            tribe.hazard_landmarks, key=lambda lm: math.hypot(lm["x"] - tribe.x, lm["y"] - tribe.y),
+        )[:5]
+        visible_entities += [
+            f"{lm['name']} at ({lm['x']},{lm['y']}) is a known danger -- {lm.get('hazard_label', 'stay away')}."
+            for lm in nearest_hazards
+        ]
         # Explicit live-run report, 2026-09-09: a tribe with a large water
         # stockpile (from the ordinary passive top-up, not true security) kept
         # seeing the standard "running low" warning with nothing in the prompt
@@ -5759,7 +5775,11 @@ class Simulation:
         if any(lm["x"] == x and lm["y"] == y for lm in tribe.hazard_landmarks):
             return
         name = random.choice(config.HAZARD_LANDMARK_NAMES)
-        tribe.hazard_landmarks.append({"x": x, "y": y, "name": name})
+        # hazard_label carried forward from 2026-09-13 onward -- previously only used
+        # for the one-time chronicle line below, discarded otherwise, so a durable
+        # fact about this danger (see _prepare_turn) could only ever show the random
+        # flavor name, never what's actually dangerous about the ground.
+        tribe.hazard_landmarks.append({"x": x, "y": y, "name": name, "hazard_label": hazard_label})
         tribe.history.append(
             f"the party marks {hazard_label} near ({x},{y}) as {name} -- a known danger for anyone who comes after"
         )

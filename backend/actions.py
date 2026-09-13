@@ -1258,7 +1258,7 @@ def _research(sim, tribe, biome, target):
         return None
     ranked = sorted(tribe.memory.entries, key=lambda e: e["weight"], reverse=True)
     top = [e["text"] for e in ranked[: config.LIBRARY_ENTRY_MEMORY_COUNT]]
-    top.extend(t for t in tribe.memory.taboos if t not in top)
+    top.extend(t["text"] for t in tribe.memory.taboos if t["text"] not in top)
     if not top:
         return "the library stands ready, but the tribe hasn't lived through anything worth recording yet"
     if tribe.wood < config.RESEARCH_WOOD_COST:
