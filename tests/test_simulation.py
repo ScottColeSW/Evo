@@ -11848,6 +11848,28 @@ def test_game_over_summary_surfaces_the_unresolved_war_note_in_the_analysis_line
     assert "no war, conquest, or absorption occurred" in analysis_line
 
 
+def test_game_over_summary_does_not_deny_a_conquest_that_actually_happened():
+    """Live bug, run_20260913_113112 (manual_quit): Tribe 2 (Advanced) had a
+    real conquest win (conquests_won=1) and 2 successful conquest defenses --
+    the per-tribe line correctly printed "Declared conquest 1 time(s) (1 won,
+    0 lost); was the target of conquest 2 time(s) (2 held, 0 fell)", but the
+    Analysis line's "unresolved war" check used to test
+    `_conquest_record_summary(t)` truthiness directly, which is also
+    non-None for a tribe that DID fight -- so the very next sentence still
+    claimed "no war, conquest, or absorption occurred" for the same tribe,
+    flatly contradicting the line above it."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Tribe 2 (Advanced)", "qwen2.5:3b", 50, 50, "#fb923c")
+    tribe.era = "war_and_world_domination_era"
+    tribe.combat_record = {"Conquest": {"won": 1, "lost": 0}, "Conquest Defense": {"won": 2, "lost": 0}}
+    sim.tribes = {"tribe_0": tribe}
+
+    summary = sim._generate_game_over_summary("manual_quit")
+
+    assert "no war, conquest, or absorption occurred" not in summary
+    assert "never attempted or faced DECLARE_CONQUEST" not in summary
+
+
 def test_game_over_summary_names_an_extinct_tribes_cause():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")

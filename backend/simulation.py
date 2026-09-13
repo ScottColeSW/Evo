@@ -1776,6 +1776,26 @@ def _final_build_summary(tribe: "Tribe") -> str:
     return ", ".join(parts) if parts else "no permanent structures"
 
 
+def _tribe_ever_touched_conquest(tribe: "Tribe") -> bool:
+    """True the instant DECLARE_CONQUEST has been attacked with or defended
+    against at all, win or lose -- distinct from _conquest_record_summary's
+    own truthiness, which also returns a non-None *string* for the "reached
+    the era but never touched it" case. _generate_game_over_summary's
+    era_ceiling/manual_quit "unresolved war" note used to check
+    `_conquest_record_summary(t)` truthiness directly to decide who gets
+    flagged as "never attempted or faced DECLARE_CONQUEST" -- but that
+    returns non-None for a tribe that DID fight (and won or lost) too, so a
+    tribe with a real win already printed two sentences earlier
+    ("Declared conquest 1 time(s) (1 won, 0 lost)") could still get flagged
+    as having had "no war, conquest, or absorption occurred" in the very
+    next sentence. Confirmed live in run_20260913_113112: Tribe 2 (Advanced)
+    had conquests_won=1 and 2 successful conquest defenses, yet the Analysis
+    line still claimed no conquest ever occurred."""
+    attack = tribe.combat_record.get("Conquest", {})
+    defense = tribe.combat_record.get("Conquest Defense", {})
+    return bool(attack.get("won", 0) or attack.get("lost", 0) or defense.get("won", 0) or defense.get("lost", 0))
+
+
 def _conquest_record_summary(tribe: "Tribe") -> str | None:
     """War and World Domination era's one real action, DECLARE_CONQUEST (see
     actions.py._declare_conquest), only ever showed up in the ending card as a
@@ -4917,12 +4937,17 @@ class Simulation:
         # loadable -- see generate_endgame_narrative's own docstring for why this
         # specific call is where a bigger/different model is safe to use. Best-
         # effort: a narrative failure (model not pulled, empty response) shouldn't
-        # block the game from actually ending.
+        # block the game from actually ending. Logged, not silently swallowed --
+        # confirmed live (run_20260913_113112) the splash's narrative box came up
+        # completely blank with zero trace of why; unload_model's own docstring
+        # already tells this exact story once (a silently-swallowed exception
+        # forcing standalone probing to diagnose), same fix applies here.
         try:
             self.game_over_narrative = await generate_endgame_narrative(
                 self.client, config.ENDGAME_SUMMARY_MODEL, self.game_over_summary,
             )
-        except Exception:
+        except Exception as exc:
+            print(f"[simulation] generate_endgame_narrative failed: {exc!r}")
             self.game_over_narrative = ""
         # Unloaded explicitly here, not folded into shutdown()'s own tribe-model set
         # below -- see that method's own comment for why an unconditional include
@@ -5018,7 +5043,10 @@ class Simulation:
             # of needing a separate frontend change (and the drift risk that
             # would carry, per this project's own repeated frontend/backend-drift
             # lesson).
-            unresolved = [t.name for t in living if _conquest_record_summary(t)]
+            unresolved = [
+                t.name for t in living
+                if t.era == "war_and_world_domination_era" and not _tribe_ever_touched_conquest(t)
+            ]
             if unresolved:
                 lines[-1] += (
                     f" {', '.join(unresolved)} reached War and World Domination, but the session ended "
