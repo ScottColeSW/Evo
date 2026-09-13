@@ -72,9 +72,25 @@ def test_critical_food_omits_fishing_suggestion_once_already_learned():
     assert "fishing" not in text
 
 
-def test_critical_food_omits_cooking_suggestion_once_already_learned():
-    text, _ = survival_bias_string(food=1, water=50, population=SMALL_TRIBE, cooking_learned=True)
+def test_critical_food_omits_cooking_suggestion_once_already_learned_and_kitchen_built():
+    text, _ = survival_bias_string(food=1, water=50, population=SMALL_TRIBE, cooking_learned=True, kitchen_built=True)
     assert "cook" not in text.lower()
+    assert "kitchen" not in text.lower()
+
+
+def test_critical_food_suggests_kitchen_once_cooking_is_learned_but_kitchen_is_not_built():
+    """Explicit report, 2026-09-13: "the 'starving' warning does not mention
+    cooking or kitchen." Confirmed live: cooking_learned flips true early and
+    this whole message went permanently silent about food multipliers for the
+    rest of a 746-cycle game, even though Kitchen -- a real, still-available
+    further 3x -- remained unbuilt the entire run."""
+    text, _ = survival_bias_string(food=1, water=50, population=SMALL_TRIBE, cooking_learned=True, kitchen_built=False)
+    assert "kitchen" in text.lower()
+
+
+def test_warning_food_suggests_kitchen_once_cooking_is_learned_but_kitchen_is_not_built():
+    text, _ = survival_bias_string(food=3, water=50, population=SMALL_TRIBE, cooking_learned=True, kitchen_built=False)
+    assert "kitchen" in text.lower()
 
 
 def test_water_secure_suppresses_the_thirst_warning_even_at_zero_water():

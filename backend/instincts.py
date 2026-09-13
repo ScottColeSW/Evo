@@ -14,6 +14,7 @@ def survival_bias_string(
     food: int, water: int, population: int,
     fishing_learned: bool = False, cooking_learned: bool = False,
     water_secure: bool = False, food_secure: bool = False,
+    kitchen_built: bool = False,
 ) -> tuple[str, bool]:
     """Returns (bias_text, is_critical). is_critical raises inference temperature the
     same way ancestral dread does -- panic should read as less predictable model
@@ -56,6 +57,16 @@ def survival_bias_string(
     # just this one crisis. Only mentioned once fishing_learned/cooking_learned are
     # actually false, so a tribe that's already mastered them doesn't get told to
     # go learn something it already knows.
+    #
+    # Explicit report, 2026-09-13: "the 'starving' warning does not mention cooking
+    # or kitchen." Confirmed live (run_20260913_080742): cooking_learned flips true
+    # early (cycle ~80-95), and once it does, this whole clause went permanently
+    # silent about food multipliers for the rest of a 746-cycle game -- even though
+    # Kitchen (a real, still-available further 3x on top of cooking, see
+    # actions._build_kitchen) remained unbuilt the entire run. Now a second rung:
+    # once cooking is learned, the message keeps naming Kitchen specifically until
+    # it's actually built, instead of going quiet the moment the first lever is
+    # pulled.
     if food_secure:
         pass
     elif food <= upkeep * config.HUNGER_CRITICAL_CYCLES_LEFT:
@@ -63,6 +74,8 @@ def survival_bias_string(
         message += ", or try fishing now." if not fishing_learned else " now."
         if not cooking_learned:
             message += " Learning to cook (build a fire, then cook after a successful hunt) would make every future harvest go much further."
+        elif not kitchen_built:
+            message += " Building a kitchen would multiply every future harvest even further, on top of what cooking already does."
         urgent.append(message)
         critical = True
     elif food <= upkeep * config.HUNGER_WARNING_CYCLES_LEFT:
@@ -70,6 +83,8 @@ def survival_bias_string(
         message += ", or fishing soon would help." if not fishing_learned else " soon would help."
         if not cooking_learned:
             message += " Learning to cook would help stored food last much longer too."
+        elif not kitchen_built:
+            message += " Building a kitchen would stretch it further still."
         urgent.append(message)
 
     if water_secure:

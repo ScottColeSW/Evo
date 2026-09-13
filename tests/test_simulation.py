@@ -583,6 +583,42 @@ def test_finished_wall_nudges_toward_a_long_house_then_reinforcement():
     assert "sections can still be reinforced for a" in request["prompt"]
 
 
+def test_build_long_house_nudge_fires_early_without_waiting_on_the_wall():
+    """Root-caused from a live 'Kitchen never gets offered' report: a real
+    746-cycle run showed BUILD_LONG_HOUSE never chosen once by either tribe,
+    despite being affordable 66-79% of the time. The only prior long-house
+    nudge (test_finished_wall_nudges_toward_a_long_house_then_reinforcement)
+    was gated behind the FIRST WALL RING being fully complete -- a real, but
+    unrelated, dependency BUILD_LONG_HOUSE's own AFFORDABILITY_CHECKS doesn't
+    actually require. This one must fire well before that, the moment the
+    building is genuinely reachable."""
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "cognitive_horizon"
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    # No wall progress at all -- the old nudge's own gate is nowhere close to met.
+    assert not any(sec["progress"] >= 100 for sec in tribe.wall_rings[0]["sections"])
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_LONG_HOUSE" in ctx["available_actions"]
+    assert "No long house stands yet" in request["prompt"]
+
+
+def test_build_long_house_nudge_is_silent_once_one_is_built():
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "cognitive_horizon"
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.long_houses_built = 1
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "No long house stands yet" not in request["prompt"]
+
+
 def test_long_house_count_nudges_toward_keep_then_fortress_then_castle():
     from backend import config
 
@@ -9950,6 +9986,47 @@ def test_hunting_and_egg_gathering_retire_once_genuinely_food_secure():
     assert "GATHER_EGGS" not in ctx["available_actions"]
     assert tribe.food_security_actions_retired is True
     assert any("no longer needs to hunt or gather eggs" in e for e in tribe.history)
+
+
+def test_gather_eggs_retires_once_coop_and_hatchery_both_stand_even_without_kitchen():
+    """Explicit report, 2026-09-13: "I see we are still offering Gather_Eggs when
+    they clearly have that taken care of already." Confirmed live (run_20260913_
+    080742): Kitchen was never built the whole 746-cycle run, so
+    food_security_actions_retired never fired, and GATHER_EGGS stayed offered
+    (162/159 uses) despite both Coop and Hatchery existing. This retirement is
+    independent of Kitchen/_is_food_secure entirely."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES  # camped, so GATHER_EGGS would otherwise be reachable
+    tribe.coop_built = True
+    tribe.hatchery_built = True
+    assert not tribe.kitchen_built  # confirms this fires without the unrelated milestone
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_EGGS" not in ctx["available_actions"]
+    assert "HUNT_DEER" in ctx["available_actions"]  # unaffected -- a separate retirement
+    assert tribe.egg_gathering_retired is True
+    assert any("no longer needs to gather wild eggs" in e for e in tribe.history)
+
+
+def test_gather_eggs_stays_available_with_only_a_coop_or_only_a_hatchery():
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.coop_built = True
+    tribe.hatchery_built = False
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_EGGS" in ctx["available_actions"]
+    assert tribe.egg_gathering_retired is False
 
 
 def test_catch_fish_stays_reachable_when_food_secure_via_farming_not_fishing():

@@ -1425,6 +1425,15 @@ class Tribe:
         # Simulation._prepare_turn. Explicit request, 2026-09-10: "we need to
         # check for infinity food on so we don't offer hunting."
         self.food_security_actions_retired = False
+        # Explicit report, 2026-09-13: "I see we are still offering Gather_Eggs when
+        # they clearly have that taken care of already." food_security_actions_
+        # retired (above) is gated on Kitchen + a proven food source -- an unrelated
+        # milestone that GATHER_EGGS specifically becomes redundant well before, once
+        # both a Coop and a Hatchery exist (_advance_flock/_advance_flock_eggs then
+        # lay and hatch eggs passively every cycle, no action needed, at rates
+        # GATHER_EGGS's own manual chance-based fetch can't beat). Same one-way
+        # retirement shape, independent flag -- see _prepare_turn.
+        self.egg_gathering_retired = False
         # Egg-gathering/flock genetics (backend/actions.py GATHER_EGGS, Simulation.
         # _resolve_hatch, backend/genetics.py hatch()) -- same pending_X/resolve shape
         # as pending_birth/lineage above, applied to a flock instead of the tribe's own
@@ -1566,6 +1575,7 @@ class Tribe:
         survival_warning, _ = survival_bias_string(
             self.food, self.water, self.population, self.fishing_learned, self.cooking_learned,
             water_secure=_is_water_secure(self), food_secure=_is_food_secure(self),
+            kitchen_built=self.kitchen_built,
         )
         nxt = next_era(self.era)
         next_era_info = None
@@ -2209,6 +2219,7 @@ class Simulation:
         survival_bias, _critical = survival_bias_string(
             tribe.food, tribe.water, tribe.population, tribe.fishing_learned, tribe.cooking_learned,
             water_secure=_is_water_secure(tribe), food_secure=_is_food_secure(tribe),
+            kitchen_built=tribe.kitchen_built,
         )
         if survival_bias:
             lines.append(survival_bias)
@@ -3168,6 +3179,7 @@ class Simulation:
         survival_bias, survival_critical = survival_bias_string(
             tribe.food, tribe.water, tribe.population, tribe.fishing_learned, tribe.cooking_learned,
             water_secure=_is_water_secure(tribe), food_secure=_is_food_secure(tribe),
+            kitchen_built=tribe.kitchen_built,
         )
         # NUDGE (2026-08-31, explicit request: "the warnings do not mention settling
         # as an alternative to low water"). A tribe already sitting on a chronic water
@@ -3402,6 +3414,20 @@ class Simulation:
                     "security keeps the tribe fed on its own from here on"
                 )
             available_actions = [a for a in available_actions if a not in ("HUNT_DEER", "HUNTING_PARTY", "GATHER_EGGS")]
+
+        # Explicit report, 2026-09-13: GATHER_EGGS specifically becomes redundant on
+        # its own, earlier milestone than food_security_actions_retired above --
+        # Coop + Hatchery, not Kitchen + a proven food source. A tribe that never
+        # builds a Kitchen (a real, observed live-run outcome) would otherwise see
+        # GATHER_EGGS offered forever even with a large, self-sustaining flock.
+        if tribe.coop_built and tribe.hatchery_built:
+            if not tribe.egg_gathering_retired:
+                tribe.egg_gathering_retired = True
+                tribe.history.append(
+                    f"\U0001f95a {tribe.name} no longer needs to gather wild eggs -- the coop and hatchery "
+                    "keep the flock fed and growing on their own from here on"
+                )
+            available_actions = [a for a in available_actions if a != "GATHER_EGGS"]
 
         # Explicit correction, 2026-09-10: "Declare_Alliance is under
         # suspicion and I'd like to even reduce when they are allow to use
@@ -4121,6 +4147,20 @@ class Simulation:
             visible_entities.append(
                 "Fire is known and the first wall ring stands fully reinforced -- torches now line it "
                 "for free, a further defense bonus."
+            )
+
+        # NUDGE (2026-09-13, root-caused from a live "Kitchen never gets offered"
+        # report): a real 746-cycle run showed BUILD_LONG_HOUSE never chosen once by
+        # either tribe, despite being affordable 66-79% of the time -- the ever-
+        # present HUNT_DEER/HUNTING_PARTY/GATHER_EGGS survival loop crowded it out of
+        # a menu with no fact ever calling it out specifically. This is the single
+        # most foundational building in the game (Kitchen, Keep, Fortress, Castle all
+        # sit downstream of it) and, unlike Kitchen/Tannery/Coop/Deer Pen, never had
+        # its own "you can do this now" nudge at all.
+        if "BUILD_LONG_HOUSE" in available_actions and tribe.long_houses_built == 0:
+            visible_entities.append(
+                "No long house stands yet -- real shelter for the tribe, and the first step toward "
+                "a kitchen, a keep, and everything built on top of them later."
             )
 
         # long_house_tier counts UPGRADE_LONG_HOUSE alongside real builds, same
