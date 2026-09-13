@@ -3341,6 +3341,66 @@ def test_era_gap_note_omits_the_research_mention_once_the_discount_is_already_ca
     assert "Research at the library" not in request["prompt"]  # but more research wouldn't help
 
 
+def test_build_object_creator_nudge_fires_once_the_era_unlocks_it():
+    """No structural prerequisite beyond cost -- unlike Kitchen/Library/Barracks,
+    this fires the instant it's reachable at all."""
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "object_creator_era"
+    tribe.wood = tribe.stone = tribe.food = tribe.water = 500
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_OBJECT_CREATOR" in ctx["available_actions"]
+    assert "an Object Creator built now would let it design entirely new items" in request["prompt"]
+
+
+def test_build_object_creator_nudge_silent_once_already_built():
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "object_creator_era"
+    tribe.wood = tribe.stone = tribe.food = tribe.water = 500
+    tribe.object_creator_built = True
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "an Object Creator built now would let it design" not in request["prompt"]
+
+
+def test_create_item_nudge_fires_once_the_object_creator_stands():
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "object_creator_era"
+    tribe.wood = tribe.stone = tribe.food = tribe.water = 500
+    tribe.object_creator_built = True
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "CREATE_ITEM" in ctx["available_actions"]
+    assert "The Object Creator stands ready" in request["prompt"]
+    # Deliberately neutral -- names every category, pushes toward none of them.
+    assert "gathering, combat, defense, celebrations, expeditions, or population" in request["prompt"]
+
+
+def test_create_item_nudge_silent_without_an_object_creator():
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "object_creator_era"
+    tribe.wood = tribe.stone = tribe.food = tribe.water = 500
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "The Object Creator stands ready" not in request["prompt"]
+
+
 def test_build_library_nudge_fires_once_a_long_house_stands():
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
     tribe = sim.tribes["tribe_0"]

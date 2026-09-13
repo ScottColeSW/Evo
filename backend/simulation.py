@@ -4392,6 +4392,36 @@ class Simulation:
                 "value (USE_ITEM) or handed over in a future trade."
             )
 
+        # NUDGE (2026-09-13, action-legibility audit): BUILD_OBJECT_CREATOR/
+        # CREATE_ITEM/CREATE_USEFUL_STRUCTURE had zero nudges anywhere -- lower
+        # priority than the other 6 fixed earlier since Object Creator Era (population
+        # 800) is rarely reached, but the project's own comment already names this
+        # exact failure mode as the default outcome absent a nudge ("an action being
+        # merely available doesn't mean a small model chooses it -- this project has
+        # hit that every single time so far"). BUILD_OBJECT_CREATOR has no structural
+        # prerequisite beyond cost, unlike Kitchen/Library/Barracks -- the nudge fires
+        # the instant it's reachable at all, same shape BUILD_WELL's own
+        # always-available nudge would use if it had one.
+        if "BUILD_OBJECT_CREATOR" in available_actions and not tribe.object_creator_built:
+            visible_entities.append(
+                "The tribe has grown large enough to support genuine invention -- an Object Creator "
+                "built now would let it design entirely new items and structures, not just what's "
+                "already known."
+            )
+        # Deliberately neutral about WHICH category to aim for (the design
+        # philosophy's own "no scripted directives" line) -- names only that a real,
+        # bounded effect is guaranteed, same "state what's mechanically true, decide
+        # nothing for the model" shape the rival-contact nudge already uses.
+        if (
+            ("CREATE_ITEM" in available_actions or "CREATE_USEFUL_STRUCTURE" in available_actions)
+            and tribe.object_creator_built
+        ):
+            visible_entities.append(
+                "The Object Creator stands ready -- creating an item or a structure now would give the "
+                "tribe a genuinely new invention with a real, permanent effect on gathering, combat, "
+                "defense, celebrations, expeditions, or population."
+            )
+
         # Military branch, step 1's original eligibility nudge (added 2026-09-08
         # after a live run showed an individual sitting eligible for 9+ days with
         # nothing ever prompting the chief to spend a turn on NAME_WARRIOR) was
