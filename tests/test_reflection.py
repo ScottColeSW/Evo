@@ -90,6 +90,26 @@ async def test_prompt_frames_the_decree_as_the_chiefs_own_idea_not_ours():
 
 
 @run_async
+async def test_decree_prompt_gives_no_copyable_example_text():
+    """Live bug, confirmed 2026-09-13 (run_20260913_135304): the decree paragraph
+    used to include two concrete illustrative examples. qwen2.5:3b returned one of
+    them back VERBATIM as its own "freely invented" decree, and gemma2:2b echoed
+    the invented "winter" framing from the other in two separate decrees of its
+    own -- a concept that appears nowhere else in this simulation. The whole point
+    of the mechanic is a decree grounded in what actually happened to THIS tribe;
+    a copyable stock example defeats that the moment a small model parrots it. The
+    prompt must describe the shape of a decree without ever giving content a model
+    could copy wholesale."""
+    client = _FakeClient({"revised_philosophy": "x"})
+
+    await reflect_on_history(client, "llama3", "Forest Tribe", "caution and hoarding", [])
+
+    assert "build us a proper kitchen before winter" not in client.last_prompt
+    assert "find fresh water before anything else" not in client.last_prompt
+    assert "winter" not in client.last_prompt.lower()
+
+
+@run_async
 async def test_reflect_on_history_falls_back_when_revised_philosophy_is_missing():
     client = _FakeClient({"changed": True, "reasoning": "something shifted"})
 

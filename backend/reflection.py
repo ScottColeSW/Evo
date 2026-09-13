@@ -55,6 +55,20 @@ async def reflect_on_history(
     # whatever decree already stands rather than silently clearing it, so a chief who
     # isn't moved to change course tonight doesn't accidentally erase a good standing
     # order just by not mentioning it.
+    #
+    # Live bug, confirmed 2026-09-13 (run_20260913_135304): this paragraph used to
+    # include two concrete illustrative examples ("build us a proper kitchen before
+    # winter," "find fresh water before anything else"). qwen2.5:3b returned the
+    # first one back VERBATIM as its own "freely invented" decree, and gemma2:2b
+    # echoed the invented "winter" framing (a concept that appears nowhere else in
+    # this simulation -- no season system exists at all) in two separate decrees of
+    # its own. Confirmed via the full run log: every "winter" mention in the whole
+    # 102-cycle run was inside a decree/dream field, none in ordinary turn text --
+    # the example had leaked into outputs that were supposed to be grounded in real
+    # events, defeating the entire point of the mechanic. Fixed by describing the
+    # shape abstractly instead of giving copyable content, matching this project's
+    # standing "no scripted directives" rule -- a hollow illustrative example is
+    # itself a kind of scripted directive once a small model starts parroting it.
     decree_line = f'Your current standing decree is: "{current_decree}"' if current_decree else "You have no standing decree right now."
     # Explicit design, 2026-09-13: "It makes real the dreams of the Chief" -- the
     # Dream Manifestation Machine (backend/actions.py._new_created_object) reads
@@ -96,10 +110,11 @@ you will personally bestow on whoever excels at one of: {categories_list}. This 
 optional; leave it out if nothing comes to mind.
 
 Separately again, you may also set a standing decree -- not a philosophy, an actual concrete \
-duty for the tribe to act on until you say otherwise ("build us a proper kitchen before winter," \
-"find fresh water before anything else"). {decree_line} Leave it as it is unless something \
-you've just reflected on genuinely calls for a new one -- this is your own idea, not ours, so \
-only propose one if it truly comes from what actually happened.{dream_block}
+order the tribe can act on starting tomorrow: a specific task, not a value or a goal statement, \
+worded the way you would actually give an order, in your own voice. {decree_line} Leave it as \
+it is unless something you've just reflected on genuinely calls for a new one -- this is your \
+own idea, not ours, so only propose one if it truly comes from what actually happened to THIS \
+tribe, not a generic-sounding order that could apply to any tribe, any time.{dream_block}
 
 Reply with ONLY JSON:
 {{
