@@ -1744,7 +1744,11 @@ def test_build_quarry_requires_a_real_successful_stone_gather():
     assert "quarry opens" in result
 
 
-def test_build_mine_requires_quarry_and_a_discovered_site():
+def test_build_mine_requires_only_a_discovered_site_not_a_quarry():
+    """Explicit correction, 2026-09-13: "these should be as easy as Quarry to both
+    find and have" -- quarry_built used to be a real, hard prerequisite (a whole
+    other building required first) on top of a discovered vein; dropped so Mine
+    mirrors Quarry's own single-earned-precondition shape."""
     from backend import config
 
     sim = _bare_simulation()
@@ -1752,9 +1756,9 @@ def test_build_mine_requires_quarry_and_a_discovered_site():
     _settle(sim, tribe)
     tribe.wood = config.MINE_WOOD_COST
     tribe.stone = config.MINE_STONE_COST
-    tribe.quarry_built = True
+    assert tribe.quarry_built is False  # deliberately never built -- no longer required
 
-    # No discovered site yet -- quarry_built alone isn't enough.
+    # No discovered site yet -- the one real precondition still isn't met.
     assert ACTION_REGISTRY["BUILD_MINE"](sim, tribe, "mountains", _NO_TARGET) is None
     assert tribe.mine_built is False
 
@@ -1774,7 +1778,6 @@ def test_build_mine_locks_in_the_most_recently_discovered_site():
     _settle(sim, tribe)
     tribe.wood = config.MINE_WOOD_COST
     tribe.stone = config.MINE_STONE_COST
-    tribe.quarry_built = True
     tribe.mine_sites.append({"x": 10, "y": 10, "biome": "mountains", "resource": "Orosite Ore"})
     tribe.mine_sites.append({"x": 20, "y": 60, "biome": "forest", "resource": "Whisperwood Amber"})
 

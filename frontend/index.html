@@ -139,10 +139,14 @@
   #game-over-splash .game-over-narrative { color: #e2e2e7; font-size: 13px; font-family: Georgia, serif; line-height: 1.7; white-space: pre-wrap; max-width: 100%; background: rgba(99, 102, 241, 0.08); border: 1px solid #3730a3; border-radius: 6px; padding: 14px 16px; margin: 8px 0 0; }
   #game-over-splash .game-over-actions { display: flex; gap: 12px; margin-top: 4px; }
   #game-over-splash .game-over-actions button { padding: 10px 26px; font-size: 13px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; letter-spacing: 0.5px; }
+  #btn-view-board { background: #1e293b; color: #cbd5e1; border: 1px solid #475569 !important; }
+  #btn-view-board:hover { background: #334155; }
   #btn-try-again { background: #4338ca; color: #e0e7ff; }
   #btn-try-again:hover { background: #4f46e5; }
   #btn-game-over-quit { background: #7f1d1d; color: #fecaca; }
   #btn-game-over-quit:hover { background: #991b1b; }
+  #btn-return-to-summary { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 101; padding: 10px 22px; font-size: 13px; font-weight: bold; letter-spacing: 0.5px; border-radius: 6px; border: 1px solid #475569; background: rgba(15,15,20,0.9); color: #e2e2e7; cursor: pointer; }
+  #btn-return-to-summary:hover { background: rgba(30,30,40,0.95); }
 
   /* Battle popup: DECLARE_CONQUEST's multi-round war of attrition, played back
      round by round -- see backend/actions.py's _declare_conquest docstring. */
@@ -245,6 +249,8 @@
   .commerce-panel .commerce-title { color: #fbbf24; font-weight: bold; }
   .combat-panel { margin-top: 6px; padding: 6px 8px; background: #2a1616; border: 1px solid #5d2f2f; border-radius: 5px; font-size: 11px; color: #fecaca; }
   .combat-panel .combat-title { color: #f87171; font-weight: bold; }
+  .espionage-panel { margin-top: 6px; padding: 6px 8px; background: #1e1a2e; border: 1px solid #4c3d6d; border-radius: 5px; font-size: 11px; color: #d8b4fe; }
+  .espionage-panel .espionage-title { color: #c084fc; font-weight: bold; }
 
   .wellbeing-panel { margin-top: 6px; padding: 6px 8px; background: #1a1a2a; border: 1px solid #35365d; border-radius: 5px; font-size: 11px; color: #c7d2fe; }
   .wellbeing-panel .wellbeing-title { color: #a5b4fc; font-weight: bold; }
@@ -354,11 +360,18 @@
             <pre class="game-over-summary" id="game-over-summary"></pre>
           </details>
           <div class="game-over-actions">
+            <button id="btn-view-board">VIEW FINAL BOARD</button>
             <button id="btn-try-again">TRY AGAIN</button>
             <button id="btn-game-over-quit">QUIT</button>
           </div>
         </div>
       </div>
+      <!-- Explicit request, 2026-09-13: "it would be nice to be able to see the
+           final board easily after the game is over." A deliberate, on-demand way
+           to do this -- distinct from the Try Again ghosting bug this same report
+           led to fixing -- since #game-over-splash is a full-viewport overlay with
+           no other way to see the frozen canvas underneath it. -->
+      <button id="btn-return-to-summary" class="hidden">← BACK TO SUMMARY</button>
       <!-- Explicit request, 2026-09-09: "I do want a play by play blows, meters
            falling, informational popup for only the one and only WAR." Shown
            once DECLARE_CONQUEST's multi-round battle (backend/actions.py's
@@ -685,6 +698,7 @@ function startSimulation(tribes, immortalCycles) {
   document.getElementById("picker").style.display = "none";
   document.getElementById("theater").classList.add("active");
   hideGameOverSplash();
+  document.getElementById("btn-return-to-summary").classList.add("hidden");
   lastEraByTribe = {};
   populateInjectModelSelect();
   requestAnimationFrame(resizeCanvas);
@@ -697,6 +711,14 @@ function startSimulation(tribes, immortalCycles) {
   previousLandmarkKeys = {};
   newLandmarks = [];
   firstStateReceived = false;
+  // Explicit report, 2026-09-13: clicking Try Again let the *previous* game's
+  // finished board -- still on the canvas, its population dots still perpetually
+  // orbiting via drawFrame's own decorative animation -- ghost through the spawn
+  // overlay (94% opaque, not fully solid) for the whole time the new simulation
+  // was spinning up, since neither of these was ever reset here. drawFrame's rAF
+  // loop never stops running, so a stale latestState left in place keeps drawing.
+  latestState = null;
+  previousState = null;
   showSpawnSplash();
 
   if (socket) {
@@ -912,6 +934,21 @@ function showGameOverSplash(state) {
 function hideGameOverSplash() {
   document.getElementById("game-over-splash").classList.add("hidden");
 }
+
+// Explicit request, 2026-09-13: "it would be nice to be able to see the final
+// board easily after the game is over." latestState is never touched by this --
+// it's still the frozen final snapshot game_over left it at -- so hiding the
+// splash alone reveals the real, final board underneath, no different from what
+// Try Again's own ghosting bug accidentally exposed before that got fixed.
+document.getElementById("btn-view-board").addEventListener("click", () => {
+  hideGameOverSplash();
+  document.getElementById("btn-return-to-summary").classList.remove("hidden");
+});
+
+document.getElementById("btn-return-to-summary").addEventListener("click", () => {
+  document.getElementById("btn-return-to-summary").classList.add("hidden");
+  if (latestState) showGameOverSplash(latestState);
+});
 
 document.getElementById("btn-try-again").addEventListener("click", () => {
   if (!lastRunConfig) return;
@@ -2005,6 +2042,20 @@ function interpolatedCycle() {
   if (!previousState || previousState.cycle == null) return latestState.cycle;
   const progress = Math.min(1, (performance.now() - lastStateArrivedAt) / stateIntervalMs);
   return previousState.cycle + (latestState.cycle - previousState.cycle) * progress;
+}
+
+// Explicit report, 2026-09-13: "the day ticked up before the sun arrived." Root
+// cause: this used to be computed once, in updateSidebar, from the raw just-arrived
+// state.cycle -- so the "Day N" label jumped the instant a message landed, while the
+// sun/moon visual (drawCelestialLighting(interpolatedCycle()), in drawFrame's own
+// per-frame loop) was still gliding toward that same cycle value over real time.
+// Called from both updateSidebar (an immediate update so the banner is never blank
+// the instant a message arrives) and drawFrame every animation frame with
+// interpolatedCycle() (what actually keeps the label in step with the visual).
+function updateDayBanner(cycle) {
+  const dayNumber = Math.floor((cycle || 0) / DAY_LENGTH_CYCLES) + 1;
+  const dayProgress = (((cycle || 0) % DAY_LENGTH_CYCLES) + DAY_LENGTH_CYCLES) % DAY_LENGTH_CYCLES / DAY_LENGTH_CYCLES;
+  document.getElementById("day-banner").textContent = `${dayProgress < 0.5 ? "☀️" : "🌙"} Day ${dayNumber}`;
 }
 
 function biomeColor(biome) {
@@ -3855,6 +3906,7 @@ function drawFrame() {
   pendingSpeechBubbles.length = 0;
 
   if (latestState) {
+    updateDayBanner(interpolatedCycle());
     drawCelestialLighting(interpolatedCycle());
     drawWeather();
     // Explicit request: "a visual on how much land they have staked out... its
@@ -4308,6 +4360,27 @@ function combatPanel(t) {
   return `<div class="combat-panel"><span class="combat-title">⚔️ Combat</span><br>${rows.join("<br>")}</div>`;
 }
 
+// Explicit request, 2026-09-13: "near the Combat sidebar box, can we add an
+// Espionage box showing the Spy performance?" Blocked until now on a real
+// serialization gap -- spy_missions_run/spy_missions_caught/rival_intel were
+// tracked on the Tribe object (this session's own SPY feature) but never sent
+// over the websocket at all. Same "elastic, empty until there's real data"
+// shape combatPanel/commercePanel already use.
+function espionagePanel(t) {
+  const run = t.spy_missions_run || 0;
+  if (!run) return "";
+  const caught = t.spy_missions_caught || 0;
+  const succeeded = run - caught;
+  const rows = [`${succeeded} succeeded, ${caught} caught (of ${run} sent)`];
+  const intel = Object.values(t.rival_intel || {});
+  if (intel.length) {
+    rows.push(...intel.map(i =>
+      `Last intel (cycle ${i.cycle}): pop ${i.population}, ${escapeHtml(i.era || "?")}`
+    ));
+  }
+  return `<div class="espionage-panel"><span class="espionage-title">🕵️ Espionage</span><br>${rows.join("<br>")}</div>`;
+}
+
 function farmingPanel(t) {
   const ring0 = (t.wall_rings || [])[0];
   const ring0Reinforced = !!ring0 && ring0.sections.every(s => s.natural_barrier || s.tier >= WALL_MAX_LAYERS);
@@ -4662,10 +4735,10 @@ function updateSidebar(state) {
   // A viewer had no way to answer "what day is this?" without doing cycle-count math
   // themselves -- DAY_LENGTH_CYCLES is already how the day/night lighting and the
   // innate tribal gathering both mark a day's boundary, so it's the real unit here,
-  // not an arbitrary new one.
-  const dayNumber = Math.floor((state.cycle || 0) / DAY_LENGTH_CYCLES) + 1;
-  const dayProgress = (((state.cycle || 0) % DAY_LENGTH_CYCLES) + DAY_LENGTH_CYCLES) % DAY_LENGTH_CYCLES / DAY_LENGTH_CYCLES;
-  document.getElementById("day-banner").textContent = `${dayProgress < 0.5 ? "☀️" : "🌙"} Day ${dayNumber}`;
+  // not an arbitrary new one. An immediate update here so the banner is never blank/
+  // stale the instant a message arrives; drawFrame's own per-frame call (below) is
+  // what actually keeps it in sync with the interpolated sun/moon position afterward.
+  updateDayBanner(state.cycle);
   updateOrdersBanner(state);
 
   // Immortality suppresses extinction on the backend only (see Simulation.
@@ -4725,6 +4798,7 @@ function updateSidebar(state) {
           ${wellbeingPanel(t)}
           ${commercePanel(t)}
           ${combatPanel(t)}
+          ${espionagePanel(t)}
         </div>`;
     }
     (t.history || []).forEach(entry => {

@@ -671,8 +671,12 @@ AFFORDABILITY_CHECKS = {
         and t.wood >= config.CASTLE_WOOD_COST and t.stone >= config.CASTLE_STONE_COST
         and _can_place(t, w, "castle")
     ),
+    # Explicit correction, 2026-09-13: "these should be as easy as Quarry to both
+    # find and have" -- dropped the quarry_built requirement (a whole other
+    # building) so this mirrors BUILD_QUARRY's own single-earned-precondition
+    # shape exactly, just keyed on a discovered vein instead of a proven gather.
     "BUILD_MINE": lambda t, w: (
-        t.quarry_built and bool(t.mine_sites)
+        bool(t.mine_sites)
         and t.wood >= config.MINE_WOOD_COST and t.stone >= config.MINE_STONE_COST
         and _can_place(t, w, "mine")
     ),
@@ -1664,6 +1668,9 @@ class Tribe:
             "created_objects": self.created_objects,
             "conquests_won": self.conquests_won,
             "trades_completed": self.trades_completed,
+            "spy_missions_run": self.spy_missions_run,
+            "spy_missions_caught": self.spy_missions_caught,
+            "rival_intel": self.rival_intel,
             "conquered_tribe_names": self.conquered_tribe_names,
             "warehouses_built": self.warehouses_built,
             "warehouse_upgrades": self.warehouse_upgrades,
@@ -4318,19 +4325,18 @@ class Simulation:
                         "Stone has been gathered here before -- a quarry built at the settlement would "
                         "triple the value of every future load of harvested stone."
                     )
+        # Explicit correction, 2026-09-13: quarry_built dropped from BUILD_MINE's own
+        # gate above ("as easy as Quarry to find and have") -- reaching this block at
+        # all now already guarantees a real vein is known (mine_sites is the sole
+        # earned precondition), so the old "quarrying mastered but no vein yet"
+        # branch is unreachable and was removed rather than left dangling.
         if "BUILD_MINE" in available_actions and not tribe.mine_built:
-            if tribe.quarry_built and tribe.mine_sites:
-                site = tribe.mine_sites[-1]
-                visible_entities.append(
-                    f"A vein of {site['resource']} is known at ({site['x']},{site['y']}) -- excavating a "
-                    "mine would bring in a steady supply of it, a resource no other tribe's own land "
-                    "necessarily shares."
-                )
-            elif tribe.quarry_built:
-                visible_entities.append(
-                    "Quarrying is mastered, but no vein of a unique resource has been found yet -- "
-                    "scouting may turn one up."
-                )
+            site = tribe.mine_sites[-1]
+            visible_entities.append(
+                f"A vein of {site['resource']} is known at ({site['x']},{site['y']}) -- excavating a "
+                "mine would bring in a steady supply of it, a resource no other tribe's own land "
+                "necessarily shares."
+            )
         # NUDGE (2026-09-12, action-legibility audit): the BUILD_MINE nudge just
         # above goes permanently silent the instant mine_built flips true (guarded
         # by `not tribe.mine_built`), but nothing picks up the baton to say the
@@ -5736,6 +5742,17 @@ class Simulation:
         biome = biome_at(x, y)
         if biome not in ("river", "lake"):
             return False
+        # Explicit design, 2026-09-13: "should they get... to try to learn that is
+        # deadly, be careful, OR build a boat -- that kinda resolution could work."
+        # A boat already gives real speed through river/lake tiles (see
+        # _advance_automatic_boat's own docstring) -- this is the other half, the
+        # crossing itself no longer being a real risk once one exists, matching this
+        # method's own long-standing comment that these landmarks were always meant
+        # to be "washed away over time, fleeting" (never actually implemented until
+        # the sweep at _advance_automatic_boat does exactly that, once, the moment a
+        # boat is first built).
+        if tribe.boat_built:
+            return False
         self._landmark_hazard(tribe, x, y, "a treacherous crossing")
         if random.random() >= config.DROWNING_HAZARD_CHANCE:
             return False
@@ -6738,6 +6755,17 @@ class Simulation:
         if tribe.boat_built or not (tribe.dock_built and tribe.fishing_learned):
             return
         tribe.boat_built = True
+        # Explicit report, 2026-09-13: "we need an easy way to remove these from the
+        # map... learning about this over and over seems hindering." River/lake
+        # crossings are the one hazard a real, earned milestone can actually resolve
+        # (see _expedition_river_hazard's own boat_built check, added alongside this)
+        # -- once a boat exists, those specific markers are stale warnings about a
+        # danger that no longer applies, so they're cleared here rather than
+        # lingering on the map forever. Volcano/cliffs/shoals markers are untouched
+        # -- a boat doesn't make any of those safer.
+        tribe.hazard_landmarks = [
+            lm for lm in tribe.hazard_landmarks if biome_at(lm["x"], lm["y"]) not in ("river", "lake")
+        ]
         if tribe.territory_center is not None:
             w, h = config.BUILDING_FOOTPRINTS["boat"]
             slot = architect.find_free_slot(self.world, tribe, "boat")

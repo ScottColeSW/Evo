@@ -1035,13 +1035,16 @@ def _build_kitchen(sim, tribe, biome, target):
 
 def _build_mine(sim, tribe, biome, target):
     """Explicit request: "Mines can [also] contain the Unique Resource of the
-    Biome... these locations are scattered about the map." Gated on quarry_built
-    (excavating a named seam is a deeper extension of already knowing how to
-    quarry) plus at least one site actually discovered via scouting (Simulation.
-    _advance_one_expedition). Locks in the most recently discovered site's
-    resource permanently -- a tribe with several discovered veins on record still
-    only ever works the one it chose to excavate."""
-    if tribe.mine_built or not tribe.quarry_built or not tribe.mine_sites:
+    Biome... these locations are scattered about the map." Gated on at least one
+    site actually discovered via scouting (Simulation._advance_one_expedition),
+    the same single-earned-precondition shape BUILD_QUARRY's own stone_ever_
+    gathered requirement uses -- explicit correction, 2026-09-13: "these should
+    be as easy as Quarry to both find and have," after quarry_built (a whole
+    other building required first) made Mine noticeably harder to reach than its
+    own site-discovery rarity alone would suggest. Locks in the most recently
+    discovered site's resource permanently -- a tribe with several discovered
+    veins on record still only ever works the one it chose to excavate."""
+    if tribe.mine_built or not tribe.mine_sites:
         return None
     if tribe.wood < config.MINE_WOOD_COST or tribe.stone < config.MINE_STONE_COST:
         return None
@@ -3152,7 +3155,7 @@ ACTION_DESCRIPTIONS = {
     "BUILD_FISHERY": "Build a fishery using stored wood and stone -- only possible once a dock already stands. A one-time, permanent structure: the settlement's passive daily fish supply flows in even more steadily from then on.",
     "BUILD_SAWMILL": "Build a sawmill using stored wood and stone -- only possible once wood has actually been gathered here at least once. A one-time, permanent structure at your settlement: every future load of gathered wood is worth six times as much from then on.",
     "BUILD_QUARRY": "Build a quarry using stored wood and stone -- only possible once stone has actually been gathered here at least once. A one-time, permanent structure at your settlement: every future load of harvested stone is worth three times as much from then on.",
-    "BUILD_MINE": "Excavate a mine at a vein your scouts have already found, using stored wood and stone -- only possible once a quarry stands and at least one vein is known. A one-time, permanent structure, but its unique resource has to actually be fetched (GATHER_ORE) before it starts flowing in steadily.",
+    "BUILD_MINE": "Excavate a mine at a vein your scouts have already found, using stored wood and stone -- only possible once at least one vein is known. A one-time, permanent structure, but its unique resource has to actually be fetched (GATHER_ORE) before it starts flowing in steadily.",
     "GATHER_ORE": "Fetch the Mine's unique resource -- only possible once a mine has been excavated. The first successful fetch also starts a small, permanent daily supply from then on, the same way fishing works once learned.",
     "BUILD_TANNERY": "Build a tannery using stored wood and stone -- only possible once a hunt has actually succeeded. A one-time, permanent structure at your settlement: Fur flows in steadily from then on, and every successful hunt yields extra meat from then on.",
     "BUILD_DEER_PEN": "Build a deer pen using stored wood and stone -- only possible once a tannery already stands and several hunts have actually succeeded. A one-time, permanent structure: a small captive herd starts immediately, breeds on its own if fed, and feeds the tannery extra Fur every cycle on top of what it already produces.",

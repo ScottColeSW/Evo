@@ -1819,6 +1819,29 @@ def test_automatic_boat_does_not_regrant_once_already_built():
     assert tribe.history == []  # no duplicate announcement
 
 
+def test_automatic_boat_clears_existing_river_and_lake_hazard_landmarks():
+    """Explicit report, 2026-09-13: "we need an easy way to remove these from the
+    map... learning about this over and over seems hindering." A boat is the one
+    real, earned milestone that actually resolves a river/lake crossing hazard
+    (see _expedition_river_hazard's own boat_built check) -- volcano/cliffs/shoals
+    markers are untouched, a boat doesn't make any of those safer."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.dock_built = True
+    tribe.fishing_learned = True
+    tribe.hazard_landmarks = [
+        {"x": 40, "y": 37, "name": "The Last Warning"},   # river
+        {"x": 14, "y": 70, "name": "Widow's Reach"},       # lake
+        {"x": 10, "y": 12, "name": "Ashen Scar"},          # volcano -- untouched
+        {"x": 6, "y": 52, "name": "Deadfall Ridge"},       # cliffs -- untouched
+    ]
+
+    sim._advance_automatic_boat(tribe)
+
+    remaining = {lm["name"] for lm in tribe.hazard_landmarks}
+    assert remaining == {"Ashen Scar", "Deadfall Ridge"}
+
+
 def test_automatic_boat_places_a_real_footprint_once_settled():
     from backend import config
 
@@ -8354,6 +8377,22 @@ def test_to_dict_exposes_trades_completed():
     assert tribe.to_dict()["trades_completed"] == 4
 
 
+def test_to_dict_exposes_spy_performance():
+    """Found while grounding an "add an Espionage sidebar box" request: SPY's own
+    stats (this session's own feature) were tracked on the Tribe object but never
+    serialized at all, so a frontend panel had no data to show regardless of its
+    own layout."""
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.spy_missions_run = 3
+    tribe.spy_missions_caught = 1
+    tribe.rival_intel = {"tribe_1": {"cycle": 100, "population": 40}}
+
+    d = tribe.to_dict()
+    assert d["spy_missions_run"] == 3
+    assert d["spy_missions_caught"] == 1
+    assert d["rival_intel"] == {"tribe_1": {"cycle": 100, "population": 40}}
+
+
 def test_to_dict_exposes_chief_election_and_death_counts():
     """Found while grounding a live "keeps getting a new Chief" report: these were
     tracked on the Tribe object the whole time but never serialized, so
@@ -12033,6 +12072,25 @@ def test_drowning_hazard_covers_lake_now_too():
 
     assert fired is True
     assert tribe.population == 10 - config.DROWNING_HAZARD_POPULATION_LOSS
+
+
+def test_boat_makes_a_river_crossing_genuinely_safe_no_hazard_no_landmark():
+    """Explicit design, 2026-09-13: a boat is real, earned resolution for this
+    specific hazard -- crossing is no longer a risk at all once one exists, not
+    just a lower one, and it doesn't even mark the tile as dangerous anymore."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 10
+    tribe.boat_built = True
+
+    with mock.patch("backend.simulation.random.random", return_value=0.01):  # would otherwise guarantee a drowning
+        fired = sim._expedition_river_hazard(tribe, 40, 37)  # a real river tile
+
+    assert fired is False
+    assert tribe.population == 10
+    assert tribe.hazard_landmarks == []
 
 
 def test_drowning_hazard_death_does_not_leave_a_grave_marker():
