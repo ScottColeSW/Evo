@@ -956,6 +956,9 @@ class Tribe:
         self.max_population = self.population
         self.chiefs_elected = 0
         self.chief_deaths = 0
+        # See _lose_population's own cooldown comment -- negative-initialized so the
+        # very first chief death is never blocked by a cooldown that hasn't started yet.
+        self.last_chief_death_cycle = -config.CHIEF_DEATH_COOLDOWN_CYCLES
         self.expeditions_launched = 0
         self.expeditions_succeeded = 0
         # Split from expeditions_succeeded above so a scouting milestone ("Master
@@ -1682,6 +1685,8 @@ class Tribe:
             "chief_name": self.chief_name,
             "chief_philosophy": self.chief_philosophy,
             "chief_decree": self.chief_decree,
+            "chiefs_elected": self.chiefs_elected,
+            "chief_deaths": self.chief_deaths,
             "chief_victory": self.chief_victory,
             "battalions": self.battalions,
             "trophies": self.trophies,
@@ -2258,6 +2263,7 @@ class Simulation:
         result = await reflect_on_history(
             self.client, tribe.model, tribe.name,
             tribe.chief_philosophy, recent_events, inventory,
+            tribe.chief_decree,
         )
         # The chief's own reasoning for this reflection -- kept even when the
         # philosophy didn't change, so the frontend has something real to show as a
@@ -2286,6 +2292,22 @@ class Simulation:
                     f"Chief {tribe.chief_name} establishes a new honor, the '{proposed['name']}', "
                     f"for excellence in {proposed['category']} -- not yet awarded to anyone."
                 )
+
+        # The chief's own concrete standing duty -- distinct from chief_philosophy
+        # (who the chief is) and grounded in the same real recent history, not a
+        # second scripted rule. Sticky by design: a missing/blank proposal leaves
+        # whatever decree already stands untouched (see reflection.py's own prompt
+        # wording), so a chief who isn't moved to change course tonight doesn't
+        # silently erase a good standing order just by not mentioning it. Already
+        # fed into every live turn's prompt via prompts.py's duty_text -- this is
+        # the chief's own real intention actually reaching the tribe's day-to-day
+        # decisions, not just a private thought.
+        proposed_decree = result.get("proposed_decree")
+        if isinstance(proposed_decree, str) and proposed_decree.strip():
+            new_decree = proposed_decree.strip()[:200]
+            if new_decree != tribe.chief_decree:
+                tribe.chief_decree = new_decree
+                tribe.history.append(f"Chief {tribe.chief_name} decrees: {tribe.chief_decree}")
 
         # See config.NIGHT_CYCLE_RANDOM_BREED_CHANCE -- a chance encounter independent
         # of any specific celebration milestone, using the exact same eligibility rule
@@ -6422,7 +6444,16 @@ class Simulation:
                 )
                 record_tribe_result(tribe, cause=cause, cycles_survived=self.cycle)
                 return
-        if tribe.chief_name and random.random() < config.CHIEF_DEATH_CHANCE_ON_LOSS:
+        # Explicit report, 2026-09-13: a live 746-cycle run showed one tribe burn
+        # through 62 chiefs -- 13 independent population-loss call sites each rolling
+        # this same 20% chance with zero memory of how recently the last one landed,
+        # so a tribe under sustained duress (repeated starvation/hazard hits in a
+        # short window) could lose 6-8 chiefs in as few as 10-24 cycles. A real
+        # cooldown, not a lower chance -- the point is spacing out how OFTEN
+        # leadership can change, not making any single loss less dangerous.
+        cooldown_elapsed = self.cycle - tribe.last_chief_death_cycle >= config.CHIEF_DEATH_COOLDOWN_CYCLES
+        if tribe.chief_name and cooldown_elapsed and random.random() < config.CHIEF_DEATH_CHANCE_ON_LOSS:
+            tribe.last_chief_death_cycle = self.cycle
             fallen = tribe.chief_name
             tribe.chief_deaths += 1
             tribe.chief_name = ""

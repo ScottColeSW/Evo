@@ -7583,7 +7583,7 @@ async def test_night_cycle_updates_philosophy_when_the_reviewer_calls_for_a_chan
     tribe.chief_philosophy = "expand aggressively"
     tribe.history.append("starvation claimed lives")
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
         return {"revised_philosophy": "caution and hoarding", "changed": True, "reasoning": "too many losses"}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -7601,7 +7601,7 @@ async def test_night_cycle_leaves_philosophy_and_history_untouched_when_nothing_
     tribe.chief_philosophy = "expand aggressively"
     history_before = list(tribe.history)
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
         return {"revised_philosophy": "expand aggressively", "changed": False, "reasoning": "still working"}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -7621,7 +7621,7 @@ async def test_night_cycle_records_the_reasoning_even_when_nothing_changed():
     tribe.chief_name = "Ashgar"
     sim.cycle = 30
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
         return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": "still working"}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -7637,15 +7637,17 @@ async def test_night_cycle_passes_the_tribes_own_recent_history_and_philosophy()
     tribe = sim.tribes["tribe_0"]
     tribe.chief_name = "Ashgar"
     tribe.chief_philosophy = "expand aggressively"
+    tribe.chief_decree = "find fresh water before anything else"
     tribe.history.append("starvation claimed lives")
     captured = {}
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
         captured["reviewer_model"] = reviewer_model
         captured["tribe_name"] = tribe_name
         captured["current_philosophy"] = current_philosophy
         captured["recent_events"] = recent_events
         captured["inventory"] = inventory
+        captured["current_decree"] = current_decree
         return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": ""}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -7656,6 +7658,85 @@ async def test_night_cycle_passes_the_tribes_own_recent_history_and_philosophy()
     assert captured["current_philosophy"] == "expand aggressively"
     assert "starvation claimed lives" in captured["recent_events"]
     assert f"Population: {tribe.population}." in captured["inventory"]
+    assert captured["current_decree"] == "find fresh water before anything else"
+
+
+@run_async
+async def test_night_cycle_adopts_a_proposed_decree():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.chief_decree = ""
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+        return {
+            "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
+            "proposed_decree": "build us a proper kitchen before winter",
+        }
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert tribe.chief_decree == "build us a proper kitchen before winter"
+    assert any("decrees: build us a proper kitchen before winter" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_night_cycle_leaves_the_standing_decree_untouched_when_none_is_proposed():
+    """Sticky by design: a chief who isn't moved to change course tonight shouldn't
+    silently erase a good standing order just by not mentioning it."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.chief_decree = "find fresh water before anything else"
+    history_before = list(tribe.history)
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+        return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": "", "proposed_decree": None}
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert tribe.chief_decree == "find fresh water before anything else"
+    assert list(tribe.history) == history_before
+
+
+@run_async
+async def test_night_cycle_does_not_repeat_a_decree_that_already_stands():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.chief_decree = "build us a proper kitchen before winter"
+    history_before = list(tribe.history)
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+        return {
+            "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
+            "proposed_decree": "build us a proper kitchen before winter",
+        }
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert list(tribe.history) == history_before  # no duplicate chronicle noise re-announcing the same decree
+
+
+@run_async
+async def test_night_cycle_trims_an_overlong_proposed_decree():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+        return {
+            "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
+            "proposed_decree": "x" * 500,
+        }
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert len(tribe.chief_decree) == 200
 
 
 def test_night_inventory_reports_the_real_state_of_affairs():
@@ -7737,7 +7818,7 @@ async def test_night_cycle_captures_a_valid_proposed_award():
     tribe = sim.tribes["tribe_0"]
     tribe.chief_name = "Ashgar"
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_award": {"name": "Keeper of the Trails", "category": "scouting"},
@@ -7759,7 +7840,7 @@ async def test_night_cycle_survives_a_non_dict_proposed_award():
     tribe = sim.tribes["tribe_0"]
     tribe.chief_name = "Ashgar"
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_award": "Keeper of the Trails",
@@ -7780,7 +7861,7 @@ async def test_night_cycle_ignores_a_proposed_award_outside_the_real_categories(
     tribe = sim.tribes["tribe_0"]
     tribe.chief_name = "Ashgar"
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_award": {"name": "Master of Dreams", "category": "dreaming"},
@@ -7793,7 +7874,7 @@ async def test_night_cycle_ignores_a_proposed_award_outside_the_real_categories(
 
 
 async def _night_cycle_no_change(sim, tribe):
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
         return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": ""}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -8235,6 +8316,20 @@ def test_to_dict_exposes_trades_completed():
     tribe.trades_completed = 4
 
     assert tribe.to_dict()["trades_completed"] == 4
+
+
+def test_to_dict_exposes_chief_election_and_death_counts():
+    """Found while grounding a live "keeps getting a new Chief" report: these were
+    tracked on the Tribe object the whole time but never serialized, so
+    board_history.db snapshots had no way to show real chief turnover without
+    re-parsing the jsonl chronicle."""
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chiefs_elected = 7
+    tribe.chief_deaths = 6
+
+    d = tribe.to_dict()
+    assert d["chiefs_elected"] == 7
+    assert d["chief_deaths"] == 6
 
 
 def test_snapshot_surfaces_the_stance_between_two_tribes():
@@ -10840,6 +10935,60 @@ def test_a_population_loss_does_not_always_claim_the_chief():
         sim._lose_population(tribe, 1)
 
     assert tribe.chief_name == "Ashgar"
+
+
+def test_chief_death_is_blocked_by_a_cooldown_right_after_the_last_one():
+    """Explicit fix, 2026-09-13: a real 746-cycle run showed one tribe lose 62
+    chiefs, clustering 6-8 deaths within 10-24 cycles -- every population-loss
+    call site rolled independently with no memory of the last death. A second
+    death attempt within CHIEF_DEATH_COOLDOWN_CYCLES of the last one must not
+    succeed even on a guaranteed-death roll."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 20
+    tribe.chief_name = "Ashgar"
+    sim.cycle = 100
+    tribe.last_chief_death_cycle = 95  # 5 cycles ago -- well inside the cooldown
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._lose_population(tribe, 1)
+
+    assert tribe.chief_name == "Ashgar"
+    assert tribe.chief_deaths == 0
+
+
+def test_chief_death_is_allowed_again_once_the_cooldown_elapses():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 20
+    tribe.chief_name = "Ashgar"
+    sim.cycle = 100
+    tribe.last_chief_death_cycle = 100 - config.CHIEF_DEATH_COOLDOWN_CYCLES  # exactly at the boundary
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._lose_population(tribe, 1)
+
+    assert tribe.chief_name == ""
+    assert tribe.chief_deaths == 1
+    assert tribe.last_chief_death_cycle == 100
+
+
+def test_a_fresh_tribes_first_chief_death_is_never_blocked_by_the_cooldown():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 20
+    tribe.chief_name = "Ashgar"
+    sim.cycle = 1  # matches _bare_simulation's own default
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._lose_population(tribe, 1)
+
+    assert tribe.chief_name == ""
+    assert tribe.chief_deaths == 1
 
 
 def test_extinction_does_not_also_report_a_separate_chief_death():

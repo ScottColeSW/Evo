@@ -1268,6 +1268,12 @@ LIGHTNING_TRAUMA_RADIUS = 6
 # not a scripted nudge -- what the tribe does about a leadership vacuum is still its
 # own turn-by-turn call.
 CHIEF_DEATH_CHANCE_ON_LOSS = 0.2
+# Explicit fix, 2026-09-13: a real 746-cycle run showed one tribe lose 62 chiefs --
+# every population-loss call site rolled independently with no memory of how recently
+# the last one landed, so a tribe under sustained duress could burn through 6-8 chiefs
+# in as few as 10-24 cycles. One in-game day (DAY_LENGTH_CYCLES) between deaths, not a
+# lower chance -- the fix is spacing, not softening any single loss.
+CHIEF_DEATH_COOLDOWN_CYCLES = 20
 
 # A tribe can now actually go extinct (population 0) instead of being propped up at a
 # permanent population-1 floor. Extinction is a far larger trauma event than an ordinary

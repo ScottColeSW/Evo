@@ -31,6 +31,7 @@ AWARD_CATEGORIES = ("scouting", "hunting", "trading", "raiding")
 async def reflect_on_history(
     client: OllamaClient, reviewer_model: str, tribe_name: str,
     current_philosophy: str, recent_events: list[str], inventory: str = "",
+    current_decree: str = "",
 ) -> dict:
     events_block = "\n".join(f"- {e}" for e in recent_events) or "(nothing notable recorded)"
     categories_list = ", ".join(AWARD_CATEGORIES)
@@ -43,6 +44,18 @@ async def reflect_on_history(
     # alone. Framed as what the chief actually takes stock of before turning in for
     # the night, not a separate instruction.
     inventory_block = f"\nBefore retiring for the night, the chief takes stock: {inventory}\n" if inventory else ""
+    # Explicit design, 2026-09-13: "the decree piece is what will make it click
+    # together" -- philosophy is who the chief IS (abstract, character), a decree is
+    # what the chief actually WANTS DONE (concrete, an instruction the tribe's own
+    # live turns already see every cycle via prompts.py's duty_text). Before this,
+    # chief_decree only ever held one hardcoded, scripted text (a water-finding duty
+    # set at election) -- this is the chief's own, freely invented decree instead,
+    # grounded in the same real recent history as the philosophy revision above, not
+    # a second scripted rule. Optional and sticky by design: leaving it out keeps
+    # whatever decree already stands rather than silently clearing it, so a chief who
+    # isn't moved to change course tonight doesn't accidentally erase a good standing
+    # order just by not mentioning it.
+    decree_line = f'Your current standing decree is: "{current_decree}"' if current_decree else "You have no standing decree right now."
     prompt = f"""You are reviewing, from a distance, the recent history of the {tribe_name} \
 tribe. Its current guiding philosophy is: "{current_philosophy}"
 {inventory_block}
@@ -58,12 +71,19 @@ Separately, if you wish, you may create a new honor of your own for your people 
 you will personally bestow on whoever excels at one of: {categories_list}. This is entirely \
 optional; leave it out if nothing comes to mind.
 
+Separately again, you may also set a standing decree -- not a philosophy, an actual concrete \
+duty for the tribe to act on until you say otherwise ("build us a proper kitchen before winter," \
+"find fresh water before anything else"). {decree_line} Leave it as it is unless something \
+you've just reflected on genuinely calls for a new one -- this is your own idea, not ours, so \
+only propose one if it truly comes from what actually happened.
+
 Reply with ONLY JSON:
 {{
   "revised_philosophy": "the guiding philosophy going forward, whether changed or the same",
   "changed": true or false,
   "reasoning": "your decision in ONE short sentence, 20 words or fewer -- this is a private thought, not an essay",
-  "proposed_award": {{"name": "a short title of your own invention", "category": "one of: {categories_list}"}} or null
+  "proposed_award": {{"name": "a short title of your own invention", "category": "one of: {categories_list}"}} or null,
+  "proposed_decree": "a short, concrete standing duty, in your own words" or null
 }}"""
     result = await client.generate_json(reviewer_model, prompt, temperature=0.7, num_ctx=8192)
     if not result or not result.get("revised_philosophy"):
@@ -72,6 +92,7 @@ Reply with ONLY JSON:
             "changed": False,
             "reasoning": "the review produced nothing usable; philosophy stands unchanged",
             "proposed_award": None,
+            "proposed_decree": None,
         }
     return result
 

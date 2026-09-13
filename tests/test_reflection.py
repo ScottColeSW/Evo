@@ -51,7 +51,41 @@ async def test_reflect_on_history_falls_back_when_model_returns_nothing_usable()
     assert result["revised_philosophy"] == "aggressive territorial expansion"
     assert result["changed"] is False
     assert result["proposed_award"] is None
+    assert result["proposed_decree"] is None
     assert result["reasoning"]
+
+
+@run_async
+async def test_prompt_states_there_is_no_standing_decree_when_none_exists():
+    client = _FakeClient({"revised_philosophy": "x"})
+
+    await reflect_on_history(client, "llama3", "Forest Tribe", "caution and hoarding", [])
+
+    assert "You have no standing decree right now." in client.last_prompt
+
+
+@run_async
+async def test_prompt_states_the_current_decree_when_one_exists():
+    client = _FakeClient({"revised_philosophy": "x"})
+
+    await reflect_on_history(
+        client, "llama3", "Forest Tribe", "caution and hoarding", [],
+        current_decree="find fresh water before anything else",
+    )
+
+    assert 'Your current standing decree is: "find fresh water before anything else"' in client.last_prompt
+
+
+@run_async
+async def test_prompt_frames_the_decree_as_the_chiefs_own_idea_not_ours():
+    """Design-philosophy check, same convention as the honest-judgment test above --
+    this must read as an invitation to propose the chief's own idea, not an
+    instruction telling the model what to decide."""
+    client = _FakeClient({"revised_philosophy": "x"})
+
+    await reflect_on_history(client, "llama3", "Forest Tribe", "caution and hoarding", [])
+
+    assert "this is your own idea, not ours" in client.last_prompt
 
 
 @run_async
