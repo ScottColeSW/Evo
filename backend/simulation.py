@@ -3876,10 +3876,33 @@ class Simulation:
             # this names the one real remaining goal explicitly, the same
             # "nudge harder once a real gate is met" shape every prior fix
             # in this vein has needed.
+            #
+            # Sharpened 2026-09-13, live report: a real run (qwen2.5:3b) sat 4
+            # long-house credits short of CASTLE_LONG_HOUSES_REQUIRED for 167
+            # cycles straight, spending the whole window on CREATE_USEFUL_
+            # STRUCTURE instead, narrating each one as if it counted toward
+            # the Castle's long-house requirement -- it never did (that
+            # action only ever reads config.CREATED_OBJECT_CATEGORIES, no
+            # relation to long_houses_built/long_house_upgrades at all). The
+            # old wording named the goal but never the actual blocker, the
+            # same "hollow nudge" gap era_gap_note was fixed for once
+            # already -- this names the real remaining number instead,
+            # exactly like that fix does.
+            credits = tribe.long_houses_built + tribe.long_house_upgrades
+            if not tribe.fortress_built:
+                gap = "a Fortress must be built first"
+            elif credits < config.CASTLE_LONG_HOUSES_REQUIRED:
+                gap = (
+                    f"{credits} of {config.CASTLE_LONG_HOUSES_REQUIRED} long-house credits banked so far -- "
+                    f"only BUILD_LONG_HOUSE (up to {config.LONG_HOUSE_MAX_COUNT} built) or UPGRADE_LONG_HOUSE "
+                    "count toward this, nothing else"
+                )
+            else:
+                gap = f"{tribe.wood} of {config.CASTLE_WOOD_COST} wood and {tribe.stone} of {config.CASTLE_STONE_COST} stone banked"
             visible_entities.append(
                 "Every rival has been conquered and absorbed -- the war is already won. The one thing "
                 "left to complete this tribe's legacy is a Castle, the final testament of everything "
-                "built here."
+                f"built here: {gap}."
             )
         if tribe.throttled_actions:
             # See "should we always keep them in the dark like this?" -- unlike
@@ -7385,10 +7408,21 @@ class Simulation:
         flat yield above, never replacing it -- a tribe with a Pen is strictly
         better off, never worse. The herd's own upkeep/breeding (_advance_deer_pen,
         called just before this in step()) is what makes this sustainable
-        ("automagically") instead of a one-time drain."""
+        ("automagically") instead of a one-time drain.
+
+        Live bug, confirmed against a real run (run_20260913_113112): a Deer Pen
+        founded at cycle 81 with its starting 2 deer (config.DEER_PEN_FOUNDING_COUNT)
+        was back down to 0 by cycle 82 -- one cycle later. DEER_PEN_DAILY_FEED_MIN/MAX
+        is named (and was explicitly requested) as a daily amount, but this block ran
+        unconditionally every cycle, feeding 1-3 deer to the Tannery roughly
+        DAY_LENGTH_CYCLES times more often than intended -- the exact same "ran every
+        cycle instead of once a day" mistake _advance_resource_trails's own docstring
+        already tells the story of once. The herd never had a chance to breed
+        (_advance_deer_pen's 15% per-cycle chance, gated on tribe.deer >= 2) before
+        being fed to zero. Gated the same way, on a day boundary."""
         if tribe.tannery_built and self._is_camped(tribe):
             self._capped_unique_add(tribe, "Fur", config.TANNERY_YIELD_PER_CYCLE)
-        if tribe.deer_pen_built and tribe.deer > 0:
+        if tribe.deer_pen_built and tribe.deer > 0 and self.cycle % config.DAY_LENGTH_CYCLES == 0:
             fed = min(tribe.deer, random.randint(config.DEER_PEN_DAILY_FEED_MIN, config.DEER_PEN_DAILY_FEED_MAX))
             if fed > 0:
                 tribe.deer -= fed

@@ -3286,6 +3286,58 @@ def test_era_progress_fact_absent_once_the_next_era_is_fully_met():
     assert "To reach Cognitive Horizon" not in request["prompt"]
 
 
+def test_post_conquest_castle_nudge_names_a_missing_fortress_first():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "war_and_world_domination_era"
+    tribe.conquests_won = 1
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "a Fortress must be built first" in request["prompt"]
+
+
+def test_post_conquest_castle_nudge_names_the_real_long_house_shortfall():
+    """Live bug, run_20260913_113112: the old wording ("the one thing left is
+    a Castle") never said WHAT was actually blocking it -- a tribe sat 4
+    long-house credits short of CASTLE_LONG_HOUSES_REQUIRED for 167 cycles
+    while spending its time on CREATE_USEFUL_STRUCTURE instead, narrating it
+    as if that counted. This asserts the real number is now named."""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "war_and_world_domination_era"
+    tribe.conquests_won = 1
+    tribe.fortress_built = True
+    tribe.long_houses_built = 5
+    tribe.long_house_upgrades = 3  # 8 of 12 credits
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert f"8 of {config.CASTLE_LONG_HOUSES_REQUIRED} long-house credits" in request["prompt"]
+    assert "only BUILD_LONG_HOUSE" in request["prompt"]
+
+
+def test_post_conquest_castle_nudge_names_the_real_resource_shortfall_once_long_houses_are_met():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "war_and_world_domination_era"
+    tribe.conquests_won = 1
+    tribe.fortress_built = True
+    tribe.long_houses_built = 5
+    tribe.long_house_upgrades = 7  # 12 of 12 credits, met
+    tribe.wood = 10
+    tribe.stone = 10
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert f"10 of {config.CASTLE_WOOD_COST} wood and 10 of {config.CASTLE_STONE_COST} stone" in request["prompt"]
+    assert "long-house credits" not in request["prompt"]
+
+
 def test_era_gap_note_reflects_a_real_research_discount_not_the_raw_threshold():
     """Explicit fix, 2026-09-13 (action-legibility audit): this used to show the
     raw, undiscounted era thresholds even for a tribe that had already earned a
@@ -10090,6 +10142,34 @@ def test_advance_tannery_yield_feed_is_capped_by_the_actual_herd_size():
 
     assert tribe.deer == 0
     assert tribe.unique_resources["Fur"] == config.TANNERY_YIELD_PER_CYCLE + 2 * config.FUR_PER_DEER_FED
+
+
+def test_advance_tannery_yield_only_feeds_the_deer_pen_once_per_real_day():
+    """Live bug, confirmed against run_20260913_113112: a Deer Pen founded at
+    cycle 81 with its starting 2 deer was back down to 0 the very next cycle
+    (82) -- this ran every single cycle instead of once a day as its own
+    DEER_PEN_DAILY_FEED_MIN/MAX naming (and the original explicit request,
+    "auto-feed the Tannery 1-3 deer a day") intended, devouring the herd
+    before _advance_deer_pen's 15% per-cycle breed chance ever had a real
+    shot at growing it. Same "once per real day is good enough" gate
+    _advance_resource_trails already uses for the identical mistake."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.tannery_built = True
+    tribe.deer_pen_built = True
+    tribe.deer = 2
+    sim.cycle = 82  # not a multiple of DAY_LENGTH_CYCLES (20)
+
+    with mock.patch("backend.simulation.random.randint", return_value=3):
+        sim._advance_tannery_yield(tribe)
+
+    assert tribe.deer == 2  # untouched off a day boundary
+    assert tribe.unique_resources["Fur"] == config.TANNERY_YIELD_PER_CYCLE  # base yield only
 
 
 def test_advance_tannery_yield_does_nothing_extra_without_a_deer_pen():
