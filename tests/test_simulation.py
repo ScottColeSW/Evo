@@ -4391,6 +4391,45 @@ def test_hunting_party_catches_something_and_heads_home():
     assert any("made a catch" in entry for entry in tribe.history)
 
 
+def test_hunting_party_catch_at_a_known_site_clears_it_and_respawns_nearby():
+    """Explicit design, 2026-09-13: "they do completely deplete the Hunting
+    Grounds, taking it off the list... a new one has to respawn somewhere new."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 80, 38, "#c084fc")  # forest, game=1.0
+    tribe.wildlife_sites.append({"x": 80, "y": 38, "type": "Deer Stand"})
+    tribe.expeditions = [{
+        "kind": "hunt", "pos": [80, 38], "origin": [80, 38], "target": [80, 38],
+        "day": 0, "phase": "outbound", "food_caught": 0,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
+    }]
+
+    with mock.patch("backend.simulation.random.random", side_effect=[0.99, 0.0, 0.5, 0.5]):  # miss hazard, hit catch, relocate angle+dist
+        sim._advance_expeditions(tribe)
+
+    assert len(tribe.wildlife_sites) == 1
+    assert tribe.wildlife_sites[0] != {"x": 80, "y": 38, "type": "Deer Stand"}
+    assert tribe.wildlife_sites[0]["type"] == "Deer Stand"
+    assert any("clears out the Deer Stand at (80,38)" in e for e in tribe.history)
+
+
+def test_hunting_party_catch_away_from_any_known_site_does_not_touch_the_list():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 80, 38, "#c084fc")  # forest, game=1.0
+    tribe.wildlife_sites.append({"x": 10, "y": 10, "type": "Wolf Den"})  # a real site, just not here
+    tribe.expeditions = [{
+        "kind": "hunt", "pos": [80, 38], "origin": [80, 38], "target": [80, 38],
+        "day": 0, "phase": "outbound", "food_caught": 0,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
+    }]
+
+    with mock.patch("backend.simulation.random.random", side_effect=[0.99, 0.0]):
+        sim._advance_expeditions(tribe)
+
+    assert tribe.wildlife_sites == [{"x": 10, "y": 10, "type": "Wolf Den"}]
+
+
 def test_hunting_party_hazard_ends_the_hunt_and_costs_population():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 80, 38, "#c084fc")
@@ -4649,6 +4688,26 @@ def test_relocate_raider_sighting_after_ambush_clears_the_old_exact_spot():
     sx, sy = tribe.raider_sightings[0]
     assert (sx, sy) != (60, 60)
     assert abs(sx - 60) <= config.RAIDER_SIGHTING_OFFSET and abs(sy - 60) <= config.RAIDER_SIGHTING_OFFSET
+
+
+def test_relocate_wildlife_site_after_clearing_never_lands_on_the_same_tile_or_unbuildable_ground():
+    """Mirrors test_relocate_raider_sighting_after_ambush's own real-randomness
+    check -- same underlying placement algorithm, deliberately reused rather
+    than reinventing a second one for what's mechanically the same problem."""
+    from backend import config
+    from backend.world import biome_at
+
+    for _ in range(200):
+        sim = _bare_simulation()
+        tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+        sim._relocate_wildlife_site_after_clearing(tribe, 60, 60, "Deer Stand")
+
+        assert len(tribe.wildlife_sites) == 1
+        new_site = tribe.wildlife_sites[0]
+        assert (new_site["x"], new_site["y"]) != (60, 60)
+        assert new_site["type"] == "Deer Stand"
+        assert biome_at(new_site["x"], new_site["y"]) not in config.UNBUILDABLE_BIOMES
 
 
 def test_relocate_raider_sighting_after_ambush_never_lands_on_the_same_tile():

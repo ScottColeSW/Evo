@@ -5924,6 +5924,31 @@ class Simulation:
         # uses. Raiders simply stay dispersed this time rather than force a
         # placement onto invalid ground.
 
+    def _relocate_wildlife_site_after_clearing(self, tribe: Tribe, x: int, y: int, site_type: str) -> None:
+        """A HUNTING_PARTY catch that lands exactly on a known wildlife site clears
+        it out for good (see _advance_hunting_party_outbound, which has already
+        removed it from tribe.wildlife_sites before calling this) -- a fresh one of
+        the same kind is placed nearby instead of that spot generating identical
+        repeat catches forever. Deliberately mirrors
+        _relocate_raider_sighting_after_ambush's exact shape (angle + a distance
+        floored at RAIDER_SIGHTING_MIN_OFFSET, a bounded retry loop against
+        unbuildable terrain) -- explicit request: "using however 'far away' we
+        relocate depleted resources number can be the same for this respawn,"
+        and there's no reason to invent a second placement algorithm for what's
+        mechanically the same problem (guarantee real, valid displacement)."""
+        for _ in range(20):
+            angle = random.uniform(0, 2 * math.pi)
+            dist = random.randint(config.RAIDER_SIGHTING_MIN_OFFSET, config.RAIDER_SIGHTING_OFFSET)
+            rx = max(0, min(self.world.grid_size - 1, x + round(dist * math.cos(angle))))
+            ry = max(0, min(self.world.grid_size - 1, y + round(dist * math.sin(angle))))
+            if (rx, ry) != (x, y) and biome_at(rx, ry) not in config.UNBUILDABLE_BIOMES:
+                tribe.wildlife_sites.append({"x": rx, "y": ry, "type": site_type})
+                return
+        # Rare fallback on a very crowded/small map -- same "accept defeat after
+        # enough tries" shape _relocate_raider_sighting_after_ambush's own search
+        # uses. The site simply isn't replaced this time rather than force a
+        # placement onto invalid ground.
+
     def _expedition_raider_ambush(self, tribe: Tribe, exp: dict, x: int, y: int) -> bool:
         """Explicit request: "It would be interesting to see a Scout encounter a
         RAIDER group" -- a real, in-the-field ambush during travel, distinct from the
@@ -6075,6 +6100,20 @@ class Simulation:
         if game_multiplier > 0 and random.random() < config.HUNTING_PARTY_CATCH_CHANCE_BASE * game_multiplier:
             exp["food_caught"] = random.randint(config.HUNTING_PARTY_CATCH_FOOD_MIN, config.HUNTING_PARTY_CATCH_FOOD_MAX)
             exp["phase"] = "returning"
+            # Explicit design, 2026-09-13: "they do completely deplete the Hunting
+            # Grounds, taking it off the list... a new one has to respawn somewhere
+            # new." A catch landing exactly on a known wildlife site's own
+            # coordinates (see _hunting_party's own targeting) means this specific
+            # ground is cleared out -- removed for good, a fresh one placed nearby
+            # instead of the same spot generating repeat catches forever. Reuses
+            # RAIDER_SIGHTING_OFFSET/_MIN_OFFSET verbatim -- explicit request:
+            # "using however 'far away' we relocate depleted resources number can
+            # be the same for this respawn."
+            cleared = next((s for s in tribe.wildlife_sites if s["x"] == px and s["y"] == py), None)
+            if cleared is not None:
+                tribe.wildlife_sites.remove(cleared)
+                self._relocate_wildlife_site_after_clearing(tribe, px, py, cleared["type"])
+                tribe.history.append(f"{scout}'s hunting party clears out the {cleared['type']} at ({px},{py}) for good")
             tribe.history.append(f"{scout}'s hunting party made a catch and is heading home")
             return
 

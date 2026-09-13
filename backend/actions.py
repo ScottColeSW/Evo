@@ -2049,15 +2049,29 @@ def _hunting_party(sim, tribe, biome, target):
     if blocked is not None:
         return blocked
 
-    angle_degrees = (
-        config.SCOUT_ROTATION_START_ANGLE_DEGREES
-        + config.SCOUT_ROTATION_STEP_DEGREES * tribe.hunt_rotation_index
-        + 90  # offset from SCOUT (0) and EXPLORATION_PARTY (180) so all three spread out
-    ) % 360
-    tribe.hunt_rotation_index += 1
-    angle_radians = math.radians(angle_degrees)
-    lx, ly = _expedition_launch_point(tribe, angle_radians, sim.world.grid_size)
-    tx, ty = _push_past_visited_ground(tribe, lx, ly, angle_radians, config.HUNTING_PARTY_PATROL_DISTANCE, sim.world.grid_size)
+    # Explicit design, 2026-09-13: "go to any discovered, not recently visited...
+    # Rabbit Warren/Deer Stand/Wolf Den and clear it out." A known site is a real,
+    # earned fact (found by an earlier scout/hunt) -- worth aiming at directly
+    # instead of the blind rotating search below, which stays exactly as it was
+    # for the "nothing known yet" case. Most recently discovered, same convention
+    # tribe.quarry_sites[-1]/mine_sites[-1] already use elsewhere for nudges.
+    # "Recently visited" needs no separate tracking here: a cleared site is
+    # removed outright (see _advance_hunting_party_outbound), so anything still on
+    # the list is, by construction, not recently cleared.
+    if tribe.wildlife_sites:
+        tx, ty = tribe.wildlife_sites[-1]["x"], tribe.wildlife_sites[-1]["y"]
+        angle_radians = math.atan2(ty - tribe.y, tx - tribe.x)
+        lx, ly = _expedition_launch_point(tribe, angle_radians, sim.world.grid_size)
+    else:
+        angle_degrees = (
+            config.SCOUT_ROTATION_START_ANGLE_DEGREES
+            + config.SCOUT_ROTATION_STEP_DEGREES * tribe.hunt_rotation_index
+            + 90  # offset from SCOUT (0) and EXPLORATION_PARTY (180) so all three spread out
+        ) % 360
+        tribe.hunt_rotation_index += 1
+        angle_radians = math.radians(angle_degrees)
+        lx, ly = _expedition_launch_point(tribe, angle_radians, sim.world.grid_size)
+        tx, ty = _push_past_visited_ground(tribe, lx, ly, angle_radians, config.HUNTING_PARTY_PATROL_DISTANCE, sim.world.grid_size)
     scout = _generate_scout(tribe, sim.cycle, base_days=config.HUNTING_PARTY_MAX_DAYS)
     tribe.expeditions.append({
         "kind": "hunt",

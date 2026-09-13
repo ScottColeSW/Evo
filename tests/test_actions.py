@@ -5228,6 +5228,41 @@ def test_hunting_party_rotation_ignores_target_vector_entirely():
     assert same_target not in headings
 
 
+def test_hunting_party_targets_a_known_wildlife_site_directly():
+    """Explicit design, 2026-09-13: "go to any discovered, not recently visited...
+    Rabbit Warren/Deer Stand/Wolf Den and clear it out." A known site is aimed at
+    directly instead of the blind rotating search."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wildlife_sites.append({"x": 80, "y": 90, "type": "Deer Stand"})
+
+    ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (0, 0))
+
+    assert tribe.expeditions[0]["target"] == [80, 90]
+    assert tribe.hunt_rotation_index == 0  # the fallback rotation never advances when a site is known
+
+
+def test_hunting_party_falls_back_to_rotation_with_no_known_site():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (0, 0))
+
+    assert tribe.expeditions[0]["target"] != [80, 90]
+    assert tribe.hunt_rotation_index == 1
+
+
+def test_hunting_party_targets_the_most_recently_discovered_site():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wildlife_sites.append({"x": 10, "y": 10, "type": "Wolf Den"})
+    tribe.wildlife_sites.append({"x": 80, "y": 90, "type": "Deer Stand"})
+
+    ACTION_REGISTRY["HUNTING_PARTY"](sim, tribe, "forest", (0, 0))
+
+    assert tribe.expeditions[0]["target"] == [80, 90]
+
+
 def test_hunting_party_dispatches_with_its_own_rotation_offset_from_its_siblings():
     """Live report, 2026-09-11: "they keep sending the same coordinates over and
     over" -- HUNTING_PARTY now rotates like SCOUT/EXPLORATION_PARTY, offset from
