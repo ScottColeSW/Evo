@@ -227,13 +227,18 @@ ERAS: tuple[Era, ...] = (
     # separate sign-off given the risk profile (autonomous filesystem writes),
     # not folded into this pass.
     Era(
+        # key left as "object_creator_era" (renamed 2026-09-13 to Dream
+        # Manifestation Machine/DMM at the building/action/display level only)
+        # -- an internal era key, never shown to a player, not worth the
+        # extra blast radius of touching every era-key comparison/test for a
+        # rename that changes nothing observable.
         key="object_creator_era",
-        label="Object Creator Era",
+        label="Dream Manifestation Era",
         requires_population=800,  # see tribal_synapse's own comment on the 2026-09-07 rescale
         requires_resources={"water": 100, "stone": 100, "wood": 100, "Fur": 50},
         advancement_cost={"wood": 70, "stone": 70, "water": 70, "Fur": 35},
-        unlocks_actions=("BUILD_OBJECT_CREATOR", "CREATE_ITEM", "CREATE_USEFUL_STRUCTURE"),
-        announcement="{tribe} enters the Object Creator Era -- they can build anything they can imagine!",
+        unlocks_actions=("BUILD_DMM", "CREATE_ITEM", "CREATE_USEFUL_STRUCTURE"),
+        announcement="{tribe} enters the Dream Manifestation Era -- the Chief's dreams can now be made real!",
     ),
     Era(
         key="war_and_world_domination_era",

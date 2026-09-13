@@ -586,7 +586,7 @@ BUILDING_FOOTPRINTS = {
     "kitchen": (2, 2), "tannery": (2, 2), "deer_pen": (2, 2), "dock": (2, 2), "fishery": (2, 4),
     "farm_plot": (3, 3), "coop": (2, 2), "fire": (1, 1), "hatchery": (2, 2),
     "boat": (2, 3), "bath_house": (2, 2), "library": (3, 3), "well": (2, 2),
-    "object_creator": (3, 3), "created_structure": (2, 2),
+    "dmm": (3, 3), "created_structure": (2, 2),
     "barracks": (3, 3),
 }
 
@@ -1911,19 +1911,34 @@ ITEM_STORAGE_CAP_PER_WAREHOUSE = 1
 # straightforward cash-out for a value that otherwise just sits on the tribe.
 USE_ITEM_STONE_SHARE = 0.5
 
-# Object Creator era (replaces the old empty mechanization_era/silicon_era
-# reserved slots -- see eras.py): "they can create anything they want and we
-# have to somehow support it." BUILD_OBJECT_CREATOR is the one-time factory,
-# same BUILD_FORGE-shaped gate (wood/stone cost + a free footprint slot).
-# CREATE_ITEM/CREATE_USEFUL_STRUCTURE are deliberately risk-bounded: the name
-# is genuinely random/flavorful (same "no invisible dice on what matters,
-# some dice on what it's called" precedent ITEM_NAMES_BY_TYPE already sets),
-# but the mechanical effect is drawn from a small fixed category menu at a
-# single capped magnitude -- explicit request: "let's limit the risk at this
-# time knowing we will come back to it" (full open-ended LLM-driven stat
+# Dream Manifestation Machine (DMM) era, renamed 2026-09-13 from "Object
+# Creator" (replaces the old empty mechanization_era/silicon_era reserved
+# slots -- see eras.py): "they can create anything they want and we have to
+# somehow support it." BUILD_DMM is the one-time factory, same BUILD_FORGE-
+# shaped gate (wood/stone cost + a free footprint slot). CREATE_ITEM/
+# CREATE_USEFUL_STRUCTURE are deliberately risk-bounded: the name is
+# genuinely random/flavorful (same "no invisible dice on what matters, some
+# dice on what it's called" precedent ITEM_NAMES_BY_TYPE already sets), but
+# the mechanical effect is drawn from a small fixed category menu at a single
+# capped magnitude -- explicit request: "let's limit the risk at this time
+# knowing we will come back to it" (full open-ended LLM-driven stat
 # generation is a deliberate future follow-up, not built now).
-OBJECT_CREATOR_WOOD_COST = 80
-OBJECT_CREATOR_STONE_COST = 80
+#
+# Renamed to make real what the Chief has dreamed -- explicit request,
+# 2026-09-13: "It makes real the dreams of the Chief." A chief's night-cycle
+# self-reflection (backend/reflection.py::reflect_on_history) can now propose
+# a dream, grounded in a real recent event and framed around a practical need
+# (see reflect_on_history's own docstring) -- stored as tribe.chief_dream and
+# read by actions._new_created_object the next time the DMM is actually used,
+# picking the category the dream calls for (config.DREAM_CATEGORY_KEYWORDS)
+# instead of blind round-robin. The DMM itself still names what it makes
+# (CREATED_OBJECT_NAMES, unchanged) -- the chief supplies the wish, not the
+# label. A 10-day cooldown (DMM_COOLDOWN_DAYS) on top of the wood/stone cost
+# is new too: previously CREATE_ITEM/CREATE_USEFUL_STRUCTURE had no cadence
+# limit at all, and a live run used the DMM 33 times in under 100 cycles.
+DMM_WOOD_COST = 80
+DMM_STONE_COST = 80
+DMM_COOLDOWN_DAYS = 10
 CREATE_ITEM_WOOD_COST = 20
 CREATE_ITEM_STONE_COST = 20
 CREATE_USEFUL_STRUCTURE_WOOD_COST = 40
@@ -1932,22 +1947,41 @@ CREATED_OBJECT_NAMES = (
     "Auto-Loom", "Sky Anchor", "Glass Compass", "Wind Ledger", "Storm Kiln",
     "Echo Frame", "Sun Lattice", "Tide Engine", "Quiet Forge", "Signal Cairn",
 )
-# Bounded effect menu -- one category per creation, picked round-robin off
-# tribe.created_objects's own length (deterministic, not a hidden roll) so
-# a tribe that keeps creating things cycles through every category rather
-# than gambling on the same one repeatedly. Six categories spanning six
-# different axes of tribe life (gathering, war, defense, culture, exploration,
-# growth), not just one narrow effect repeated -- explicit invitation: "if you
-# want to add different ways the new things can alter the Tribes, I'm ok with
-# creativity." See actions.py._created_object_bonus for where each is read.
+# Bounded effect menu -- one category per creation. Picked round-robin off
+# tribe.created_objects's own length (deterministic, not a hidden roll) by
+# default, so a tribe that keeps creating things cycles through every
+# category rather than gambling on the same one repeatedly -- but a live,
+# grounded tribe.chief_dream (see the DMM docstring above) takes priority
+# over the rotation when its keywords genuinely match one of these six. Six
+# categories spanning six different axes of tribe life (gathering, war,
+# defense, culture, exploration, growth), not just one narrow effect
+# repeated -- explicit invitation: "if you want to add different ways the
+# new things can alter the Tribes, I'm ok with creativity." See
+# actions.py._created_object_bonus for where each is read.
 CREATED_OBJECT_CATEGORIES = (
     "gather_boost", "combat_boost", "defense_boost",
     "celebration_discount", "expedition_boost", "population_boost",
 )
+# Deterministic keyword match for a chief's proposed_dream text (actions.
+# _new_created_object) -- substring search, first category with any hit
+# wins, in this fixed order (gather checked first, population last) so a
+# dream mentioning both hunger and growth reads as the more urgent need.
+# Plain substrings, not a real NLP classifier -- consistent with this
+# project's "no invisible dice, no hidden model judgment" stance on anything
+# that actually changes a mechanical outcome; a dream matching nothing here
+# falls back to the ordinary round-robin untouched.
+DREAM_CATEGORY_KEYWORDS = {
+    "gather_boost": ("food", "hunger", "hungry", "starv", "harvest", "hunt", "gather", "farm", "crop", "feast"),
+    "combat_boost": ("raider", "attack", "battle", "fight", "war", "conquest", "enemy", "weapon"),
+    "defense_boost": ("wall", "defen", "safe", "protect", "raid", "siege", "shield"),
+    "celebration_discount": ("celebrat", "festival", "joy", "trophy", "proud", "honor"),
+    "expedition_boost": ("scout", "explor", "journey", "travel", "distant", "expedition", "voyage"),
+    "population_boost": ("child", "birth", "family", "grow", "population", "home", "shelter"),
+}
 # A flat, modest +20% per creation, same order of magnitude as SAWMILL_WOOD_
 # MULTIPLIER/DOCK_FISH_CATCH_BONUS_FRACTION -- not KITCHEN_FOOD_MULTIPLIER's
 # 3x stacking, deliberately smaller given these come with no real prerequisite
-# beyond the Object Creator itself. Stacks additively across multiple created
+# beyond the DMM itself. Stacks additively across multiple created
 # objects in the same category, same shape as the raider-defense bonus stack.
 # Used by gather_boost/combat_boost/defense_boost/celebration_discount --
 # expedition_boost/population_boost use their own differently-scaled

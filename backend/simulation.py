@@ -140,7 +140,7 @@ ONE_TIME_BUILD_FLAGS = {
     "BUILD_ROAD": "road_built", "BUILD_HATCHERY": "hatchery_built",
     "BUILD_COOP": "coop_built",
     "BUILD_BATH_HOUSE": "bath_house_built", "BUILD_LIBRARY": "library_built",
-    "BUILD_WELL": "well_built", "BUILD_OBJECT_CREATOR": "object_creator_built",
+    "BUILD_WELL": "well_built", "BUILD_DMM": "dmm_built",
 }
 
 # See _prepare_turn's survival-crisis filter. A live run showed a tribe stay at 0
@@ -722,20 +722,25 @@ AFFORDABILITY_CHECKS = {
         and t.wood >= config.FORGE_ITEM_WOOD_COST
         and t.unique_resources.get(t.mine_resource_name, 0) >= config.FORGE_ITEM_ORE_COST
     ),
-    "BUILD_OBJECT_CREATOR": lambda t, w: (
-        t.wood >= config.OBJECT_CREATOR_WOOD_COST and t.stone >= config.OBJECT_CREATOR_STONE_COST
-        and _can_place(t, w, "object_creator")
+    "BUILD_DMM": lambda t, w: (
+        t.wood >= config.DMM_WOOD_COST and t.stone >= config.DMM_STONE_COST
+        and _can_place(t, w, "dmm")
     ),
     # Both require the factory itself to actually stand -- same "structural
     # prerequisite, not just a resource cost" shape BUILD_FORGE gates FORGE_ITEM
     # on, made explicit here rather than relying only on the handler's own
-    # no-op guard.
+    # no-op guard. The DMM's own 10-day cooldown (actions._dmm_ready) is NOT
+    # checked here -- these lambdas only ever receive (tribe, world), no
+    # current cycle -- so a tribe mid-cooldown still sees the action listed
+    # and gets a silent no-op if it's chosen, same as any other action whose
+    # handler has a guard clause the affordability table doesn't fully mirror
+    # (e.g. BUILD_MINE's own free-slot check).
     "CREATE_ITEM": lambda t, w: (
-        t.object_creator_built
+        t.dmm_built
         and t.wood >= config.CREATE_ITEM_WOOD_COST and t.stone >= config.CREATE_ITEM_STONE_COST
     ),
     "CREATE_USEFUL_STRUCTURE": lambda t, w: (
-        t.object_creator_built
+        t.dmm_built
         and t.wood >= config.CREATE_USEFUL_STRUCTURE_WOOD_COST and t.stone >= config.CREATE_USEFUL_STRUCTURE_STONE_COST
         and _can_place(t, w, "created_structure")
     ),
@@ -861,7 +866,7 @@ def _celebration_cost(tribe: "Tribe") -> int:
     cost = min(round(tribe.food * config.CELEBRATION_RESOURCE_COST_FRACTION), config.CELEBRATION_MAX_COST)
     if tribe.cooking_learned:
         cost = round(cost * config.CELEBRATION_COOKING_COST_MULTIPLIER)
-    # Object Creator era's celebration_discount effect -- see actions.py.
+    # DMM era's celebration_discount effect -- see actions.py.
     # _created_object_bonus. Floored at 0 rather than letting it go negative.
     cost = max(0, round(cost * (1 - _created_object_bonus(tribe, "celebration_discount"))))
     return cost
@@ -1371,15 +1376,20 @@ class Tribe:
         # carries, redeemable via USE_ITEM or handed over in a TRADE.
         self.forge_built = False
         self.items: list[dict] = []
-        # Object Creator era (see actions.py._build_object_creator/_create_item/
-        # _create_useful_structure, eras.py's object_creator_era): the factory
-        # itself, plus every item/structure it's produced --
+        # DMM (Dream Manifestation Machine) era, renamed 2026-09-13 from
+        # "Object Creator" (see actions.py._build_dmm/_create_item/
+        # _create_useful_structure, eras.py's object_creator_era -- the era
+        # key itself is unchanged): the factory itself, when it next comes
+        # off cooldown, plus every item/structure it's produced --
         # {"name", "category" (one of config.CREATED_OBJECT_CATEGORIES),
         # "kind": "item"|"structure"}. category is picked round-robin off this
-        # list's own length at creation time, not a hidden roll -- see
-        # _created_object_bonus for where each category's bounded effect is
-        # actually read.
-        self.object_creator_built = False
+        # list's own length at creation time, unless the chief has a live
+        # dream that names a real need instead (chief_dream, actions.
+        # _new_created_object) -- see _created_object_bonus for where each
+        # category's bounded effect is actually read.
+        self.dmm_built = False
+        self.dmm_cooldown_until_cycle = 0
+        self.chief_dream: str | None = None
         self.created_objects: list[dict] = []
         # War and World Domination era (see actions.py._declare_conquest,
         # Simulation._merge_tribes, Simulation.step's world_domination check):
@@ -1664,7 +1674,7 @@ class Tribe:
             "deer": self.deer,
             "forge_built": self.forge_built,
             "items": self.items,
-            "object_creator_built": self.object_creator_built,
+            "dmm_built": self.dmm_built,
             "created_objects": self.created_objects,
             "conquests_won": self.conquests_won,
             "trades_completed": self.trades_completed,
@@ -1702,6 +1712,7 @@ class Tribe:
             "chief_name": self.chief_name,
             "chief_philosophy": self.chief_philosophy,
             "chief_decree": self.chief_decree,
+            "chief_dream": self.chief_dream,
             "chiefs_elected": self.chiefs_elected,
             "chief_deaths": self.chief_deaths,
             "chief_victory": self.chief_victory,
@@ -1754,7 +1765,7 @@ _ONE_OFF_STRUCTURE_FLAGS: tuple[tuple[str, str], ...] = (
     ("fortress_built", "Fortress"), ("castle_built", "Castle"), ("road_built", "Road"),
     ("hatchery_built", "Hatchery"), ("coop_built", "Coop"), ("bath_house_built", "Bath House"),
     ("library_built", "Library"), ("well_built", "Well"),
-    ("object_creator_built", "Object Creator"),
+    ("dmm_built", "Dream Manifestation Machine"),
 )
 
 
@@ -2301,7 +2312,7 @@ class Simulation:
         result = await reflect_on_history(
             self.client, tribe.model, tribe.name,
             tribe.chief_philosophy, recent_events, inventory,
-            tribe.chief_decree,
+            tribe.chief_decree, tribe.dmm_built,
         )
         # The chief's own reasoning for this reflection -- kept even when the
         # philosophy didn't change, so the frontend has something real to show as a
@@ -2346,6 +2357,17 @@ class Simulation:
             if new_decree != tribe.chief_decree:
                 tribe.chief_decree = new_decree
                 tribe.history.append(f"Chief {tribe.chief_name} decrees: {tribe.chief_decree}")
+
+        # "It makes real the dreams of the Chief" -- explicit request, 2026-09-13.
+        # Unlike the decree above, NOT sticky: a dream is consumed the next time the
+        # DMM is actually used (actions._new_created_object clears tribe.chief_dream
+        # whether it matches a category or not), so an old, already-realized wish
+        # can't keep echoing after it's been granted. A fresh reflection here simply
+        # overwrites whatever dream, if any, was still waiting.
+        proposed_dream = result.get("proposed_dream")
+        if isinstance(proposed_dream, str) and proposed_dream.strip():
+            tribe.chief_dream = proposed_dream.strip()[:200]
+            tribe.history.append(f"Chief {tribe.chief_name} dreams of {tribe.chief_dream}")
 
         # See config.NIGHT_CYCLE_RANDOM_BREED_CHANCE -- a chance encounter independent
         # of any specific celebration milestone, using the exact same eligibility rule
@@ -4451,35 +4473,49 @@ class Simulation:
                 "value (USE_ITEM) or handed over in a future trade."
             )
 
-        # NUDGE (2026-09-13, action-legibility audit): BUILD_OBJECT_CREATOR/
-        # CREATE_ITEM/CREATE_USEFUL_STRUCTURE had zero nudges anywhere -- lower
-        # priority than the other 6 fixed earlier since Object Creator Era (population
-        # 800) is rarely reached, but the project's own comment already names this
-        # exact failure mode as the default outcome absent a nudge ("an action being
-        # merely available doesn't mean a small model chooses it -- this project has
-        # hit that every single time so far"). BUILD_OBJECT_CREATOR has no structural
-        # prerequisite beyond cost, unlike Kitchen/Library/Barracks -- the nudge fires
-        # the instant it's reachable at all, same shape BUILD_WELL's own
+        # NUDGE (2026-09-13, action-legibility audit): BUILD_DMM/CREATE_ITEM/
+        # CREATE_USEFUL_STRUCTURE had zero nudges anywhere -- lower priority than
+        # the other 6 fixed earlier since this era (population 800) is rarely
+        # reached, but the project's own comment already names this exact failure
+        # mode as the default outcome absent a nudge ("an action being merely
+        # available doesn't mean a small model chooses it -- this project has hit
+        # that every single time so far"). BUILD_DMM has no structural prerequisite
+        # beyond cost, unlike Kitchen/Library/Barracks -- the nudge fires the
+        # instant it's reachable at all, same shape BUILD_WELL's own
         # always-available nudge would use if it had one.
-        if "BUILD_OBJECT_CREATOR" in available_actions and not tribe.object_creator_built:
+        if "BUILD_DMM" in available_actions and not tribe.dmm_built:
             visible_entities.append(
-                "The tribe has grown large enough to support genuine invention -- an Object Creator "
-                "built now would let it design entirely new items and structures, not just what's "
+                "The tribe has grown large enough to support genuine invention -- a Dream Manifestation "
+                "Machine built now would let it make the Chief's own dreams real, not just what's "
                 "already known."
             )
-        # Deliberately neutral about WHICH category to aim for (the design
-        # philosophy's own "no scripted directives" line) -- names only that a real,
-        # bounded effect is guaranteed, same "state what's mechanically true, decide
-        # nothing for the model" shape the rival-contact nudge already uses.
-        if (
-            ("CREATE_ITEM" in available_actions or "CREATE_USEFUL_STRUCTURE" in available_actions)
-            and tribe.object_creator_built
-        ):
-            visible_entities.append(
-                "The Object Creator stands ready -- creating an item or a structure now would give the "
-                "tribe a genuinely new invention with a real, permanent effect on gathering, combat, "
-                "defense, celebrations, expeditions, or population."
-            )
+        # Renamed and sharpened 2026-09-13 ("It makes real the dreams of the
+        # Chief"): still deliberately neutral about which category the result
+        # lands in when no dream is live (the design philosophy's own "no
+        # scripted directives" line) -- but a live tribe.chief_dream (set by the
+        # chief's own night-cycle reflection, see reflection.py) is a real fact
+        # worth surfacing, not a directive: it says what's already true (the
+        # dream exists and will shape the next creation), decides nothing for
+        # the model. Also names the cooldown explicitly once it's actually the
+        # blocker -- the same "name the real gap, not just the goal" fix the
+        # post-conquest Castle nudge just got.
+        if "CREATE_ITEM" in available_actions or "CREATE_USEFUL_STRUCTURE" in available_actions:
+            if tribe.dmm_built and self.cycle >= tribe.dmm_cooldown_until_cycle:
+                dream_note = (
+                    f' The Chief has lately dreamed of "{tribe.chief_dream}" -- the DMM will draw on that.'
+                    if tribe.chief_dream else ""
+                )
+                visible_entities.append(
+                    "The Dream Manifestation Machine stands ready -- creating an item or a structure now "
+                    "would give the tribe a genuinely new invention with a real, permanent effect on "
+                    f"gathering, combat, defense, celebrations, expeditions, or population.{dream_note}"
+                )
+            elif tribe.dmm_built:
+                cycles_left = tribe.dmm_cooldown_until_cycle - self.cycle
+                visible_entities.append(
+                    f"The Dream Manifestation Machine is still resting -- {cycles_left} cycle(s) left "
+                    "before it can manifest again."
+                )
 
         # Military branch, step 1's original eligibility nudge (added 2026-09-08
         # after a live run showed an individual sitting eligible for 9+ days with
@@ -5319,7 +5355,7 @@ class Simulation:
                 speed_base = config.EXPEDITION_SPEED
             else:
                 speed_base = config.SETTLED_EXPEDITION_SPEED
-            # Object Creator era's expedition_boost effect: a flat extra
+            # DMM era's expedition_boost effect: a flat extra
             # tiles/cycle per created object of that category (see config.
             # CREATED_OBJECT_EXPEDITION_SPEED_BONUS), not a percentage --
             # measured the same way ROAD_SPEED_BONUS already is.
@@ -5567,7 +5603,7 @@ class Simulation:
                 speed_base = config.EXPEDITION_SPEED
             else:
                 speed_base = config.SETTLED_EXPEDITION_SPEED
-            # Object Creator era's expedition_boost effect: a flat extra
+            # DMM era's expedition_boost effect: a flat extra
             # tiles/cycle per created object of that category (see config.
             # CREATED_OBJECT_EXPEDITION_SPEED_BONUS), not a percentage --
             # measured the same way ROAD_SPEED_BONUS already is.
@@ -6567,7 +6603,7 @@ class Simulation:
             # levels" -- free once a tribe has both fire and a fully reinforced
             # first wall ring, no action or cost of its own.
             + (config.TORCHES_DEFENSE_BONUS if tribe.fire_ever_built and ring0_reinforced else 0.0)
-            # Object Creator era's defense_boost effect -- see actions.py.
+            # DMM era's defense_boost effect -- see actions.py.
             # _created_object_bonus.
             + _created_object_bonus(tribe, "defense_boost")
             - config.RAIDER_STRENGTH_DEFENSE_PENALTY_AT_MAX * raider_strength

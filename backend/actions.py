@@ -95,7 +95,7 @@ def _food_multiplier(tribe) -> float:
         multiplier *= config.COOKING_FOOD_MULTIPLIER
     if tribe.kitchen_built:
         multiplier *= config.KITCHEN_FOOD_MULTIPLIER
-    # Object Creator era's gather_boost effect -- see _created_object_bonus.
+    # DMM era's gather_boost effect -- see _created_object_bonus.
     multiplier *= 1 + _created_object_bonus(tribe, "gather_boost")
     return multiplier
 
@@ -1390,7 +1390,7 @@ def _armed_count(tribe) -> int:
     how many of the army have weapons or magic from the forge or object
     creator." Real Forge-crafted weapons currently on hand (tribe.items,
     type == "weapon" -- tools/innovations don't count, only combat gear)
-    plus every Object Creator combat_boost creation (the "magic" -- the same
+    plus every DMM combat_boost creation (the "magic" -- the same
     creations that already drive DECLARE_CONQUEST's effective-population
     multiplier via _created_object_bonus). Purely a display count for the
     battle popup, not a new input to the win-chance math -- combat_boost
@@ -1432,56 +1432,99 @@ def _might_adjusted_win_chance(tribe, rival, base_win_chance: float) -> float:
     )
 
 
-def _build_object_creator(sim, tribe, biome, target):
-    """Object Creator era's signature building -- the factory that lets a
-    tribe start inventing genuinely new things. One-time, permanent, same
-    BUILD_FORGE-shaped gate (wood/stone cost + a free footprint slot), just a
+def _build_dmm(sim, tribe, biome, target):
+    """DMM (Dream Manifestation Machine) era's signature building -- the
+    factory that lets a tribe start making the Chief's dreams real. Renamed
+    2026-09-13 from "Object Creator" -- same one-time, permanent, BUILD_
+    FORGE-shaped gate (wood/stone cost + a free footprint slot), just a
     late-game one behind the era's own steep resource threshold (see
-    eras.py's object_creator_era)."""
-    if tribe.object_creator_built:
+    eras.py's object_creator_era -- the era key itself is unchanged, only
+    the building/action names and their display text)."""
+    if tribe.dmm_built:
         return None
-    if tribe.wood < config.OBJECT_CREATOR_WOOD_COST or tribe.stone < config.OBJECT_CREATOR_STONE_COST:
+    if tribe.wood < config.DMM_WOOD_COST or tribe.stone < config.DMM_STONE_COST:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "object_creator")
+    slot = architect.find_free_slot(sim.world, tribe, "dmm")
     if slot is None:
         return None
-    tribe.wood -= config.OBJECT_CREATOR_WOOD_COST
-    tribe.stone -= config.OBJECT_CREATOR_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["object_creator"]
-    architect.record_building(tribe, "object_creator", slot[0], slot[1], w, h, sim.cycle)
-    tribe.object_creator_built = True
+    tribe.wood -= config.DMM_WOOD_COST
+    tribe.stone -= config.DMM_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["dmm"]
+    architect.record_building(tribe, "dmm", slot[0], slot[1], w, h, sim.cycle)
+    tribe.dmm_built = True
     sim._award_trophy(tribe, "Visionary")
-    return "the Object Creator hums to life -- the tribe can now design and build genuinely new things"
+    return "the Dream Manifestation Machine hums to life -- the tribe can now make the Chief's dreams real"
+
+
+def _dream_matched_category(dream: str) -> str | None:
+    """Deterministic substring match of a chief's proposed_dream text against
+    config.DREAM_CATEGORY_KEYWORDS, in that dict's own fixed key order --
+    first category with any keyword hit wins. Plain text search, no model
+    judgment involved in the match itself (the dream text is real chief
+    output; classifying it is not). Returns None for a dream that matches
+    nothing, so the caller can fall back to the ordinary round-robin."""
+    lowered = dream.lower()
+    for category, keywords in config.DREAM_CATEGORY_KEYWORDS.items():
+        if any(keyword in lowered for keyword in keywords):
+            return category
+    return None
 
 
 def _new_created_object(tribe) -> tuple[str, str]:
     """Picks a name and effect category for a freshly created item/structure
     -- shared by CREATE_ITEM/CREATE_USEFUL_STRUCTURE. The name is genuinely
     random/flavorful (same creative-but-bounded balance ITEM_NAMES_BY_TYPE
-    already strikes for Forge items); the category is picked round-robin off
-    this tribe's own creation count so far, not a hidden roll, cycling
-    through all six of CREATED_OBJECT_CATEGORIES rather than gambling on the
-    same one repeatedly. Explicit request: "let's limit the risk at this
-    time knowing we will come back to it" -- full open-ended LLM-driven stat
-    generation (parsing the model's own description into a novel mechanical
-    effect) is a deliberate future follow-up, not built here."""
+    already strikes for Forge items) and always comes from the DMM itself
+    (CREATED_OBJECT_NAMES), never from the chief's own words -- "DMM names
+    it," explicit request, 2026-09-13.
+
+    The category is round-robin by default (off this tribe's own creation
+    count so far, not a hidden roll, cycling through all six of
+    CREATED_OBJECT_CATEGORIES rather than gambling on the same one
+    repeatedly) -- unless the chief has a live, grounded tribe.chief_dream
+    (backend/reflection.py::reflect_on_history's proposed_dream field,
+    consumed here whether it matches or not, so a stale unmatched wish
+    doesn't linger forever): that dream's own real, practical need picks the
+    category instead, via _dream_matched_category. Explicit request: "let's
+    limit the risk at this time knowing we will come back to it" -- full
+    open-ended LLM-driven stat generation (parsing the model's own
+    description into a novel mechanical effect) is still a deliberate future
+    follow-up, not built here; the dream only ever selects among the same
+    six pre-existing, pre-balanced categories."""
     name = random.choice(config.CREATED_OBJECT_NAMES)
-    category = config.CREATED_OBJECT_CATEGORIES[len(tribe.created_objects) % len(config.CREATED_OBJECT_CATEGORIES)]
+    dream = tribe.chief_dream
+    tribe.chief_dream = None
+    matched = _dream_matched_category(dream) if dream else None
+    category = matched or config.CREATED_OBJECT_CATEGORIES[len(tribe.created_objects) % len(config.CREATED_OBJECT_CATEGORIES)]
     return name, category
 
 
+def _dmm_ready(sim, tribe) -> bool:
+    """Shared cooldown gate for CREATE_ITEM/CREATE_USEFUL_STRUCTURE -- the
+    DMM itself rests for config.DMM_COOLDOWN_DAYS between uses, not each
+    action independently, since both draw from the one machine. New
+    2026-09-13: previously neither action had any cadence limit at all, and
+    a live run used the DMM 33 times in under 100 cycles. Same "absolute
+    ready-again cycle, not a last-used timestamp" shape Simulation.
+    _advance_battalion_patrol's own cooldown already uses."""
+    return sim.cycle >= tribe.dmm_cooldown_until_cycle
+
+
 def _create_item(sim, tribe, biome, target):
-    """The Object Creator's first real output: a genuinely new, permanent
-    item with one bounded effect. population_boost is the one immediate,
-    one-shot effect (a flat population grant, see config.
-    CREATED_OBJECT_POPULATION_BONUS); every other category is read passively
-    at its own real hook point (_created_object_bonus)."""
-    if not tribe.object_creator_built:
+    """The DMM's first real output: a genuinely new, permanent item with one
+    bounded effect. population_boost is the one immediate, one-shot effect
+    (a flat population grant, see config.CREATED_OBJECT_POPULATION_BONUS);
+    every other category is read passively at its own real hook point
+    (_created_object_bonus)."""
+    if not tribe.dmm_built:
+        return None
+    if not _dmm_ready(sim, tribe):
         return None
     if tribe.wood < config.CREATE_ITEM_WOOD_COST or tribe.stone < config.CREATE_ITEM_STONE_COST:
         return None
     tribe.wood -= config.CREATE_ITEM_WOOD_COST
     tribe.stone -= config.CREATE_ITEM_STONE_COST
+    tribe.dmm_cooldown_until_cycle = sim.cycle + config.DMM_COOLDOWN_DAYS * config.DAY_LENGTH_CYCLES
     name, category = _new_created_object(tribe)
     tribe.created_objects.append({"name": name, "category": category, "kind": "item"})
     if len(tribe.created_objects) == 1:
@@ -1498,9 +1541,12 @@ def _create_item(sim, tribe, biome, target):
 
 def _create_useful_structure(sim, tribe, biome, target):
     """Same idea as CREATE_ITEM, but a real building footprint instead of a
-    portable item -- "anything" the Object Creator can make spans both, per
-    direct confirmation."""
-    if not tribe.object_creator_built:
+    portable item -- "anything" the DMM can make spans both, per direct
+    confirmation. Shares CREATE_ITEM's own DMM cooldown (_dmm_ready) rather
+    than a separate one, since both draw from the one machine."""
+    if not tribe.dmm_built:
+        return None
+    if not _dmm_ready(sim, tribe):
         return None
     if tribe.wood < config.CREATE_USEFUL_STRUCTURE_WOOD_COST or tribe.stone < config.CREATE_USEFUL_STRUCTURE_STONE_COST:
         return None
@@ -1509,6 +1555,7 @@ def _create_useful_structure(sim, tribe, biome, target):
         return None
     tribe.wood -= config.CREATE_USEFUL_STRUCTURE_WOOD_COST
     tribe.stone -= config.CREATE_USEFUL_STRUCTURE_STONE_COST
+    tribe.dmm_cooldown_until_cycle = sim.cycle + config.DMM_COOLDOWN_DAYS * config.DAY_LENGTH_CYCLES
     w, h = config.BUILDING_FOOTPRINTS["created_structure"]
     architect.record_building(tribe, "created_structure", slot[0], slot[1], w, h, sim.cycle)
     name, category = _new_created_object(tribe)
@@ -2354,7 +2401,7 @@ def _raid(sim, tribe, biome, target):
     if defender is None:
         return "found no rival encampment there to raid"
 
-    # Object Creator era's combat_boost effect applies here too, not just
+    # DMM era's combat_boost effect applies here too, not just
     # DECLARE_CONQUEST -- see _created_object_bonus.
     effective_population = tribe.population * (1 + _created_object_bonus(tribe, "combat_boost"))
     attacker_win_chance = effective_population / max(1, effective_population + defender.population)
@@ -3117,7 +3164,7 @@ ACTION_REGISTRY = {
     "BUILD_FORGE": _build_forge,
     "FORGE_ITEM": _forge_item,
     "USE_ITEM": _use_item,
-    "BUILD_OBJECT_CREATOR": _build_object_creator,
+    "BUILD_DMM": _build_dmm,
     "CREATE_ITEM": _create_item,
     "CREATE_USEFUL_STRUCTURE": _create_useful_structure,
     "DECLARE_CONQUEST": _declare_conquest,
@@ -3187,9 +3234,9 @@ ACTION_DESCRIPTIONS = {
     "BUILD_FORGE": "Build a forge using stored wood and stone -- only possible once a mine stands and at least one unit of its ore is already in stock. A one-time, permanent structure: from then on, ore can be worked into real tools, weapons, and inventions.",
     "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. No durability to track: each item just carries a flat value, usable later or given away in a trade.",
     "USE_ITEM": "Redeem your oldest crafted item for its stored value, converted into wood and stone. Does nothing if you have no items.",
-    "BUILD_OBJECT_CREATOR": "Build the Object Creator using stored wood and stone -- a one-time, permanent factory that lets the tribe start inventing genuinely new items and structures from then on.",
-    "CREATE_ITEM": "Design and craft a genuinely new item at the Object Creator -- a real, permanent effect (a bonus to gathering, combat, defense, celebrations, exploration speed, or an immediate population grant), picked for you. Only possible once the Object Creator stands.",
-    "CREATE_USEFUL_STRUCTURE": "Design and build a genuinely new structure at the Object Creator -- same real, permanent effects as CREATE_ITEM, but a building instead of a portable item. Only possible once the Object Creator stands.",
+    "BUILD_DMM": "Build the Dream Manifestation Machine (DMM) using stored wood and stone -- a one-time, permanent factory that lets the tribe start making the Chief's dreams real.",
+    "CREATE_ITEM": "Design and craft a genuinely new item at the DMM -- a real, permanent effect (a bonus to gathering, combat, defense, celebrations, exploration speed, or an immediate population grant), shaped by whatever the Chief has lately dreamed of, or picked for you otherwise. Only possible once the DMM stands, and it rests 10 days between uses.",
+    "CREATE_USEFUL_STRUCTURE": "Design and build a genuinely new structure at the DMM -- same real, permanent effects as CREATE_ITEM, but a building instead of a portable item. Only possible once the DMM stands, and it rests 10 days between uses.",
     "DECLARE_CONQUEST": "An all-in campaign to fully and immediately conquer a rival tribe near target_vector, in one decisive stroke rather than several raids. A win absorbs them completely; a loss costs far more than an ordinary failed raid. Does nothing if no rival is there.",
     "BUILD_JOINT_CASTLE": "Contribute wood and stone toward a Joint Castle raised together with a genuinely, mutually allied rival tribe -- a shared monument to the alliance, built up over several turns from either side. Completing it marks both tribes as having reached Castle-state. Only possible once truly allied, not just once one side has declared it.",
     "BUILD_KITCHEN": "Build a kitchen using stored wood and stone -- only possible once cooking is known and a long house stands. A one-time, permanent structure: stacks with cooking for nine times as much food from every future forage, hunt, or catch, instead of only three.",

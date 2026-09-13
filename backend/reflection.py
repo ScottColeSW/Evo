@@ -31,7 +31,7 @@ AWARD_CATEGORIES = ("scouting", "hunting", "trading", "raiding")
 async def reflect_on_history(
     client: OllamaClient, reviewer_model: str, tribe_name: str,
     current_philosophy: str, recent_events: list[str], inventory: str = "",
-    current_decree: str = "",
+    current_decree: str = "", dmm_built: bool = False,
 ) -> dict:
     events_block = "\n".join(f"- {e}" for e in recent_events) or "(nothing notable recorded)"
     categories_list = ", ".join(AWARD_CATEGORIES)
@@ -56,6 +56,30 @@ async def reflect_on_history(
     # isn't moved to change course tonight doesn't accidentally erase a good standing
     # order just by not mentioning it.
     decree_line = f'Your current standing decree is: "{current_decree}"' if current_decree else "You have no standing decree right now."
+    # Explicit design, 2026-09-13: "It makes real the dreams of the Chief" -- the
+    # Dream Manifestation Machine (backend/actions.py._new_created_object) reads
+    # tribe.chief_dream to pick which of its 6 bounded effect categories to
+    # manifest next, instead of blind round-robin. Only asked once the DMM
+    # actually stands (dmm_built) -- dreaming up something with nowhere to make
+    # it real is pointless, same "don't ask about a mechanic that isn't reachable
+    # yet" gate cooking_learned already applies to kitchen mentions in
+    # instincts.py. Explicitly required to be grounded in something from
+    # recent_events, not generic wish-fulfillment -- this is the same shape as
+    # the user's own original idea: "a Chief that has tasted delicious Cooked
+    # food could have a dream of lots and lots of food." The DMM itself still
+    # names whatever gets made (CREATED_OBJECT_NAMES) -- the chief only ever
+    # supplies the wish, never the label.
+    dream_block = ""
+    if dmm_built:
+        dream_block = f"""
+
+Separately, the tribe's Dream Manifestation Machine stands ready to make one of your dreams \
+real. If something that actually happened recently -- named above -- has left you wanting \
+something practical for your people, describe that dream in your own words. It must be \
+grounded in something real that just happened, not a generic wish, and it should serve a real \
+need (feeding the tribe, defending it, exploring further, growing it, celebrating together, or \
+fighting off a threat). Leave it out if nothing recent truly calls for one -- the Machine will \
+name whatever it manifests, so just describe the need, not what to call it."""
     prompt = f"""You are reviewing, from a distance, the recent history of the {tribe_name} \
 tribe. Its current guiding philosophy is: "{current_philosophy}"
 {inventory_block}
@@ -75,7 +99,7 @@ Separately again, you may also set a standing decree -- not a philosophy, an act
 duty for the tribe to act on until you say otherwise ("build us a proper kitchen before winter," \
 "find fresh water before anything else"). {decree_line} Leave it as it is unless something \
 you've just reflected on genuinely calls for a new one -- this is your own idea, not ours, so \
-only propose one if it truly comes from what actually happened.
+only propose one if it truly comes from what actually happened.{dream_block}
 
 Reply with ONLY JSON:
 {{
@@ -83,7 +107,8 @@ Reply with ONLY JSON:
   "changed": true or false,
   "reasoning": "your decision in ONE short sentence, 20 words or fewer -- this is a private thought, not an essay",
   "proposed_award": {{"name": "a short title of your own invention", "category": "one of: {categories_list}"}} or null,
-  "proposed_decree": "a short, concrete standing duty, in your own words" or null
+  "proposed_decree": "a short, concrete standing duty, in your own words" or null,
+  "proposed_dream": "a short description of a real, grounded need, in your own words" or null
 }}"""
     result = await client.generate_json(reviewer_model, prompt, temperature=0.7, num_ctx=8192)
     if not result or not result.get("revised_philosophy"):
@@ -93,6 +118,7 @@ Reply with ONLY JSON:
             "reasoning": "the review produced nothing usable; philosophy stands unchanged",
             "proposed_award": None,
             "proposed_decree": None,
+            "proposed_dream": None,
         }
     return result
 

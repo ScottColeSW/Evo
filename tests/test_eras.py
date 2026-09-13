@@ -103,6 +103,6 @@ def test_object_creator_and_war_domination_eras_replaced_the_old_empty_slots():
     outright by two real eras, not appended after them -- the ladder is 6
     stages now, not 7, and both new top eras actually unlock something."""
     assert [e.key for e in ERAS[-2:]] == ["object_creator_era", "war_and_world_domination_era"]
-    object_creator, war_domination = ERAS[-2], ERAS[-1]
-    assert set(object_creator.unlocks_actions) == {"BUILD_OBJECT_CREATOR", "CREATE_ITEM", "CREATE_USEFUL_STRUCTURE"}
+    dmm_era, war_domination = ERAS[-2], ERAS[-1]
+    assert set(dmm_era.unlocks_actions) == {"BUILD_DMM", "CREATE_ITEM", "CREATE_USEFUL_STRUCTURE"}
     assert war_domination.unlocks_actions == ("DECLARE_CONQUEST",)

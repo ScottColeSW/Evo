@@ -454,7 +454,7 @@
           <div class="icon-key-row"><span class="icon-key-icon">📚</span> Library</div>
           <div class="icon-key-row"><span class="icon-key-icon">🪣</span> Well</div>
           <div class="icon-key-row"><span class="icon-key-icon">⛵</span> Boat (roams nearby water once built)</div>
-          <div class="icon-key-row"><span class="icon-key-icon">🛠️</span> Object Creator</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🛠️</span> Dream Manifestation Machine</div>
           <div class="icon-key-row"><span class="icon-key-icon">✨</span> Created Structure</div>
 
           <div class="icon-key-section">Discoveries</div>
@@ -855,7 +855,7 @@ const GAME_OVER_SUBTITLES = {
 // live status board).
 const GO_BUILDING_ICONS = [
   ["castle_built", "🏯"], ["fortress_built", "🏰"], ["keep_built", "🏯"],
-  ["object_creator_built", "🛠️"], ["forge_built", "🔨"], ["mine_built", "💎"],
+  ["dmm_built", "🛠️"], ["forge_built", "🔨"], ["mine_built", "💎"],
   ["road_built", "🛣️"], ["dock_built", "⚓"], ["fishery_built", "🐟"],
   ["sawmill_built", "🪵"], ["quarry_built", "⛏️"], ["kitchen_built", "🍲"],
   ["tannery_built", "🦫"], ["deer_pen_built", "🦌"], ["hatchery_built", "🐣"], ["coop_built", "🐔"], ["bath_house_built", "🛁"],
@@ -1026,7 +1026,7 @@ function showBattleSplash(battle) {
   // indication of how many of the army have weapons or magic from the forge
   // or object creator." attacker_armed/defender_armed (backend/actions.py's
   // _declare_conquest) count real Forge-crafted weapons on hand plus
-  // Object Creator's combat_boost creations -- baked into the battle record
+  // the DMM's combat_boost creations -- baked into the battle record
   // once at battle time, same as Might, not a live lookup.
   const maxArmed = Math.max(1, battle.attacker_armed, battle.defender_armed);
   document.getElementById("battle-attacker-armed-fill").style.width = `${(battle.attacker_armed / maxArmed) * 100}%`;
@@ -3409,7 +3409,7 @@ const BUILDING_ICONS = {
   warehouse: "🏬",
   dock: "⚓", fishery: "🎣", farm_plot: "🌾", coop: "🐔", fire: "🔥",
   hatchery: "🐣", boat: "⛵", bath_house: "🛁", library: "📚", well: "🪣",
-  object_creator: "🛠️", created_structure: "✨",
+  dmm: "🛠️", created_structure: "✨",
 };
 
 function drawBuildings(t) {
@@ -4391,7 +4391,7 @@ function farmingPanel(t) {
     || t.sawmill_built || t.quarry_built || t.kitchen_built || t.mine_built || t.tannery_built || t.deer_pen_built
     || t.forge_built || t.warehouses_built || t.founded_city || (t.cooking_learned && !t.kitchen_built)
     || t.hatchery_built || t.coop_built || t.boat_built || t.bath_house_built || t.library_built || t.well_built
-    || t.object_creator_built || t.conquests_won || hasBarracks;
+    || t.dmm_built || t.conquests_won || hasBarracks;
   if (!hasAny) return "";
   // Explicit request, 2026-09-11: "a subsection breakout of the list under
   // Establishments... organized into appropriately labeled subsections." The panel
@@ -4577,15 +4577,15 @@ function farmingPanel(t) {
     const upgradeNote = upgrades ? `, ${upgrades} upgrade${upgrades !== 1 ? "s" : ""}` : "";
     industry.push(`🏬 Warehouse — ${t.warehouses_built} built${upgradeNote}, storage capacity ${cap} per resource`);
   }
-  if (t.object_creator_built) {
+  if (t.dmm_built) {
     const objects = t.created_objects || [];
     if (objects.length) {
       const detail = objects
         .map(o => `${escapeHtml(o.name)} (${escapeHtml(o.category.replace(/_/g, " "))})`)
         .join(", ");
-      industry.push(`🛠️ Object Creator — ${objects.length} creation(s): ${detail}`);
+      industry.push(`🛠️ Dream Manifestation Machine — ${objects.length} creation(s): ${detail}`);
     } else {
-      industry.push("🛠️ Object Creator — nothing designed yet");
+      industry.push("🛠️ Dream Manifestation Machine — nothing manifested yet");
     }
   }
 

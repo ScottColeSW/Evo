@@ -3400,7 +3400,7 @@ def test_era_gap_note_omits_the_research_mention_once_the_discount_is_already_ca
     assert "Research at the library" not in request["prompt"]  # but more research wouldn't help
 
 
-def test_build_object_creator_nudge_fires_once_the_era_unlocks_it():
+def test_build_dmm_nudge_fires_once_the_era_unlocks_it():
     """No structural prerequisite beyond cost -- unlike Kitchen/Library/Barracks,
     this fires the instant it's reachable at all."""
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
@@ -3412,42 +3412,73 @@ def test_build_object_creator_nudge_fires_once_the_era_unlocks_it():
 
     request, ctx = sim._prepare_turn(tribe)
 
-    assert "BUILD_OBJECT_CREATOR" in ctx["available_actions"]
-    assert "an Object Creator built now would let it design entirely new items" in request["prompt"]
+    assert "BUILD_DMM" in ctx["available_actions"]
+    assert "a Dream Manifestation Machine built now would let it make the Chief's own dreams real" in request["prompt"]
 
 
-def test_build_object_creator_nudge_silent_once_already_built():
+def test_build_dmm_nudge_silent_once_already_built():
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
     sim._found_territory(tribe)
     tribe.era = "object_creator_era"
     tribe.wood = tribe.stone = tribe.food = tribe.water = 500
-    tribe.object_creator_built = True
+    tribe.dmm_built = True
 
     request, _ctx = sim._prepare_turn(tribe)
 
-    assert "an Object Creator built now would let it design" not in request["prompt"]
+    assert "a Dream Manifestation Machine built now would let it make" not in request["prompt"]
 
 
-def test_create_item_nudge_fires_once_the_object_creator_stands():
+def test_create_item_nudge_fires_once_the_dmm_stands():
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
     sim._found_territory(tribe)
     tribe.era = "object_creator_era"
     tribe.wood = tribe.stone = tribe.food = tribe.water = 500
-    tribe.object_creator_built = True
+    tribe.dmm_built = True
 
     request, ctx = sim._prepare_turn(tribe)
 
     assert "CREATE_ITEM" in ctx["available_actions"]
-    assert "The Object Creator stands ready" in request["prompt"]
+    assert "The Dream Manifestation Machine stands ready" in request["prompt"]
     # Deliberately neutral -- names every category, pushes toward none of them.
     assert "gathering, combat, defense, celebrations, expeditions, or population" in request["prompt"]
 
 
-def test_create_item_nudge_silent_without_an_object_creator():
+def test_create_item_nudge_names_the_live_chief_dream_when_one_exists():
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "object_creator_era"
+    tribe.wood = tribe.stone = tribe.food = tribe.water = 500
+    tribe.dmm_built = True
+    tribe.chief_dream = "never going hungry again"
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert 'The Chief has lately dreamed of "never going hungry again"' in request["prompt"]
+
+
+def test_create_item_nudge_names_the_cooldown_once_thats_the_real_blocker():
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "object_creator_era"
+    tribe.wood = tribe.stone = tribe.food = tribe.water = 500
+    tribe.dmm_built = True
+    tribe.dmm_cooldown_until_cycle = sim.cycle + 7
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "The Dream Manifestation Machine is still resting -- 7 cycle(s) left" in request["prompt"]
+    assert "The Dream Manifestation Machine stands ready" not in request["prompt"]
+
+
+def test_create_item_nudge_silent_without_a_dmm():
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
@@ -3457,7 +3488,8 @@ def test_create_item_nudge_silent_without_an_object_creator():
 
     request, _ctx = sim._prepare_turn(tribe)
 
-    assert "The Object Creator stands ready" not in request["prompt"]
+    assert "The Dream Manifestation Machine stands ready" not in request["prompt"]
+    assert "The Dream Manifestation Machine is still resting" not in request["prompt"]
 
 
 def test_build_library_nudge_fires_once_a_long_house_stands():
@@ -7939,7 +7971,7 @@ async def test_night_cycle_updates_philosophy_when_the_reviewer_calls_for_a_chan
     tribe.chief_philosophy = "expand aggressively"
     tribe.history.append("starvation claimed lives")
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
         return {"revised_philosophy": "caution and hoarding", "changed": True, "reasoning": "too many losses"}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -7957,7 +7989,7 @@ async def test_night_cycle_leaves_philosophy_and_history_untouched_when_nothing_
     tribe.chief_philosophy = "expand aggressively"
     history_before = list(tribe.history)
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
         return {"revised_philosophy": "expand aggressively", "changed": False, "reasoning": "still working"}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -7977,7 +8009,7 @@ async def test_night_cycle_records_the_reasoning_even_when_nothing_changed():
     tribe.chief_name = "Ashgar"
     sim.cycle = 30
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
         return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": "still working"}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -7997,7 +8029,7 @@ async def test_night_cycle_passes_the_tribes_own_recent_history_and_philosophy()
     tribe.history.append("starvation claimed lives")
     captured = {}
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
         captured["reviewer_model"] = reviewer_model
         captured["tribe_name"] = tribe_name
         captured["current_philosophy"] = current_philosophy
@@ -8024,7 +8056,7 @@ async def test_night_cycle_adopts_a_proposed_decree():
     tribe.chief_name = "Ashgar"
     tribe.chief_decree = ""
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_decree": "build us a proper kitchen before winter",
@@ -8047,7 +8079,7 @@ async def test_night_cycle_leaves_the_standing_decree_untouched_when_none_is_pro
     tribe.chief_decree = "find fresh water before anything else"
     history_before = list(tribe.history)
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
         return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": "", "proposed_decree": None}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -8065,7 +8097,7 @@ async def test_night_cycle_does_not_repeat_a_decree_that_already_stands():
     tribe.chief_decree = "build us a proper kitchen before winter"
     history_before = list(tribe.history)
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_decree": "build us a proper kitchen before winter",
@@ -8083,7 +8115,7 @@ async def test_night_cycle_trims_an_overlong_proposed_decree():
     tribe = sim.tribes["tribe_0"]
     tribe.chief_name = "Ashgar"
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_decree": "x" * 500,
@@ -8174,7 +8206,7 @@ async def test_night_cycle_captures_a_valid_proposed_award():
     tribe = sim.tribes["tribe_0"]
     tribe.chief_name = "Ashgar"
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_award": {"name": "Keeper of the Trails", "category": "scouting"},
@@ -8196,7 +8228,7 @@ async def test_night_cycle_survives_a_non_dict_proposed_award():
     tribe = sim.tribes["tribe_0"]
     tribe.chief_name = "Ashgar"
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_award": "Keeper of the Trails",
@@ -8217,7 +8249,7 @@ async def test_night_cycle_ignores_a_proposed_award_outside_the_real_categories(
     tribe = sim.tribes["tribe_0"]
     tribe.chief_name = "Ashgar"
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_award": {"name": "Master of Dreams", "category": "dreaming"},
@@ -8230,7 +8262,7 @@ async def test_night_cycle_ignores_a_proposed_award_outside_the_real_categories(
 
 
 async def _night_cycle_no_change(sim, tribe):
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree=""):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
         return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": ""}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -8672,6 +8704,13 @@ def test_to_dict_exposes_trades_completed():
     tribe.trades_completed = 4
 
     assert tribe.to_dict()["trades_completed"] == 4
+
+
+def test_to_dict_exposes_the_chiefs_dream():
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.chief_dream = "never going hungry again"
+
+    assert tribe.to_dict()["chief_dream"] == "never going hungry again"
 
 
 def test_to_dict_exposes_spy_performance():
@@ -11834,7 +11873,7 @@ def test_game_over_summary_lists_the_final_build():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.castle_built = True
-    tribe.object_creator_built = True
+    tribe.dmm_built = True
     tribe.long_houses_built = 3
     tribe.wall_rings = [{"tier": 0}, {"tier": 1}]
     sim.tribes = {"tribe_0": tribe}
@@ -11843,7 +11882,7 @@ def test_game_over_summary_lists_the_final_build():
 
     assert "Final build:" in summary
     assert "Castle" in summary
-    assert "Object Creator" in summary
+    assert "Dream Manifestation Machine" in summary
     assert "3 Long House(s)" in summary
     assert "2 wall ring(s)" in summary
 

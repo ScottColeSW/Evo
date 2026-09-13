@@ -52,6 +52,7 @@ async def test_reflect_on_history_falls_back_when_model_returns_nothing_usable()
     assert result["changed"] is False
     assert result["proposed_award"] is None
     assert result["proposed_decree"] is None
+    assert result["proposed_dream"] is None
     assert result["reasoning"]
 
 
@@ -166,6 +167,33 @@ async def test_prompt_asks_for_honest_judgment_not_a_scripted_outcome():
 
     assert "not what should have happened" in client.last_prompt
     assert "That judgment is yours to make" in client.last_prompt
+
+
+@run_async
+async def test_prompt_omits_the_dream_question_without_a_dmm():
+    client = _FakeClient({"revised_philosophy": "x"})
+
+    await reflect_on_history(client, "llama3", "Forest Tribe", "caution and hoarding", [])
+
+    assert "Dream Manifestation Machine" not in client.last_prompt
+
+
+@run_async
+async def test_prompt_asks_for_a_grounded_dream_once_the_dmm_stands():
+    """Explicit request, 2026-09-13: "It makes real the dreams of the Chief" --
+    the dream must be grounded in something that actually happened, not generic
+    wish-fulfillment, mirroring the original idea: a chief who tasted good food
+    dreaming of Kitchen. Also confirms the DMM, not the chief, names the result."""
+    client = _FakeClient({"revised_philosophy": "x"})
+
+    await reflect_on_history(
+        client, "llama3", "Forest Tribe", "caution and hoarding", ["survived a raid"], dmm_built=True,
+    )
+
+    assert "Dream Manifestation Machine" in client.last_prompt
+    assert "grounded in something real that just happened" in client.last_prompt
+    assert "the Machine will name whatever it manifests" in client.last_prompt
+    assert "proposed_dream" in client.last_prompt
 
 
 @run_async

@@ -2269,31 +2269,31 @@ def test_use_item_is_a_no_op_with_no_items():
     assert (tribe.wood, tribe.stone) == (wood_before, stone_before)
 
 
-def test_build_object_creator_places_a_real_building():
+def test_build_dmm_places_a_real_building():
     from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     _settle(sim, tribe)
-    tribe.wood = config.OBJECT_CREATOR_WOOD_COST
-    tribe.stone = config.OBJECT_CREATOR_STONE_COST
+    tribe.wood = config.DMM_WOOD_COST
+    tribe.stone = config.DMM_STONE_COST
 
-    result = ACTION_REGISTRY["BUILD_OBJECT_CREATOR"](sim, tribe, "plains", _NO_TARGET)
+    result = ACTION_REGISTRY["BUILD_DMM"](sim, tribe, "plains", _NO_TARGET)
 
-    assert tribe.object_creator_built is True
+    assert tribe.dmm_built is True
     assert tribe.wood == 0
     assert tribe.stone == 0
-    assert any(b["type"] == "object_creator" for b in tribe.buildings)
+    assert any(b["type"] == "dmm" for b in tribe.buildings)
     assert any(t["name"] == "Visionary" for t in tribe.trophies)
-    assert "Object Creator" in result
+    assert "Dream Manifestation Machine" in result
 
     # One-time -- a second attempt is a no-op even with resources restocked.
-    tribe.wood = config.OBJECT_CREATOR_WOOD_COST
-    tribe.stone = config.OBJECT_CREATOR_STONE_COST
-    assert ACTION_REGISTRY["BUILD_OBJECT_CREATOR"](sim, tribe, "plains", _NO_TARGET) is None
+    tribe.wood = config.DMM_WOOD_COST
+    tribe.stone = config.DMM_STONE_COST
+    assert ACTION_REGISTRY["BUILD_DMM"](sim, tribe, "plains", _NO_TARGET) is None
 
 
-def test_create_item_requires_the_object_creator_and_grants_a_bounded_effect():
+def test_create_item_requires_the_dmm_and_grants_a_bounded_effect():
     from unittest import mock
 
     from backend import config
@@ -2303,10 +2303,10 @@ def test_create_item_requires_the_object_creator_and_grants_a_bounded_effect():
     tribe.wood = config.CREATE_ITEM_WOOD_COST
     tribe.stone = config.CREATE_ITEM_STONE_COST
 
-    # No Object Creator built yet.
+    # No DMM built yet.
     assert ACTION_REGISTRY["CREATE_ITEM"](sim, tribe, "plains", _NO_TARGET) is None
 
-    tribe.object_creator_built = True
+    tribe.dmm_built = True
     with mock.patch("backend.actions.random.choice", return_value=config.CREATED_OBJECT_NAMES[0]):
         result = ACTION_REGISTRY["CREATE_ITEM"](sim, tribe, "plains", _NO_TARGET)
 
@@ -2323,16 +2323,35 @@ def test_create_item_requires_the_object_creator_and_grants_a_bounded_effect():
     assert created["name"] in result
 
 
+def test_create_item_requires_the_dmm_to_be_off_cooldown():
+    """New 2026-09-13: previously CREATE_ITEM/CREATE_USEFUL_STRUCTURE had no
+    cadence limit at all -- a live run used the DMM 33 times in under 100
+    cycles. A tribe mid-cooldown gets a silent no-op, same shape as any other
+    action whose handler has a guard the affordability table doesn't mirror."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.dmm_built = True
+    tribe.wood = config.CREATE_ITEM_WOOD_COST
+    tribe.stone = config.CREATE_ITEM_STONE_COST
+    tribe.dmm_cooldown_until_cycle = sim.cycle + 1
+
+    assert ACTION_REGISTRY["CREATE_ITEM"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.created_objects == []
+
+
 def test_create_item_categories_cycle_round_robin_not_randomly():
     from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.object_creator_built = True
+    tribe.dmm_built = True
     n = len(config.CREATED_OBJECT_CATEGORIES)
     for i in range(n + 2):
         tribe.wood = config.CREATE_ITEM_WOOD_COST
         tribe.stone = config.CREATE_ITEM_STONE_COST
+        tribe.dmm_cooldown_until_cycle = 0  # isolate round-robin from the cooldown, tested separately
         ACTION_REGISTRY["CREATE_ITEM"](sim, tribe, "plains", _NO_TARGET)
         assert tribe.created_objects[i]["category"] == config.CREATED_OBJECT_CATEGORIES[i % n]
 
@@ -2342,7 +2361,7 @@ def test_create_item_population_boost_grants_population_immediately():
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.object_creator_built = True
+    tribe.dmm_built = True
     boost_index = config.CREATED_OBJECT_CATEGORIES.index("population_boost")
     # Pre-fill created_objects so the next creation's round-robin index lands
     # exactly on population_boost, rather than depending on menu order.
@@ -2357,13 +2376,50 @@ def test_create_item_population_boost_grants_population_immediately():
     assert "new people" in result
 
 
+def test_create_item_uses_a_grounded_chief_dream_to_pick_the_category_instead_of_round_robin():
+    """"It makes real the dreams of the Chief" -- explicit request, 2026-09-13.
+    A live tribe.chief_dream that matches a real category (here, hunger/food
+    keywords) wins over the round-robin rotation; the DMM still names the
+    result, never the chief (config.CREATED_OBJECT_NAMES, not the dream text)."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.dmm_built = True
+    tribe.wood = config.CREATE_ITEM_WOOD_COST
+    tribe.stone = config.CREATE_ITEM_STONE_COST
+    tribe.chief_dream = "After the last harvest failed, I dreamed of never going hungry again"
+
+    ACTION_REGISTRY["CREATE_ITEM"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.created_objects[0]["category"] == "gather_boost"
+    assert tribe.created_objects[0]["name"] in config.CREATED_OBJECT_NAMES
+    assert tribe.chief_dream is None  # consumed, whether matched or not
+
+
+def test_create_item_falls_back_to_round_robin_when_the_dream_matches_nothing():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.dmm_built = True
+    tribe.wood = config.CREATE_ITEM_WOOD_COST
+    tribe.stone = config.CREATE_ITEM_STONE_COST
+    tribe.chief_dream = "a strange and formless vision, unlike anything before"
+
+    ACTION_REGISTRY["CREATE_ITEM"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.created_objects[0]["category"] == config.CREATED_OBJECT_CATEGORIES[0]
+    assert tribe.chief_dream is None
+
+
 def test_create_useful_structure_places_a_real_building():
     from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     _settle(sim, tribe)
-    tribe.object_creator_built = True
+    tribe.dmm_built = True
     tribe.wood = config.CREATE_USEFUL_STRUCTURE_WOOD_COST
     tribe.stone = config.CREATE_USEFUL_STRUCTURE_STONE_COST
 
