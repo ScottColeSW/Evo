@@ -465,6 +465,7 @@
           <div class="icon-key-row"><span class="icon-key-icon">💎</span> Mine</div>
           <div class="icon-key-row"><span class="icon-key-icon">🍲</span> Kitchen</div>
           <div class="icon-key-row"><span class="icon-key-icon">🦫</span> Tannery</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🦌</span> Deer Pen</div>
           <div class="icon-key-row"><span class="icon-key-icon">🔨</span> Forge</div>
           <div class="icon-key-row"><span class="icon-key-icon">🏬</span> Warehouse</div>
           <div class="icon-key-row"><span class="icon-key-icon">⚓</span> Dock</div>
@@ -4616,8 +4617,14 @@ function farmingPanel(t) {
     industry.push(`🦫 Tannery — ${TANNERY_YIELD_PER_CYCLE} Fur/day (${amount} stored)`);
   }
   if (t.deer_pen_built) {
+    // Live bug, confirmed 2026-09-14: this said "/cycle" until the backend's
+    // own feed-into-tannery block (Simulation._advance_tannery_yield) was
+    // fixed the same session to fire once a real day instead of every single
+    // cycle (the exact Deer Pen depletion bug this text used to describe
+    // wrong even before that fix -- "X-Y/cycle" was never accurate once the
+    // gate was corrected).
     industry.push(
-      `🦌 Deer Pen — ${t.deer} deer, feeding ${DEER_PEN_DAILY_FEED_MIN}-${DEER_PEN_DAILY_FEED_MAX}/cycle into the tannery`
+      `🦌 Deer Pen — ${t.deer} deer, feeding ${DEER_PEN_DAILY_FEED_MIN}-${DEER_PEN_DAILY_FEED_MAX}/day into the tannery`
     );
   }
   if (t.forge_built) {
