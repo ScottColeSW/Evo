@@ -8029,7 +8029,7 @@ async def test_settled_tribe_with_a_farm_plot_does_not_dehydrate_over_many_cycle
 
     sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
     tribe = sim.tribes["tribe_0"]
-    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
+    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call for the *initial* election in step()
     tribe.has_ever_settled = True
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.population = 37
@@ -8040,7 +8040,19 @@ async def test_settled_tribe_with_a_farm_plot_does_not_dehydrate_over_many_cycle
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
          mock.patch("backend.simulation.reflect_on_history", mock.AsyncMock(
              return_value={"revised_philosophy": "x", "changed": False, "reasoning": ""}
-         )):
+         )), \
+         mock.patch("backend.simulation.name_settlement", mock.AsyncMock(
+             return_value={"settlement_name": "Test Settlement", "note": ""}
+         )), \
+         mock.patch("backend.simulation.breed_individuals", mock.AsyncMock(
+             return_value={"child_name": "Test Child", "note": ""}
+         )), \
+         mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=_FAKE_CHIEF)):
+        # name_settlement fires as soon as _is_settled_near_water is true (it is here);
+        # breed_individuals can fire too, over 40 cycles, via the real (unmocked)
+        # NIGHT_CYCLE_RANDOM_BREED_CHANCE roll at the cycle-30 night boundary; and
+        # elect_chief can fire via the real (unmocked) chief-death-on-population-loss
+        # roll (_apply_population_loss) installing a successor once Ashgar falls.
         for _ in range(40):
             await sim.step()
 
@@ -8150,7 +8162,13 @@ async def test_settled_scouts_hazard_rolls_are_gated_to_the_dawn_boundary():
     }]
     sim.cycle = config.DAY_LENGTH_CYCLES // 2  # comfortably off the boundary for several cycles running
 
-    with mock.patch("backend.simulation.random.random", return_value=0.0):  # guarantees the hazard hits when rolled
+    # random.random forced to 0.0 guarantees the hazard hits when rolled -- it also
+    # forces the celebration-triggered breed chance to hit every time, so
+    # breed_individuals needs mocking here too.
+    with mock.patch("backend.simulation.random.random", return_value=0.0), \
+         mock.patch("backend.simulation.breed_individuals", mock.AsyncMock(
+             return_value={"child_name": "Test Child", "note": ""}
+         )):
         with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
             for _ in range(5):  # five straight cycles sitting on the volcano -- would be 5 rolls under the old code
                 await sim.step()

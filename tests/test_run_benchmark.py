@@ -9,6 +9,10 @@ from tests.conftest import run_async
 import run_benchmark
 
 _FAKE_CHIEF = {"chief_name": "Test Chief", "victory_method": "a coin flip", "guiding_philosophy": "test philosophy"}
+# A real food surplus can trigger _check_for_celebration's breeding chance even within
+# these short trials, hitting a real, unmocked breed_individuals() network call --
+# same class of gap elect_chief above already guards against.
+_FAKE_CHILD = {"child_name": "Test Child", "note": ""}
 
 
 async def _fake_run_batch(self, requests):
@@ -64,6 +68,7 @@ async def test_run_trial_stops_at_the_cycle_budget_and_records_a_row(tmp_path, m
 
     with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls, \
          mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=_FAKE_CHIEF)), \
+         mock.patch("backend.simulation.breed_individuals", mock.AsyncMock(return_value=_FAKE_CHILD)), \
          mock.patch("backend.scheduler.ModelBatchScheduler.run_batch", _fake_run_batch), \
          mock.patch("backend.ollama_client.OllamaClient.unload_model", mock.AsyncMock()):
         mock_guard_cls.return_value.verify_vram_safety_margin = mock.AsyncMock(return_value=(True, ""))
@@ -88,6 +93,7 @@ async def test_run_trial_is_deterministic_given_the_same_seed(tmp_path, monkeypa
 
     with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls, \
          mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=_FAKE_CHIEF)), \
+         mock.patch("backend.simulation.breed_individuals", mock.AsyncMock(return_value=_FAKE_CHILD)), \
          mock.patch("backend.scheduler.ModelBatchScheduler.run_batch", _fake_run_batch), \
          mock.patch("backend.ollama_client.OllamaClient.unload_model", mock.AsyncMock()):
         mock_guard_cls.return_value.verify_vram_safety_margin = mock.AsyncMock(return_value=(True, ""))
@@ -106,6 +112,7 @@ async def test_run_trial_extracts_facts_for_both_tribes_in_a_two_tribe_scenario(
 
     with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls, \
          mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=_FAKE_CHIEF)), \
+         mock.patch("backend.simulation.breed_individuals", mock.AsyncMock(return_value=_FAKE_CHILD)), \
          mock.patch("backend.scheduler.ModelBatchScheduler.run_batch", _fake_run_batch), \
          mock.patch("backend.ollama_client.OllamaClient.unload_model", mock.AsyncMock()):
         mock_guard_cls.return_value.verify_vram_safety_margin = mock.AsyncMock(return_value=(True, ""))
