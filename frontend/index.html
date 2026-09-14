@@ -147,6 +147,15 @@
   #btn-game-over-quit:hover { background: #991b1b; }
   #btn-return-to-summary { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 101; padding: 10px 22px; font-size: 13px; font-weight: bold; letter-spacing: 0.5px; border-radius: 6px; border: 1px solid #475569; background: rgba(15,15,20,0.9); color: #e2e2e7; cursor: pointer; }
   #btn-return-to-summary:hover { background: rgba(30,30,40,0.95); }
+  /* Live bug, confirmed 2026-09-14: every other "hidden" toggle in this file has a
+     matching #id.hidden{display:none} rule, but this one never got one -- so the
+     button rendered on top of every screen, live games included, from the moment
+     #theater became visible, regardless of its "hidden" class. Clicking it mid-game
+     called showGameOverSplash(latestState) on a live (non-game-over) snapshot,
+     producing a "SIMULATION COMPLETE" splash with a blank verdict and no trophies
+     for a game that was still running -- confusing even though VIEW FINAL BOARD
+     still worked to get back. This is the actual missing rule. */
+  #btn-return-to-summary.hidden { display: none; }
 
   /* Battle popup: DECLARE_CONQUEST's multi-round war of attrition, played back
      round by round -- see backend/actions.py's _declare_conquest docstring. */
