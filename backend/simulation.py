@@ -7567,6 +7567,21 @@ class Simulation:
         daily -- mirrors _advance_mine_yield exactly, into the same
         unique_resources dict.
 
+        Live report, 2026-09-14: "tannery only works if deer hunt or deer pen
+        work." BUILD_TANNERY's own gate (tribe.hunt_ever_succeeded) is
+        satisfied by ANY successful hunt -- including a HUNTING_PARTY catch at
+        a Rabbit Warren or Wolf Den that never involved a deer at all
+        (Simulation._report_hunting_party_home sets the same flag regardless
+        of species). The ongoing flat Fur trickle used to fire off that same
+        generic flag, meaning a tribe that only ever hunted rabbits could
+        still passively process hides with no real deer connection. Now
+        requires real, deer-specific activity: at least one successful
+        HUNT_DEER (tribe.hunt_deer_success_count, distinct from the generic
+        hunt_ever_succeeded) or a Deer Pen actually standing. Not touching
+        BUILD_TANNERY's own build gate -- "the Tannery should come online
+        easily, as they only need to have hunted" was itself an explicit
+        simplification; this only tightens what keeps it *producing*.
+
         Explicit follow-up, 2026-09-11: "DEER_PEN that will auto-feed the Tannery
         1-3 deer a day." Once a Deer Pen exists too (which already implies a
         Tannery -- see actions.py._build_deer_pen's own gate), this feeds a real
@@ -7575,6 +7590,13 @@ class Simulation:
         better off, never worse. The herd's own upkeep/breeding (_advance_deer_pen,
         called just before this in step()) is what makes this sustainable
         ("automagically") instead of a one-time drain.
+
+        Live report, 2026-09-14: "deer pen output is for both kitchen and
+        tannery; meat, skin." Each deer fed now also yields meat (config.
+        MEAT_PER_DEER_FED), same shape actions._hunt_deer's own
+        TANNERY_MEAT_BONUS_PER_HUNT already gives an instant hunt -- through
+        _food_multiplier like every other food source in this game (fishing,
+        farming, expedition catches), not a bare addition.
 
         Live bug, confirmed against a real run (run_20260913_113112): a Deer Pen
         founded at cycle 81 with its starting 2 deer (config.DEER_PEN_FOUNDING_COUNT)
@@ -7586,13 +7608,16 @@ class Simulation:
         already tells the story of once. The herd never had a chance to breed
         (_advance_deer_pen's 15% per-cycle chance, gated on tribe.deer >= 2) before
         being fed to zero. Gated the same way, on a day boundary."""
-        if tribe.tannery_built and self._is_camped(tribe):
+        deer_proven = tribe.hunt_deer_success_count > 0 or tribe.deer_pen_built
+        if tribe.tannery_built and deer_proven and self._is_camped(tribe):
             self._capped_unique_add(tribe, "Fur", config.TANNERY_YIELD_PER_CYCLE)
         if tribe.deer_pen_built and tribe.deer > 0 and self.cycle % config.DAY_LENGTH_CYCLES == 0:
             fed = min(tribe.deer, random.randint(config.DEER_PEN_DAILY_FEED_MIN, config.DEER_PEN_DAILY_FEED_MAX))
             if fed > 0:
                 tribe.deer -= fed
                 self._capped_unique_add(tribe, "Fur", fed * config.FUR_PER_DEER_FED)
+                meat = round(fed * config.MEAT_PER_DEER_FED * _food_multiplier(tribe))
+                self._capped_add(tribe, "food", meat)
 
     def _advance_resource_trails(self, tribe: Tribe) -> None:
         """Explicit request: "if they have found a Quarry, Mine, Stand of Trees

@@ -4623,8 +4623,12 @@ function farmingPanel(t) {
     // cycle (the exact Deer Pen depletion bug this text used to describe
     // wrong even before that fix -- "X-Y/cycle" was never accurate once the
     // gate was corrected).
+    //
+    // Live report, 2026-09-14: "deer pen output is for both kitchen and
+    // tannery; meat, skin." Each deer fed now yields food too (config.
+    // MEAT_PER_DEER_FED), not just Fur -- text updated to say so.
     industry.push(
-      `🦌 Deer Pen — ${t.deer} deer, feeding ${DEER_PEN_DAILY_FEED_MIN}-${DEER_PEN_DAILY_FEED_MAX}/day into the tannery`
+      `🦌 Deer Pen — ${t.deer} deer, feeding ${DEER_PEN_DAILY_FEED_MIN}-${DEER_PEN_DAILY_FEED_MAX}/day into the tannery for meat and hide`
     );
   }
   if (t.forge_built) {

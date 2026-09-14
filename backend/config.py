@@ -1867,6 +1867,11 @@ DEER_NATURAL_BREED_CHANCE = 0.15
 DEER_PEN_DAILY_FEED_MIN = 1
 DEER_PEN_DAILY_FEED_MAX = 3
 FUR_PER_DEER_FED = 2
+# Live report, 2026-09-14: "deer pen output is for both kitchen and tannery;
+# meat, skin." A deer fed to the tannery yields meat too, not just hide --
+# same shape actions._hunt_deer's own TANNERY_MEAT_BONUS_PER_HUNT already
+# uses for an instant hunt, just applied to the Pen's daily feed instead.
+MEAT_PER_DEER_FED = 2
 
 # BUILD_KITCHEN (backend/actions.py): explicit follow-up -- "we might have to let
 # them build a kitchen which improves cooked food to excellent food yielding 3
