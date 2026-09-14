@@ -374,7 +374,30 @@ def _warehouse_capacity_note(tribe: "Tribe") -> str:
 
     A standalone function (unlike diversification_note's own inline block) so an A/B
     test can monkeypatch it off for a baseline run without touching real game
-    mechanics -- see scripts/ab_test_growth_facts.py."""
+    mechanics -- see scripts/ab_test_growth_facts.py.
+
+    Extended 2026-09-14, live-run finding (run_20260914_093337): Tribe 1 built all
+    5 warehouses by cycle 343 (storage cap 2300/resource), then sat with wood,
+    stone, and food all pinned at exactly 2300 from roughly cycle 350 through past
+    cycle 640 -- "the farm plots yield a harvest -- 0 food gathered in (stores
+    nearly full, ...)" fired 136 times in that run's jsonl, and the tribe never
+    chose UPGRADE_WAREHOUSE once in that whole window despite it costing only 40
+    wood/35 stone (trivially affordable against a 2300 balance). A nudge for
+    exactly this transition already existed (added 2026-09-12, "action-legibility
+    audit") but was appended to visible_entities -- the same generic, buried list
+    era_gap_note/diversification_note/this function's own first-warehouse case
+    were deliberately pulled OUT of, for the explicitly documented reason "a fact
+    buried in the generic list gets ignored even when it's true" (see growth_note's
+    own comment a little further down in _prepare_turn). The 2026-09-12 fix
+    reintroduced that exact mistake one tier further down the warehouse's own
+    lifecycle instead of mirroring the elevated placement its first-warehouse
+    sibling right above already uses. Folded in here instead of left as a
+    parallel, lower-salience duplicate, so it gets the same GROWTH IMPERATIVE
+    LAYER prompt slot. Affordability re-checked inline (mirrors AFFORDABILITY_
+    CHECKS["UPGRADE_WAREHOUSE"]/actions._upgrade_warehouse's own cost formula)
+    rather than threading available_actions through this function's signature,
+    so scripts/ab_test_growth_facts.py's single-argument monkeypatch keeps
+    working unchanged."""
     if tribe.warehouses_built == 0 and _warehouse_needed(tribe):
         return (
             f"Population ({tribe.population}) has already outgrown the storage cap "
@@ -382,6 +405,15 @@ def _warehouse_capacity_note(tribe: "Tribe") -> str:
             "harvest that arrives faster than it's spent overflows and is lost for good. Building "
             "a warehouse raises that ceiling for good."
         )
+    if tribe.warehouses_built >= config.WAREHOUSE_MAX_COUNT and _warehouse_needed(tribe):
+        tier = tribe.warehouse_upgrades
+        upgrade_wood_cost = round(config.WAREHOUSE_UPGRADE_WOOD_COST_BASE * (1 + tier * config.WAREHOUSE_UPGRADE_COST_GROWTH))
+        upgrade_stone_cost = round(config.WAREHOUSE_UPGRADE_STONE_COST_BASE * (1 + tier * config.WAREHOUSE_UPGRADE_COST_GROWTH))
+        if tribe.wood >= upgrade_wood_cost and tribe.stone >= upgrade_stone_cost:
+            return (
+                f"Warehouses are at their built limit ({tribe.warehouses_built}) and storage is still "
+                "under real pressure -- UPGRADE_WAREHOUSE is the only way to raise that ceiling further."
+            )
     return ""
 
 
@@ -4409,17 +4441,16 @@ class Simulation:
                         f"further, toward the {next_tier[1]} needed for a {next_tier[0]}."
                     )
 
-        # NUDGE (2026-09-12, action-legibility audit): the exact same cap-transition
-        # gap UPGRADE_LONG_HOUSE was just fixed for above, unmirrored to its closest
-        # sibling. _warehouse_needed already gates UPGRADE_WAREHOUSE's own
-        # AFFORDABILITY_CHECKS entry (raising the cap only matters if storage is
-        # actually pressured), reused here so this never fires for a warehouse-capped
-        # tribe that genuinely has room to spare.
-        if "UPGRADE_WAREHOUSE" in available_actions and tribe.warehouses_built >= config.WAREHOUSE_MAX_COUNT and _warehouse_needed(tribe):
-            visible_entities.append(
-                f"Warehouses are at their built limit ({tribe.warehouses_built}) and storage is still "
-                "under real pressure -- UPGRADE_WAREHOUSE is the only way to raise that ceiling further."
-            )
+        # The UPGRADE_WAREHOUSE cap-transition case that used to live here (added
+        # 2026-09-12, "action-legibility audit") moved into _warehouse_capacity_note
+        # instead -- see that function's 2026-09-14 docstring update for why a fact
+        # appended straight to visible_entities (this generic, buried list) turned
+        # out to be exactly the low-salience mistake era_gap_note/diversification_note
+        # were already fixed for, confirmed live: run_20260914_093337's Tribe 1 sat
+        # at the warehouse cap for 300+ cycles with this exact fact true and firing
+        # every single cycle, and never once chose UPGRADE_WAREHOUSE. Same real,
+        # computed condition, now delivered through the elevated GROWTH IMPERATIVE
+        # LAYER slot instead of duplicated here.
         # NUDGE (2026-09-12, same audit): identical shape, one tier further down the
         # same pattern -- a Barracks caps how large a battalion can ever grow
         # (actions._battalion_capacity), and nothing announces the moment that cap is

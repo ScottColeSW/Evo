@@ -765,6 +765,98 @@ def test_upgrade_warehouse_nudge_silent_when_storage_has_room_to_spare():
     assert "Warehouses are at their built limit" not in request["prompt"]
 
 
+def test_upgrade_warehouse_cap_note_reaches_the_elevated_growth_layer():
+    """Live-run finding (run_20260914_093337): Tribe 1 hit the warehouse build cap
+    at cycle 343 (5 built, storage capped at 2300/resource) and then sat with wood,
+    stone, and food all pinned at exactly that ceiling for 300+ cycles, never once
+    choosing UPGRADE_WAREHOUSE despite it costing only 40 wood/35 stone -- trivially
+    affordable. The cap-transition fact for this exact case already existed (added
+    2026-09-12) but lived in visible_entities, the same generic, buried list
+    era_gap_note/diversification_note/_warehouse_capacity_note's own first-warehouse
+    case were deliberately elevated OUT of into the GROWTH IMPERATIVE LAYER prompt
+    slot, for the documented reason that a fact buried in the generic list gets
+    ignored even when it's true. This test confirms the fact now flows through
+    growth_note (compile_live_state_prompt's elevated section, wrapped with the same
+    "Your people are grateful for steady leadership..." framing every other
+    growth_note fact gets) instead of being a bare, unwrapped visible_entities line --
+    the actual, grounded difference between the old (demonstrably ineffective) nudge
+    and this one."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "monolithic_era"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT
+    tribe.warehouse_upgrades = 0
+    cap = config.STORAGE_CAP_BASE + config.WAREHOUSE_MAX_COUNT * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+    tribe.wood = tribe.stone = tribe.food = tribe.water = cap  # pinned at the cap, like the real run
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    # The growth_note wrapper (compile_live_state_prompt/_growth_pressure_text) is
+    # what proves this reached the elevated slot rather than the generic, buried
+    # visible_entities list -- checked separately from the fact text itself since
+    # era_gap_note may also be riding along in the same growth_note string.
+    assert "Your people are grateful for steady leadership, and now look to you for what comes next." in request["prompt"]
+    assert (
+        f"Warehouses are at their built limit ({config.WAREHOUSE_MAX_COUNT}) and storage is still "
+        "under real pressure -- UPGRADE_WAREHOUSE is the only way to raise that ceiling further."
+    ) in request["prompt"]
+
+
+def test_warehouse_capacity_note_silent_when_the_upgrade_itself_is_unaffordable():
+    """Point 3 of the fix: never suggest UPGRADE_WAREHOUSE as "the only way" when the
+    tribe genuinely can't afford it this cycle -- mirrors AFFORDABILITY_CHECKS[
+    "UPGRADE_WAREHOUSE"]'s own cost gate rather than assuming maxed-out warehouses
+    plus real pressure is automatically actionable."""
+    from backend.simulation import _warehouse_capacity_note
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Plains Tribe", "gemma2:2b", 65, 65, "#c084fc")
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT
+    tribe.warehouse_upgrades = 0
+    cap = config.STORAGE_CAP_BASE + config.WAREHOUSE_MAX_COUNT * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+    tribe.population = cap  # real pressure, per _warehouse_needed
+    tribe.wood = 0  # can't actually afford the upgrade this cycle
+    tribe.stone = 0
+
+    assert _warehouse_capacity_note(tribe) == ""
+
+
+def test_warehouse_capacity_note_clears_once_an_upgrade_raises_the_cap():
+    """Confirms the fact is a live read of the CURRENT cap, not a one-shot latch --
+    the moment UPGRADE_WAREHOUSE actually lands (warehouse_upgrades += 1, per
+    actions._upgrade_warehouse) and resources settle back under the newly-raised
+    cap, the note falls silent again, exactly like a fresh warehouse clears the
+    first-warehouse case just above it in this same function."""
+    from backend.simulation import _warehouse_capacity_note
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Plains Tribe", "gemma2:2b", 65, 65, "#c084fc")
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT
+    tribe.warehouse_upgrades = 0
+    old_cap = config.STORAGE_CAP_BASE + config.WAREHOUSE_MAX_COUNT * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+    tribe.population = old_cap
+    tribe.wood = tribe.stone = tribe.food = tribe.water = old_cap
+
+    assert "UPGRADE_WAREHOUSE is the only way" in _warehouse_capacity_note(tribe)
+
+    # UPGRADE_WAREHOUSE just landed: cap rose by another bonus step, population
+    # stayed put, and the resources it was pinned at now sit comfortably below
+    # the new ceiling instead of hard against it.
+    tribe.warehouse_upgrades = 1
+    new_cap = old_cap + config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+    tribe.population = old_cap
+    tribe.wood = tribe.stone = tribe.food = tribe.water = round(new_cap * 0.5)
+
+    assert _warehouse_capacity_note(tribe) == ""
+
+
 def test_upgrade_barracks_nudge_fires_at_the_build_cap_when_battalion_is_full():
     from backend import config
 
