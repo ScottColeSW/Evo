@@ -2902,7 +2902,22 @@ const GENERAL_LANDMARK_ICONS = [
 ]; // rock, sprout, amphora, feather, nazar amulet, coin
 
 const LANDMARK_TYPES = [
-  ["confirmed_water_sites", WATER_LANDMARK_ICON, [0, 0], "Water"],       // droplet, centered
+  // Live report, 2026-09-14 (an 8-day/~800-cycle run): "Tribe 1's hut being
+  // hidden by a Water icon." Confirmed water is very often found right at the
+  // tribe's own settlement tile -- that's WHY it settled there -- so the old
+  // [0, 0] "centered" offset routinely landed this landmark exactly on top of
+  // drawSettlementMarker's own hut icon, which paints earlier in the same
+  // frame (see drawFrame's draw-order comment). Left at [0, 0] here -- a
+  // static per-type tile offset can't fix this the way it does for the other
+  // entries below: drawSettlementMarker's disc is a real pixel floor (Math.
+  // max(11, TILE * MOON_CORE_RADIUS_TILES / 3)), not tile-relative, and this
+  // map's actual TILE is only ~5-6px (see this function's own comment above),
+  // so no fixed tile-multiple offset clears it at that scale without also
+  // dragging an ISOLATED water site (the common case) uselessly far from
+  // where it was actually found. Handled instead as a real collision check
+  // against this tribe's own territory_center, right where the entry is
+  // drawn below -- only nudged when it would actually overlap the hut.
+  ["confirmed_water_sites", WATER_LANDMARK_ICON, [0, 0], "Water"],   // droplet, collision-checked below
   ["lumber_sites", "\u{1F332}", [-0.55, -0.4], "Timber"],          // evergreen, upper-left
   ["wildlife_sites", "\u{1F43E}", [0.55, -0.4], "Game"],         // paw prints, upper-right
   ["quarry_sites", "⛏️", [0, 0.55], "Quarry"],           // pick, lower-center
@@ -3096,9 +3111,29 @@ function drawLandmarks() {
       (t[field] || []).forEach(entry => {
         const [x, y] = Array.isArray(entry) ? entry : [entry.x, entry.y];
         const entryLabel = entry && (entry.type || entry.resource || entry.name) ? (entry.type || entry.resource || entry.name) : label;
-        const cx = x * TILE + TILE / 2 + ox * TILE;
-        const cy = y * TILE + TILE / 2 + oy * TILE;
+        let cx = x * TILE + TILE / 2 + ox * TILE;
+        let cy = y * TILE + TILE / 2 + oy * TILE;
         const r = Math.max(8, TILE * 0.55);
+        // See this field's own LANDMARK_TYPES comment above -- a confirmed water
+        // site found at the settlement's own tile used to draw dead-center on
+        // drawSettlementMarker's hut icon and hide it. Nudged directly away from
+        // the real hut anchor, by the two discs' own actual radii (computed in
+        // the same pixel units the overlap happens in), only when they'd
+        // actually collide -- an isolated water site elsewhere is untouched.
+        if (field === "confirmed_water_sites" && t.territory_center) {
+          const [hutTileX, hutTileY] = landAnchor(...t.territory_center);
+          const hutCx = hutTileX * TILE + TILE / 2;
+          const hutCy = hutTileY * TILE + TILE / 2;
+          const hutR = Math.max(11, (TILE * MOON_CORE_RADIUS_TILES) / 3);
+          const dx = cx - hutCx, dy = cy - hutCy;
+          const dist = Math.hypot(dx, dy);
+          const clearance = hutR + r + 4;
+          if (dist < clearance) {
+            const angle = dist > 0.5 ? Math.atan2(dy, dx) : -Math.PI / 2;
+            cx = hutCx + Math.cos(angle) * clearance;
+            cy = hutCy + Math.sin(angle) * clearance;
+          }
+        }
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, 2 * Math.PI);
         ctx.fillStyle = "rgba(10,14,26,0.92)";
