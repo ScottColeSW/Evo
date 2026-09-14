@@ -24,9 +24,14 @@ def test_survival_bias_now_names_a_concrete_response():
     hunt" on its own was more honest than scripting the outcome. Explicit request:
     nudge harder. This still isn't a forced action -- available_actions and the
     model's own choice are untouched -- but the fact block no longer pretends not to
-    know what the tribe actually needs."""
+    know what the tribe actually needs.
+
+    Live report, 2026-09-14 (8-day run): naming the CONCEPT ("gather food") isn't
+    the same as naming the actual ACTION_REGISTRY token the model has to emit --
+    that's a real inferential leap, the same "facts vs mechanics" gap this project
+    keeps finding elsewhere. Now checks for the literal tokens directly."""
     food_text, _ = survival_bias_string(food=1, water=50, population=SMALL_TRIBE)
-    assert "hunting party" in food_text or "gather food" in food_text
+    assert "HUNTING_PARTY" in food_text or "GATHER_FOOD" in food_text
 
     water_text, _ = survival_bias_string(food=50, water=1, population=SMALL_TRIBE)
     assert "gather water" in water_text or "scouts" in water_text
@@ -57,19 +62,19 @@ def test_critical_food_suggests_fishing_and_cooking_when_neither_is_learned():
     Kitchen as additional ideas." Fishing and cooking are always real options, not
     just gather/hunt."""
     text, _ = survival_bias_string(food=1, water=50, population=SMALL_TRIBE)
-    assert "fishing" in text
+    assert "CATCH_FISH" in text
     assert "cook" in text.lower()
 
 
 def test_warning_food_also_suggests_fishing_and_cooking_when_neither_is_learned():
     text, _ = survival_bias_string(food=3, water=50, population=SMALL_TRIBE)
-    assert "fishing" in text
+    assert "CATCH_FISH" in text
     assert "cook" in text.lower()
 
 
 def test_critical_food_omits_fishing_suggestion_once_already_learned():
     text, _ = survival_bias_string(food=1, water=50, population=SMALL_TRIBE, fishing_learned=True)
-    assert "fishing" not in text
+    assert "CATCH_FISH" not in text
 
 
 def test_critical_food_omits_cooking_suggestion_once_already_learned_and_kitchen_built():

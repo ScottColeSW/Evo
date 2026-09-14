@@ -67,24 +67,41 @@ def survival_bias_string(
     # once cooking is learned, the message keeps naming Kitchen specifically until
     # it's actually built, instead of going quiet the moment the first lever is
     # pulled.
+    #
+    # Explicit report, 2026-09-14 (a full 8-day/~800-cycle run): "these guys get
+    # gather commands and we are warning them to 'gather' food. that's a logic leap
+    # I don't think they are ready for." The comment above already claims this
+    # message names GATHER_FOOD/HUNTING_PARTY "directly," but the actual text only
+    # ever said the lowercase, informal "gather food" / "hunting" / "fishing" --
+    # never the literal action tokens (GATHER_FOOD, HUNT_DEER, HUNTING_PARTY,
+    # CATCH_FISH) the model actually has to emit, unlike every other nudge in this
+    # codebase (e.g. simulation.py's own "DECLARE_CONQUEST is a real, favorable bet
+    # now"), which always embeds the exact ACTION_REGISTRY key. Translating loose
+    # prose into the one correct token is exactly the kind of inferential leap this
+    # project's own "facts vs mechanics" pattern says a small model can't reliably
+    # make. GATHER_FOOD and HUNT_DEER are both unlocked from primitive_dawn (see
+    # eras.py) and never settlement-gated, so naming them unconditionally is always
+    # safe; CATCH_FISH stays behind the same fishing_learned gate as before (a
+    # pre-existing, separate question of whether it can dangle for an unsettled
+    # tribe -- not what was reported here, left alone).
     if food_secure:
         pass
     elif food <= upkeep * config.HUNGER_CRITICAL_CYCLES_LEFT:
-        message = "Your people are starving -- gather food, send a hunting party"
-        message += ", or try fishing now." if not fishing_learned else " now."
+        message = "Your people are starving -- GATHER_FOOD, HUNT_DEER, or HUNTING_PARTY would help right now"
+        message += "; CATCH_FISH is also worth trying." if not fishing_learned else "."
         if not cooking_learned:
-            message += " Learning to cook (build a fire, then cook after a successful hunt) would make every future harvest go much further."
+            message += " BUILD_FIRE, then cooking after a successful hunt, would make every future harvest go much further."
         elif not kitchen_built:
-            message += " Building a kitchen would multiply every future harvest even further, on top of what cooking already does."
+            message += " BUILD_KITCHEN would multiply every future harvest even further, on top of what cooking already does."
         urgent.append(message)
         critical = True
     elif food <= upkeep * config.HUNGER_WARNING_CYCLES_LEFT:
-        message = "Food stores are running low -- gathering food, hunting"
-        message += ", or fishing soon would help." if not fishing_learned else " soon would help."
+        message = "Food stores are running low -- GATHER_FOOD, HUNT_DEER, or HUNTING_PARTY soon would help"
+        message += "; CATCH_FISH is also an option." if not fishing_learned else "."
         if not cooking_learned:
-            message += " Learning to cook would help stored food last much longer too."
+            message += " BUILD_FIRE, then cooking after a successful hunt, would help stored food last much longer too."
         elif not kitchen_built:
-            message += " Building a kitchen would stretch it further still."
+            message += " BUILD_KITCHEN would stretch it further still."
         urgent.append(message)
 
     if water_secure:
