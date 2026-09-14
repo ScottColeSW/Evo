@@ -7767,6 +7767,7 @@ async def test_step_records_the_raw_prompt_and_response_in_the_debug_transcript(
     text the model sent back, captured every real turn."""
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
 
     async def fake_run_batch(requests):
         assert requests[0]["prompt"]  # a real prompt was actually built and passed through
@@ -7788,6 +7789,7 @@ async def test_debug_transcript_is_capped_at_the_configured_history_limit():
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
 
     async def fake_run_batch(requests):
         return {"tribe_0": {"intent": {"visual_action": "GATHER_WOOD"}, "latency_ms": 1.0, "raw_response": "{}"}}
@@ -7824,6 +7826,7 @@ async def test_dawn_gathering_chronicle_line_lands_before_this_cycles_own_action
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
     sim.cycle = config.DAY_LENGTH_CYCLES - 1  # step() increments before checking
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
@@ -7839,6 +7842,7 @@ async def test_step_holds_the_tribal_gathering_only_on_its_own_interval():
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
     sim.cycle = config.DAY_LENGTH_CYCLES - 1  # step() increments before checking
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
@@ -7853,6 +7857,7 @@ async def test_step_does_not_hold_the_tribal_gathering_off_its_interval():
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
     sim.cycle = config.DAY_LENGTH_CYCLES - 2
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
@@ -7874,6 +7879,7 @@ async def test_settled_tribe_with_a_farm_plot_does_not_dehydrate_over_many_cycle
 
     sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
     tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
     tribe.has_ever_settled = True
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.population = 37
@@ -7908,6 +7914,7 @@ async def test_step_advances_a_settled_tribes_expedition_position_but_not_its_da
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
     tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
     tribe.has_ever_settled = True
     tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [70, 50],
@@ -7940,6 +7947,7 @@ async def test_a_settled_tribes_scout_reverts_to_the_once_a_day_fast_batch_move(
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
     tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
     tribe.has_ever_settled = True
     tribe.expeditions = [{
         "kind": "scout", "pos": [50, 50], "origin": [50, 50], "target": [70, 50],
@@ -7981,6 +7989,7 @@ async def test_settled_scouts_hazard_rolls_are_gated_to_the_dawn_boundary():
     # cycle. (18, 13) is a clean 5 tiles from the volcano, real mountains.
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 18, "y": 13}])  # adjacent to the real volcano
     tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
     tribe.has_ever_settled = True
     tribe.population = 20
     tribe.expeditions = [{
@@ -8009,6 +8018,7 @@ async def test_step_advances_a_settled_tribes_expedition_day_and_gains_on_the_da
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
     tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
     tribe.has_ever_settled = True
     tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [70, 50],
@@ -8041,6 +8051,7 @@ async def test_step_advances_a_not_yet_settled_tribes_expeditions_every_cycle():
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
     tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
     assert tribe.has_ever_settled is False
     tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [70, 50],
@@ -8063,6 +8074,7 @@ async def test_step_advances_expeditions_on_the_dawn_boundary():
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
     tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
     tribe.has_ever_settled = True
     tribe.expeditions = [{
         "pos": [50, 50], "origin": [50, 50], "target": [70, 50],
@@ -11764,6 +11776,7 @@ async def test_step_skips_extinct_tribes_entirely():
     dead.extinct = True
     dead.population = 0
     frozen_history = list(dead.history)
+    sim.tribes["tribe_1"].chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
 
     async def fake_run_batch(requests):
         # only the living tribe ("B") should ever be asked for a turn
@@ -11934,6 +11947,7 @@ async def test_step_triggers_game_over_when_one_tribe_conquers_every_rival_and_h
     tribes = list(sim.tribes.values())
     winner, loser = tribes[0], tribes[1]
     sim._merge_tribes(winner, loser)
+    winner.chief_name = "Ashgar"  # _merge_tribes clears chief_name; avoid a real elect_chief() call
     winner.castle_built = True
     assert len(sim.tribes) == 1  # confirms the merge really happened before stepping
 
@@ -11962,6 +11976,7 @@ async def test_step_defers_world_domination_until_the_winner_also_builds_a_castl
     winner, loser = tribes[0], tribes[1]
     winner.era = "war_and_world_domination_era"
     sim._merge_tribes(winner, loser)
+    winner.chief_name = "Ashgar"  # _merge_tribes clears chief_name; avoid a real elect_chief() call
     assert winner.castle_built is False
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
@@ -11985,6 +12000,7 @@ async def test_step_triggers_golden_age_when_the_joint_castle_completes():
     sim._found_territory(tribe_a)
     sim._found_territory(tribe_b)
     tribe_a.era = tribe_b.era = "war_and_world_domination_era"
+    tribe_a.chief_name = tribe_b.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
     tribe_a.stance_toward[tribe_b.id] = "ALLIED"
     tribe_b.stance_toward[tribe_a.id] = "ALLIED"
     sim.joint_castle = {
@@ -12022,6 +12038,7 @@ async def test_step_does_not_mistake_two_independent_solo_castles_for_golden_age
     sim._found_territory(tribe_a)
     sim._found_territory(tribe_b)
     tribe_a.era = tribe_b.era = ERAS[-1].key
+    tribe_a.chief_name = tribe_b.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
     tribe_a.stance_toward[tribe_b.id] = "ALLIED"
     tribe_b.stance_toward[tribe_a.id] = "ALLIED"
     tribe_a.castle_built = True
@@ -12045,6 +12062,7 @@ async def test_step_holds_off_era_ceiling_while_the_joint_castle_is_still_in_pro
     sim._found_territory(tribe_a)
     sim._found_territory(tribe_b)
     tribe_a.era = tribe_b.era = "war_and_world_domination_era"
+    tribe_a.chief_name = tribe_b.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
     tribe_a.stance_toward[tribe_b.id] = "ALLIED"
     tribe_b.stance_toward[tribe_a.id] = "ALLIED"
     # No joint_castle started yet, neither has a Castle -- both at the top
@@ -12062,6 +12080,7 @@ async def test_step_does_not_trigger_world_domination_for_an_ordinary_solo_tribe
     this run) shouldn't be treated as having "won" -- conquests_won stays 0
     for a tribe that was simply always alone."""
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    sim.tribes["tribe_0"].chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
     assert len(sim.tribes) == 1
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
@@ -12145,6 +12164,7 @@ async def test_step_triggers_game_over_when_every_living_tribe_hits_the_era_ceil
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
     for tribe in sim.tribes.values():
         tribe.era = ERAS[-1].key
+        tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
          mock.patch("backend.simulation.generate_endgame_narrative", mock.AsyncMock(return_value="")), \
@@ -12166,6 +12186,8 @@ async def test_step_does_not_trigger_game_over_when_only_some_tribes_hit_the_era
     tribes = list(sim.tribes.values())
     tribes[0].era = ERAS[-1].key
     tribes[1].era = ERAS[0].key  # still has real progress left to make
+    for tribe in tribes:
+        tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
         await sim.step()
@@ -12445,6 +12467,7 @@ async def test_step_unloads_a_single_tribes_model_when_it_alone_goes_extinct():
     dying, surviving = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
     dying.population = 1
     dying.food = 0  # starves to extinction on this tick's upkeep
+    surviving.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
 
     async def fake_run_batch(requests):
         # SCOUT dispatches on the expedition's own separate supply -- "no drain on
@@ -12476,6 +12499,7 @@ async def test_step_does_not_unload_a_model_still_used_by_a_surviving_tribe():
     dying = sim.tribes["tribe_0"]
     dying.population = 1
     dying.food = 0
+    sim.tribes["tribe_1"].chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
 
     async def fake_run_batch(requests):
         return {
@@ -12534,7 +12558,11 @@ async def test_step_survives_a_conquest_merge_mid_loop_and_unloads_the_losers_mo
 
     with mock.patch.dict("backend.simulation.ACTION_REGISTRY", {"DECLARE_CONQUEST": fake_declare_conquest}), \
          mock.patch.object(sim.scheduler, "run_batch", fake_run_batch), \
-         mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
+         mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload, \
+         mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=_FAKE_CHIEF)):
+        # _merge_tribes clears the winner's chief_name mid-step (real "new
+        # leadership" mechanic) -- setting it beforehand wouldn't survive that,
+        # so elect_chief itself is mocked here to avoid a real network call.
         await sim.step()  # would raise RuntimeError before the list(...) fix
 
     assert loser.extinct is True
