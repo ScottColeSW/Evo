@@ -361,7 +361,7 @@ def _warehouse_needed(tribe) -> bool:
     return any(getattr(tribe, r) >= near_cap for r in ("wood", "stone", "food", "water"))
 
 
-def _warehouse_capacity_note(tribe: "Tribe") -> str:
+def _warehouse_capacity_note(tribe: "Tribe", current_cycle: int | None = None) -> str:
     """Live trace finding (run_20260908_082234): a tribe that grew past population
     1600 on the original STORAGE_CAP_BASE of 150 (never having built a warehouse)
     spent 70+ cycles oscillating between 0 food and a harvest overflowing back out --
@@ -397,7 +397,16 @@ def _warehouse_capacity_note(tribe: "Tribe") -> str:
     CHECKS["UPGRADE_WAREHOUSE"]/actions._upgrade_warehouse's own cost formula)
     rather than threading available_actions through this function's signature,
     so scripts/ab_test_growth_facts.py's single-argument monkeypatch keeps
-    working unchanged."""
+    working unchanged.
+
+    current_cycle is optional (defaults to None, skipping the cooldown-aware
+    branch entirely) for the same reason -- a monkeypatch replacement or any
+    other single-argument caller keeps working exactly as before; only the
+    real _prepare_turn call site passes self.cycle. See config.
+    WAREHOUSE_UPGRADE_COOLDOWN_DAYS's own comment for why the cooldown
+    exists (28 upgrades in ~150 cycles feeding a runaway population
+    ceiling) -- naming it here rather than staying silent while the action
+    itself quietly no-ops, same shape the DMM cooldown nudge already uses."""
     if tribe.warehouses_built == 0 and _warehouse_needed(tribe):
         return (
             f"Population ({tribe.population}) has already outgrown the storage cap "
@@ -406,6 +415,13 @@ def _warehouse_capacity_note(tribe: "Tribe") -> str:
             "a warehouse raises that ceiling for good."
         )
     if tribe.warehouses_built >= config.WAREHOUSE_MAX_COUNT and _warehouse_needed(tribe):
+        if current_cycle is not None and current_cycle < tribe.warehouse_upgrade_cooldown_until_cycle:
+            cycles_left = tribe.warehouse_upgrade_cooldown_until_cycle - current_cycle
+            return (
+                f"Warehouses are at their built limit ({tribe.warehouses_built}) and storage is still "
+                f"under real pressure, but the last upgrade is still settling in -- {cycles_left} "
+                "cycle(s) left before UPGRADE_WAREHOUSE can be used again."
+            )
         tier = tribe.warehouse_upgrades
         upgrade_wood_cost = round(config.WAREHOUSE_UPGRADE_WOOD_COST_BASE * (1 + tier * config.WAREHOUSE_UPGRADE_COST_GROWTH))
         upgrade_stone_cost = round(config.WAREHOUSE_UPGRADE_STONE_COST_BASE * (1 + tier * config.WAREHOUSE_UPGRADE_COST_GROWTH))
@@ -1441,6 +1457,12 @@ class Tribe:
         # conquest," not just "this tribe is the only one left" (which could
         # also happen if every rival died of unrelated hazards).
         self.conquests_won = 0
+        # Same "absolute ready-again cycle" shape as dmm_cooldown_until_cycle
+        # above -- see config.DECLARE_CONQUEST_COOLDOWN_DAYS's own comment for
+        # the live-run finding (three back-to-back campaigns in 4 cycles)
+        # that prompted it. Set on BOTH sides of a resolved campaign
+        # (actions._declare_conquest), not just whoever declared it.
+        self.conquest_cooldown_until_cycle = 0
         # _merge_tribes deletes the loser from Simulation.tribes entirely, so
         # by the time a world_domination game-over summary is generated,
         # nothing else on hand still names who was actually conquered --
@@ -1471,6 +1493,12 @@ class Tribe:
         # instead, an escalating-cost repeatable so it doesn't just become the same
         # infinite-spam problem under a new name. See _storage_cap/_item_storage_cap.
         self.warehouse_upgrades = 0
+        # Same "absolute ready-again cycle" shape as dmm_cooldown_until_cycle
+        # above -- see config.WAREHOUSE_UPGRADE_COOLDOWN_DAYS's own comment.
+        # warehouse_upgrades itself stays deliberately uncapped in COUNT (that
+        # was the whole point of replacing BUILD_WAREHOUSE's own hard cap) --
+        # this only slows how often the next tier can land.
+        self.warehouse_upgrade_cooldown_until_cycle = 0
         # Explicit request, 2026-09-09: live debug view of raw LLM I/O -- see
         # config.DEBUG_TRANSCRIPT_HISTORY_LIMIT's own comment. A capped deque
         # (not tribe.history, which is the in-fiction chronicle) of
@@ -4674,7 +4702,19 @@ class Simulation:
             if nearby_rivals:
                 rival = min(nearby_rivals, key=lambda o: math.hypot(o.x - tribe.x, o.y - tribe.y))
                 tribe_might, rival_might = compute_might(tribe), compute_might(rival)
-                if tribe_might > rival_might * config.DECLARE_CONQUEST_NUDGE_MIGHT_RATIO:
+                # config.DECLARE_CONQUEST_COOLDOWN_DAYS (2026-09-14, live-run
+                # finding): a tribe fresh off its own campaign shouldn't be
+                # nudged straight back into another one -- name the real
+                # blocker instead, same shape the DMM cooldown nudge above
+                # already uses, rather than staying silent while the action
+                # itself quietly no-ops.
+                if self.cycle < tribe.conquest_cooldown_until_cycle:
+                    cycles_left = tribe.conquest_cooldown_until_cycle - self.cycle
+                    visible_entities.append(
+                        f"The Battalion is still recovering from its last campaign -- {cycles_left} "
+                        "cycle(s) left before DECLARE_CONQUEST can be attempted again."
+                    )
+                elif tribe_might > rival_might * config.DECLARE_CONQUEST_NUDGE_MIGHT_RATIO:
                     visible_entities.append(
                         f"{rival.name}'s Battalion is meaningfully weaker (Might {rival_might} vs. this "
                         f"tribe's {tribe_might}) -- DECLARE_CONQUEST at ({rival.x},{rival.y}) is a real, "
@@ -4753,7 +4793,7 @@ class Simulation:
         # trace, the EXPAND_TERRITORY side) was retired 2026-09-08 once
         # CONSTRUCT_WALL/EXPAND_TERRITORY were merged into one action -- there's no
         # longer a second action to nudge the model toward picking.
-        warehouse_note = _warehouse_capacity_note(tribe)
+        warehouse_note = _warehouse_capacity_note(tribe, self.cycle)
 
         if tribe.fishing_learned:
             visible_entities.append(

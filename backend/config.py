@@ -1788,6 +1788,21 @@ WAREHOUSE_UPGRADE_WOOD_COST_BASE = 40
 WAREHOUSE_UPGRADE_STONE_COST_BASE = 35
 WAREHOUSE_UPGRADE_COST_GROWTH = 0.5
 
+# Live-run finding, 2026-09-14 (run_20260914_093337, see the "Population
+# Autopsy" field report): the escalating cost above was meant to be the one
+# brake on repeat UPGRADE_WAREHOUSE use, the same way WAREHOUSE_MAX_COUNT
+# bounds BUILD_WAREHOUSE -- but a tribe with a healthy economy can just keep
+# affording the next tier. One tribe upgraded 28 times in ~150 cycles,
+# raising its own storage_cap (and therefore _sustainable_population,
+# storage_cap * UPKEEP_POPULATION_DIVISOR) in lockstep with its own
+# population, which grows *proportional to current population* by design --
+# the combination is genuine unbounded compounding, 10 -> 56,883 in 364
+# cycles. Deliberately NOT a count cap (that's what BUILD_WAREHOUSE already
+# tried and needed UPGRADE_WAREHOUSE to escape from) -- a time-based
+# cooldown instead, same "the machine itself rests" shape DMM_COOLDOWN_DAYS
+# already uses for CREATE_ITEM/CREATE_USEFUL_STRUCTURE.
+WAREHOUSE_UPGRADE_COOLDOWN_DAYS = 3
+
 # Resource-site discovery (lumber/wildlife/quarry/mine): superseded 2026-09-02 --
 # see world.py's SITE_SEED_GRID_CELL_SIZE/SITE_SEED_FILL_PROBABILITY/
 # SITE_DISCOVERY_RADIUS. Sites used to be decided fresh via an independent chance
@@ -2091,6 +2106,19 @@ DECLARE_CONQUEST_SURRENDER_POPULATION_RATIO = 0.5
 # threshold it's still a true stalemate (no merge), just with a history note
 # that they're clearly outmatched, so the next loss like this ends it.
 DECLARE_CONQUEST_SURRENDER_AFTER_LOSSES = 2
+
+# Live-run finding, 2026-09-14 (run_20260914_093337, "Population Autopsy"
+# field report): nothing above stops a fresh DECLARE_CONQUEST the very next
+# cycle after the last one resolves. That run saw three separate campaigns
+# in 4 cycles (365, 367, 368) between the same two tribes -- each one's own
+# round-loss math tops out around an 88% hit (see the 0.7**6 comment above),
+# but three of those back-to-back compound to a >99% combined population
+# loss, not the ~88% any single campaign's own worst case anticipates.
+# Applies to both attacker and defender (same "the war exhausts everyone
+# involved" shape, not just whoever declared it) so neither side can simply
+# retaliate immediately and restart the grind. Same "absolute ready-again
+# cycle" shape DMM_COOLDOWN_DAYS already uses.
+DECLARE_CONQUEST_COOLDOWN_DAYS = 3
 
 # Bronze Age counter-offensive (backend/actions.py._strike_raider_camp): a tribe that
 # has scouted a raider camp (raider_sightings) can strike it directly once organized

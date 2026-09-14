@@ -116,7 +116,7 @@ def _print_result(result):
 async def main():
     all_results = []
 
-    simulation._warehouse_capacity_note = lambda tribe: ""
+    simulation._warehouse_capacity_note = lambda tribe, current_cycle=None: ""
     simulation._wall_expansion_note = lambda tribe: ""
     print("=== VARIANT: no_growth_facts (baseline, feature disabled) ===")
     for i in range(RUNS_PER_VARIANT):

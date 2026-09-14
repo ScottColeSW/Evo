@@ -848,6 +848,15 @@ def _build_warehouse(sim, tribe, biome, target):
     return f"a warehouse rises -- storage capacity grows to {_storage_cap(tribe)} per resource"
 
 
+def _warehouse_upgrade_ready(sim, tribe) -> bool:
+    """Shared cooldown gate for UPGRADE_WAREHOUSE -- see config.
+    WAREHOUSE_UPGRADE_COOLDOWN_DAYS's own comment for the live-run finding
+    (28 upgrades in ~150 cycles, compounding straight into a runaway
+    population ceiling) that prompted it. Same "absolute ready-again cycle"
+    shape as _dmm_ready."""
+    return sim.cycle >= tribe.warehouse_upgrade_cooldown_until_cycle
+
+
 def _upgrade_warehouse(sim, tribe, biome, target):
     """Explicit request, 2026-09-09, after real data showed one tribe building 47
     warehouses in a single run: "they shouldn't build more than 5 I think. The
@@ -861,7 +870,14 @@ def _upgrade_warehouse(sim, tribe, biome, target):
     Repeatable, but not free to spam the same way the old flat-cost
     BUILD_WAREHOUSE was: cost grows by config.WAREHOUSE_UPGRADE_COST_GROWTH
     per tier already banked (tribe.warehouse_upgrades), so this naturally
-    tapers off rather than needing its own hardcoded count cap."""
+    tapers off rather than needing its own hardcoded count cap. Live data
+    (2026-09-14) showed the escalating cost alone wasn't enough brake on a
+    thriving economy -- config.WAREHOUSE_UPGRADE_COOLDOWN_DAYS adds a real
+    cooldown on top, same shape the DMM's own rest period already uses,
+    without capping the count itself (that's the exact trap this action was
+    built to escape from in the first place)."""
+    if not _warehouse_upgrade_ready(sim, tribe):
+        return None
     tier = tribe.warehouse_upgrades
     wood_cost = round(config.WAREHOUSE_UPGRADE_WOOD_COST_BASE * (1 + tier * config.WAREHOUSE_UPGRADE_COST_GROWTH))
     stone_cost = round(config.WAREHOUSE_UPGRADE_STONE_COST_BASE * (1 + tier * config.WAREHOUSE_UPGRADE_COST_GROWTH))
@@ -870,6 +886,7 @@ def _upgrade_warehouse(sim, tribe, biome, target):
     tribe.wood -= wood_cost
     tribe.stone -= stone_cost
     tribe.warehouse_upgrades += 1
+    tribe.warehouse_upgrade_cooldown_until_cycle = sim.cycle + config.WAREHOUSE_UPGRADE_COOLDOWN_DAYS * config.DAY_LENGTH_CYCLES
     return f"the standing warehouses are reinforced -- storage capacity grows to {_storage_cap(tribe)} per resource"
 
 
@@ -1581,6 +1598,15 @@ def _create_useful_structure(sim, tribe, biome, target):
     return f"the {name} is built -- a genuinely new {category.replace('_', ' ')} structure for the tribe"
 
 
+def _conquest_ready(sim, tribe) -> bool:
+    """Shared cooldown gate for DECLARE_CONQUEST -- see config.
+    DECLARE_CONQUEST_COOLDOWN_DAYS's own comment for the live-run finding
+    (three campaigns in 4 cycles, compounding to a >99% combined population
+    loss) that prompted it. Same "absolute ready-again cycle" shape as
+    _dmm_ready/_warehouse_upgrade_ready."""
+    return sim.cycle >= tribe.conquest_cooldown_until_cycle
+
+
 def _declare_conquest(sim, tribe, biome, target):
     """War and World Domination era's decisive war action -- unlike ordinary
     RAID's gradual population-siphon (several successful raids to fully
@@ -1627,10 +1653,21 @@ def _declare_conquest(sim, tribe, biome, target):
             break
     if defender is None:
         return "found no rival civilization there to conquer"
+    if not _conquest_ready(sim, tribe):
+        return None
     if tribe.wood < config.DECLARE_CONQUEST_WOOD_COST or tribe.stone < config.DECLARE_CONQUEST_STONE_COST:
         return None
     tribe.wood -= config.DECLARE_CONQUEST_WOOD_COST
     tribe.stone -= config.DECLARE_CONQUEST_STONE_COST
+    # Set on BOTH sides the moment the campaign is actually launched, before
+    # any round resolves -- see config.DECLARE_CONQUEST_COOLDOWN_DAYS's own
+    # comment for why this needs to cover the defender too, not just whoever
+    # declared. Set here rather than only on a decisive outcome so even a
+    # stalemate (no merge, both sides still standing) still buys real
+    # recovery time before either can try again.
+    cooldown_until = sim.cycle + config.DECLARE_CONQUEST_COOLDOWN_DAYS * config.DAY_LENGTH_CYCLES
+    tribe.conquest_cooldown_until_cycle = cooldown_until
+    defender.conquest_cooldown_until_cycle = cooldown_until
 
     attacker_name, defender_name = tribe.name, defender.name
     attacker_start_population = tribe.population

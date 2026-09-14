@@ -748,6 +748,33 @@ def test_upgrade_warehouse_nudge_fires_at_the_build_cap_when_still_needed():
     assert "UPGRADE_WAREHOUSE is the only way" in request["prompt"]
 
 
+def test_upgrade_warehouse_nudge_names_the_cooldown_instead_while_recovering():
+    """Live-run finding, 2026-09-14: the same tribe that never used
+    UPGRADE_WAREHOUSE once in 300+ cycles has a sibling problem on a
+    healthy economy -- 28 uses in ~150 cycles, feeding runaway population
+    growth. config.WAREHOUSE_UPGRADE_COOLDOWN_DAYS throttles that, and the
+    nudge should say so rather than keep suggesting an action that's
+    actually a silent no-op right now."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "monolithic_era"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT
+    tribe.population = config.STORAGE_CAP_BASE + config.WAREHOUSE_MAX_COUNT * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+    tribe.wood = tribe.stone = tribe.food = tribe.water = 5000
+    tribe.warehouse_upgrade_cooldown_until_cycle = sim.cycle + 5
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "still settling in" in request["prompt"]
+    assert "5 cycle(s) left" in request["prompt"]
+    assert "UPGRADE_WAREHOUSE is the only way" not in request["prompt"]
+
+
 def test_upgrade_warehouse_nudge_silent_when_storage_has_room_to_spare():
     from backend import config
 
@@ -5884,6 +5911,37 @@ def test_prepare_turn_nudges_declare_conquest_against_a_weaker_discovered_rival(
     assert "tribe_1" in tribe.discovered_rivals
     assert "DECLARE_CONQUEST" in request["prompt"]
     assert "meaningfully weaker" in request["prompt"]
+
+
+def test_prepare_turn_names_the_conquest_cooldown_instead_of_the_weaker_rival_nudge():
+    """Live-run finding, 2026-09-14 ("Population Autopsy"): three separate
+    DECLARE_CONQUEST campaigns fired in 4 cycles between the same two
+    tribes, compounding to a >99% combined population collapse. Once
+    config.DECLARE_CONQUEST_COOLDOWN_DAYS is blocking a fresh campaign, the
+    nudge should say so instead of still pointing at a weaker rival as if
+    the action were actually available this turn."""
+    sim = Simulation(
+        [
+            {"name": "Forest Tribe", "model": "gemma2:2b"},
+            {"name": "Mountain Tribe", "model": "qwen2.5:3b"},
+        ]
+    )
+    tribe = sim.tribes["tribe_0"]
+    rival = sim.tribes["tribe_1"]
+    rival.x, rival.y = tribe.x - 10, tribe.y  # within RIVAL_PRECISE_AWARENESS_RADIUS
+    tribe.era = "war_and_world_domination_era"
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.wood, tribe.stone = 200, 200
+    tribe.battalion_size = 20
+    rival.battalion_size = 0
+    tribe.conquest_cooldown_until_cycle = sim.cycle + 12
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "still recovering from its last campaign" in request["prompt"]
+    assert "12 cycle(s) left" in request["prompt"]
+    assert "meaningfully weaker" not in request["prompt"]
 
 
 def test_prepare_turn_has_no_declare_conquest_nudge_without_discovery():

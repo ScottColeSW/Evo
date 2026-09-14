@@ -330,6 +330,10 @@ def test_upgrade_warehouse_raises_capacity_and_costs_more_each_tier():
     assert "reinforced" in result
     first_wood_spent = 10_000 - tribe.wood
 
+    # config.WAREHOUSE_UPGRADE_COOLDOWN_DAYS gates repeat use now -- advance
+    # past it so this test still exercises "each tier costs more," not the
+    # cooldown itself (see test_upgrade_warehouse_no_op_while_on_cooldown).
+    sim.cycle += config.WAREHOUSE_UPGRADE_COOLDOWN_DAYS * config.DAY_LENGTH_CYCLES
     wood_before_second = tribe.wood
     ACTION_REGISTRY["UPGRADE_WAREHOUSE"](sim, tribe, "plains", _NO_TARGET)
     assert tribe.warehouse_upgrades == 2
@@ -364,6 +368,40 @@ def test_upgrade_warehouse_unavailable_before_the_count_cap_is_reached():
     tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT - 1
 
     assert AFFORDABILITY_CHECKS["UPGRADE_WAREHOUSE"](tribe, sim.world) is False
+
+
+def test_upgrade_warehouse_no_op_while_on_cooldown():
+    """Live-run finding, 2026-09-14: a tribe with a healthy economy upgraded
+    its warehouse 28 times in ~150 cycles, raising its own population
+    ceiling in lockstep with its own population -- genuine unbounded
+    compounding. config.WAREHOUSE_UPGRADE_COOLDOWN_DAYS throttles repeat use
+    even when fully affordable, the same way DMM_COOLDOWN_DAYS already
+    gates CREATE_ITEM/CREATE_USEFUL_STRUCTURE."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT
+    tribe.wood = tribe.stone = 10_000
+    tribe.warehouse_upgrade_cooldown_until_cycle = sim.cycle + 1
+
+    assert ACTION_REGISTRY["UPGRADE_WAREHOUSE"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.warehouse_upgrades == 0
+
+
+def test_upgrade_warehouse_sets_a_cooldown_after_use():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT
+    tribe.wood = tribe.stone = 10_000
+
+    ACTION_REGISTRY["UPGRADE_WAREHOUSE"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.warehouse_upgrade_cooldown_until_cycle == sim.cycle + config.WAREHOUSE_UPGRADE_COOLDOWN_DAYS * config.DAY_LENGTH_CYCLES
 
 
 def test_build_barracks_is_repeatable_and_raises_battalion_capacity():
@@ -2727,6 +2765,57 @@ def test_declare_conquest_win_chance_is_boosted_by_a_stronger_battalion():
     boosted_chance = _might_adjusted_win_chance(attacker, defender, 0.5)
 
     assert boosted_chance > 0.5
+
+
+def test_declare_conquest_no_op_while_on_cooldown():
+    """Live-run finding, 2026-09-14 ("Population Autopsy"): three separate
+    DECLARE_CONQUEST campaigns fired in 4 cycles between the same two
+    tribes, each independently able to inflict ~88% loss, compounding to a
+    >99% combined population collapse. config.DECLARE_CONQUEST_COOLDOWN_DAYS
+    blocks a fresh campaign even when fully affordable and a real rival is
+    known, the same "absolute ready-again cycle" shape the DMM cooldown
+    already uses."""
+    from backend import config
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Strong Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Weak Tribe", "gemma2:2b", 51, 50, "#fb923c")
+    attacker.population = 100
+    defender.population = 100
+    attacker.wood = config.DECLARE_CONQUEST_WOOD_COST
+    attacker.stone = config.DECLARE_CONQUEST_STONE_COST
+    attacker.conquest_cooldown_until_cycle = sim.cycle + 1
+    sim.tribes = {attacker.id: attacker, defender.id: defender}
+
+    assert ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50)) is None
+    assert attacker.wood == config.DECLARE_CONQUEST_WOOD_COST  # nothing spent
+    assert defender.id in sim.tribes  # no war was ever fought
+
+
+def test_declare_conquest_sets_a_cooldown_on_both_sides():
+    """Applies to attacker AND defender, not just whoever declared -- see
+    config.DECLARE_CONQUEST_COOLDOWN_DAYS's own comment for why a stalemate
+    (both sides still standing) needs this too, or the loser of that
+    stalemate could immediately retaliate and restart the same grind."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Tribe A", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Tribe B", "gemma2:2b", 51, 50, "#fb923c")
+    attacker.population = 100
+    defender.population = 100
+    attacker.wood = config.DECLARE_CONQUEST_WOOD_COST
+    attacker.stone = config.DECLARE_CONQUEST_STONE_COST
+    sim.tribes = {attacker.id: attacker, defender.id: defender}
+    expected = sim.cycle + config.DECLARE_CONQUEST_COOLDOWN_DAYS * config.DAY_LENGTH_CYCLES
+
+    with mock.patch("backend.actions.random.random", return_value=0.5):
+        ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
+
+    assert attacker.conquest_cooldown_until_cycle == expected
+    assert defender.conquest_cooldown_until_cycle == expected
 
 
 def test_declare_conquest_finds_no_rival_returns_a_note_not_a_crash():
