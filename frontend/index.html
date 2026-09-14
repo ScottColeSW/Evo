@@ -66,6 +66,10 @@
   #era-banner.danger { background: rgba(127,29,29,0.95); }
   #era-banner.chief { background: rgba(180,131,10,0.95); }
   #era-banner.party { background: linear-gradient(90deg, rgba(219,39,119,0.95), rgba(217,70,239,0.95), rgba(234,88,12,0.95)); }
+  /* Beyond the Horizon era -- warm gold/sunset gradient, distinct from every
+     other variant, since this is the single biggest story beat a run can
+     have. Plan file amber-drifting-tern.md. */
+  #era-banner.horizon { background: linear-gradient(90deg, rgba(180,83,9,0.95), rgba(251,191,36,0.95), rgba(217,119,6,0.95)); color: #1c1408; }
   canvas { background: #111; border: 2px solid #2a2a3a; border-radius: 4px; display: block; }
 
   #spawn-splash { position: absolute; inset: 0; background: rgba(11,11,15,0.94); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 20; border-radius: 4px; transition: opacity 0.4s ease; }
@@ -115,6 +119,10 @@
     border-radius: 12px; padding: 16px 18px; position: relative; overflow: hidden; text-align: left;
   }
   #game-over-splash .go-card.extinct { opacity: 0.6; filter: grayscale(0.5); }
+  /* Departed is not a loss -- explicit design, plan file amber-drifting-tern.md
+     ("a genuine two-sided ending, not a euphemism for one side losing"). No
+     opacity/grayscale reduction like .extinct; a warm glow instead. */
+  #game-over-splash .go-card.departed { box-shadow: 0 0 24px rgba(251,191,36,0.18); }
   #game-over-splash .go-card::before {
     content: ""; position: absolute; top: -40%; right: -30%; width: 140px; height: 140px;
     background: radial-gradient(circle, rgba(251,191,36,0.14), transparent 70%); pointer-events: none;
@@ -124,7 +132,12 @@
   #game-over-splash .go-card .go-status { font-size: 10px; margin-top: 6px; letter-spacing: 0.4px; text-transform: uppercase; }
   #game-over-splash .go-card .go-status.surviving { color: #6ee7b7; }
   #game-over-splash .go-card .go-status.extinct { color: #f87171; }
+  #game-over-splash .go-card .go-status.departed { color: #fbbf24; }
   #game-over-splash .go-card .go-era-pill { font-size: 10px; background: #2a2a3a; color: #a5b4fc; padding: 2px 8px; border-radius: 10px; display: inline-block; margin-top: 8px; }
+  #game-over-splash .go-card .go-sole-dominion {
+    font-size: 10px; background: rgba(251,191,36,0.15); color: #fde68a; padding: 2px 8px;
+    border-radius: 10px; display: inline-block; margin-top: 8px; margin-left: 6px;
+  }
   #game-over-splash .go-card .go-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin-top: 12px; }
   #game-over-splash .go-card .go-stat .v { font-size: 15px; font-weight: 700; color: #e2e2e7; }
   #game-over-splash .go-card .go-stat .l { font-size: 9px; color: #7c7c94; letter-spacing: 0.4px; text-transform: uppercase; }
@@ -465,6 +478,7 @@
           <div class="icon-key-row"><span class="icon-key-icon">⛵</span> Boat (roams nearby water once built)</div>
           <div class="icon-key-row"><span class="icon-key-icon">🛠️</span> Dream Manifestation Machine</div>
           <div class="icon-key-row"><span class="icon-key-icon">✨</span> Created Structure</div>
+          <div class="icon-key-row"><span class="icon-key-icon">🚢</span> Vessel</div>
 
           <div class="icon-key-section">Discoveries</div>
           <div class="icon-key-row"><span class="icon-key-icon icon-key-icon-pool" id="key-icon-water">💧</span> Confirmed water source (one, picked per site)</div>
@@ -788,6 +802,7 @@ function startSimulation(tribes, immortalCycles) {
       trackNewLandmarks(latestState);
       checkEraTransitions(latestState);
       checkExtinctions(latestState);
+      checkDepartures(latestState);
       checkChiefElections(latestState);
       checkCelebrations(latestState);
       checkRaids(latestState);
@@ -846,6 +861,7 @@ const GAME_OVER_TITLES = {
   golden_age: "A GOLDEN AGE",
   era_ceiling: "SIMULATION COMPLETE",
   manual_quit: "RUN STOPPED",
+  departure: "BEYOND THE HORIZON",
 };
 
 const GAME_OVER_SUBTITLES = {
@@ -854,6 +870,7 @@ const GAME_OVER_SUBTITLES = {
   golden_age: "Two rival civilizations completed a lasting monument together",
   era_ceiling: "Every surviving population has exhausted the known stages of development",
   manual_quit: "Observation ended by operator request",
+  departure: "One people sails on, one inherits the island",
 };
 
 // A compact icon-only readout for the end-screen cards -- same emoji the
@@ -864,7 +881,7 @@ const GAME_OVER_SUBTITLES = {
 // live status board).
 const GO_BUILDING_ICONS = [
   ["castle_built", "🏯"], ["fortress_built", "🏰"], ["keep_built", "🏯"],
-  ["dmm_built", "🛠️"], ["forge_built", "🔨"], ["mine_built", "💎"],
+  ["dmm_built", "🛠️"], ["vessel_built", "🚢"], ["forge_built", "🔨"], ["mine_built", "💎"],
   ["road_built", "🛣️"], ["dock_built", "⚓"], ["fishery_built", "🐟"],
   ["sawmill_built", "🪵"], ["quarry_built", "⛏️"], ["kitchen_built", "🍲"],
   ["tannery_built", "🦫"], ["deer_pen_built", "🦌"], ["hatchery_built", "🐣"], ["coop_built", "🐔"], ["bath_house_built", "🛁"],
@@ -896,7 +913,7 @@ function goVerdictText(state) {
   return match ? match[0] : summary.split("\n")[0] || "";
 }
 
-const GAME_OVER_VERDICT_ICONS = { extinction: "💀", world_domination: "👑", golden_age: "🕊️", era_ceiling: "🏛️", manual_quit: "⏸️" };
+const GAME_OVER_VERDICT_ICONS = { extinction: "💀", world_domination: "👑", golden_age: "🕊️", era_ceiling: "🏛️", manual_quit: "⏸️", departure: "🌅" };
 
 function showGameOverSplash(state) {
   const reason = state.game_over_reason;
@@ -917,14 +934,21 @@ function showGameOverSplash(state) {
       : "none recorded";
     const combat = goCombatLine(t);
     const buildIcons = goBuildingIcons(t);
+    // Departed is not a loss -- own card class/status, no grayscale, no "extinct"
+    // wording. See plan file amber-drifting-tern.md.
+    const cardClass = t.extinct ? "extinct" : t.departed ? "departed" : "";
+    const statusClass = t.extinct ? "extinct" : t.departed ? "departed" : "surviving";
+    const statusText = t.extinct
+      ? `☠ Extinct${t.extinction_cause ? " — " + escapeHtml(t.extinction_cause) : ""}`
+      : t.departed ? "⛵ Departed" : "✓ Surviving";
+    const soleDominion = state.game_over_reason === "departure" && !t.extinct && !t.departed
+      ? `<span class="go-sole-dominion">👑 Sole Dominion</span>` : "";
     return `
-      <div class="go-card ${t.extinct ? "extinct" : ""}" style="border-left-color:${t.color}">
+      <div class="go-card ${cardClass}" style="border-left-color:${t.color}">
         <div class="go-name">${escapeHtml(t.name)}${t.settlement_name ? ` &middot; ${escapeHtml(t.settlement_name)}` : ""}</div>
         <div class="go-model">${escapeHtml(t.model)}</div>
-        <div class="go-status ${t.extinct ? "extinct" : "surviving"}">
-          ${t.extinct ? `☠ Extinct${t.extinction_cause ? " — " + escapeHtml(t.extinction_cause) : ""}` : "✓ Surviving"}
-        </div>
-        <div class="go-era-pill">${escapeHtml(t.era_label || t.era || "")}</div>
+        <div class="go-status ${statusClass}">${statusText}</div>
+        <div class="go-era-pill">${escapeHtml(t.era_label || t.era || "")}</div>${soleDominion}
         <div class="go-stat-grid">
           <div class="go-stat"><div class="v">${t.max_population ?? t.population ?? 0}</div><div class="l">Peak Population</div></div>
           <div class="go-stat"><div class="v">${t.population ?? 0}</div><div class="l">Final Population</div></div>
@@ -1571,7 +1595,12 @@ function checkEraTransitions(state) {
       return;
     }
     if (lastEraByTribe[id] !== t.era) {
-      queueBanner(`${t.name} enters the ${t.era_label}!`);
+      // Beyond the Horizon gets the same warm variant DEPART itself uses
+      // (checkDepartures) -- reaching this era is a real milestone worth the
+      // distinct look, not just another purple banner. Plan file
+      // amber-drifting-tern.md.
+      const variant = t.era === "departure_era" ? "horizon" : undefined;
+      queueBanner(`${t.name} enters the ${t.era_label}!`, false, variant);
       lastEraByTribe[id] = t.era;
     }
   });
@@ -1584,6 +1613,7 @@ function showEraBanner(text, danger, variant) {
   banner.classList.toggle("danger", !!danger);
   banner.classList.toggle("chief", variant === "chief");
   banner.classList.toggle("party", variant === "party");
+  banner.classList.toggle("horizon", variant === "horizon");
   clearTimeout(eraBannerTimeout);
   const duration = danger ? 6000 : 4000;
   eraBannerTimeout = setTimeout(() => banner.classList.remove("show"), duration);
@@ -1710,6 +1740,25 @@ function checkExtinctions(state) {
       queueBanner(`💀 ${t.name} has gone extinct`, true);
     }
     lastExtinctByTribe[id] = t.extinct;
+  });
+}
+
+/* ---------- Departure (Beyond the Horizon era) ---------- */
+// Same false-to-true transition-detection shape as checkExtinctions above --
+// plan file amber-drifting-tern.md.
+
+let lastDepartedByTribe = {};
+
+function checkDepartures(state) {
+  Object.entries(state.tribes || {}).forEach(([id, t]) => {
+    if (lastDepartedByTribe[id] === undefined) {
+      lastDepartedByTribe[id] = t.departed;  // first sighting -- don't fire on page load
+      return;
+    }
+    if (!lastDepartedByTribe[id] && t.departed) {
+      queueBanner(`⛵ ${t.name} sails beyond the horizon!`, false, "horizon");
+    }
+    lastDepartedByTribe[id] = t.departed;
   });
 }
 
@@ -3418,7 +3467,7 @@ const BUILDING_ICONS = {
   warehouse: "🏬",
   dock: "⚓", fishery: "🎣", farm_plot: "🌾", coop: "🐔", fire: "🔥",
   hatchery: "🐣", boat: "⛵", bath_house: "🛁", library: "📚", well: "🪣",
-  dmm: "🛠️", created_structure: "✨",
+  dmm: "🛠️", created_structure: "✨", vessel: "🚢",
 };
 
 function drawBuildings(t) {
@@ -4305,6 +4354,7 @@ const WALL_MAX_LAYERS = 2;
 const ERA_ORDER = [
   "primitive_dawn", "cognitive_horizon", "tribal_synapse",
   "monolithic_era", "object_creator_era", "war_and_world_domination_era",
+  "departure_era",
 ];
 function eraAtLeast(era, floor) {
   const i = ERA_ORDER.indexOf(era), f = ERA_ORDER.indexOf(floor);

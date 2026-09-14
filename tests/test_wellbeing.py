@@ -145,10 +145,18 @@ def test_self_actualization_tier_rises_with_era_and_city_growth():
 
 
 def test_self_actualization_maxes_out_at_the_top_era():
+    """era_fraction (backend/wellbeing.py) is era_index(tribe.era) / (len(ERAS) - 1)
+    -- generic, not hardcoded to a specific era count, so it self-adjusts whenever
+    the ladder grows (e.g. departure_era, added 2026-09-14, plan file
+    amber-drifting-tern.md). Uses ERAS[-1].key (the real top era, whatever it
+    currently is) rather than a hardcoded era name, so this test keeps testing
+    its actual intent -- "the top era" -- instead of going stale the next time
+    a new era is appended."""
     from backend import config
+    from backend.eras import ERAS
 
     top = compute_wellbeing(
-        _tribe(era="war_and_world_domination_era", founded_city=True, buildings=[{} for _ in range(config.SELF_ACTUALIZATION_BUILDING_REFERENCE)]),
+        _tribe(era=ERAS[-1].key, founded_city=True, buildings=[{} for _ in range(config.SELF_ACTUALIZATION_BUILDING_REFERENCE)]),
         wall_fraction=0.0,
     )
 

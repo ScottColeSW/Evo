@@ -3338,6 +3338,103 @@ def test_post_conquest_castle_nudge_names_the_real_resource_shortfall_once_long_
     assert "long-house credits" not in request["prompt"]
 
 
+def test_build_vessel_is_unavailable_without_the_departure_dream_even_if_affordable():
+    """AFFORDABILITY_CHECKS["BUILD_VESSEL"] gates on tribe.departure_dreamed
+    directly, not just cost -- available the instant the era unlocks it, but
+    inert until the real condition is met, same shape BUILD_JOINT_CASTLE uses."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "departure_era"
+    tribe.wood = tribe.stone = config.VESSEL_WOOD_COST
+    tribe.food = tribe.water = 500
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_VESSEL" not in ctx["available_actions"]
+
+
+def test_build_vessel_is_available_once_the_dream_and_cost_are_both_met():
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.territory_radius = 40  # room for the 6x3 footprint
+    tribe.era = "departure_era"
+    tribe.departure_dreamed = True
+    tribe.wood = tribe.stone = config.VESSEL_WOOD_COST
+    tribe.food = tribe.water = 500
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_VESSEL" in ctx["available_actions"]
+
+
+def test_depart_is_available_only_once_the_vessel_stands():
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "departure_era"
+    tribe.food = tribe.water = 500
+
+    _request, ctx = sim._prepare_turn(tribe)
+    assert "DEPART" not in ctx["available_actions"]
+
+    tribe.vessel_built = True
+    _request, ctx = sim._prepare_turn(tribe)
+    assert "DEPART" in ctx["available_actions"]
+
+
+def test_departure_dream_nudge_fires_once_dreamed_but_not_yet_built():
+    """Same "an action being merely available doesn't mean a small model
+    chooses it" lesson this project has hit every time so far. Plan file
+    amber-drifting-tern.md."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.departure_dreamed = True
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_VESSEL would begin making that real" in request["prompt"]
+    assert "DEPART would carry the tribe" not in request["prompt"]
+
+
+def test_departure_vessel_nudge_fires_once_built_but_not_yet_departed():
+    """The one that matters most -- a finished vessel that never gets boarded
+    is the exact failure mode DECLARE_CONQUEST suffered before its own
+    eligibility nudge existed."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.departure_dreamed = True
+    tribe.vessel_built = True
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "DEPART would carry the tribe beyond the horizon" in request["prompt"]
+    assert "BUILD_VESSEL would begin making that real" not in request["prompt"]
+
+
+def test_departure_nudges_silent_before_the_dream_and_after_departing():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "beyond the horizon" not in request["prompt"]
+
+    tribe.departure_dreamed = True
+    tribe.vessel_built = True
+    tribe.departed = True
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "BUILD_VESSEL would begin making that real" not in request["prompt"]
+    assert "DEPART would carry the tribe beyond the horizon" not in request["prompt"]
+
+
 def test_era_gap_note_reflects_a_real_research_discount_not_the_raw_threshold():
     """Explicit fix, 2026-09-13 (action-legibility audit): this used to show the
     raw, undiscounted era thresholds even for a tribe that had already earned a
@@ -6525,8 +6622,17 @@ def test_top_era_narrows_the_menu_to_endgame_resolution_when_a_rival_exists():
     with both tribes alive and thriving, having reached the top era, having
     never once fought or allied -- nothing forced any real resolution before
     both independently hit era_ceiling. Confirmed via AskUserQuestion: peace
-    stays open alongside war."""
+    stays open alongside war.
+
+    Era updated 2026-09-14 (plan file amber-drifting-tern.md) from the
+    literal "war_and_world_domination_era" to ERAS[-1].key (the real
+    ultimate top era, whatever it currently is): this lock is keyed on
+    `next_era(tribe.era) is None`, which now only becomes true at
+    departure_era -- an intentional, documented consequence of adding a real
+    era above war_and_world_domination_era, not a bug. This test's own
+    intent ("at the true top era, force real convergence") is unchanged."""
     from backend import config
+    from backend.eras import ERAS
 
     sim = Simulation(
         [
@@ -6538,7 +6644,7 @@ def test_top_era_narrows_the_menu_to_endgame_resolution_when_a_rival_exists():
     tribe.has_ever_settled = True
     sim._found_territory(tribe)
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
-    tribe.era = "war_and_world_domination_era"
+    tribe.era = ERAS[-1].key
     tribe.wood = tribe.stone = 1000
     tribe.discovered_rivals.add("tribe_1")  # real contact -- DECLARE_WAR/ALLIANCE actually reachable
     tribe.barracks_built = 1  # explicit request: no war/alliance without a Barracks first
@@ -6699,8 +6805,12 @@ def test_mutual_alliance_hides_joint_castle_once_both_already_have_one():
 def test_one_sided_alliance_declaration_still_gets_the_normal_endgame_lock():
     """Only tribe declared it -- rival hasn't reciprocated, so this isn't a
     genuine mutual alliance yet and the ordinary war/peace endgame narrowing
-    still applies."""
+    still applies.
+
+    Era updated 2026-09-14 (plan file amber-drifting-tern.md) -- see the
+    sibling test above for why ERAS[-1].key, not a hardcoded era name."""
     from backend import config
+    from backend.eras import ERAS
 
     sim = Simulation(
         [
@@ -6712,7 +6822,7 @@ def test_one_sided_alliance_declaration_still_gets_the_normal_endgame_lock():
     tribe.has_ever_settled = True
     sim._found_territory(tribe)
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
-    tribe.era = rival.era = "war_and_world_domination_era"
+    tribe.era = rival.era = ERAS[-1].key
     tribe.wood = tribe.stone = 1000
     tribe.discovered_rivals.add(rival.id)
     tribe.barracks_built = 1
@@ -6729,8 +6839,13 @@ def test_battle_ready_lock_narrows_to_declare_conquest_alone():
     available to only Declare_Conquest... when they are both 'battle-
     ready'." Once both sides have fully committed (a real Battalion, Barracks
     maxed out), there's no more reason to keep offering TRAIN_BATTALION/
-    BUILD_BARRACKS/SCOUT/DECLARE_ALLIANCE -- only DECLARE_CONQUEST remains."""
+    BUILD_BARRACKS/SCOUT/DECLARE_ALLIANCE -- only DECLARE_CONQUEST remains.
+
+    Era updated 2026-09-14 (plan file amber-drifting-tern.md) -- see
+    test_top_era_narrows_the_menu_to_endgame_resolution_when_a_rival_exists
+    for why ERAS[-1].key, not a hardcoded era name."""
     from backend import config
+    from backend.eras import ERAS
 
     sim = Simulation(
         [
@@ -6742,7 +6857,7 @@ def test_battle_ready_lock_narrows_to_declare_conquest_alone():
     tribe.has_ever_settled = True
     sim._found_territory(tribe)
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
-    tribe.era = "war_and_world_domination_era"
+    tribe.era = ERAS[-1].key
     tribe.wood = tribe.stone = 1000
     tribe.discovered_rivals.add(rival.id)
     tribe.barracks_built = config.BARRACKS_MAX_COUNT
@@ -7971,7 +8086,7 @@ async def test_night_cycle_updates_philosophy_when_the_reviewer_calls_for_a_chan
     tribe.chief_philosophy = "expand aggressively"
     tribe.history.append("starvation claimed lives")
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
         return {"revised_philosophy": "caution and hoarding", "changed": True, "reasoning": "too many losses"}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -7989,7 +8104,7 @@ async def test_night_cycle_leaves_philosophy_and_history_untouched_when_nothing_
     tribe.chief_philosophy = "expand aggressively"
     history_before = list(tribe.history)
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
         return {"revised_philosophy": "expand aggressively", "changed": False, "reasoning": "still working"}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -8009,7 +8124,7 @@ async def test_night_cycle_records_the_reasoning_even_when_nothing_changed():
     tribe.chief_name = "Ashgar"
     sim.cycle = 30
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
         return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": "still working"}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -8029,7 +8144,7 @@ async def test_night_cycle_passes_the_tribes_own_recent_history_and_philosophy()
     tribe.history.append("starvation claimed lives")
     captured = {}
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
         captured["reviewer_model"] = reviewer_model
         captured["tribe_name"] = tribe_name
         captured["current_philosophy"] = current_philosophy
@@ -8056,7 +8171,7 @@ async def test_night_cycle_adopts_a_proposed_decree():
     tribe.chief_name = "Ashgar"
     tribe.chief_decree = ""
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_decree": "build us a proper kitchen before winter",
@@ -8079,7 +8194,7 @@ async def test_night_cycle_leaves_the_standing_decree_untouched_when_none_is_pro
     tribe.chief_decree = "find fresh water before anything else"
     history_before = list(tribe.history)
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
         return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": "", "proposed_decree": None}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -8097,7 +8212,7 @@ async def test_night_cycle_does_not_repeat_a_decree_that_already_stands():
     tribe.chief_decree = "build us a proper kitchen before winter"
     history_before = list(tribe.history)
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_decree": "build us a proper kitchen before winter",
@@ -8115,7 +8230,7 @@ async def test_night_cycle_trims_an_overlong_proposed_decree():
     tribe = sim.tribes["tribe_0"]
     tribe.chief_name = "Ashgar"
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_decree": "x" * 500,
@@ -8201,12 +8316,90 @@ def test_night_inventory_drops_intelligence_on_a_rival_that_no_longer_exists():
 
 
 @run_async
+async def test_night_cycle_classifies_a_departure_shaped_dream_separately():
+    """Plan file amber-drifting-tern.md: a dream that reads as wanting to
+    leave must never be spent on a mundane DMM creation instead -- checked
+    BEFORE the ordinary chief_dream assignment, only once departure_eligible
+    (computed by the caller from era + dmm_built + the DMM warmup count)."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.era = "departure_era"
+    tribe.dmm_built = True
+    tribe.created_objects = [{"name": "x", "category": "gather_boost", "kind": "item"}]
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
+        return {
+            "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
+            "proposed_dream": "I have come to wonder what lies beyond this island",
+        }
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert tribe.departure_dreamed is True
+    assert tribe.departure_dream == "I have come to wonder what lies beyond this island"
+    assert tribe.chief_dream is None
+    assert any("dreams beyond the horizon" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_night_cycle_treats_a_departure_shaped_dream_as_ordinary_when_not_eligible():
+    """The same text, before the tribe is actually eligible (no DMM warmup
+    yet), falls through to the ordinary chief_dream path instead -- eligibility
+    is computed once, by the caller, not re-derived from the dream text alone."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.era = "war_and_world_domination_era"  # not yet departure_era
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
+        return {
+            "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
+            "proposed_dream": "I have come to wonder what lies beyond this island",
+        }
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert tribe.departure_dreamed is False
+    assert tribe.chief_dream == "I have come to wonder what lies beyond this island"
+
+
+@run_async
+async def test_night_cycle_leaves_an_already_dreamed_departure_untouched():
+    """One-way, same convention as every other milestone flag here -- a
+    second departure-shaped dream after the first is already banked falls
+    through to the ordinary chief_dream path instead of being re-checked."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.era = "departure_era"
+    tribe.dmm_built = True
+    tribe.created_objects = [{"name": "x", "category": "gather_boost", "kind": "item"}]
+    tribe.departure_dreamed = True
+    tribe.departure_dream = "the first, original dream"
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
+        return {
+            "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
+            "proposed_dream": "beyond the horizon, once more",
+        }
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert tribe.departure_dream == "the first, original dream"  # untouched
+    assert tribe.chief_dream == "beyond the horizon, once more"  # falls through instead
+
+
+@run_async
 async def test_night_cycle_captures_a_valid_proposed_award():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
     tribe.chief_name = "Ashgar"
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_award": {"name": "Keeper of the Trails", "category": "scouting"},
@@ -8228,7 +8421,7 @@ async def test_night_cycle_survives_a_non_dict_proposed_award():
     tribe = sim.tribes["tribe_0"]
     tribe.chief_name = "Ashgar"
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_award": "Keeper of the Trails",
@@ -8249,7 +8442,7 @@ async def test_night_cycle_ignores_a_proposed_award_outside_the_real_categories(
     tribe = sim.tribes["tribe_0"]
     tribe.chief_name = "Ashgar"
 
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
         return {
             "revised_philosophy": current_philosophy, "changed": False, "reasoning": "",
             "proposed_award": {"name": "Master of Dreams", "category": "dreaming"},
@@ -8262,7 +8455,7 @@ async def test_night_cycle_ignores_a_proposed_award_outside_the_real_categories(
 
 
 async def _night_cycle_no_change(sim, tribe):
-    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False):
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
         return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": ""}
 
     with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
@@ -8711,6 +8904,20 @@ def test_to_dict_exposes_the_chiefs_dream():
     tribe.chief_dream = "never going hungry again"
 
     assert tribe.to_dict()["chief_dream"] == "never going hungry again"
+
+
+def test_to_dict_exposes_departure_fields():
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.departure_dreamed = True
+    tribe.departure_dream = "what lies beyond this island"
+    tribe.vessel_built = True
+    tribe.departed = True
+
+    d = tribe.to_dict()
+    assert d["departure_dreamed"] is True
+    assert d["departure_dream"] == "what lies beyond this island"
+    assert d["vessel_built"] is True
+    assert d["departed"] is True
 
 
 def test_to_dict_exposes_spy_performance():
@@ -11749,12 +11956,19 @@ async def test_step_does_not_mistake_two_independent_solo_castles_for_golden_age
     alliance -- that must never be read as the golden_age ending. The run
     still legitimately ends here (both are alive, allied, and at the top
     era with nothing left in progress -- era_ceiling's own real condition),
-    just not credited to a Joint Castle that was never actually built."""
+    just not credited to a Joint Castle that was never actually built.
+
+    Era updated 2026-09-14 (plan file amber-drifting-tern.md) to ERAS[-1].key
+    (the real ultimate top era) -- era_ceiling only fires once every living
+    tribe is there, an intentional consequence of adding a real era above
+    war_and_world_domination_era."""
+    from backend.eras import ERAS
+
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
     tribe_a, tribe_b = list(sim.tribes.values())
     sim._found_territory(tribe_a)
     sim._found_territory(tribe_b)
-    tribe_a.era = tribe_b.era = "war_and_world_domination_era"
+    tribe_a.era = tribe_b.era = ERAS[-1].key
     tribe_a.stance_toward[tribe_b.id] = "ALLIED"
     tribe_b.stance_toward[tribe_a.id] = "ALLIED"
     tribe_a.castle_built = True
@@ -11801,6 +12015,70 @@ async def test_step_does_not_trigger_world_domination_for_an_ordinary_solo_tribe
         await sim.step()
 
     assert sim.game_over is False
+
+
+@run_async
+async def test_step_triggers_departure_game_over_when_a_tribe_departs():
+    """Beyond the Horizon era's real ending -- plan file amber-drifting-tern.md.
+    actions._depart only ever sets tribe.departed; step() owns the actual
+    win/loss condition, same split world_domination already uses."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    tribes = list(sim.tribes.values())
+    for t in tribes:
+        t.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
+    tribes[0].departed = True
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch("backend.simulation.generate_endgame_narrative", mock.AsyncMock(return_value="")), \
+         mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
+        await sim.step()
+
+    assert sim.game_over is True
+    assert sim.status == "GAME OVER"
+    assert sim.game_over_reason == "departure"
+    assert mock_unload.await_count == 3  # both tribes' models + ENDGAME_SUMMARY_MODEL
+
+
+@run_async
+async def test_step_departure_takes_priority_over_world_domination_the_same_cycle():
+    """A deliberate act the model chose THIS cycle (DEPART) should win over a
+    passively re-evaluated condition -- checked before world_domination/
+    golden_age/era_ceiling in step()'s own elif chain."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    tribes = list(sim.tribes.values())
+    winner, loser = tribes[0], tribes[1]
+    sim._merge_tribes(winner, loser)
+    winner.chief_name = "Ashgar"  # _merge_tribes clears chief_name; avoid a real elect_chief() call
+    winner.castle_built = True  # world_domination's own condition is also satisfied
+    winner.departed = True
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch("backend.simulation.generate_endgame_narrative", mock.AsyncMock(return_value="")), \
+         mock.patch.object(sim.client, "unload_model", mock.AsyncMock()):
+        await sim.step()
+
+    assert sim.game_over_reason == "departure"
+
+
+@run_async
+async def test_step_allows_a_solo_conquest_winner_to_also_depart():
+    """Edge case, reasoned through in the plan, not ignored: a tribe that
+    already won by conquest can still choose to leave rather than rule --
+    nothing should block it."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    tribes = list(sim.tribes.values())
+    winner, loser = tribes[0], tribes[1]
+    sim._merge_tribes(winner, loser)
+    winner.chief_name = "Ashgar"  # _merge_tribes clears chief_name; avoid a real elect_chief() call
+    winner.departed = True
+    assert len(sim.tribes) == 1
+
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch("backend.simulation.generate_endgame_narrative", mock.AsyncMock(return_value="")), \
+         mock.patch.object(sim.client, "unload_model", mock.AsyncMock()):
+        await sim.step()
+
+    assert sim.game_over_reason == "departure"
 
 
 @run_async
@@ -11885,6 +12163,76 @@ def test_game_over_summary_lists_the_final_build():
     assert "Dream Manifestation Machine" in summary
     assert "3 Long House(s)" in summary
     assert "2 wall ring(s)" in summary
+
+
+def test_game_over_summary_lists_a_built_vessel():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.vessel_built = True
+    sim.tribes = {"tribe_0": tribe}
+
+    summary = sim._generate_game_over_summary("era_ceiling")
+
+    assert "Vessel" in summary
+
+
+def test_game_over_summary_departure_status_line_reads_departed_not_extinct():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.departed = True
+    sim.tribes = {"tribe_0": tribe}
+
+    summary = sim._generate_game_over_summary("departure")
+
+    assert "departed beyond the horizon" in summary
+    assert "extinct" not in summary
+
+
+def test_game_over_summary_departure_quotes_the_chiefs_own_dream():
+    """Plan file amber-drifting-tern.md: no invented detail needed -- the
+    tribe's own real words, quoted verbatim."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.departed = True
+    tribe.departure_dream = "what lies beyond this island, after everything we've built"
+    sim.tribes = {"tribe_0": tribe}
+
+    summary = sim._generate_game_over_summary("departure")
+
+    analysis_line = next(line for line in summary.split("\n") if line.startswith("Analysis:"))
+    assert "Forest Tribe" in analysis_line
+    assert "what lies beyond this island, after everything we've built" in analysis_line
+
+
+def test_game_over_summary_departure_credits_the_remaining_tribe_with_sole_dominion():
+    """A genuine two-sided ending, not a euphemism for one side losing --
+    the tribe left behind gets its own real line, not silence."""
+    sim = _bare_simulation()
+    departed = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    departed.departed = True
+    departed.departure_dream = "a new life beyond the horizon"
+    remaining = Tribe("tribe_1", "Mountain Tribe", "qwen2.5:3b", 80, 80, "#fb923c")
+    sim.tribes = {"tribe_0": departed, "tribe_1": remaining}
+
+    summary = sim._generate_game_over_summary("departure")
+
+    assert "Mountain Tribe inherit the island uncontested -- theirs alone, at last." in summary
+
+
+def test_game_over_summary_departure_handles_a_lone_departure_with_no_rival_left():
+    """Edge case, reasoned through in the plan: a solo conquest winner can
+    still depart. No "inherits the island" line makes sense when nobody is
+    left behind -- must not crash or invent a rival."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.departed = True
+    tribe.departure_dream = "a new life beyond the horizon"
+    sim.tribes = {"tribe_0": tribe}
+
+    summary = sim._generate_game_over_summary("departure")
+
+    assert "a new life beyond the horizon" in summary
+    assert "inherit the island" not in summary
 
 
 def test_game_over_summary_notes_no_permanent_structures_when_none_were_built():
@@ -11987,6 +12335,38 @@ def test_game_over_summary_does_not_deny_a_conquest_that_actually_happened():
 
     assert "no war, conquest, or absorption occurred" not in summary
     assert "never attempted or faced DECLARE_CONQUEST" not in summary
+
+
+def test_reached_war_era_or_later_is_true_at_war_era_and_every_era_after_it():
+    """Plan file amber-drifting-tern.md: adding departure_era above
+    war_and_world_domination_era means a tribe can advance past it -- the two
+    call sites that used to check `tribe.era == "war_and_world_domination_era"`
+    directly would otherwise silently stop firing for any tribe that raced
+    through without ever touching DECLARE_CONQUEST."""
+    from backend.simulation import _reached_war_era_or_later
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.era = "tribal_synapse"
+    assert _reached_war_era_or_later(tribe) is False
+    tribe.era = "war_and_world_domination_era"
+    assert _reached_war_era_or_later(tribe) is True
+    tribe.era = "departure_era"
+    assert _reached_war_era_or_later(tribe) is True
+
+
+def test_game_over_summary_flags_a_tribe_past_war_era_that_never_declared_conquest():
+    """The exact regression the >= fix above exists for: a tribe that raced
+    into departure_era without ever touching DECLARE_CONQUEST must still be
+    flagged -- an exact-equality check would silently miss it the moment a
+    tribe advances past war_and_world_domination_era."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.era = "departure_era"
+    sim.tribes = {"tribe_0": tribe}
+
+    summary = sim._generate_game_over_summary("era_ceiling")
+
+    assert "never attempted or faced DECLARE_CONQUEST" in summary
 
 
 def test_game_over_summary_names_an_extinct_tribes_cause():

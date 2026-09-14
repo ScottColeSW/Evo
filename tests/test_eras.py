@@ -2,7 +2,7 @@ from backend.eras import ERAS, era_index, next_era, unlocked_actions_through
 
 _EXPECTED_KEYS = [
     "primitive_dawn", "cognitive_horizon", "tribal_synapse", "monolithic_era",
-    "object_creator_era", "war_and_world_domination_era",
+    "object_creator_era", "war_and_world_domination_era", "departure_era",
 ]
 
 
@@ -15,13 +15,14 @@ def test_era_index_finds_known_and_falls_back_on_unknown():
     assert era_index("cognitive_horizon") == 1
     assert era_index("tribal_synapse") == 2
     assert era_index("war_and_world_domination_era") == 5
+    assert era_index("departure_era") == 6
     assert era_index("not_a_real_era") == 0
 
 
 def test_next_era_progresses_through_every_stage_and_ends_at_the_top():
     for current_key, expected_next_key in zip(_EXPECTED_KEYS, _EXPECTED_KEYS[1:]):
         assert next_era(current_key).key == expected_next_key
-    assert next_era("war_and_world_domination_era") is None
+    assert next_era("departure_era") is None
 
 
 def test_unlocked_actions_accumulate_across_eras():
@@ -47,11 +48,15 @@ def test_population_and_resource_requirements_never_decrease_up_the_ladder():
 def test_final_era_sits_at_a_real_concrete_population_threshold():
     # config.POPULATION_GROWTH_CAP is infinite (explicit request: "we should not
     # put a cap on population"), so this is a real, concrete threshold, not an
-    # enforced hard cap. Raised 80 -> 1500 (2026-09-07, "much bigger populations
-    # going to war"), reachable in practice now that population growth itself
-    # scales with tribe size and Well-Being instead of a flat +1/cycle -- see
-    # config.POPULATION_GROWTH_SCALE_DIVISOR's own comment.
-    assert ERAS[-1].requires_population == 1500
+    # enforced hard cap. departure_era (added 2026-09-14, plan file
+    # amber-drifting-tern.md) is now the final rung -- 3000 is an untuned first
+    # guess, roughly the same escalation the 800->1500 jump already used.
+    assert ERAS[-1].requires_population == 3000
+    # war_and_world_domination_era's own threshold (raised 80 -> 1500,
+    # 2026-09-07, "much bigger populations going to war") stays a real fact
+    # worth its own regression check, not just folded into "the final era."
+    war_domination = next(e for e in ERAS if e.key == "war_and_world_domination_era")
+    assert war_domination.requires_population == 1500
 
 
 def test_cognitive_horizon_is_the_agrarian_infrastructure_tier():
@@ -100,9 +105,25 @@ def test_object_creator_and_war_domination_eras_replaced_the_old_empty_slots():
     """Explicit request, after a run reached the old ceiling with nothing left
     to do there ("we have to extend it now"): the three old empty reserved
     slots (mechanization_era/silicon_era/cosmic_post_human) are replaced
-    outright by two real eras, not appended after them -- the ladder is 6
-    stages now, not 7, and both new top eras actually unlock something."""
-    assert [e.key for e in ERAS[-2:]] == ["object_creator_era", "war_and_world_domination_era"]
-    dmm_era, war_domination = ERAS[-2], ERAS[-1]
+    outright by two real eras, not appended after them. departure_era (added
+    2026-09-14) is a genuine addition on top of that six-stage ladder, not a
+    replacement -- see the dedicated test below."""
+    assert [e.key for e in ERAS[-3:-1]] == ["object_creator_era", "war_and_world_domination_era"]
+    dmm_era, war_domination = ERAS[-3], ERAS[-2]
     assert set(dmm_era.unlocks_actions) == {"BUILD_DMM", "CREATE_ITEM", "CREATE_USEFUL_STRUCTURE"}
     assert war_domination.unlocks_actions == ("DECLARE_CONQUEST",)
+
+
+def test_departure_era_is_a_real_seventh_rung_above_war_and_world_domination():
+    """Live report, 2026-09-14: era_ceiling fired the instant the second tribe
+    crossed into war_and_world_domination_era, ending a run on the exact same
+    cycle with zero turns spent in the era it had just reached. A real 7th
+    rung fixes the timing for free -- era_ceiling's own "nowhere left to grow"
+    check (all living tribes' next_era() is None) stays false until a tribe
+    actually reaches this one, no separate grace-period timer needed
+    anywhere. Plan file amber-drifting-tern.md."""
+    assert ERAS[-1].key == "departure_era"
+    assert ERAS[-1].label == "Beyond the Horizon"
+    assert set(ERAS[-1].unlocks_actions) == {"BUILD_VESSEL", "DEPART"}
+    assert next_era("war_and_world_domination_era").key == "departure_era"
+    assert next_era("departure_era") is None

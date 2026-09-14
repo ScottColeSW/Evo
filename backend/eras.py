@@ -249,6 +249,30 @@ ERAS: tuple[Era, ...] = (
         unlocks_actions=("DECLARE_CONQUEST",),
         announcement="{tribe} enters the age of War and World Domination!",
     ),
+    # Added 2026-09-14, live report: era_ceiling fired the instant the second
+    # tribe crossed into war_and_world_domination_era, ending a run on the
+    # exact same cycle with zero turns spent in the era it had just reached.
+    # A real 7th rung fixes the timing for free (era_ceiling's own "nowhere
+    # left to grow" check stays false until a tribe actually reaches this
+    # one -- no separate grace-period timer needed anywhere) and turns "the
+    # game ran out of conditions" into an earned ending: a tribe that has
+    # built everything the island offers chooses to leave it. See plan file
+    # amber-drifting-tern.md for the full design (the Vessel/DEPART actions,
+    # the departure-dream gate, the two-sided ending). Reaching this era only
+    # means the possibility exists -- BUILD_VESSEL/DEPART stay functionally
+    # gated on tribe.departure_dreamed until the Chief's own dream actually
+    # calls for it, the same "available the instant the era unlocks it, but
+    # inert until the real condition is met" shape BUILD_JOINT_CASTLE uses.
+    Era(
+        key="departure_era",
+        label="Beyond the Horizon",
+        requires_population=3000,  # untuned first guess -- roughly the same
+                                    # escalation the 800->1500 jump already used
+        requires_resources={"water": 150, "stone": 150, "wood": 150, "Fur": 120},
+        advancement_cost={"wood": 110, "stone": 110, "water": 110, "Fur": 85},
+        unlocks_actions=("BUILD_VESSEL", "DEPART"),
+        announcement="{tribe} looks to the horizon -- there may be a world beyond this island.",
+    ),
 )
 
 _BY_KEY = {era.key: era for era in ERAS}
@@ -259,6 +283,29 @@ def era_index(key: str) -> int:
         if era.key == key:
             return i
     return 0
+
+
+def reached_era_or_later(current_key: str, floor_key: str) -> bool:
+    """True once a tribe (or an era key generally) is at floor_key or any era
+    after it -- NOT exact equality, and NOT "the ultimate top of the current
+    ladder" either (that's what `next_era(key) is None` means, a different
+    and often-confused question). Lives here, not in simulation.py, so both
+    backend.simulation and backend.actions can share it without a circular
+    import.
+
+    Plan file amber-drifting-tern.md, 2026-09-14: adding departure_era above
+    war_and_world_domination_era broke two real call sites that used to check
+    `tribe.era == "war_and_world_domination_era"` directly (both fixed to use
+    this instead) and, more seriously, silently broke actions.
+    _mutual_ally_at_top_era -- its own docstring says "both at the one era
+    DECLARE_CONQUEST/BUILD_JOINT_CASTLE exist in" (war_and_world_domination_
+    era specifically), but it was implemented as `next_era(tribe.era) is not
+    None: return None`, i.e. "is this tribe at the ULTIMATE top era" -- which
+    stopped matching war_and_world_domination_era at all the moment a real
+    era existed above it, silently breaking BUILD_JOINT_CASTLE/the golden_age
+    ending for any two allied tribes sitting at that era. Confirmed by a
+    previously-passing test failing outright, not a guess."""
+    return era_index(current_key) >= era_index(floor_key)
 
 
 def next_era(current_key: str) -> Era | None:

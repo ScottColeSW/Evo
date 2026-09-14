@@ -588,6 +588,7 @@ BUILDING_FOOTPRINTS = {
     "boat": (2, 3), "bath_house": (2, 2), "library": (3, 3), "well": (2, 2),
     "dmm": (3, 3), "created_structure": (2, 2),
     "barracks": (3, 3),
+    "vessel": (6, 3),
 }
 
 # BUILD_FISHERY (backend/actions.py): a new building, unlocked once a Dock already
@@ -2006,6 +2007,36 @@ CREATED_OBJECT_POPULATION_BONUS = 3
 # ordinary repelled raid, since this is a full campaign, not a hit-and-run.
 DECLARE_CONQUEST_WOOD_COST = 100
 DECLARE_CONQUEST_STONE_COST = 100
+
+# Departure era ("Beyond the Horizon", eras.py) -- see plan file
+# amber-drifting-tern.md for the full design. A tribe that has already used
+# the DMM at least once (the "warmup," not just built it) may have its
+# chief's regular night-cycle reflection turn up a departure-dream instead
+# of an ordinary practical one -- reflect_on_history's proposed_dream field
+# is reused for this, classified downstream (Simulation._run_night_cycle)
+# rather than a second JSON key.
+DMM_WARMUP_CREATIONS_REQUIRED = 1
+# Deterministic substring match against a chief's proposed_dream text
+# (actions._is_departure_dream), checked BEFORE the ordinary DMM category
+# match so a departure-dream is never accidentally spent on a mundane
+# creation. Plain text search, no model judgment in the classification
+# itself, same "no invisible dice" stance DREAM_CATEGORY_KEYWORDS already
+# uses.
+DEPARTURE_DREAM_KEYWORDS = (
+    "leave", "beyond", "horizon", "voyage", "sail", "freedom",
+    "elsewhere", "unknown", "new life", "escape", "depart",
+)
+# BUILD_VESSEL: a real, visible building (architect.find_free_slot,
+# BUILD_CASTLE's own shape), gated on tribe.departure_dreamed rather than
+# the DMM's cooldown -- this is ordinary construction, unrelated to
+# actions._dmm_ready. Cost is a first-pass guess, explicitly untuned:
+# CASTLE_WOOD_COST/STONE_COST's 40/50 is trivial against the
+# 2,000-30,000-stockpile economies these runs actually reach late-game, so
+# this needs to feel like a real capstone cost, not a rounding error.
+VESSEL_WOOD_COST = 2500
+VESSEL_STONE_COST = 2500
+# DEPART: small and deliberate, no real cost -- this is the moment itself,
+# not another resource sink on top of BUILD_VESSEL's own cost.
 
 # Explicit request, 2026-09-09: "I do want a play by play blows, meters
 # falling, informational popup for only the one and only WAR... Yes, real

@@ -32,6 +32,7 @@ async def reflect_on_history(
     client: OllamaClient, reviewer_model: str, tribe_name: str,
     current_philosophy: str, recent_events: list[str], inventory: str = "",
     current_decree: str = "", dmm_built: bool = False,
+    departure_eligible: bool = False,
 ) -> dict:
     events_block = "\n".join(f"- {e}" for e in recent_events) or "(nothing notable recorded)"
     categories_list = ", ".join(AWARD_CATEGORIES)
@@ -94,6 +95,24 @@ grounded in something real that just happened, not a generic wish, and it should
 need (feeding the tribe, defending it, exploring further, growing it, celebrating together, or \
 fighting off a threat). Leave it out if nothing recent truly calls for one -- the Machine will \
 name whatever it manifests, so just describe the need, not what to call it."""
+    # Plan file amber-drifting-tern.md, 2026-09-14: Beyond the Horizon era's real
+    # gate. Only offered once dmm_built, the DMM has actually been used at least
+    # once (config.DMM_WARMUP_CREATIONS_REQUIRED -- passed in via
+    # departure_eligible, computed by the caller, not re-derived here), and the
+    # tribe has reached the era itself. Deliberately describes the SHAPE of the
+    # idea only, no example sentence -- this is exactly the paragraph the
+    # decree-leak bug above was found in, one paragraph earlier in this same
+    # function. A copyable illustrative phrase here would repeat that mistake in
+    # the one place it would matter most (this dream, unlike an ordinary one, is
+    # quoted verbatim in the final game-over summary).
+    departure_dream_block = ""
+    if departure_eligible:
+        departure_dream_block = """
+
+Separately, if something about the tribe's long journey here has left you wondering what might \
+exist beyond this island, you may say so -- not a practical need this time, just what you've \
+come to want after seeing everything this place has to offer. Leave it out if this island still \
+feels like enough."""
     prompt = f"""You are reviewing, from a distance, the recent history of the {tribe_name} \
 tribe. Its current guiding philosophy is: "{current_philosophy}"
 {inventory_block}
@@ -114,7 +133,7 @@ order the tribe can act on starting tomorrow: a specific task, not a value or a 
 worded the way you would actually give an order, in your own voice. {decree_line} Leave it as \
 it is unless something you've just reflected on genuinely calls for a new one -- this is your \
 own idea, not ours, so only propose one if it truly comes from what actually happened to THIS \
-tribe, not a generic-sounding order that could apply to any tribe, any time.{dream_block}
+tribe, not a generic-sounding order that could apply to any tribe, any time.{dream_block}{departure_dream_block}
 
 Reply with ONLY JSON:
 {{
@@ -123,7 +142,7 @@ Reply with ONLY JSON:
   "reasoning": "your decision in ONE short sentence, 20 words or fewer -- this is a private thought, not an essay",
   "proposed_award": {{"name": "a short title of your own invention", "category": "one of: {categories_list}"}} or null,
   "proposed_decree": "a short, concrete standing duty, in your own words" or null,
-  "proposed_dream": "a short description of a real, grounded need, in your own words" or null
+  "proposed_dream": "a short description of a real, grounded dream, in your own words" or null
 }}"""
     result = await client.generate_json(reviewer_model, prompt, temperature=0.7, num_ctx=8192)
     if not result or not result.get("revised_philosophy"):

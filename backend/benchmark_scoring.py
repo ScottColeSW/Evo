@@ -9,7 +9,16 @@ a given number -- bump it whenever a formula changes materially.
 
 from .eras import ERAS, era_index
 
-SCORING_VERSION = 2
+# Bumped 2->3, 2026-09-14: score_survival/score_settlement's era_fraction is
+# era_index(era) / (len(ERAS) - 1) -- generic, not hardcoded, so it silently
+# recalculates whenever the era ladder changes length. departure_era (plan file
+# amber-drifting-tern.md) added a 7th rung, so an identical era_reached now
+# produces a lower era_fraction (and therefore a lower score) than an
+# identically-worded historical trial scored under the 6-era ladder. Caught by
+# a test asserting self_actualization (backend/wellbeing.py, the same
+# era_fraction shape) maxes out at the real top era -- worth checking this
+# whole codebase for `len(ERAS)` again the next time the ladder changes.
+SCORING_VERSION = 3
 
 # A tribe that ever settled permanently near water (backend.simulation.Tribe.
 # settled_permanently_near_water) gets this flat bonus on top of the weighted score

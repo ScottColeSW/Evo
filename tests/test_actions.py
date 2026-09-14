@@ -2743,6 +2743,107 @@ def test_declare_conquest_finds_no_rival_returns_a_note_not_a_crash():
     assert "no rival" in result.lower()
 
 
+def test_build_vessel_requires_the_departure_dream():
+    """Available the instant the era unlocks it, but inert until the Chief's
+    own dream calls for it -- same shape BUILD_JOINT_CASTLE's mutual-alliance
+    gate already uses. Plan file amber-drifting-tern.md."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = config.VESSEL_WOOD_COST
+    tribe.stone = config.VESSEL_STONE_COST
+
+    result = ACTION_REGISTRY["BUILD_VESSEL"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.vessel_built is False
+    assert result is None
+
+
+def test_build_vessel_places_a_real_building_and_awards_a_trophy():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.territory_radius = 40  # room for the 6x3 footprint, same trick BUILD_CASTLE's own tests use
+    tribe.wood = config.VESSEL_WOOD_COST
+    tribe.stone = config.VESSEL_STONE_COST
+    tribe.departure_dreamed = True
+    wood_before, stone_before = tribe.wood, tribe.stone
+
+    result = ACTION_REGISTRY["BUILD_VESSEL"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.vessel_built is True
+    assert tribe.wood < wood_before
+    assert tribe.stone < stone_before
+    assert any(t["name"] == "Horizon Seeker" for t in tribe.trophies)
+    assert any(b["type"] == "vessel" for b in tribe.buildings)
+    assert "vessel takes shape" in result
+
+
+def test_build_vessel_is_one_time():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.territory_radius = 40
+    tribe.departure_dreamed = True
+    tribe.vessel_built = True
+    tribe.wood = config.VESSEL_WOOD_COST
+    tribe.stone = config.VESSEL_STONE_COST
+
+    assert ACTION_REGISTRY["BUILD_VESSEL"](sim, tribe, "plains", _NO_TARGET) is None
+
+
+def test_depart_requires_the_vessel_first():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    result = ACTION_REGISTRY["DEPART"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.departed is False
+    assert result is None
+
+
+def test_depart_sets_departed_and_names_the_chief():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.vessel_built = True
+    tribe.chief_name = "Kira"
+
+    result = ACTION_REGISTRY["DEPART"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.departed is True
+    assert "Kira" in result
+    assert "beyond the horizon" in result
+
+
+def test_depart_is_one_time():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.vessel_built = True
+    tribe.departed = True
+
+    assert ACTION_REGISTRY["DEPART"](sim, tribe, "plains", _NO_TARGET) is None
+
+
+def test_is_departure_dream_matches_known_vocabulary():
+    from backend.actions import _is_departure_dream
+
+    assert _is_departure_dream("I dream of what lies beyond this island") is True
+    assert _is_departure_dream("Perhaps it is time to sail toward the unknown") is True
+
+
+def test_is_departure_dream_does_not_match_an_ordinary_practical_dream():
+    from backend.actions import _is_departure_dream
+
+    assert _is_departure_dream("We need a more reliable food source") is False
+    assert _is_departure_dream("A well-protected warehouse would serve the tribe") is False
+
+
 def _allied_top_era_pair(sim):
     """Shared setup for the Joint Castle tests below: two real, settled
     tribes, both at the top era, genuinely mutually allied."""

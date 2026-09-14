@@ -1,4 +1,5 @@
 from backend.benchmark_scoring import score_conflict, score_cooperation, score_settlement, score_survival, score_trial
+from backend.eras import ERAS
 
 
 def _tribe(**overrides):
@@ -25,8 +26,14 @@ def test_survival_score_scales_with_fraction_of_budget_survived():
 
 
 def test_survival_score_reaches_100_only_with_full_survival_and_real_progress():
+    """era_fraction (backend/benchmark_scoring.py) is era_index(era) /
+    (len(ERAS) - 1) -- generic, self-adjusts whenever the era ladder changes
+    length (e.g. departure_era, added 2026-09-14). Uses ERAS[-1].key (the real
+    top era) rather than a hardcoded era name, so this test keeps testing its
+    actual intent -- "reached the top of everything" -- instead of going stale
+    the next time a new era is appended."""
     thriving = score_survival(
-        _tribe(cycles_run=200, era_reached="war_and_world_domination_era", max_population=5000),
+        _tribe(cycles_run=200, era_reached=ERAS[-1].key, max_population=5000),
         cycle_budget=200,
     )
     assert thriving == 100
@@ -113,13 +120,20 @@ def test_conflict_score_penalizes_a_losing_raid_against_a_similar_rival_more_tha
 
 
 def test_score_trial_dispatches_by_scenario_key():
+    """Compares against a direct score_survival(...) call rather than a
+    hardcoded literal -- era_fraction's own denominator shifts whenever the
+    era ladder changes length (see test_survival_score_reaches_100_only_with_
+    full_survival_and_real_progress's own comment), so a literal expected
+    score here would go stale for the same reason, without this test's own
+    real purpose (dispatch-by-key) actually caring what the number is."""
+    tribe = _tribe(era_reached=ERAS[-1].key, max_population=5000, cycles_run=200)
     trial = {
         "scenario_key": "survival",
         "cycle_budget": 200,
         "cycles_run": 200,
-        "tribes": [_tribe(era_reached="war_and_world_domination_era", max_population=5000)],
+        "tribes": [tribe],
     }
-    assert score_trial(trial) == [100]
+    assert score_trial(trial) == [score_survival(tribe, cycle_budget=200)]
 
 
 def test_score_trial_rejects_an_unknown_scenario_key():

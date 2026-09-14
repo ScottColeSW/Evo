@@ -217,6 +217,57 @@ async def test_prompt_asks_for_a_grounded_dream_once_the_dmm_stands():
 
 
 @run_async
+async def test_prompt_omits_the_departure_question_when_not_eligible():
+    client = _FakeClient({"revised_philosophy": "x"})
+
+    await reflect_on_history(
+        client, "llama3", "Forest Tribe", "caution and hoarding", [], dmm_built=True,
+    )
+
+    assert "beyond this island" not in client.last_prompt
+
+
+@run_async
+async def test_prompt_asks_about_departure_once_eligible():
+    """Beyond the Horizon era's real gate -- plan file amber-drifting-tern.md.
+    Still returned via the existing proposed_dream field, no new JSON key --
+    classification happens downstream (Simulation._run_night_cycle)."""
+    client = _FakeClient({"revised_philosophy": "x"})
+
+    await reflect_on_history(
+        client, "llama3", "Forest Tribe", "caution and hoarding", ["reached the last stage of development"],
+        dmm_built=True, departure_eligible=True,
+    )
+
+    assert "beyond this island" in client.last_prompt
+    # Same JSON field as the ordinary dream -- no second key added to the schema.
+    assert client.last_prompt.count('"proposed_dream"') == 1
+
+
+@run_async
+async def test_departure_prompt_gives_no_copyable_example_text():
+    """Explicit design-philosophy carry-over from the 2026-09-14 decree-leak
+    fix: this dream is quoted VERBATIM in the eventual game-over summary, so a
+    copyable example here would be worse than the original bug, not just a
+    repeat of it. Describes the shape only."""
+    client = _FakeClient({"revised_philosophy": "x"})
+
+    await reflect_on_history(
+        client, "llama3", "Forest Tribe", "caution and hoarding", [],
+        dmm_built=True, departure_eligible=True,
+    )
+
+    assert "winter" not in client.last_prompt.lower()
+    # No quoted illustrative sentence -- unlike the decree paragraph's old bug,
+    # there should be no quotation marks wrapping an invented example at all
+    # in the departure paragraph specifically.
+    departure_start = client.last_prompt.index("Separately, if something about the tribe's long journey")
+    departure_end = client.last_prompt.index("feels like enough.") + len("feels like enough.")
+    departure_paragraph = client.last_prompt[departure_start:departure_end]
+    assert '"' not in departure_paragraph
+
+
+@run_async
 async def test_generate_endgame_narrative_returns_the_models_stripped_text():
     client = _FakeTextClient("  A civilization rose, thrived, and faded.  \n")
 

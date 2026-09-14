@@ -9,7 +9,7 @@ from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _battalion_capacity, _created_object_bonus, _eligible_breeding_pair, _food_multiplier,
-    _generate_raider_name, _has_room_to_grow, _item_storage_cap, _labor_multiplier,
+    _generate_raider_name, _has_room_to_grow, _is_departure_dream, _item_storage_cap, _labor_multiplier,
     _long_house_fur_discount, _mutual_ally_at_top_era, _push_past_visited_ground, _record_combat,
     _storage_cap, _sustainable_population, _territory_has_nearby_threats,
     expedition_capacity,
@@ -18,7 +18,7 @@ from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
 from .genetics import breed, hatch
 from .reflection import AWARD_CATEGORIES, generate_endgame_narrative, reflect_on_history
-from .eras import ERAS, era_index, next_era, unlocked_actions_through
+from .eras import ERAS, era_index, next_era, reached_era_or_later, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
 from .instincts import survival_bias_string
@@ -747,6 +747,16 @@ AFFORDABILITY_CHECKS = {
     "DECLARE_CONQUEST": lambda t, w: (
         t.wood >= config.DECLARE_CONQUEST_WOOD_COST and t.stone >= config.DECLARE_CONQUEST_STONE_COST
     ),
+    # Beyond the Horizon era -- plan file amber-drifting-tern.md. BUILD_VESSEL
+    # is real construction (BUILD_CASTLE's own shape), gated on the Chief's
+    # own departure_dreamed flag rather than just cost -- available the
+    # instant the era unlocks it, but inert until that real condition is met,
+    # same shape BUILD_JOINT_CASTLE's own mutual-alliance gate already uses.
+    "BUILD_VESSEL": lambda t, w: (
+        t.departure_dreamed and t.wood >= config.VESSEL_WOOD_COST
+        and t.stone >= config.VESSEL_STONE_COST and _can_place(t, w, "vessel")
+    ),
+    "DEPART": lambda t, w: t.vessel_built and not t.departed,
     # Live report: "I keep seeing 'send hunting party'" -- confirmed against a
     # real run: SCOUT and HUNTING_PARTY were each chosen and rejected with "no
     # one left to send" roughly three times out of four (SCOUT 305/403,
@@ -1404,6 +1414,19 @@ class Tribe:
         # nothing else on hand still names who was actually conquered --
         # tracked here instead so that summary can name them for real.
         self.conquered_tribe_names: list[str] = []
+        # Beyond the Horizon era (see actions.py._build_vessel/_depart,
+        # eras.py's departure_era) -- plan file amber-drifting-tern.md.
+        # departure_dreamed is one-way, same convention as every other
+        # milestone flag here (foraging_retired, has_ever_settled): once the
+        # Chief's own reflection genuinely turns toward leaving
+        # (Simulation._run_night_cycle, classified via actions.
+        # _is_departure_dream), it never gets re-checked or overwritten.
+        # departure_dream holds the verbatim text -- quoted directly in the
+        # eventual game-over summary, no invented detail needed.
+        self.departure_dreamed = False
+        self.departure_dream: str | None = None
+        self.vessel_built = False
+        self.departed = False
         # See actions.py._build_warehouse/_storage_cap -- explicit request after a
         # live run showed unbounded hoarding (200+ wood while starved on stone).
         # Repeatable, same shape as long_houses_built -- each one raises every
@@ -1682,6 +1705,10 @@ class Tribe:
             "spy_missions_caught": self.spy_missions_caught,
             "rival_intel": self.rival_intel,
             "conquered_tribe_names": self.conquered_tribe_names,
+            "departure_dreamed": self.departure_dreamed,
+            "departure_dream": self.departure_dream,
+            "vessel_built": self.vessel_built,
+            "departed": self.departed,
             "warehouses_built": self.warehouses_built,
             "warehouse_upgrades": self.warehouse_upgrades,
             "foraging_retired": self.foraging_retired,
@@ -1766,6 +1793,7 @@ _ONE_OFF_STRUCTURE_FLAGS: tuple[tuple[str, str], ...] = (
     ("hatchery_built", "Hatchery"), ("coop_built", "Coop"), ("bath_house_built", "Bath House"),
     ("library_built", "Library"), ("well_built", "Well"),
     ("dmm_built", "Dream Manifestation Machine"),
+    ("vessel_built", "Vessel"),
 )
 
 
@@ -1807,6 +1835,21 @@ def _tribe_ever_touched_conquest(tribe: "Tribe") -> bool:
     return bool(attack.get("won", 0) or attack.get("lost", 0) or defense.get("won", 0) or defense.get("lost", 0))
 
 
+def _reached_war_era_or_later(tribe: "Tribe") -> bool:
+    """True once a tribe has reached war_and_world_domination_era OR any
+    later era (departure_era, currently) -- NOT exact equality. Plan file
+    amber-drifting-tern.md: adding a real era above war_and_world_domination_
+    era means a tribe can advance past it, and the two call sites below used
+    to check `tribe.era == "war_and_world_domination_era"` directly -- which
+    would silently stop firing for any tribe that raced through into the new
+    era without ever touching DECLARE_CONQUEST, exactly the "never attempted
+    it" case both were written to catch in the first place. Thin wrapper
+    around eras.reached_era_or_later (shared with actions._mutual_ally_at_
+    top_era, which has the exact same class of bug -- see that function's
+    own fix note)."""
+    return reached_era_or_later(tribe.era, "war_and_world_domination_era")
+
+
 def _conquest_record_summary(tribe: "Tribe") -> str | None:
     """War and World Domination era's one real action, DECLARE_CONQUEST (see
     actions.py._declare_conquest), only ever showed up in the ending card as a
@@ -1828,7 +1871,7 @@ def _conquest_record_summary(tribe: "Tribe") -> str | None:
     won, lost = attack.get("won", 0), attack.get("lost", 0)
     held, fell = defense.get("won", 0), defense.get("lost", 0)
     if not (won or lost or held or fell):
-        if tribe.era == "war_and_world_domination_era":
+        if _reached_war_era_or_later(tribe):
             return "Reached War and World Domination but never attempted or faced DECLARE_CONQUEST"
         return None
     bits = []
@@ -2309,10 +2352,18 @@ class Simulation:
         cross-tribe/cross-individual crossover."""
         recent_events = list(tribe.history)[-config.NIGHT_CYCLE_HISTORY_WINDOW:]
         inventory = self._build_night_inventory(tribe)
+        # Beyond the Horizon era's real gate -- plan file amber-drifting-tern.md.
+        # All three required: the era itself (don't invite the idea before it's
+        # possible), the DMM built, and the DMM already used at least once (the
+        # "warmup," not just built) -- config.DMM_WARMUP_CREATIONS_REQUIRED.
+        departure_eligible = (
+            tribe.era == "departure_era" and tribe.dmm_built
+            and len(tribe.created_objects) >= config.DMM_WARMUP_CREATIONS_REQUIRED
+        )
         result = await reflect_on_history(
             self.client, tribe.model, tribe.name,
             tribe.chief_philosophy, recent_events, inventory,
-            tribe.chief_decree, tribe.dmm_built,
+            tribe.chief_decree, tribe.dmm_built, departure_eligible,
         )
         # The chief's own reasoning for this reflection -- kept even when the
         # philosophy didn't change, so the frontend has something real to show as a
@@ -2364,10 +2415,23 @@ class Simulation:
         # whether it matches a category or not), so an old, already-realized wish
         # can't keep echoing after it's been granted. A fresh reflection here simply
         # overwrites whatever dream, if any, was still waiting.
+        #
+        # Departure-dream check runs FIRST, before the ordinary chief_dream
+        # assignment -- plan file amber-drifting-tern.md. A dream that reads as
+        # wanting to leave must never be spent on a mundane DMM creation instead;
+        # `not tribe.departure_dreamed` makes this one-way, same convention as
+        # every other milestone flag here (once dreamed, always dreamed, never
+        # re-checked or overwritten by a later, more ordinary reflection).
         proposed_dream = result.get("proposed_dream")
         if isinstance(proposed_dream, str) and proposed_dream.strip():
-            tribe.chief_dream = proposed_dream.strip()[:200]
-            tribe.history.append(f"Chief {tribe.chief_name} dreams of {tribe.chief_dream}")
+            dream_text = proposed_dream.strip()[:200]
+            if departure_eligible and not tribe.departure_dreamed and _is_departure_dream(dream_text):
+                tribe.departure_dreamed = True
+                tribe.departure_dream = dream_text
+                tribe.history.append(f"Chief {tribe.chief_name} dreams beyond the horizon: {dream_text}")
+            else:
+                tribe.chief_dream = dream_text
+                tribe.history.append(f"Chief {tribe.chief_name} dreams of {tribe.chief_dream}")
 
         # See config.NIGHT_CYCLE_RANDOM_BREED_CHANCE -- a chance encounter independent
         # of any specific celebration milestone, using the exact same eligibility rule
@@ -2691,6 +2755,19 @@ class Simulation:
         living_tribes = [t for t in self.tribes.values() if not t.extinct]
         if self.tribes and not living_tribes:
             await self._trigger_game_over("extinction")
+        # Beyond the Horizon era -- plan file amber-drifting-tern.md. Checked
+        # before world_domination/golden_age/era_ceiling below: a deliberate
+        # act the model chose THIS cycle (DEPART) should win over a passively
+        # re-evaluated condition. actions._depart only ever sets tribe.departed
+        # -- actions mutate state, step() owns win/loss conditions, the same
+        # split DECLARE_CONQUEST/_merge_tribes already use for world_domination.
+        # A solo tribe that already won by conquest can still depart (a nice
+        # alternate finish for that path too, not specially blocked); the rare
+        # case of both tribes departing the same cycle is handled by
+        # _generate_game_over_summary iterating every departed tribe rather
+        # than assuming exactly one.
+        elif any(t.departed for t in self.tribes.values()):
+            await self._trigger_game_over("departure")
         # War and World Domination era's real victory condition.
         # Simulation._merge_tribes physically removes a conquered rival from
         # self.tribes (unlike ordinary hazard/starvation extinction, which only
@@ -3926,6 +4003,24 @@ class Simulation:
                 "left to complete this tribe's legacy is a Castle, the final testament of everything "
                 f"built here: {gap}."
             )
+
+        # Beyond the Horizon era -- plan file amber-drifting-tern.md. Two nudges,
+        # same "an action being merely available doesn't mean a small model
+        # chooses it" lesson this project has hit every single time so far
+        # (Kitchen, NAME_WARRIOR, the wall, DECLARE_CONQUEST, the post-conquest
+        # Castle nudge just above). The second one matters most: a finished
+        # vessel that never gets boarded is the exact failure mode
+        # DECLARE_CONQUEST suffered before its own eligibility nudge existed.
+        if tribe.departure_dreamed and not tribe.vessel_built:
+            visible_entities.append(
+                "The Chief has dreamed of leaving this place behind -- BUILD_VESSEL would begin "
+                "making that real."
+            )
+        elif tribe.vessel_built and not tribe.departed:
+            visible_entities.append(
+                "The vessel stands ready -- DEPART would carry the tribe beyond the horizon, "
+                "fulfilling the Chief's dream, for good."
+            )
         if tribe.throttled_actions:
             # See "should we always keep them in the dark like this?" -- unlike
             # tribe.history (spectator/chronicle-only, never reaches the model's own
@@ -4952,14 +5047,26 @@ class Simulation:
         tribe.memory.remember(memory_text, self.cycle, weight)
 
     def _has_active_alliance_at_top_era(self) -> bool:
-        """True if any two living, top-era tribes are mutually allied and
-        haven't finished a Joint Castle together yet -- used to hold off the
-        era_ceiling ending while the peaceful path is genuinely still in
-        progress, whether or not BUILD_JOINT_CASTLE has ever actually been
-        chosen yet (checked directly against stance/castle_built, not
-        self.joint_castle, since that dict doesn't exist until the first
-        real contribution lands)."""
-        top_era_tribes = [t for t in self.tribes.values() if not t.extinct and next_era(t.era) is None]
+        """True if any two living tribes at or past war_and_world_domination_
+        era are mutually allied and haven't finished a Joint Castle together
+        yet -- used to hold off the era_ceiling ending while the peaceful
+        path is genuinely still in progress, whether or not BUILD_JOINT_
+        CASTLE has ever actually been chosen yet (checked directly against
+        stance/castle_built, not self.joint_castle, since that dict doesn't
+        exist until the first real contribution lands).
+
+        Fixed alongside actions._mutual_ally_at_top_era (plan file
+        amber-drifting-tern.md, 2026-09-14, same bug: `next_era(t.era) is
+        None` means "at the ULTIMATE top era," not "at the era Joint Castle
+        actually unlocks in" -- these stopped being the same question the
+        moment departure_era existed). This function's one caller (the
+        era_ceiling check just below) already guarantees every living tribe
+        is at the true top era before calling this, so the old check
+        happened to still work there by construction -- fixed anyway so this
+        docstring's own "mirrored check" claim about _mutual_ally_at_top_era
+        stays true, not just accidentally-equivalent in the one place that
+        currently calls it."""
+        top_era_tribes = [t for t in self.tribes.values() if not t.extinct and reached_era_or_later(t.era, "war_and_world_domination_era")]
         for i, a in enumerate(top_era_tribes):
             for b in top_era_tribes[i + 1:]:
                 if a.stance_toward.get(b.id) == "ALLIED" and b.stance_toward.get(a.id) == "ALLIED":
@@ -5054,10 +5161,15 @@ class Simulation:
                 "OVERSEER LOG: Every surviving population has exhausted the known stages of "
                 "civilizational development. No further advancement remains observable."
             )
+        elif reason == "departure":
+            lines.append(
+                "OVERSEER LOG: One civilization has chosen to leave the known world behind, "
+                "answering a dream rather than a war."
+            )
         else:
             lines.append("OVERSEER LOG: Observation ended by operator request. Final standing recorded below.")
         for tribe in self.tribes.values():
-            status = "extinct" if tribe.extinct else "surviving"
+            status = "extinct" if tribe.extinct else ("departed beyond the horizon" if tribe.departed else "surviving")
             cause_note = f", cause of collapse: {tribe.extinction_cause or 'unknown'}" if tribe.extinct else ""
             era_label = next((e.label for e in ERAS if e.key == tribe.era), tribe.era)
             trophy_names = ", ".join(t["name"] for t in tribe.trophies) or "none recorded"
@@ -5104,7 +5216,7 @@ class Simulation:
             # lesson).
             unresolved = [
                 t.name for t in living
-                if t.era == "war_and_world_domination_era" and not _tribe_ever_touched_conquest(t)
+                if _reached_war_era_or_later(t) and not _tribe_ever_touched_conquest(t)
             ]
             if unresolved:
                 lines[-1] += (
@@ -5112,6 +5224,24 @@ class Simulation:
                     "before DECLARE_CONQUEST was ever attempted or faced -- no war, conquest, or "
                     "absorption occurred."
                 )
+        elif reason == "departure":
+            # Plan file amber-drifting-tern.md: a genuine two-sided ending, not
+            # a euphemism for one side losing. Iterates every departed tribe
+            # rather than assuming exactly one -- an accepted, rare edge case
+            # is both tribes departing the same cycle, which degrades
+            # gracefully here (two departure lines, no "sole dominion" line)
+            # instead of picking one arbitrarily. departure_dream is quoted
+            # verbatim -- it's the tribe's own real words, nothing invented.
+            departed = [t for t in self.tribes.values() if t.departed]
+            remaining = [t for t in living if not t.departed]
+            for t in departed:
+                lines.append(
+                    f'Analysis: {t.name} sails beyond the horizon, answering the Chief\'s own dream: '
+                    f'"{t.departure_dream}." Session concluded at cycle {self.cycle}.'
+                )
+            if remaining:
+                names = " and ".join(t.name for t in remaining)
+                lines.append(f"{names} inherit the island uncontested -- theirs alone, at last.")
         else:
             lines.append(f"Analysis: session concluded at cycle {self.cycle}.")
         return "\n".join(lines)

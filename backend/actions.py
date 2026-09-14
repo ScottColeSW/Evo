@@ -1470,6 +1470,15 @@ def _dream_matched_category(dream: str) -> str | None:
     return None
 
 
+def _is_departure_dream(dream: str) -> bool:
+    """Deterministic substring match against config.DEPARTURE_DREAM_KEYWORDS
+    -- checked by Simulation._run_night_cycle BEFORE a dream ever reaches
+    _dream_matched_category, so a genuine wish to leave never gets spent on
+    a mundane DMM creation instead. Plan file amber-drifting-tern.md."""
+    lowered = dream.lower()
+    return any(keyword in lowered for keyword in config.DEPARTURE_DREAM_KEYWORDS)
+
+
 def _new_created_object(tribe) -> tuple[str, str]:
     """Picks a name and effect category for a freshly created item/structure
     -- shared by CREATE_ITEM/CREATE_USEFUL_STRUCTURE. The name is genuinely
@@ -1730,6 +1739,42 @@ def _declare_conquest(sim, tribe, biome, target):
         defender.history.append(stalemate_note)
         return f"after {config.DECLARE_CONQUEST_MAX_ROUNDS} brutal rounds neither side breaks -- {stalemate_note}"
     return f"after {config.DECLARE_CONQUEST_MAX_ROUNDS} brutal rounds neither side breaks -- {attacker_name}'s campaign against {defender_name} ends in a costly stalemate"
+
+
+def _build_vessel(sim, tribe, biome, target):
+    """Beyond the Horizon era's real building -- ordinary construction
+    (BUILD_CASTLE's own shape: wood/stone cost + a free footprint slot),
+    unrelated to the DMM's cooldown-gated creation pattern. Gated on
+    tribe.departure_dreamed rather than just era + cost: the Chief's own
+    dream (Simulation._run_night_cycle, grounded in real events) is the
+    real permission here, not just having grown large enough. Plan file
+    amber-drifting-tern.md."""
+    if tribe.vessel_built or not tribe.departure_dreamed:
+        return None
+    if tribe.wood < config.VESSEL_WOOD_COST or tribe.stone < config.VESSEL_STONE_COST:
+        return None
+    slot = architect.find_free_slot(sim.world, tribe, "vessel")
+    if slot is None:
+        return None
+    tribe.wood -= config.VESSEL_WOOD_COST
+    tribe.stone -= config.VESSEL_STONE_COST
+    w, h = config.BUILDING_FOOTPRINTS["vessel"]
+    architect.record_building(tribe, "vessel", slot[0], slot[1], w, h, sim.cycle)
+    tribe.vessel_built = True
+    sim._award_trophy(tribe, "Horizon Seeker")
+    return "a real vessel takes shape -- built to carry the tribe beyond the horizon, exactly as the Chief dreamed"
+
+
+def _depart(sim, tribe, biome, target):
+    """The moment itself -- small and deliberate, no real cost on top of
+    BUILD_VESSEL's own. Simulation.step() watches tribe.departed (not this
+    handler) to actually end the run, the same "actions mutate state,
+    step() owns win/loss conditions" split DECLARE_CONQUEST/_merge_tribes
+    already use for world_domination. Plan file amber-drifting-tern.md."""
+    if not tribe.vessel_built or tribe.departed:
+        return None
+    tribe.departed = True
+    return f"the tribe boards the vessel and sails beyond the horizon, chasing the dream Chief {tribe.chief_name} once spoke of"
 
 
 def _plant_crop(sim, tribe, biome, target):
@@ -2921,17 +2966,29 @@ def _declare_alliance(sim, tribe, biome, target):
 
 
 def _mutual_ally_at_top_era(sim, tribe):
-    """The rival this tribe could build a Joint Castle with -- both at the
-    one era DECLARE_CONQUEST/BUILD_JOINT_CASTLE exist in, and genuinely,
-    mutually allied (not just this tribe's own one-sided declaration).
-    Returns None otherwise. See Simulation._has_active_alliance_at_top_era
-    for the mirrored check step() uses to hold off era_ceiling while this is
-    still in progress."""
-    from .eras import next_era
-    if next_era(tribe.era) is not None:
+    """The rival this tribe could build a Joint Castle with -- both at or
+    past the era DECLARE_CONQUEST/BUILD_JOINT_CASTLE exist in
+    (war_and_world_domination_era), and genuinely, mutually allied (not just
+    this tribe's own one-sided declaration). Returns None otherwise. See
+    Simulation._has_active_alliance_at_top_era for the mirrored check step()
+    uses to hold off era_ceiling while this is still in progress.
+
+    Live bug, confirmed 2026-09-14 (plan file amber-drifting-tern.md): this
+    used to check `next_era(tribe.era) is not None` -- "is this tribe at the
+    ULTIMATE top era" -- which is a different question from "has this tribe
+    reached the era these two actions actually unlock in." The moment
+    departure_era existed above war_and_world_domination_era, that check
+    stopped matching war_and_world_domination_era at all, silently breaking
+    BUILD_JOINT_CASTLE/the golden_age ending for any two allied tribes
+    sitting at that era -- caught by a previously-passing test failing
+    outright. Fixed to check "at or past war_and_world_domination_era"
+    instead, the same reached_era_or_later(..., "war_and_world_domination_
+    era") shape Simulation._reached_war_era_or_later already uses."""
+    from .eras import reached_era_or_later
+    if not reached_era_or_later(tribe.era, "war_and_world_domination_era"):
         return None
     for other in sim.tribes.values():
-        if other.id == tribe.id or other.extinct or next_era(other.era) is not None:
+        if other.id == tribe.id or other.extinct or not reached_era_or_later(other.era, "war_and_world_domination_era"):
             continue
         if tribe.stance_toward.get(other.id) == "ALLIED" and other.stance_toward.get(tribe.id) == "ALLIED":
             return other
@@ -3168,6 +3225,8 @@ ACTION_REGISTRY = {
     "CREATE_ITEM": _create_item,
     "CREATE_USEFUL_STRUCTURE": _create_useful_structure,
     "DECLARE_CONQUEST": _declare_conquest,
+    "BUILD_VESSEL": _build_vessel,
+    "DEPART": _depart,
     "BUILD_JOINT_CASTLE": _build_joint_castle,
     "BUILD_KITCHEN": _build_kitchen,
     "BUILD_MOAT": _build_moat,
@@ -3238,6 +3297,8 @@ ACTION_DESCRIPTIONS = {
     "CREATE_ITEM": "Design and craft a genuinely new item at the DMM -- a real, permanent effect (a bonus to gathering, combat, defense, celebrations, exploration speed, or an immediate population grant), shaped by whatever the Chief has lately dreamed of, or picked for you otherwise. Only possible once the DMM stands, and it rests 10 days between uses.",
     "CREATE_USEFUL_STRUCTURE": "Design and build a genuinely new structure at the DMM -- same real, permanent effects as CREATE_ITEM, but a building instead of a portable item. Only possible once the DMM stands, and it rests 10 days between uses.",
     "DECLARE_CONQUEST": "An all-in campaign to fully and immediately conquer a rival tribe near target_vector, in one decisive stroke rather than several raids. A win absorbs them completely; a loss costs far more than an ordinary failed raid. Does nothing if no rival is there.",
+    "BUILD_VESSEL": "Build a real vessel using stored wood and stone -- a one-time, permanent structure meant to carry the tribe beyond the horizon. Only possible once the Chief has genuinely dreamed of leaving.",
+    "DEPART": "Board the vessel and sail beyond the horizon, for good -- ends the tribe's story here. Only possible once the vessel stands.",
     "BUILD_JOINT_CASTLE": "Contribute wood and stone toward a Joint Castle raised together with a genuinely, mutually allied rival tribe -- a shared monument to the alliance, built up over several turns from either side. Completing it marks both tribes as having reached Castle-state. Only possible once truly allied, not just once one side has declared it.",
     "BUILD_KITCHEN": "Build a kitchen using stored wood and stone -- only possible once cooking is known and a long house stands. A one-time, permanent structure: stacks with cooking for nine times as much food from every future forage, hunt, or catch, instead of only three.",
     "BUILD_MOAT": "Dig a moat using stored wood and stone -- only possible once the wall has been reinforced with a second layer. A one-time, permanent structure, cheaper than another wall layer: a further defense bonus.",
