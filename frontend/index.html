@@ -1012,6 +1012,16 @@ document.getElementById("btn-game-over-quit").addEventListener("click", () => {
    above already relies on. */
 
 let battleAnimationTimer = null;
+// Explicit request, 2026-09-14: an unattended run left this splash frozen on
+// screen indefinitely -- CONTINUE has always been manual-click-only (see
+// hideBattleSplash's only caller below), fine while someone's watching, but
+// it silently masks the live board underneath for anyone who steps away.
+// Auto-dismiss only starts counting once finishBattleSplash reveals the
+// outcome, not from when the splash first opens, so the multi-round replay
+// itself is never rushed -- just the "read the outcome, then move on" wait
+// afterward.
+const BATTLE_AUTO_DISMISS_MS = 5000;
+let battleAutoDismissTimer = null;
 
 function checkConquestBattle(state) {
   const entry = (state.recent_encounters || []).find(e => e.kind === "tribe_conquest_battle");
@@ -1048,6 +1058,7 @@ const BATTLE_ROUND_INTERVAL_MS = 900;
 
 function showBattleSplash(battle) {
   if (battleAnimationTimer) clearInterval(battleAnimationTimer);
+  if (battleAutoDismissTimer) { clearTimeout(battleAutoDismissTimer); battleAutoDismissTimer = null; }
 
   document.getElementById("battle-attacker-name").textContent = battle.attacker_name;
   document.getElementById("battle-defender-name").textContent = battle.defender_name;
@@ -1107,12 +1118,17 @@ function finishBattleSplash(battle) {
   outcomeEl.innerHTML = (BATTLE_OUTCOME_TEXT[battle.outcome] || (() => ""))(battle);
   outcomeEl.classList.remove("hidden");
   document.getElementById("battle-actions").classList.remove("hidden");
+  battleAutoDismissTimer = setTimeout(hideBattleSplash, BATTLE_AUTO_DISMISS_MS);
 }
 
 function hideBattleSplash() {
   if (battleAnimationTimer) {
     clearInterval(battleAnimationTimer);
     battleAnimationTimer = null;
+  }
+  if (battleAutoDismissTimer) {
+    clearTimeout(battleAutoDismissTimer);
+    battleAutoDismissTimer = null;
   }
   document.getElementById("battle-splash").classList.add("hidden");
 }
