@@ -295,3 +295,17 @@ async def test_generate_endgame_narrative_does_not_invite_invented_specifics():
     await generate_endgame_narrative(client, "mistral:7b", "OVERSEER LOG: ...")
 
     assert "Do not invent specific events, names, or numbers" in client.last_prompt
+
+
+@run_async
+async def test_generate_endgame_narrative_asks_for_two_paragraphs():
+    """Explicit request, 2026-09-14: the final-summary narrative was rendering as
+    one dense, unbroken block on the game-over splash. white-space: pre-wrap
+    already renders a blank line as visible paragraph spacing (see frontend/
+    index.html's .game-over-narrative) -- the missing piece was ever asking the
+    model to write one in the first place."""
+    client = _FakeTextClient("a tale")
+
+    await generate_endgame_narrative(client, "mistral:7b", "OVERSEER LOG: ...")
+
+    assert "two short paragraphs" in client.last_prompt

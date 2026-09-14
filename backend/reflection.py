@@ -183,6 +183,9 @@ ended. Here is the factual record of what happened, exactly as observed:
 Write a short narrative account of this civilization's story -- three to six sentences, \
 grounded only in the facts above. Do not invent specific events, names, or numbers beyond \
 what's given; you may interpret and characterize what happened, not add to it. Write it as \
-a story's closing, not another log entry."""
+a story's closing, not another log entry.
+
+Break it into two short paragraphs, separated by a single blank line -- roughly "how it \
+lived" and "how it ended" -- rather than one unbroken block."""
     narrative = await client.generate_text(model, prompt, temperature=0.7)
     return narrative.strip()
