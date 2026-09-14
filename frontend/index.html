@@ -24,6 +24,10 @@
   #model-warning { color: #f59e0b; font-size: 12px; margin-top: 8px; display: none; }
   #immortality-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; color: #c7d2fe; }
   #immortality-row input[type=number] { width: 60px; background: #141419; border: 1px solid #333344; color: #e2e2e7; padding: 4px 6px; border-radius: 4px; }
+  #picker-footer-links { text-align: center; margin-top: 22px; padding-top: 14px; border-top: 1px solid #2a2a3a; font-size: 12px; }
+  #picker-footer-links a { color: #7c7c94; text-decoration: none; }
+  #picker-footer-links a:hover { color: #a5b4fc; text-decoration: underline; }
+  #picker-footer-links .sep { color: #444455; margin: 0 8px; }
 
   /* --- Theater screen --- */
   #theater { display: none; flex-direction: column; height: 100vh; }
@@ -336,6 +340,11 @@
   <div id="picker-controls">
     <button id="btn-add">+ Add Tribe</button>
     <button id="btn-start">Begin Simulation</button>
+  </div>
+  <div id="picker-footer-links">
+    <a href="about.html">About the Creator</a>
+    <span class="sep">·</span>
+    <a href="books.html">Books</a>
   </div>
 </div>
 

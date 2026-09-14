@@ -34,6 +34,20 @@ async def debug_console(request: web.Request) -> web.FileResponse:
     return web.FileResponse(FRONTEND_DIR / "debug.html")
 
 
+@routes.get("/about.html")
+async def about_page(request: web.Request) -> web.FileResponse:
+    """Static personal about/bio page -- same one-route-per-file shape as
+    index/debug_console above (this app has no generic static-directory
+    route), just serving a file with no simulation logic behind it."""
+    return web.FileResponse(FRONTEND_DIR / "about.html")
+
+
+@routes.get("/books.html")
+async def books_page(request: web.Request) -> web.FileResponse:
+    """Static book list, same shape as about_page above."""
+    return web.FileResponse(FRONTEND_DIR / "books.html")
+
+
 @routes.get("/api/models")
 async def models(request: web.Request) -> web.Response:
     async with httpx.AsyncClient(timeout=5.0) as client:
