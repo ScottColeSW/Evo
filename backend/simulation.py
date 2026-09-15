@@ -7690,17 +7690,29 @@ class Simulation:
         _advance_flock already uses for the tribe's flock. No genetics/lineage
         crossover here, unlike hatching -- "breed to recursively have the
         resources automagically" describes population growth, not named
-        individuals with inherited traits, so this stays a flat +1 roll."""
+        individuals with inherited traits.
+
+        Live-run finding, 2026-09-15: a herd fed all the way to 0 could never
+        breed back (the early-return just below), a permanent dead end -- see
+        config.DEER_PEN_MINIMUM_HERD_SIZE's own comment. Starvation loss is now
+        clamped at that same floor, so it can thin an oversized herd but never
+        wipe the seed population a Pen needs to keep functioning. Litter size on
+        a successful breed is now a weighted 1-4 draw (config.
+        DEER_BREED_LITTER_SIZES/_WEIGHTS) instead of a flat +1 -- explicit
+        request: "1-4 on a sliding probability scale where 4 is hard and 1 is
+        given.\""""
         if tribe.deer <= 0:
             return
         feed_needed = config.DEER_UPKEEP_FOOD_PER_MEMBER * tribe.deer
         if tribe.food < feed_needed:
-            tribe.deer -= 1
-            tribe.history.append("part of the deer herd is lost for lack of feed")
+            if tribe.deer > config.DEER_PEN_MINIMUM_HERD_SIZE:
+                tribe.deer -= 1
+                tribe.history.append("part of the deer herd is lost for lack of feed")
             return
         tribe.food -= feed_needed
         if tribe.deer >= config.DEER_MIN_SIZE_TO_BREED and random.random() < config.DEER_NATURAL_BREED_CHANCE:
-            tribe.deer += 1
+            litter = random.choices(config.DEER_BREED_LITTER_SIZES, weights=config.DEER_BREED_LITTER_WEIGHTS)[0]
+            tribe.deer += litter
 
     def _advance_tannery_yield(self, tribe: Tribe) -> None:
         """Once a tannery is built (actions.py._build_tannery), Fur flows in
@@ -7752,7 +7764,13 @@ class Simulation:
         if tribe.tannery_built and deer_proven and self._is_camped(tribe):
             self._capped_unique_add(tribe, "Fur", config.TANNERY_YIELD_PER_CYCLE)
         if tribe.deer_pen_built and tribe.deer > 0 and self.cycle % config.DAY_LENGTH_CYCLES == 0:
-            fed = min(tribe.deer, random.randint(config.DEER_PEN_DAILY_FEED_MIN, config.DEER_PEN_DAILY_FEED_MAX))
+            # Live-run finding, 2026-09-15: "Deer Pen showing 0" -- with a small
+            # herd, min(deer, randint(1,3)) could equal the herd's own size,
+            # feeding it to exactly 0 in one day. Clamped to never feed below
+            # config.DEER_PEN_MINIMUM_HERD_SIZE, same floor _advance_deer_pen's
+            # own starvation-loss path now respects.
+            feedable = max(0, tribe.deer - config.DEER_PEN_MINIMUM_HERD_SIZE)
+            fed = min(feedable, random.randint(config.DEER_PEN_DAILY_FEED_MIN, config.DEER_PEN_DAILY_FEED_MAX))
             if fed > 0:
                 tribe.deer -= fed
                 self._capped_unique_add(tribe, "Fur", fed * config.FUR_PER_DEER_FED)

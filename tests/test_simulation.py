@@ -10591,15 +10591,38 @@ def test_advance_deer_pen_consumes_feed():
 
 
 def test_advance_deer_pen_shrinks_without_enough_feed():
+    """deer starts comfortably above config.DEER_PEN_MINIMUM_HERD_SIZE so the
+    ordinary shrink path is still observable -- see the sibling test just
+    below for the floor itself."""
+    from backend import config
+
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.deer = 2
+    tribe.deer = config.DEER_PEN_MINIMUM_HERD_SIZE + 2
     tribe.food = 0
 
     sim._advance_deer_pen(tribe)
 
-    assert tribe.deer == 1
+    assert tribe.deer == config.DEER_PEN_MINIMUM_HERD_SIZE + 1
     assert any("lost for lack of feed" in entry for entry in tribe.history)
+
+
+def test_advance_deer_pen_starvation_never_drops_below_the_minimum_herd_size():
+    """Live-run finding, 2026-09-15: "Deer Pen showing 0" -- a herd fed or
+    starved all the way to 0 could never breed back (_advance_deer_pen's own
+    early return above). Starvation loss now stops at config.
+    DEER_PEN_MINIMUM_HERD_SIZE instead of continuing to 0."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.deer = config.DEER_PEN_MINIMUM_HERD_SIZE
+    tribe.food = 0
+
+    sim._advance_deer_pen(tribe)
+
+    assert tribe.deer == config.DEER_PEN_MINIMUM_HERD_SIZE
+    assert not any("lost for lack of feed" in entry for entry in tribe.history)
 
 
 def test_advance_deer_pen_can_naturally_breed_once_established_and_fed():
@@ -10610,10 +10633,31 @@ def test_advance_deer_pen_can_naturally_breed_once_established_and_fed():
     tribe.deer = config.DEER_MIN_SIZE_TO_BREED
     tribe.food = 1000
 
-    with mock.patch("backend.simulation.random.random", return_value=0.0):  # below any chance
+    with mock.patch("backend.simulation.random.random", return_value=0.0), \
+            mock.patch("backend.simulation.random.choices", return_value=[1]):
         sim._advance_deer_pen(tribe)
 
     assert tribe.deer == config.DEER_MIN_SIZE_TO_BREED + 1
+
+
+def test_advance_deer_pen_litter_size_is_drawn_from_the_weighted_pool():
+    """Explicit request, 2026-09-15: "When Deer Breed, they produce 1-4 new
+    Deer... on a sliding probability scale where 4 is hard and 1 is given."
+    A successful breed roll now adds a weighted litter (config.
+    DEER_BREED_LITTER_SIZES/_WEIGHTS) instead of a flat +1."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.deer = config.DEER_MIN_SIZE_TO_BREED
+    tribe.food = 1000
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0), \
+            mock.patch("backend.simulation.random.choices", return_value=[4]) as fake_choices:
+        sim._advance_deer_pen(tribe)
+
+    assert tribe.deer == config.DEER_MIN_SIZE_TO_BREED + 4
+    fake_choices.assert_called_once_with(config.DEER_BREED_LITTER_SIZES, weights=config.DEER_BREED_LITTER_WEIGHTS)
 
 
 def test_advance_deer_pen_does_nothing_with_an_empty_herd():
@@ -10648,7 +10692,11 @@ def test_advance_tannery_yield_feeds_deer_into_extra_fur_once_pen_exists():
     assert tribe.unique_resources["Fur"] == config.TANNERY_YIELD_PER_CYCLE + 3 * config.FUR_PER_DEER_FED
 
 
-def test_advance_tannery_yield_feed_is_capped_by_the_actual_herd_size():
+def test_advance_tannery_yield_feed_is_capped_by_the_herd_size_above_the_floor():
+    """Live-run finding, 2026-09-15: "Deer Pen showing 0" -- feeding used to be
+    capped only by the herd's raw size, so a small herd (e.g. 2) could be fed
+    to exactly 0 in one day. Now also respects config.DEER_PEN_MINIMUM_HERD_
+    SIZE: only the surplus above that floor is ever feedable."""
     from unittest import mock
 
     from backend import config
@@ -10658,13 +10706,32 @@ def test_advance_tannery_yield_feed_is_capped_by_the_actual_herd_size():
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.tannery_built = True
     tribe.deer_pen_built = True
-    tribe.deer = 2
+    tribe.deer = config.DEER_PEN_MINIMUM_HERD_SIZE + 2
 
-    with mock.patch("backend.simulation.random.randint", return_value=3):  # would ask for more than exists
+    with mock.patch("backend.simulation.random.randint", return_value=3):  # would ask for more than the feedable surplus
         sim._advance_tannery_yield(tribe)
 
-    assert tribe.deer == 0
+    assert tribe.deer == config.DEER_PEN_MINIMUM_HERD_SIZE
     assert tribe.unique_resources["Fur"] == config.TANNERY_YIELD_PER_CYCLE + 2 * config.FUR_PER_DEER_FED
+
+
+def test_advance_tannery_yield_feeds_nothing_when_the_herd_is_already_at_the_floor():
+    from unittest import mock
+
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.tannery_built = True
+    tribe.deer_pen_built = True
+    tribe.deer = config.DEER_PEN_MINIMUM_HERD_SIZE
+
+    with mock.patch("backend.simulation.random.randint", return_value=3):
+        sim._advance_tannery_yield(tribe)
+
+    assert tribe.deer == config.DEER_PEN_MINIMUM_HERD_SIZE
+    assert tribe.unique_resources["Fur"] == config.TANNERY_YIELD_PER_CYCLE  # base trickle only, nothing fed
 
 
 def test_advance_tannery_yield_only_feeds_the_deer_pen_once_per_real_day():

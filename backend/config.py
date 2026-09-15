@@ -1869,12 +1869,32 @@ TANNERY_MEAT_BONUS_PER_HUNT = 2
 DEER_PEN_HUNT_THRESHOLD = 3
 DEER_PEN_WOOD_COST = 15
 DEER_PEN_STONE_COST = 15
-DEER_PEN_FOUNDING_COUNT = 2
+# Live-run finding, 2026-09-15: "Deer Pen showing 0." Confirmed exact
+# mechanism: a Pen founded with the old count of 2 could have its entire
+# starting herd fed to the Tannery in one shot (DEER_PEN_DAILY_FEED_MAX=3,
+# min(deer, randint(1,3)) can equal deer itself when deer is small) before it
+# ever got a meaningful number of breeding rolls -- and once tribe.deer hits
+# 0, _advance_deer_pen's own first line returns immediately, so a zeroed herd
+# can never breed its way back. A permanent dead end, not a transient dip.
+# Explicit request: "They should have at least 3 at all times." Raised to
+# match DEER_PEN_MINIMUM_HERD_SIZE below, and both the daily feed and the
+# starvation-loss path (Simulation._advance_deer_pen) are now clamped so
+# neither can ever push the herd under that floor.
+DEER_PEN_FOUNDING_COUNT = 3
+DEER_PEN_MINIMUM_HERD_SIZE = 3
 # Mirrors FLOCK_UPKEEP_FOOD_PER_MEMBER/FLOCK_MIN_SIZE_TO_BREED/
 # FLOCK_NATURAL_HATCH_CHANCE's own shape -- deer eat more per head than fowl.
 DEER_UPKEEP_FOOD_PER_MEMBER = 2
 DEER_MIN_SIZE_TO_BREED = 2
 DEER_NATURAL_BREED_CHANCE = 0.15
+# Explicit request, 2026-09-15: "When Deer Breed, they produce 1-4 new Deer.
+# 1-4 on a sliding probability scale where 4 is hard and 1 is given." A
+# successful breed roll (DEER_NATURAL_BREED_CHANCE above) used to add a flat
+# +1; now draws a litter size from this weighted pool instead -- 1 is by far
+# the most likely outcome ("given"), 4 is rare ("hard"), monotonically
+# decreasing in between. Indices line up with DEER_BREED_LITTER_SIZES below.
+DEER_BREED_LITTER_SIZES = (1, 2, 3, 4)
+DEER_BREED_LITTER_WEIGHTS = (50, 30, 15, 5)
 # The literal "1-3 deer a day" -- Simulation._advance_tannery_yield feeds this
 # many captive deer (capped by however many actually exist) into Fur production
 # each cycle, on top of the existing flat TANNERY_YIELD_PER_CYCLE, never
