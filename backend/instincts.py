@@ -72,36 +72,46 @@ def survival_bias_string(
     # gather commands and we are warning them to 'gather' food. that's a logic leap
     # I don't think they are ready for." The comment above already claims this
     # message names GATHER_FOOD/HUNTING_PARTY "directly," but the actual text only
-    # ever said the lowercase, informal "gather food" / "hunting" / "fishing" --
-    # never the literal action tokens (GATHER_FOOD, HUNT_DEER, HUNTING_PARTY,
-    # CATCH_FISH) the model actually has to emit, unlike every other nudge in this
-    # codebase (e.g. simulation.py's own "DECLARE_CONQUEST is a real, favorable bet
-    # now"), which always embeds the exact ACTION_REGISTRY key. Translating loose
-    # prose into the one correct token is exactly the kind of inferential leap this
-    # project's own "facts vs mechanics" pattern says a small model can't reliably
-    # make. GATHER_FOOD and HUNT_DEER are both unlocked from primitive_dawn (see
-    # eras.py) and never settlement-gated, so naming them unconditionally is always
-    # safe; CATCH_FISH stays behind the same fishing_learned gate as before (a
+    # ever said the vague, collective "gather food" / "hunting" / "fishing" --
+    # words that don't map 1:1 onto any one real action (HUNT_DEER vs.
+    # HUNTING_PARTY are both "hunting"; is "gather food" GATHER_FOOD or one of the
+    # settled-only food actions?). Translating a vague collective noun into the
+    # one correct action is exactly the kind of inferential leap this project's
+    # own "facts vs mechanics" pattern says a small model can't reliably make.
+    #
+    # Follow-up correction, 2026-09-15: the first fix over-corrected the other
+    # way, spelling out the literal SCREAMING_SNAKE_CASE ACTION_REGISTRY keys
+    # (GATHER_FOOD, HUNT_DEER, HUNTING_PARTY) in the middle of the sentence.
+    # Explicit request: "This should be plain text, but using the 'action' words
+    # specifically, not the variable names." Rewritten as ordinary lowercase
+    # prose again, but with each verb now naming exactly one real action instead
+    # of a collective term ("forage" -> GATHER_FOOD, "hunt deer" -> HUNT_DEER,
+    # "a hunting party" -> HUNTING_PARTY, "fish"/"fishing" -> CATCH_FISH,
+    # "a fire" -> BUILD_FIRE, "a kitchen" -> BUILD_KITCHEN) -- precise about
+    # which action without reading like debug output. GATHER_FOOD and HUNT_DEER
+    # are both unlocked from primitive_dawn (see eras.py) and never
+    # settlement-gated, so naming them unconditionally is always safe;
+    # CATCH_FISH stays behind the same fishing_learned gate as before (a
     # pre-existing, separate question of whether it can dangle for an unsettled
     # tribe -- not what was reported here, left alone).
     if food_secure:
         pass
     elif food <= upkeep * config.HUNGER_CRITICAL_CYCLES_LEFT:
-        message = "Your people are starving -- GATHER_FOOD, HUNT_DEER, or HUNTING_PARTY would help right now"
-        message += "; CATCH_FISH is also worth trying." if not fishing_learned else "."
+        message = "Your people are starving -- foraging for food, hunting deer, or sending out a hunting party would help right now"
+        message += ", or try fishing." if not fishing_learned else "."
         if not cooking_learned:
-            message += " BUILD_FIRE, then cooking after a successful hunt, would make every future harvest go much further."
+            message += " Building a fire, then cooking after a successful hunt, would make every future harvest go much further."
         elif not kitchen_built:
-            message += " BUILD_KITCHEN would multiply every future harvest even further, on top of what cooking already does."
+            message += " Building a kitchen would multiply every future harvest even further, on top of what cooking already does."
         urgent.append(message)
         critical = True
     elif food <= upkeep * config.HUNGER_WARNING_CYCLES_LEFT:
-        message = "Food stores are running low -- GATHER_FOOD, HUNT_DEER, or HUNTING_PARTY soon would help"
-        message += "; CATCH_FISH is also an option." if not fishing_learned else "."
+        message = "Food stores are running low -- foraging for food, hunting deer, or sending out a hunting party soon would help"
+        message += ", or try fishing." if not fishing_learned else "."
         if not cooking_learned:
-            message += " BUILD_FIRE, then cooking after a successful hunt, would help stored food last much longer too."
+            message += " Building a fire, then cooking after a successful hunt, would help stored food last much longer too."
         elif not kitchen_built:
-            message += " BUILD_KITCHEN would stretch it further still."
+            message += " Building a kitchen would stretch it further still."
         urgent.append(message)
 
     if water_secure:
