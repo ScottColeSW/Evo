@@ -1165,42 +1165,60 @@ function showBattleSplash(battle) {
 
   let i = 0;
   battleAnimationTimer = setInterval(() => {
-    if (i >= battle.rounds.length) {
+    // Live report, 2026-09-15: "the blackout came back" on a run with no battle at
+    // all this time -- ruled this loop out as THAT incident's cause (no conquest
+    // fired), but auditing it surfaced a real, unrelated risk of the exact same
+    // failure class the 2026-09-09 spawn-splash fix already had to learn from once:
+    // #battle-splash is the same full-screen, near-black, fixed-position overlay,
+    // and this callback had no guard at all -- one bad round (a missing field, a
+    // future data-shape change) throws mid-frame, the interval is never cleared,
+    // and the overlay is stranded on top of everything with no visible cause. Fails
+    // safe instead: log it (diagnosable next time) and force the splash closed
+    // rather than leaving a permanent black screen.
+    try {
+      if (i >= battle.rounds.length) {
+        clearInterval(battleAnimationTimer);
+        battleAnimationTimer = null;
+        if (battleDieTumbleTimer) { clearInterval(battleDieTumbleTimer); battleDieTumbleTimer = null; }
+        finishBattleSplash(battle);
+        return;
+      }
+      const round = battle.rounds[i];
+      document.getElementById("battle-round-label").textContent = `Round ${round.round} of ${battle.rounds.length}`;
+      renderBattleMeters(battle, round.attacker_population, round.defender_population);
+      const log = document.getElementById("battle-log");
+      log.insertAdjacentHTML("beforeend", battleLogLineForRound(battle, round));
+      log.scrollTop = log.scrollHeight;
+
+      // The die's shown result is decided already (round.die_roll) -- this is a
+      // presentation layer over the real random.random() roll backend/actions.py
+      // already made; the tumble is cosmetic suspense, not a second roll.
+      const favoredColor = round.die_effective_pct >= 50 ? battle.attacker_color : battle.defender_color;
+      dieEl.classList.add("rolling");
+      dieEl.style.backgroundColor = favoredColor || "";
+      if (battleDieTumbleTimer) clearInterval(battleDieTumbleTimer);
+      battleDieTumbleTimer = setInterval(() => {
+        dieEl.textContent = String(1 + Math.floor(Math.random() * round.die));
+      }, 70);
+      setTimeout(() => {
+        if (battleDieTumbleTimer) { clearInterval(battleDieTumbleTimer); battleDieTumbleTimer = null; }
+        dieEl.classList.remove("rolling");
+        dieEl.textContent = String(round.die_roll);
+        document.getElementById("battle-die-readout").innerHTML =
+          `Needs <b>${round.die_target}+</b> on a d${round.die}`;
+        const [shoutPhrase, shoutGloss] = battleDieShoutFor(round.attacker_won);
+        shoutEl.innerHTML = `${escapeHtml(shoutPhrase)}<span class="shout-gloss">${escapeHtml(shoutGloss)}</span>`;
+        shoutEl.classList.add("show");
+      }, BATTLE_DIE_TUMBLE_MS);
+
+      i++;
+    } catch (err) {
+      console.error("Error animating a battle round -- closing the battle splash instead of leaving it stuck.", err);
       clearInterval(battleAnimationTimer);
       battleAnimationTimer = null;
       if (battleDieTumbleTimer) { clearInterval(battleDieTumbleTimer); battleDieTumbleTimer = null; }
-      finishBattleSplash(battle);
-      return;
+      hideBattleSplash();
     }
-    const round = battle.rounds[i];
-    document.getElementById("battle-round-label").textContent = `Round ${round.round} of ${battle.rounds.length}`;
-    renderBattleMeters(battle, round.attacker_population, round.defender_population);
-    const log = document.getElementById("battle-log");
-    log.insertAdjacentHTML("beforeend", battleLogLineForRound(battle, round));
-    log.scrollTop = log.scrollHeight;
-
-    // The die's shown result is decided already (round.die_roll) -- this is a
-    // presentation layer over the real random.random() roll backend/actions.py
-    // already made; the tumble is cosmetic suspense, not a second roll.
-    const favoredColor = round.die_effective_pct >= 50 ? battle.attacker_color : battle.defender_color;
-    dieEl.classList.add("rolling");
-    dieEl.style.backgroundColor = favoredColor || "";
-    if (battleDieTumbleTimer) clearInterval(battleDieTumbleTimer);
-    battleDieTumbleTimer = setInterval(() => {
-      dieEl.textContent = String(1 + Math.floor(Math.random() * round.die));
-    }, 70);
-    setTimeout(() => {
-      if (battleDieTumbleTimer) { clearInterval(battleDieTumbleTimer); battleDieTumbleTimer = null; }
-      dieEl.classList.remove("rolling");
-      dieEl.textContent = String(round.die_roll);
-      document.getElementById("battle-die-readout").innerHTML =
-        `Needs <b>${round.die_target}+</b> on a d${round.die}`;
-      const [shoutPhrase, shoutGloss] = battleDieShoutFor(round.attacker_won);
-      shoutEl.innerHTML = `${escapeHtml(shoutPhrase)}<span class="shout-gloss">${escapeHtml(shoutGloss)}</span>`;
-      shoutEl.classList.add("show");
-    }, BATTLE_DIE_TUMBLE_MS);
-
-    i++;
   }, BATTLE_ROUND_INTERVAL_MS);
 }
 
