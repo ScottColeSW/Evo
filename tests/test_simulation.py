@@ -7748,6 +7748,36 @@ async def test_resolve_cultural_crossover_records_history_for_both_tribes():
 
 
 @run_async
+async def test_resolve_cultural_crossover_passes_the_human_readable_era_label_not_the_raw_key():
+    """Same fix as genetics.hatch's own era_label lookup (test_resolve_hatch_
+    passes_the_human_readable_era_label_not_the_raw_key) -- breed()'s prompt has
+    the identical "'{era}' era" quoted-token shape a small model can parrot back
+    verbatim into its own note."""
+    from backend.eras import ERAS
+
+    sim = Simulation([
+        {"name": "Forest Tribe", "model": "gemma2:2b"},
+        {"name": "Mountain Tribe", "model": "qwen2.5:3b"},
+    ])
+    tribe = sim.tribes["tribe_0"]
+    rival = sim.tribes["tribe_1"]
+    tribe.era = "war_and_world_domination_era"
+    tribe.pending_cultural_crossover = rival.id
+    captured = {}
+
+    async def fake_breed(client, model, tribe_a, tribe_b, era):
+        captured["era"] = era
+        return {"note": "they trade stories of fire and stone"}
+
+    with mock.patch("backend.simulation.breed", fake_breed):
+        await sim._resolve_cultural_crossover(tribe)
+
+    expected_label = next(e.label for e in ERAS if e.key == "war_and_world_domination_era")
+    assert captured["era"] == expected_label
+    assert captured["era"] != "war_and_world_domination_era"
+
+
+@run_async
 async def test_resolve_cultural_crossover_passes_the_real_stabilized_vocabulary():
     sim = Simulation([
         {"name": "Forest Tribe", "model": "gemma2:2b"},
@@ -11557,6 +11587,41 @@ async def test_resolve_hatch_crosses_two_existing_parents_via_hatch():
     assert tribe.flock_lineage[-1]["parents"] == ["hardy", "quick to forage"]
     assert any("hardy forager" not in entry for entry in tribe.history)  # trait itself isn't echoed
     assert any("a promising hatchling" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_resolve_hatch_passes_the_human_readable_era_label_not_the_raw_key():
+    """Live report, 2026-09-15: "Tribe 2 hatchling names started look
+    'unencoded'." Confirmed against a real run: genetics.hatch's prompt used to
+    embed the raw internal era key ("'departure_era' era"), and small models
+    echoed that snake_case token back verbatim into the hatchling's own trait/
+    note text -- the same "a quoted token in the prompt gets parroted back"
+    shape already fixed once for the decree/dream prompts. Now passes the
+    era's real label (eras.py's own ERAS, same lookup simulation.py's era-
+    progress lines already use) instead of the bare key."""
+    from backend.eras import ERAS
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.flock = 2
+    tribe.era = "departure_era"
+    parents = [
+        {"trait": "hardy", "parents": [], "cycle": 1, "note": ""},
+        {"trait": "quick to forage", "parents": [], "cycle": 2, "note": ""},
+    ]
+    tribe.pending_hatch = {"parents": parents}
+    captured = {}
+
+    async def fake_hatch(client, model, parent_a, parent_b, era):
+        captured["era"] = era
+        return {"trait": "hardy forager", "note": "a promising hatchling"}
+
+    with mock.patch("backend.simulation.hatch", fake_hatch):
+        await sim._resolve_hatch(tribe)
+
+    expected_label = next(e.label for e in ERAS if e.key == "departure_era")
+    assert captured["era"] == expected_label
+    assert captured["era"] != "departure_era"
 
 
 @run_async

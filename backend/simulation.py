@@ -2203,7 +2203,19 @@ class Simulation:
         tribe.pending_hatch = None
 
         if parents:
-            result = await hatch(self.client, tribe.model, parents[0], parents[1], tribe.era)
+            # Live report, 2026-09-15: "Tribe 2 hatchling names started look
+            # 'unencoded'." Confirmed against run_20260914_155214: genetics.hatch's
+            # own prompt embedded the raw internal era KEY ("'departure_era' era",
+            # "'cognitive_horizon' era") in quotes, and small models echoed it back
+            # verbatim into the hatchling's own trait/note text ("adapting to the
+            # 'departure_era' era's environment," "the '1_x_1' mutation") -- the
+            # same "a quoted token in the prompt gets parroted back" shape already
+            # fixed once for the decree/dream prompts (f96ef85). Same era_label
+            # lookup those prompts and simulation.py's own era-progress lines
+            # already use, so the model only ever sees the real, human-readable
+            # name ("Beyond the Horizon"), never the snake_case key.
+            era_label = next((e.label for e in ERAS if e.key == tribe.era), tribe.era)
+            result = await hatch(self.client, tribe.model, parents[0], parents[1], era_label)
         else:
             result = {"trait": "unremarkable but hardy", "note": "the first of the flock hatches"}
         trait = result.get("trait") or "unremarkable but hardy"
@@ -2268,7 +2280,12 @@ class Simulation:
         lexicon = {token: "a word both tribes have converged on" for token in shared_tokens}
         tribe_a = {"ideology": tribe.chief_philosophy or "no fixed creed yet", "lexicon": lexicon}
         tribe_b = {"ideology": rival.chief_philosophy or "no fixed creed yet", "lexicon": lexicon}
-        result = await breed(self.client, tribe.model, tribe_a, tribe_b, tribe.era)
+        # Same era_label fix as _resolve_hatch's own call to genetics.hatch just
+        # below -- breed()'s prompt has the identical "'{era}' era" quoted-token
+        # shape, so the raw snake_case key (e.g. "war_and_world_domination_era")
+        # was just as parrotable back into this note verbatim.
+        era_label = next((e.label for e in ERAS if e.key == tribe.era), tribe.era)
+        result = await breed(self.client, tribe.model, tribe_a, tribe_b, era_label)
         note = result.get("note") or "two cultures briefly touch, then go their own way"
         entry = f"{tribe.name} and {rival.name} exchange ideas as new allies -- {note}"
         tribe.history.append(entry)
