@@ -1573,6 +1573,20 @@ class Tribe:
         # distinct from GATHER_EGGS finding a wild nest to hatch (which grows
         # flock directly, never touches this count).
         self.eggs = 0
+        # Explicit request, 2026-09-15: a real "ins and outs" ledger for the
+        # Coop/Hatchery pairing once both stand (see farmingPanel's own
+        # "Egg Genesis Factory" consolidation in frontend/index.html) --
+        # eggs laid (this, cumulative -- never decremented, unlike tribe.eggs
+        # itself which drains as they hatch), eggs hatched (len(flock_lineage),
+        # already durable), flock now (tribe.flock, current headcount).
+        # Incremented at every real source that adds to tribe.eggs: the
+        # flock's own passive laying (_advance_flock_eggs) and a wild
+        # GATHER_EGGS find once a Coop exists to bring it home to
+        # (actions.py._gather_eggs) -- display-only for now, sidebar-only per
+        # explicit request, but a real persistent count so a future
+        # mechanical bonus keyed on lifetime egg production has something
+        # real to read instead of needing its own new counter later.
+        self.eggs_laid_total = 0
         # See actions.py._gather_eggs/_build_hatchery -- a real wild find, the
         # Hatchery's own prerequisite (not flock size alone).
         self.eggs_ever_gathered = False
@@ -1806,6 +1820,7 @@ class Tribe:
             "last_harvest_cycle": self.last_harvest_cycle,
             "flock": self.flock,
             "eggs": self.eggs,
+            "eggs_laid_total": self.eggs_laid_total,
             "livestock_surplus_threshold": _livestock_surplus_threshold(self),
             "hatchery_built": self.hatchery_built,
             "coop_built": self.coop_built,
@@ -7930,6 +7945,7 @@ class Simulation:
         laid = tribe.flock // config.EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR
         if laid:
             tribe.eggs += laid
+            tribe.eggs_laid_total += laid
 
     def _advance_livestock_feast(self, tribe: Tribe) -> None:
         """See config.LIVESTOCK_SURPLUS_THRESHOLD's own comment -- once eggs or

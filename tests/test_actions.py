@@ -3239,6 +3239,7 @@ def test_gather_eggs_deposits_into_the_stockpile_once_a_coop_exists():
         result = ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
 
     assert tribe.eggs == config.GATHER_EGGS_STOCKPILE_AMOUNT
+    assert tribe.eggs_laid_total == config.GATHER_EGGS_STOCKPILE_AMOUNT
     assert tribe.pending_hatch == {"parents": None}  # untouched, not overwritten
     assert "stored for the hatchery" in result
 

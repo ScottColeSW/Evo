@@ -1855,6 +1855,7 @@ def _gather_eggs(sim, tribe, biome, target):
         if random.random() >= config.GATHER_EGGS_SUCCESS_CHANCE:
             return "no eggs found this time"
         tribe.eggs += config.GATHER_EGGS_STOCKPILE_AMOUNT
+        tribe.eggs_laid_total += config.GATHER_EGGS_STOCKPILE_AMOUNT
         tribe.eggs_ever_gathered = True
         return f"an egg is found and brought back to the coop -- {tribe.eggs} now stored for the hatchery"
     if tribe.pending_hatch is not None:

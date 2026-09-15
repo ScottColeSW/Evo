@@ -11448,6 +11448,24 @@ def test_advance_flock_eggs_lays_passively_from_a_living_flock():
     assert tribe.eggs == 3
 
 
+def test_advance_flock_eggs_also_grows_the_lifetime_laid_total():
+    """Explicit request, 2026-09-15: a real "eggs laid" total for the Egg
+    Genesis Factory/Industrial Farm sidebar consolidation -- unlike
+    tribe.eggs itself (a live stockpile that drains as eggs hatch),
+    eggs_laid_total only ever grows."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = config.EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR * 3
+
+    sim._advance_flock_eggs(tribe)
+    sim._advance_flock_eggs(tribe)
+
+    assert tribe.eggs_laid_total == 6  # cumulative across both cycles
+    assert tribe.eggs == 6  # the live stockpile also just hasn't drained yet
+
+
 def test_advance_flock_eggs_does_nothing_with_an_empty_flock():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
