@@ -8277,6 +8277,42 @@ async def test_night_cycle_leaves_philosophy_and_history_untouched_when_nothing_
 
 
 @run_async
+async def test_night_cycle_collapses_repeated_hatches_to_the_single_latest_one():
+    """Live report, 2026-09-14/15: "the chief is getting every hatch not just
+    the latest or greatest (singular)." Confirmed against two real runs: a
+    mature flock's automatic hatching floods tribe.history with repeated "an
+    egg hatches" entries, and a flat last-N slice let those crowd out
+    everything else that actually happened. Now only the single most recent
+    hatch survives into the reflection window; older hatches are skipped so
+    real, varied events further back get pulled in instead."""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.history.append("a raider camp was destroyed")  # a real, older event
+    for i in range(config.NIGHT_CYCLE_HISTORY_WINDOW - 1):
+        tribe.history.append(f"an egg hatches -- the flock grows (hatch #{i})")
+    tribe.history.append("the last egg hatches -- the flock grows (the newest one)")
+
+    captured = {}
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
+        captured["recent_events"] = recent_events
+        return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": "ok"}
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    events = captured["recent_events"]
+    hatch_events = [e for e in events if "egg hatches" in e]
+    assert len(hatch_events) == 1
+    assert "the newest one" in hatch_events[0]
+    assert "a raider camp was destroyed" in events  # pulled in from further back instead
+    assert len(events) <= config.NIGHT_CYCLE_HISTORY_WINDOW
+
+
+@run_async
 async def test_night_cycle_records_the_reasoning_even_when_nothing_changed():
     """The frontend's night-time thought bubble needs something real to show even on
     an unremarkable review -- reasoning is captured regardless of whether the

@@ -2410,7 +2410,29 @@ class Simulation:
         transcript that gives a tribe's own accumulated experience a chance to
         compound into wisdom over time, distinct from breed()/breed_individuals'
         cross-tribe/cross-individual crossover."""
-        recent_events = list(tribe.history)[-config.NIGHT_CYCLE_HISTORY_WINDOW:]
+        # Explicit report, 2026-09-14/15: "the chief is getting every hatch not
+        # just the latest or greatest (singular)." A flat last-N slice of
+        # tribe.history is fine early on, but the Coop/Hatchery's automatic
+        # hatching (_resolve_hatch) appends a fresh "an egg hatches" entry every
+        # single time, with no throttling. Confirmed against two real runs from
+        # 2026-09-14 (run_20260914_155214/151621): hatch density in this exact
+        # 20-entry window climbed from 0/20 early game to 9/20 by late game, a
+        # clear, worsening trend as the flock grows -- left as a flat slice, a
+        # long enough run eventually starves this reflection of everything but
+        # hatches. Walks the full chronicle backward instead, keeping only the
+        # single most recent hatch and skipping every earlier one, so the
+        # window fills with real variety rather than repeats of the same event.
+        recent_events: list[str] = []
+        seen_hatch = False
+        for entry in reversed(tribe.history):
+            if "egg hatches" in entry:
+                if seen_hatch:
+                    continue
+                seen_hatch = True
+            recent_events.append(entry)
+            if len(recent_events) >= config.NIGHT_CYCLE_HISTORY_WINDOW:
+                break
+        recent_events.reverse()
         inventory = self._build_night_inventory(tribe)
         # Beyond the Horizon era's real gate -- plan file amber-drifting-tern.md.
         # All three required: the era itself (don't invite the idea before it's
