@@ -4702,7 +4702,14 @@ function farmingPanel(t) {
     // Live report, 2026-09-14: "deer pen output is for both kitchen and
     // tannery; meat, skin." Each deer fed now yields food too (config.
     // MEAT_PER_DEER_FED), not just Fur -- text updated to say so.
-    industry.push(
+    //
+    // Live report, 2026-09-15: "I don't think it's organized in the right
+    // place in the sidebar." Confirmed -- this lived in the industry bucket
+    // (resource processing: Tannery, Mine, Quarry, Sawmill) while its own
+    // closest structural sibling, the Coop (a live, breeding population
+    // feeding a companion building, same shape by explicit design), sits in
+    // food just above. Moved to match.
+    food.push(
       `🦌 Deer Pen — ${t.deer} deer, feeding ${DEER_PEN_DAILY_FEED_MIN}-${DEER_PEN_DAILY_FEED_MAX}/day into the tannery for meat and hide`
     );
   }
