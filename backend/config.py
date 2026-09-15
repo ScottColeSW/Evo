@@ -2199,7 +2199,22 @@ TERRITORY_CLEARING_RADIUS_MARGIN = 5
 # shared vocabulary with them) within this Euclidean distance -- previously broadcasts
 # were audible map-wide regardless of distance, which gave away free information and
 # removed any incentive to actually travel toward another tribe.
-BROADCAST_HEARING_RADIUS = 15
+#
+# Raised from the original 15, 2026-09-15: real data (a "Developments" chart sketch
+# built from 4 actual runs) showed linguistic_consensus pinned at exactly 0.0 for
+# every run, every cycle -- never once converging. Root cause: SPAWN_POINTS' 6
+# possible pairings sit 17-43 tiles apart (checked all of them), settled tribes
+# essentially never move again, and 15 was tighter than even the CLOSEST pairing
+# (17). The "must travel toward them" incentive this radius was nerfed to preserve
+# (see above) was therefore never actually reachable for any default spawn --
+# not a working incentive, just a permanent wall. Set above the widest pairing (43)
+# so every default spawn combination can converge once both are genuinely settled,
+# same reasoning RIVAL_DISTANT_SIGHTING_RADIUS below already uses ("set above the
+# real default spawn distance") -- confirmed by the user as the intended fix over
+# the alternative (leaving distance real and instead strengthening whatever would
+# make a settled tribe relocate toward a rival, which isn't otherwise incentivized
+# today either).
+BROADCAST_HEARING_RADIUS = 50
 
 # Cross-tribe proximity awareness, independent of whether the other tribe has ever
 # broadcast anything -- real data this session showed every single run (25/25 tribe-

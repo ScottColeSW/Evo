@@ -112,13 +112,36 @@ def test_broadcast_not_overheard_beyond_hearing_radius():
         ]
     )
     forest = sim.tribes["tribe_0"]
-    mountain = sim.tribes["tribe_1"]  # default spawns are far apart (different biomes)
+    mountain = sim.tribes["tribe_1"]
+    # Explicit placement, not "default spawns are far apart" -- BROADCAST_HEARING_RADIUS
+    # was raised to 50 (2026-09-15, config.py's own comment has the real-data grounding)
+    # specifically so every default SPAWN_POINTS pairing (max real distance 43) now
+    # falls WITHIN hearing range once settled, so this test can no longer lean on
+    # default spawn distance to stay out of range.
+    mountain.x, mountain.y = forest.x + 200, forest.y
     mountain.last_broadcast = "KRA-ZUL"
     mountain.last_action = "HUNT_DEER"
 
     request, _ctx = sim._prepare_turn(forest)
 
     assert "overheard" not in request["prompt"]
+
+
+def test_every_default_spawn_pairing_is_within_broadcast_hearing_radius():
+    """Live report, 2026-09-15: a real-data chart of linguistic_consensus across 4
+    actual runs showed it pinned at exactly 0.0 the entire time, every run -- tribes
+    never once converged on shared vocabulary. Root cause: BROADCAST_HEARING_RADIUS
+    (15 at the time) was tighter than even the CLOSEST of SPAWN_POINTS' 6 possible
+    pairings (17), so convergence was never reachable for any default spawn, not a
+    rare edge case. Locks in the fix (config.py's own comment has the full grounding)
+    so a future SPAWN_POINTS retune can't silently reintroduce the same dead end."""
+    import itertools
+
+    from backend import config
+
+    for a, b in itertools.combinations(SPAWN_POINTS, 2):
+        distance = math.hypot(a[0] - b[0], a[1] - b[1])
+        assert distance <= config.BROADCAST_HEARING_RADIUS, (a, b, distance)
 
 
 def test_declared_stance_is_surfaced_as_a_fact_regardless_of_distance():
