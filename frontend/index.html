@@ -156,6 +156,9 @@
   #game-over-splash .game-over-narrative { color: #e2e2e7; font-size: 14px; font-family: Georgia, serif; line-height: 1.75; white-space: pre-wrap; max-width: 620px; margin: 8px auto 0; background: rgba(99, 102, 241, 0.08); border: 1px solid #3730a3; border-radius: 6px; padding: 18px 22px; }
   #game-over-splash .game-over-actions { display: flex; gap: 12px; margin-top: 4px; }
   #game-over-splash .game-over-actions button { padding: 10px 26px; font-size: 13px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; letter-spacing: 0.5px; }
+  #game-over-splash .go-footer-links { margin-top: 14px; font-size: 12px; }
+  #game-over-splash .go-footer-links a { color: #7c7c94; text-decoration: none; }
+  #game-over-splash .go-footer-links a:hover { color: #a5b4fc; text-decoration: underline; }
   #btn-view-board { background: #1e293b; color: #cbd5e1; border: 1px solid #475569 !important; }
   #btn-view-board:hover { background: #334155; }
   #btn-try-again { background: #4338ca; color: #e0e7ff; }
@@ -415,6 +418,15 @@
             <button id="btn-view-board">VIEW FINAL BOARD</button>
             <button id="btn-try-again">TRY AGAIN</button>
             <button id="btn-game-over-quit">QUIT</button>
+          </div>
+          <!-- Explicit request, 2026-09-15: a link to the "Developments" analytics
+               sketch (population/era/well-being/nudge-reliance curves across real
+               runs), reachable once a run actually ends rather than cluttering the
+               live game UI -- a real in-app page was explicitly deferred ("I feel
+               this will become another burden on my system"), so this points at the
+               already-published artifact directly. -->
+          <div class="go-footer-links">
+            <a href="https://claude.ai/artifact/AExhr76BHTR6w1jW51foEk" target="_blank" rel="noopener">See Developments →</a>
           </div>
         </div>
       </div>
