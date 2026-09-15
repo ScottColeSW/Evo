@@ -2510,3 +2510,11 @@ HAZARD_LANDMARK_NAMES = (
 # accepted cost since that only gates Moat/Torches, not core progression.
 ACTION_REPETITION_THROTTLE_THRESHOLD = 4
 ACTION_REPETITION_THROTTLE_COOLDOWN = 7
+
+# Live report, 2026-09-15: a real run showed one tribe's model fail to produce a
+# recognizable decision on 241 of 239 turns -- the whole run, not a blip. Grounded
+# against that incident: 10 catches a genuinely stuck model within its first day
+# (cycle 10 of ~239) instead of losing an entire run to it, while comfortably
+# clearing normal one-or-two-turn noise a healthy model already self-corrects from.
+# See Tribe.consecutive_unresolved_turns and Simulation._handle_model_failure.
+MODEL_FAILURE_STREAK_THRESHOLD = 10

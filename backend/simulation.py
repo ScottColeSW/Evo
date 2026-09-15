@@ -998,6 +998,23 @@ class Tribe:
         # _prepare_turn next cycle, then cleared. {"raw", "guess", "fallback"} or None
         # -- None means last cycle's answer was understood as a real action.
         self.last_confusion: dict | None = None
+        # Live report, 2026-09-15: a real run showed one tribe's model produce
+        # unrecognizable decision text on 241 of 239 turns -- not occasional
+        # confusion, the model itself stuck in a genuine degenerate loop (confirmed
+        # independently: it repeated the same garbage token regardless of prompt,
+        # even for a trivial unrelated request). _resolve_action's fallback ladder
+        # already prevents a crash, but silently substituting available_actions[0]
+        # forever left the tribe rudderless for the whole run with no real
+        # consequence. consecutive_unresolved_turns tracks a STREAK (reset on any
+        # cleanly-understood turn) so a healthy model's one-off formatting slip
+        # (already common and already self-corrects) never trips this -- only a
+        # genuinely stuck model runs the count up. See config.
+        # MODEL_FAILURE_STREAK_THRESHOLD and Simulation._handle_model_failure.
+        self.consecutive_unresolved_turns = 0
+        # Models already tried and ruled out for THIS tribe this game, so a repeat
+        # failure never re-offers (or loops between) the same broken model(s) --
+        # _handle_model_failure only ever swaps to a model not in this list.
+        self.failed_models: list[str] = []
         self.last_target: list[int] | None = None
         # Unlike last_target (RELOCATE-only, drives the journey_note fact), this
         # records the target_vector submitted alongside *every* action, purely for
@@ -2779,6 +2796,10 @@ class Simulation:
                 "latency_ms": outcome["latency_ms"],
             })
             self._apply_turn(tribe, outcome["intent"], outcome["latency_ms"], contexts[tid])
+            if tribe.consecutive_unresolved_turns >= config.MODEL_FAILURE_STREAK_THRESHOLD:
+                await self._handle_model_failure(tribe)
+                if tribe.extinct:
+                    continue
             self._advance_automatic_fire(tribe)
             self._advance_automatic_boat(tribe)
             self._advance_wall_security(tribe)
@@ -5089,8 +5110,10 @@ class Simulation:
             # cycle's correction fact can say what really happened, since IDLE's
             # removal means it's never accurate to say "nothing happened" anymore.
             tribe.last_confusion = {"raw": unresolved_raw[:80], "guess": guess, "fallback": action}
+            tribe.consecutive_unresolved_turns += 1
         else:
             tribe.last_confusion = None
+            tribe.consecutive_unresolved_turns = 0
         broadcast = intent.get("synthetic_language_broadcast") or ""
         target = intent.get("target_vector", [tribe.x, tribe.y])
         if not (isinstance(target, list) and len(target) == 2):
@@ -5218,6 +5241,62 @@ class Simulation:
             memory_text += f" {hazard_note}."
         tribe.memory.remember(memory_text, self.cycle, weight)
 
+    async def _handle_model_failure(self, tribe: "Tribe") -> None:
+        """Called once tribe.consecutive_unresolved_turns reaches config.
+        MODEL_FAILURE_STREAK_THRESHOLD (see that field's own comment on Tribe for
+        the real-run grounding). Escalates instead of quietly substituting forever:
+        try a different locally available model first, same VRAM-safety precedent
+        add_tribe already uses; if every local model has already failed this tribe,
+        the tribe itself fails for real via _lose_population's existing extinction
+        path -- if another tribe is still alive the run simply continues with them
+        (already-working behavior, see step()'s living_tribes check), and if that
+        was the last one, step()'s own existing game-over check fires right after
+        this returns. Resets the streak counter unconditionally, so a swapped-in
+        model gets its own full-length fresh attempt rather than inheriting the
+        old one's count."""
+        tribe.consecutive_unresolved_turns = 0
+        old_model = tribe.model
+        tribe.failed_models.append(old_model)
+
+        available = await self.client.list_models()
+        still_used_by_others = {t.model for t in self.tribes.values() if t.id != tribe.id and not t.extinct}
+        candidates = [m for m in available if m not in tribe.failed_models]
+        # Prefer a model no other living tribe is currently using, so tribes stay
+        # distinguishable -- a soft preference (falls back to a shared model)
+        # rather than a hard requirement that could refuse a real recovery option.
+        ordered = [m for m in candidates if m not in still_used_by_others] + [
+            m for m in candidates if m in still_used_by_others
+        ]
+
+        guard = HardwareVRAMBoundaryGuard(self.client.base_url, config.VRAM_LIMIT_GB)
+        new_model = None
+        for candidate in ordered:
+            ok, _warning = await guard.verify_vram_safety_margin(candidate)
+            if ok:
+                new_model = candidate
+                break
+        if new_model is None and ordered:
+            # Every remaining candidate is oversized -- verify_vram_safety_margin
+            # already fails open elsewhere for exactly this reason (a size warning
+            # shouldn't block play outright, see add_tribe); still try the first
+            # real alternative rather than giving up while one exists.
+            new_model = ordered[0]
+
+        if new_model is not None:
+            if old_model not in still_used_by_others:
+                await self.client.unload_model(old_model)
+            tribe.model = new_model
+            tribe.history.append(
+                f"{tribe.name}'s chief falls silent mid-thought -- a new voice rises to lead in their place"
+            )
+            return
+
+        # No untried model left for this tribe -- the failure is real, not
+        # recoverable. _lose_population handles extinction marking, the trauma
+        # wave, and the scoreboard record; step()'s own model-unload sweep and
+        # all-extinct game-over check both already run right after this returns.
+        self._lose_population(tribe, tribe.population, cause="model_failure")
+
     def _has_active_alliance_at_top_era(self) -> bool:
         """True if any two living tribes at or past war_and_world_domination_
         era are mutually allied and haven't finished a Joint Castle together
@@ -5317,7 +5396,18 @@ class Simulation:
         than anything new being computed here."""
         lines = []
         if reason == "extinction":
-            lines.append("OVERSEER LOG: Every observed population has ceased to exist.")
+            # Explicit design: a model-failure extinction (see _handle_model_failure --
+            # every locally available model already failed this tribe) is a genuinely
+            # different story than starving or losing a war, and deserves an honest
+            # line rather than the generic one, same spirit as the per-tribe
+            # "cause of collapse" detail below.
+            if self.tribes and all(t.extinction_cause == "model_failure" for t in self.tribes.values()):
+                lines.append(
+                    "OVERSEER LOG: Every observed population's own mind gave out -- no further model "
+                    "was available to try. Observation ends unresolved, not defeated."
+                )
+            else:
+                lines.append("OVERSEER LOG: Every observed population has ceased to exist.")
         elif reason == "world_domination":
             lines.append(
                 "OVERSEER LOG: A single population now accounts for the entire observed civilization. "

@@ -4000,6 +4000,127 @@ def test_confusion_nudge_appears_once_then_clears():
     assert "PONDER" not in request2["prompt"]  # doesn't repeat on the following cycle
 
 
+def test_consecutive_unresolved_turns_tracks_a_streak_not_just_one_miss():
+    """Live report, 2026-09-15: a real run showed one tribe's model produce
+    unrecognizable decisions on 241 of 239 turns straight -- a genuinely stuck
+    model, not the occasional one-off formatting slip a healthy model already
+    self-corrects from. The streak counter (not just last_confusion) is what lets
+    Simulation distinguish the two."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    ctx = {"biome": "plains", "available_actions": ["GATHER_FOOD", "GATHER_WATER", "SCOUT", "RELOCATE"]}
+
+    sim._apply_turn(tribe, {}, 50.0, ctx)
+    assert tribe.consecutive_unresolved_turns == 1
+    sim._apply_turn(tribe, {}, 50.0, ctx)
+    assert tribe.consecutive_unresolved_turns == 2
+
+    sim._apply_turn(tribe, {"visual_action": "SCOUT"}, 50.0, ctx)  # a real, understood turn
+    assert tribe.consecutive_unresolved_turns == 0  # streak resets, doesn't just decrement
+
+
+@run_async
+async def test_model_failure_streak_swaps_to_an_untried_local_model():
+    """The escalation this streak exists to trigger: config.
+    MODEL_FAILURE_STREAK_THRESHOLD consecutive unresolved turns swaps the tribe to
+    a different locally available model rather than silently substituting the
+    same fallback action forever."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
+
+    async def fake_run_batch(requests):
+        return {"tribe_0": {"intent": {}, "latency_ms": 1.0, "raw_response": "{}"}}
+
+    with (
+        mock.patch.object(sim.scheduler, "run_batch", fake_run_batch),
+        mock.patch.object(sim.client, "list_models", mock.AsyncMock(return_value=["gemma2:2b", "qwen2.5:3b"])),
+        mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as unload,
+        mock.patch(
+            "backend.vram_guard.HardwareVRAMBoundaryGuard.verify_vram_safety_margin",
+            mock.AsyncMock(return_value=(True, "")),
+        ),
+    ):
+        for _ in range(config.MODEL_FAILURE_STREAK_THRESHOLD):
+            await sim.step()
+
+    assert tribe.model == "qwen2.5:3b"
+    assert tribe.consecutive_unresolved_turns == 0  # the swapped-in model gets a fresh streak
+    assert tribe.failed_models == ["gemma2:2b"]
+    unload.assert_awaited_with("gemma2:2b")
+    assert not tribe.extinct
+
+
+@run_async
+async def test_model_failure_extincts_the_tribe_once_every_local_model_has_failed():
+    """If every locally available model has already failed this tribe, the
+    failure is real, not recoverable -- the tribe actually fails (existing
+    extinction path), rather than looping between the same broken models
+    forever."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.failed_models = ["qwen2.5:3b"]  # the only other locally available model already failed too
+
+    async def fake_run_batch(requests):
+        return {"tribe_0": {"intent": {}, "latency_ms": 1.0, "raw_response": "{}"}}
+
+    with (
+        mock.patch.object(sim.scheduler, "run_batch", fake_run_batch),
+        mock.patch.object(sim.client, "list_models", mock.AsyncMock(return_value=["gemma2:2b", "qwen2.5:3b"])),
+        mock.patch.object(sim.client, "unload_model", mock.AsyncMock()),
+    ):
+        for _ in range(config.MODEL_FAILURE_STREAK_THRESHOLD):
+            await sim.step()
+
+    assert tribe.extinct is True
+    assert tribe.extinction_cause == "model_failure"
+
+
+@run_async
+async def test_surviving_tribe_continues_after_the_other_fails_from_model_failure():
+    """Simulation.step()'s own existing living_tribes check already only ends the
+    game once EVERY tribe is extinct -- confirms a model-failure extinction
+    doesn't end the run early while a rival is still alive."""
+    from backend import config
+
+    sim = Simulation([
+        {"name": "A", "model": "gemma2:2b"},
+        {"name": "B", "model": "qwen2.5:3b"},
+    ])
+    tribe_a = sim.tribes["tribe_0"]
+    tribe_b = sim.tribes["tribe_1"]
+    tribe_a.chief_name = "Ashgar"
+    tribe_b.chief_name = "Kaela"
+    tribe_a.failed_models = ["qwen2.5:3b"]  # nothing left for A to swap to
+
+    async def fake_run_batch(requests):
+        results = {}
+        for r in requests:
+            if r["id"] == "tribe_0":
+                results["tribe_0"] = {"intent": {}, "latency_ms": 1.0, "raw_response": "{}"}
+            else:
+                results["tribe_1"] = {"intent": {"visual_action": "GATHER_FOOD"}, "latency_ms": 1.0, "raw_response": "{}"}
+        return results
+
+    with (
+        mock.patch.object(sim.scheduler, "run_batch", fake_run_batch),
+        mock.patch.object(sim.client, "list_models", mock.AsyncMock(return_value=["gemma2:2b", "qwen2.5:3b"])),
+        mock.patch.object(sim.client, "unload_model", mock.AsyncMock()),
+    ):
+        for _ in range(config.MODEL_FAILURE_STREAK_THRESHOLD):
+            await sim.step()
+
+    assert tribe_a.extinct is True
+    assert tribe_a.extinction_cause == "model_failure"
+    assert tribe_b.extinct is False
+    assert sim.game_over is False
+
+
 def test_apply_turn_records_last_target_only_for_relocate():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
@@ -12756,6 +12877,42 @@ def test_game_over_summary_notes_no_permanent_structures_when_none_were_built():
     summary = sim._generate_game_over_summary("extinction")
 
     assert "Final build: no permanent structures" in summary
+
+
+def test_game_over_summary_distinguishes_an_all_model_failure_extinction():
+    """A model-failure extinction (Simulation._handle_model_failure -- every
+    locally available model already failed) is a genuinely different story than
+    starving or losing a war, and should say so plainly rather than the generic
+    extinction line."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.extinct = True
+    tribe.extinction_cause = "model_failure"
+    sim.tribes = {"tribe_0": tribe}
+
+    summary = sim._generate_game_over_summary("extinction")
+
+    assert "no further model was available" in summary
+    assert "Every observed population has ceased to exist." not in summary
+
+
+def test_game_over_summary_uses_the_generic_line_for_a_mixed_extinction():
+    """Only fires the model-failure-specific line when EVERY tribe's extinction
+    was actually caused by it -- a mixed cause (one starved, one's model broke)
+    is still the ordinary extinction story."""
+    sim = _bare_simulation()
+    starved = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    starved.extinct = True
+    starved.extinction_cause = "starvation"
+    model_failed = Tribe("tribe_1", "Mountain Tribe", "qwen2.5:3b", 10, 45, "#fb923c")
+    model_failed.extinct = True
+    model_failed.extinction_cause = "model_failure"
+    sim.tribes = {"tribe_0": starved, "tribe_1": model_failed}
+
+    summary = sim._generate_game_over_summary("extinction")
+
+    assert "Every observed population has ceased to exist." in summary
+    assert "no further model was available" not in summary
 
 
 def test_game_over_summary_reports_conquest_attempts_won_and_lost():
