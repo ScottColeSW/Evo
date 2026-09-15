@@ -4525,18 +4525,31 @@ function farmingPanel(t) {
   const housing = [];
   const industry = [];
   const military = [];
-  if (t.farm_plots > 0) {
+  // Explicit request, 2026-09-15: "clean up all repetition in the whole Eggs
+  // environment... If they have both Hatchery and Coop, this can 'convert'
+  // to an 'Egg Genesis Factory.' If they also have a Farm, they can
+  // 'convert' all of the above into an Industrial Farm." Sidebar-only
+  // consolidation, no mechanical change (cosmetic tiering, agreed as the
+  // first pass) -- Coop/Hatchery/Farm all remain the real underlying
+  // buildings/flags; this just detects "you have both/all" and shows one
+  // organized block instead of several separate, overlapping-sounding
+  // lines. Leaves room for a real bonus to hook into either tier later --
+  // see tribe.eggs_laid_total's own comment (Simulation.Tribe.__init__) for
+  // why that's a genuine persistent counter now, not just a display value.
+  const eggGenesisReady = t.hatchery_built && t.coop_built;
+  const industrialFarmReady = eggGenesisReady && t.farm_plots > 0;
+  const farmStage = t.crop_growth < 33 ? "🌱 sprouting" : t.crop_growth < 66 ? "🌿 growing" : "🌾 ready to harvest";
+  const farmNextYield = t.farm_plots * CROP_HARVEST_YIELD_PER_PLOT;
+  if (t.farm_plots > 0 && !industrialFarmReady) {
     // Explicit correction: "farm plot yields are showing as x/100 even if they
     // have more than 1 plot" -- crop_growth is one shared clock for the whole
     // farm (Simulation._advance_farming), not per-plot, and the eventual
     // harvest scales by plot count; the old label didn't say either of those
     // things, reading as if growth or yield were capped at 100 regardless of
     // plot count.
-    const stage = t.crop_growth < 33 ? "🌱 sprouting" : t.crop_growth < 66 ? "🌿 growing" : "🌾 ready to harvest";
-    const nextYield = t.farm_plots * CROP_HARVEST_YIELD_PER_PLOT;
     food.push(
-      `🌾 Farm — ${t.farm_plots} plot${t.farm_plots > 1 ? "s" : ""} · ${stage} ` +
-      `(${t.crop_growth}/100 shared growth → ${nextYield} food at harvest)`
+      `🌾 Farm — ${t.farm_plots} plot${t.farm_plots > 1 ? "s" : ""} · ${farmStage} ` +
+      `(${t.crop_growth}/100 shared growth → ${farmNextYield} food at harvest)`
     );
   }
   // Live report, 2026-09-11: "The Flock line is flickering on and off." Confirmed
@@ -4574,40 +4587,57 @@ function farmingPanel(t) {
     const justHatched = last && (latestState.cycle - last.cycle) <= 3
       && (!secondLast || (last.cycle - secondLast.cycle) > 3);
     if (justHatched) {
+      // A genuinely isolated hatch is still worth celebrating regardless of
+      // building tier -- kept outside the eggGenesisReady consolidation below.
       food.push(`🥚 An egg just hatched! — ${escapeHtml(last.trait)} (flock now ${t.flock})`);
-    } else if (t.flock > 0) {
-      // livestock_surplus_threshold comes straight from the backend (Tribe.
-      // to_dict, backend/simulation.py's _livestock_surplus_threshold) --
-      // population-scaled, not a fixed dozen, so this can never drift from
-      // what _advance_livestock_feast actually did server-side.
-      const surplusThreshold = t.livestock_surplus_threshold ?? 12;
-      const surplusNote = t.flock > surplusThreshold ? " · surplus feasted on" : "";
-      food.push(`🐔 Flock — ${t.flock}${last ? ` · latest: ${escapeHtml(last.trait)}` : ""}${surplusNote}`);
-    } else {
-      food.push(`🐔 Flock — lost to lack of feed${last ? ` · last was ${escapeHtml(last.trait)}` : ""}`);
+    } else if (!eggGenesisReady) {
+      if (t.flock > 0) {
+        // livestock_surplus_threshold comes straight from the backend (Tribe.
+        // to_dict, backend/simulation.py's _livestock_surplus_threshold) --
+        // population-scaled, not a fixed dozen, so this can never drift from
+        // what _advance_livestock_feast actually did server-side.
+        const surplusThreshold = t.livestock_surplus_threshold ?? 12;
+        const surplusNote = t.flock > surplusThreshold ? " · surplus feasted on" : "";
+        food.push(`🐔 Flock — ${t.flock}${last ? ` · latest: ${escapeHtml(last.trait)}` : ""}${surplusNote}`);
+      } else {
+        food.push(`🐔 Flock — lost to lack of feed${last ? ` · last was ${escapeHtml(last.trait)}` : ""}`);
+      }
     }
   }
-  if (t.eggs > 0) {
+  if (t.eggs > 0 && !eggGenesisReady) {
     // Explicit request: "we aren't showing counts on either [eggs or flock]"
     // -- a real, separate stockpile from flock (Simulation._advance_flock_eggs),
     // eaten off automatically past the tribe's own scaled surplus threshold.
     const eggsSurplusThreshold = t.livestock_surplus_threshold ?? 12;
     food.push(`🥚 Eggs in store — ${t.eggs}${t.eggs > eggsSurplusThreshold ? " · surplus feasted on" : ""}`);
   }
-  if (t.hatchery_built) {
-    // Explicit follow-up, 2026-09-11: once a Coop exists too, the Hatchery stops
-    // being a chance multiplier and actually incubates stored eggs into new flock
-    // deterministically (backend/simulation.py's _advance_flock) -- see the Coop
-    // line just below for the eggs-per-hatch side of the same loop.
-    food.push(t.coop_built
-      ? "🐣 Hatchery — incubating stored eggs into new flock automatically"
-      : `🐣 Hatchery — flock hatch chance ×${HATCHERY_HATCH_CHANCE_MULTIPLIER}`);
+  if (t.hatchery_built && !eggGenesisReady) {
+    // Only reachable here without a Coop yet -- once both stand, the
+    // consolidated Egg Genesis Factory/Industrial Farm block below covers it.
+    food.push(`🐣 Hatchery — flock hatch chance ×${HATCHERY_HATCH_CHANCE_MULTIPLIER}`);
   }
-  if (t.coop_built) {
-    const note = t.hatchery_built
-      ? `every ${EGGS_PER_HATCH} stored eggs hatch into a new fowl`
-      : "build a Hatchery too so stored eggs actually hatch";
-    food.push(`🐔 Coop — home for the flock, ${note}`);
+  if (t.coop_built && !eggGenesisReady) {
+    food.push("🐔 Coop — home for the flock, build a Hatchery too so stored eggs actually hatch");
+  }
+  if (eggGenesisReady) {
+    const eggsHatchedTotal = flockLineage.length;
+    const eggGenesisStats =
+      `${t.eggs_laid_total || 0} eggs laid · ${eggsHatchedTotal} hatched · ${t.flock} in the flock now`;
+    if (industrialFarmReady) {
+      // Explicit request: "If they also have a Farm, they can 'convert' all
+      // of the above into an Industrial Farm." Combines the Farm's own
+      // stage/yield facts with the egg ledger into one block.
+      food.push(
+        `🏭🌾 Industrial Farm — ${t.farm_plots} farm plot${t.farm_plots > 1 ? "s" : ""} · ${farmStage} ` +
+        `(${t.crop_growth}/100 shared growth → ${farmNextYield} food at harvest); ${eggGenesisStats}`
+      );
+    } else {
+      // Explicit request: "If they have both Hatchery and Coop, this can
+      // 'convert' to an 'Egg Genesis Factory.'" A real, organized ledger
+      // (laid -> hatched -> current headcount) instead of two separate
+      // lines that used to describe the same loop from either end.
+      food.push(`🏭 Egg Genesis Factory — ${eggGenesisStats}`);
+    }
   }
   if (t.fishing_learned) food.push("🎣 Fishing — mastered, fish now caught for food");
   if (t.fishery_built) food.push(`🐟 Fishery — ${fishSupplyPerCycle(t)} food/day flows in automatically`);
