@@ -197,6 +197,27 @@
   #battle-splash .battle-log div.defender-line { color: #fca5a5; }
   #battle-splash .battle-outcome { font-size: 16px; font-weight: 700; color: #fde68a; text-align: center; }
   #battle-splash .battle-outcome.hidden, #battle-splash .battle-actions.hidden { display: none; }
+  /* "The Die of Battle" sketch, 2026-09-15 */
+  #battle-splash .battle-die-stage { display: flex; align-items: center; gap: 14px; min-height: 46px; }
+  #battle-splash .battle-die {
+    width: 46px; height: 46px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    font-family: monospace; font-weight: 700; font-size: 18px; color: #0f0f14; border-radius: 10px;
+    background: #7c7c94; box-shadow: 0 3px 0 rgba(0,0,0,0.35); transition: background-color 0.2s ease;
+  }
+  #battle-splash .battle-die.rolling { animation: battle-die-tumble 0.45s steps(6) infinite; }
+  @keyframes battle-die-tumble {
+    0% { transform: rotate(0deg) scale(1); }
+    50% { transform: rotate(180deg) scale(1.1); }
+    100% { transform: rotate(360deg) scale(1); }
+  }
+  #battle-splash .battle-die-readout { font-size: 12px; color: #c7c7d1; line-height: 1.5; }
+  #battle-splash .battle-die-readout b { color: #e2e2e7; }
+  #battle-splash .battle-shout {
+    font-family: Georgia, serif; font-style: italic; font-size: 14px; color: #e2e2e7; text-align: center;
+    min-height: 20px; opacity: 0; transform: translateY(3px); transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  #battle-splash .battle-shout.show { opacity: 1; transform: translateY(0); }
+  #battle-splash .battle-shout .shout-gloss { display: block; font-family: system-ui, sans-serif; font-style: normal; font-size: 10.5px; color: #7c7c94; margin-top: 1px; }
   #battle-splash .battle-actions button { padding: 10px 26px; font-size: 13px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; letter-spacing: 0.5px; background: #4338ca; color: #e0e7ff; }
   #battle-splash .battle-actions button:hover { background: #4f46e5; }
 
@@ -439,6 +460,19 @@
               <div class="battle-meter-value" id="battle-defender-armed-value"></div>
             </div>
           </div>
+          <!-- "The Die of Battle" sketch, 2026-09-15: each round's real win
+               chance is now also a die+target+roll (backend/actions.py's
+               _pick_battle_die/_declare_conquest), animated here so a round
+               feels like a physical roll landing instead of just meters
+               moving. Purely presentational -- the die's shown result is
+               chosen server-side to already match whatever the real
+               attacker_won_round roll decided; nothing here can change the
+               outcome. -->
+          <div class="battle-die-stage" id="battle-die-stage">
+            <div class="battle-die" id="battle-die">?</div>
+            <div class="battle-die-readout" id="battle-die-readout"></div>
+          </div>
+          <div class="battle-shout" id="battle-shout"></div>
           <div class="battle-log" id="battle-log"></div>
           <div class="battle-outcome hidden" id="battle-outcome"></div>
           <div class="battle-actions hidden" id="battle-actions">
@@ -1063,7 +1097,34 @@ function renderBattleMeters(battle, attackerPop, defenderPop) {
   document.getElementById("battle-defender-pop-value").textContent = `${defenderPop} / ${battle.defender_start_population}`;
 }
 
-const BATTLE_ROUND_INTERVAL_MS = 900;
+// "The Die of Battle" sketch, 2026-09-15: a small hand-authored pool, not an
+// LLM call -- war shouts fire up to 6 times per battle and need to land
+// instantly; that's a cost/latency shape this project already reserves for
+// deliberative narrative (dreams, decrees), not punchy per-round flavor.
+// Phrased in the same invented phonetic syllables the tribes already
+// broadcast in live play, so a shout doesn't feel like a different language
+// dropped into the middle of a run.
+const BATTLE_WIN_SHOUTS = [
+  ["KRA-ZUL VASH-TA!!", "the ground is ours"],
+  ["TA-VASH, ZUL-MI-RA!", "they could not hold"],
+  ["ZUL-KRA, HOI!", "a roar, not a word"],
+  ["VASH-TA-KRA, ZUL!", "onward, no mercy"],
+];
+const BATTLE_LOSS_SHOUTS = [
+  ["MEE-LO... KRA-ZUL.", "we fall back, not broken"],
+  ["VASH-TA MU-ZUL...", "the line did not hold"],
+  ["KRA... MEE-LO-TA.", "count what is left"],
+  ["MU-ZUL, MEE-LO...", "not like this"],
+];
+
+function battleDieShoutFor(attackerWon) {
+  const pool = attackerWon ? BATTLE_WIN_SHOUTS : BATTLE_LOSS_SHOUTS;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+const BATTLE_ROUND_INTERVAL_MS = 1200;
+const BATTLE_DIE_TUMBLE_MS = 500;
+let battleDieTumbleTimer = null;
 
 function showBattleSplash(battle) {
   if (battleAnimationTimer) clearInterval(battleAnimationTimer);
@@ -1092,6 +1153,14 @@ function showBattleSplash(battle) {
   document.getElementById("battle-outcome").classList.add("hidden");
   document.getElementById("battle-actions").classList.add("hidden");
   renderBattleMeters(battle, battle.attacker_start_population, battle.defender_start_population);
+  const dieEl = document.getElementById("battle-die");
+  dieEl.textContent = "?";
+  dieEl.classList.remove("rolling");
+  dieEl.style.backgroundColor = "";
+  document.getElementById("battle-die-readout").textContent = "";
+  const shoutEl = document.getElementById("battle-shout");
+  shoutEl.textContent = "";
+  shoutEl.classList.remove("show");
   document.getElementById("battle-splash").classList.remove("hidden");
 
   let i = 0;
@@ -1099,6 +1168,7 @@ function showBattleSplash(battle) {
     if (i >= battle.rounds.length) {
       clearInterval(battleAnimationTimer);
       battleAnimationTimer = null;
+      if (battleDieTumbleTimer) { clearInterval(battleDieTumbleTimer); battleDieTumbleTimer = null; }
       finishBattleSplash(battle);
       return;
     }
@@ -1108,6 +1178,28 @@ function showBattleSplash(battle) {
     const log = document.getElementById("battle-log");
     log.insertAdjacentHTML("beforeend", battleLogLineForRound(battle, round));
     log.scrollTop = log.scrollHeight;
+
+    // The die's shown result is decided already (round.die_roll) -- this is a
+    // presentation layer over the real random.random() roll backend/actions.py
+    // already made; the tumble is cosmetic suspense, not a second roll.
+    const favoredColor = round.die_effective_pct >= 50 ? battle.attacker_color : battle.defender_color;
+    dieEl.classList.add("rolling");
+    dieEl.style.backgroundColor = favoredColor || "";
+    if (battleDieTumbleTimer) clearInterval(battleDieTumbleTimer);
+    battleDieTumbleTimer = setInterval(() => {
+      dieEl.textContent = String(1 + Math.floor(Math.random() * round.die));
+    }, 70);
+    setTimeout(() => {
+      if (battleDieTumbleTimer) { clearInterval(battleDieTumbleTimer); battleDieTumbleTimer = null; }
+      dieEl.classList.remove("rolling");
+      dieEl.textContent = String(round.die_roll);
+      document.getElementById("battle-die-readout").innerHTML =
+        `Needs <b>${round.die_target}+</b> on a d${round.die}`;
+      const [shoutPhrase, shoutGloss] = battleDieShoutFor(round.attacker_won);
+      shoutEl.innerHTML = `${escapeHtml(shoutPhrase)}<span class="shout-gloss">${escapeHtml(shoutGloss)}</span>`;
+      shoutEl.classList.add("show");
+    }, BATTLE_DIE_TUMBLE_MS);
+
     i++;
   }, BATTLE_ROUND_INTERVAL_MS);
 }
@@ -1138,6 +1230,10 @@ function hideBattleSplash() {
   if (battleAutoDismissTimer) {
     clearTimeout(battleAutoDismissTimer);
     battleAutoDismissTimer = null;
+  }
+  if (battleDieTumbleTimer) {
+    clearInterval(battleDieTumbleTimer);
+    battleDieTumbleTimer = null;
   }
   document.getElementById("battle-splash").classList.add("hidden");
 }
