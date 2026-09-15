@@ -4557,7 +4557,22 @@ function farmingPanel(t) {
     // hatch happened on, which is enough to give the hatch MOMENT itself the same
     // "ready to harvest" visual weight the farm gets, not just a buried stat.
     const last = flockLineage.length ? flockLineage[flockLineage.length - 1] : null;
-    const justHatched = last && (latestState.cycle - last.cycle) <= 3;
+    const secondLast = flockLineage.length > 1 ? flockLineage[flockLineage.length - 2] : null;
+    // Live report, 2026-09-15: "the sidebar 'Flock' line isn't sticking."
+    // Confirmed against a real run: a mature flock hatches every 1-2 cycles
+    // late-game (190/194 real gaps <=3 cycles, most exactly 1, in
+    // run_20260914_155214's Tribe 2) -- justHatched below was true almost
+    // permanently once the Coop/Hatchery got going, so the steady "Flock — N"
+    // line it was meant to fall back to was essentially unreachable; the
+    // line's own text just kept changing hatch to hatch instead of holding
+    // still long enough to read. Now also requires the PRIOR hatch to have
+    // happened outside this same window -- back-to-back automatic hatching
+    // (the routine, mature-flock case) reads as the steady aggregate line
+    // again, and the celebratory "just hatched" treatment is reserved for a
+    // genuinely isolated, noteworthy hatch, the same distinction this
+    // project already draws elsewhere between routine and notable events.
+    const justHatched = last && (latestState.cycle - last.cycle) <= 3
+      && (!secondLast || (last.cycle - secondLast.cycle) > 3);
     if (justHatched) {
       food.push(`🥚 An egg just hatched! — ${escapeHtml(last.trait)} (flock now ${t.flock})`);
     } else if (t.flock > 0) {
