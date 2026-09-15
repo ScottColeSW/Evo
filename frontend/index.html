@@ -5003,12 +5003,23 @@ function formatChiefDecision(entry) {
 // always visible instead of one click/tab away. Night's reflection (t.last_reflection,
 // the same text drawThoughtBubble already shows over a tribe at night) is appended
 // as a small hover-only indicator since the banner has no room for both in full.
+//
+// Bug report, 2026-09-15: "'reflecting' is bleeding into the daytime." Root cause --
+// last_reflection is a *last-known-value* field (backend/simulation.py never clears
+// it, since NIGHT_CYCLE_EVERY_N_CYCLES=30 fires on a totally different cadence than
+// any one day's dusk/dawn, see _hold_evening_recap's own comment on that drift), so
+// it stays truthy for the rest of the game once the first reflection happens -- every
+// daytime cycle after that first night showed the badge too. drawTribeSpeechBubble
+// (line ~2664) already gates the exact same field on isNight for the map's thought
+// bubble; this banner just never had the matching gate.
 function updateOrdersBanner(state) {
   const el = document.getElementById("orders-banner");
+  const dayProgress = ((state.cycle % DAY_LENGTH_CYCLES) + DAY_LENGTH_CYCLES) % DAY_LENGTH_CYCLES / DAY_LENGTH_CYCLES;
+  const isNight = dayProgress >= 0.5;
   const tribes = Object.values(state.tribes || {}).filter(t => !t.extinct);
   el.innerHTML = tribes.map(t => {
     const order = (t.history && t.history.length) ? formatChiefDecision(t.history[t.history.length - 1]) : "no decision yet";
-    const reflection = t.last_reflection
+    const reflection = (isNight && t.last_reflection)
       ? ` <span class="orders-reflection" title="${escapeHtml(t.last_reflection)}">🌙 reflecting</span>`
       : "";
     return `<div class="orders-chip"><span class="orders-tribe" style="color:${t.color}">${escapeHtml(t.name)}:</span> ${order}${reflection}</div>`;
