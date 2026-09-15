@@ -218,8 +218,8 @@ Your "visual_action" value must be exactly one of these era-appropriate action n
 copied verbatim with no other text: {world_state['available_actions']}
 
 Compile your tactical intent by substituting your own values into this JSON template --
-do not copy the placeholder text itself into your answer. Any malformed syntax will
-trigger an automated retry:
+do not copy the placeholder text itself into your answer. The field name must be
+exactly "visual_action" -- not "action" or any other name:
 
 {{
     "visual_action": "<one action name from the list above, nothing else>",

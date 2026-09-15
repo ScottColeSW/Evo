@@ -3915,6 +3915,36 @@ def test_gibberish_action_text_falls_back_to_a_real_action_and_records_confusion
     assert "unrecognized decision text" in tribe.history[-1]
 
 
+def test_apply_turn_recovers_from_a_common_alternate_field_name():
+    """Live report, 2026-09-15: a real run showed qwen2.5:3b drop "visual_action"
+    from its own JSON on 84 of ~150 turns straight -- confirmed root cause:
+    Ollama's format="json" only guarantees valid JSON syntax, never that the
+    model actually used the field NAME the prompt asked for. A response using
+    the single most common alternate name ("action") should still resolve
+    cleanly, with no confusion recorded -- this is a real, if mislabeled,
+    action choice, not a parse failure."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    ctx = {"biome": "plains", "available_actions": ["GATHER_FOOD", "GATHER_WATER", "SCOUT", "RELOCATE"]}
+
+    sim._apply_turn(tribe, {"action": "SCOUT"}, 50.0, ctx)
+
+    assert tribe.last_action == "SCOUT"
+    assert tribe.last_confusion is None
+
+
+def test_apply_turn_still_falls_back_when_no_recognizable_field_exists_at_all():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    ctx = {"biome": "plains", "available_actions": ["GATHER_FOOD", "GATHER_WATER", "SCOUT", "RELOCATE"]}
+
+    sim._apply_turn(tribe, {"metacognitive_rationale": "I choose to reflect."}, 50.0, ctx)
+
+    assert tribe.last_action in ctx["available_actions"]
+    assert tribe.last_confusion is not None
+    assert tribe.last_confusion["raw"] == "(no action provided)"
+
+
 def test_case_and_spacing_variants_resolve_cleanly_without_confusion():
     """Cheap normalization (case, spaces/hyphens for underscores) should recover the
     intended action with no correction nudge needed -- these aren't confusion, just

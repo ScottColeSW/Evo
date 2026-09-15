@@ -5064,7 +5064,24 @@ class Simulation:
             )
 
     def _apply_turn(self, tribe: Tribe, intent: dict, latency_ms: float, ctx: dict) -> None:
-        raw_action = intent.get("visual_action", "(no action provided)")
+        # Live report, 2026-09-15: Tribe 2 (qwen2.5:3b) dropped "visual_action"
+        # from its own JSON on 84 of ~150 turns in one run, from a specific
+        # cycle onward through the rest of the game -- confirmed root cause:
+        # Ollama's format="json" only guarantees syntactically valid JSON, not
+        # that the model actually uses the field NAME the prompt asked for. The
+        # real action still resolved correctly either way (_resolve_action's
+        # own fuzzy-matching over whatever text this line finds), but the
+        # public broadcast text read as "(no action provided)" for that whole
+        # stretch. A couple of the most plausible alternate names a model might
+        # substitute are checked before giving up, the same spirit as
+        # _resolve_action's own normalization pass recovering "gather-food" as
+        # GATHER_FOOD instead of treating it as a parse failure.
+        raw_action = (
+            intent.get("visual_action")
+            or intent.get("action")
+            or intent.get("chosen_action")
+            or "(no action provided)"
+        )
         action, unresolved_raw = _resolve_action(raw_action, ctx["available_actions"])
         if unresolved_raw is not None:
             guess = _guess_intended_action(unresolved_raw, ctx["available_actions"])
