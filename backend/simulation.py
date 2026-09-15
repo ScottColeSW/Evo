@@ -857,6 +857,30 @@ def _compass_direction(dx: float, dy: float) -> str:
 # typos. Only a genuine miss falls through further, and even then a looser fuzzy pass
 # records a best-guess for the correction nudge (_prepare_turn's last_confusion
 # block) to name -- "Instant Enlightenment" for next cycle, not a forced action now.
+#
+# Live-run finding, 2026-09-15: BUILD_WAREHOUSE/BUILD_LONG_HOUSE/BUILD_BARRACKS
+# each "graduate" into a distinct UPGRADE_* action once their own build-count cap
+# is reached (config.WAREHOUSE_MAX_COUNT/LONG_HOUSE_MAX_COUNT/BARRACKS_MAX_COUNT)
+# -- the BUILD_* name drops out of available_actions entirely at that point, but
+# a model that's been reliably choosing it up to then has no reason to know the
+# name changed; nothing in its own experience ever taught it "UPGRADE_WAREHOUSE"
+# is now the move. Before this fix, _resolve_action's "real action, just not
+# available right now" branch (below) discarded that intent completely and
+# substituted an unrelated available_actions[0] instead -- confirmed live: a
+# tribe sat at population 15,568 with 0 warehouse upgrades ever made, despite an
+# elevated growth_note nudge (backend/simulation.py._warehouse_capacity_note)
+# firing every single turn once it was warehouse-capped. A nudge alone wasn't
+# enough (this project's own "facts vs mechanics" pattern, confirmed again);
+# this instead translates the model's still-legible intent directly, the same
+# way a normalization/fuzzy pass already recovers "gather-food" or "Gather
+# Food" as GATHER_FOOD rather than treating either as a parse failure.
+GRADUATED_ACTION_UPGRADES = {
+    "BUILD_WAREHOUSE": "UPGRADE_WAREHOUSE",
+    "BUILD_LONG_HOUSE": "UPGRADE_LONG_HOUSE",
+    "BUILD_BARRACKS": "UPGRADE_BARRACKS",
+}
+
+
 def _resolve_action(raw: str, available_actions: list[str]) -> tuple[str, str | None]:
     """Returns (action_to_apply, unresolved_raw). unresolved_raw is None on any real
     match (exact, normalized, or a confident fuzzy match) -- including a syntactically
@@ -879,7 +903,13 @@ def _resolve_action(raw: str, available_actions: list[str]) -> tuple[str, str | 
         return normalized, None
     if normalized in ACTION_REGISTRY:
         # A real action name, just not unlocked/available right now -- a legitimate
-        # "can't do that here," not confusion, so no correction nudge fires.
+        # "can't do that here," not confusion, so no correction nudge fires. If
+        # it's specifically a graduated BUILD_* whose UPGRADE_* successor is
+        # available, redirect there instead of an unrelated available_actions[0]
+        # -- see GRADUATED_ACTION_UPGRADES's own comment above for why.
+        upgrade = GRADUATED_ACTION_UPGRADES.get(normalized)
+        if upgrade and upgrade in available_actions:
+            return upgrade, None
         return available_actions[0], None
     close = difflib.get_close_matches(normalized, available_actions, n=1, cutoff=0.6)
     if close:

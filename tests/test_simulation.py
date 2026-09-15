@@ -3859,6 +3859,37 @@ def test_resolve_action_exact_and_normalized_and_out_of_context_cases():
     assert unresolved == "xyzzy nonsense"
 
 
+def test_resolve_action_redirects_a_graduated_build_action_to_its_upgrade():
+    """Live-run finding, 2026-09-15: a tribe sat at population 15,568 with 0
+    warehouse upgrades ever made, despite an elevated nudge firing every turn
+    once it was warehouse-capped. BUILD_WAREHOUSE drops out of
+    available_actions once config.WAREHOUSE_MAX_COUNT is reached, but nothing
+    in the model's own experience ever taught it the name changed to
+    UPGRADE_WAREHOUSE -- before this fix, naming the now-unavailable
+    BUILD_WAREHOUSE fell all the way through to an unrelated available_
+    actions[0], discarding the model's real, still-legible intent. Same shape
+    covers BUILD_LONG_HOUSE/BUILD_BARRACKS -> UPGRADE_LONG_HOUSE/
+    UPGRADE_BARRACKS."""
+    avail = ["GATHER_STONE", "SCOUT", "UPGRADE_WAREHOUSE"]
+    assert _resolve_action("BUILD_WAREHOUSE", avail) == ("UPGRADE_WAREHOUSE", None)
+    assert _resolve_action("build warehouse", avail) == ("UPGRADE_WAREHOUSE", None)
+
+    avail2 = ["GATHER_STONE", "SCOUT", "UPGRADE_LONG_HOUSE"]
+    assert _resolve_action("BUILD_LONG_HOUSE", avail2) == ("UPGRADE_LONG_HOUSE", None)
+
+    avail3 = ["GATHER_STONE", "SCOUT", "UPGRADE_BARRACKS"]
+    assert _resolve_action("BUILD_BARRACKS", avail3) == ("UPGRADE_BARRACKS", None)
+
+
+def test_resolve_action_falls_back_normally_when_the_upgrade_isnt_available_either():
+    """The redirect only applies once the successor action is actually offered --
+    if a tribe names BUILD_WAREHOUSE before it's even capped (UPGRADE_WAREHOUSE
+    genuinely isn't unlocked yet either), this stays the same "can't do that
+    here" fallback as any other real-but-unavailable action name."""
+    avail = ["GATHER_STONE", "SCOUT"]
+    assert _resolve_action("BUILD_WAREHOUSE", avail) == (avail[0], None)
+
+
 def test_guess_intended_action_is_display_only_and_best_effort():
     avail = ["GATHER_FOOD", "GATHER_WATER", "SCOUT", "RELOCATE", "CATCH_FISH"]
     assert _guess_intended_action("catch some fish", avail) == "CATCH_FISH"
