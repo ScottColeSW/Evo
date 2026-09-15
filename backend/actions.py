@@ -1607,6 +1607,45 @@ def _conquest_ready(sim, tribe) -> bool:
     return sim.cycle >= tribe.conquest_cooldown_until_cycle
 
 
+def _pick_battle_die(chance: float) -> tuple[int, int, int]:
+    """Explicit request, 2026-09-15 ("The Die of Battle" sketch): translate a
+    round's real win chance into a die size and target number for the
+    frontend's battle splash to animate, so a round's outcome feels like a
+    physical roll landing instead of an invisible percentage. Purely a
+    presentation layer -- the die is picked and its shown result is chosen
+    to MATCH whatever the real round_win_chance/random.random() roll in
+    _declare_conquest already decided; it never itself decides anything.
+    That was the explicit, deliberate scope agreed on before building this:
+    fix the round's visibility, don't touch the actual math.
+
+    Die size is picked by distance from a true coin flip (50%), not by
+    which side is favored -- a near-certain round doesn't need fine
+    resolution, a genuine toss-up does:
+      >= 35 points from 50%  -> d4
+      20-34 points from 50%  -> d6
+      10-19 points from 50%  -> d10
+      < 10 points from 50%   -> d20
+
+    Target is clamped to [2, die] (never 1) so a "loss" face always exists
+    on the die regardless of how lopsided the real chance is -- otherwise a
+    95%+ round could pick a die where every face reads as a win, with
+    nothing left to show the rare real loss that still sometimes lands."""
+    distance = abs(chance - 0.5)
+    if distance >= 0.35:
+        die = 4
+    elif distance >= 0.20:
+        die = 6
+    elif distance >= 0.10:
+        die = 10
+    else:
+        die = 20
+    fails = round(die * (1 - chance))
+    fails = max(1, min(die - 1, fails))
+    target = fails + 1
+    effective_pct = round((die - fails) / die * 100)
+    return die, target, effective_pct
+
+
 def _declare_conquest(sim, tribe, biome, target):
     """War and World Domination era's decisive war action -- unlike ordinary
     RAID's gradual population-siphon (several successful raids to fully
@@ -1687,9 +1726,17 @@ def _declare_conquest(sim, tribe, biome, target):
         winner, loser = (tribe, defender) if attacker_won_round else (defender, tribe)
         sim._lose_population(loser, round(loser.population * config.DECLARE_CONQUEST_ROUND_LOSS_FRACTION_LOSER), cause="conquest_round_loss")
         sim._lose_population(winner, round(winner.population * config.DECLARE_CONQUEST_ROUND_LOSS_FRACTION_WINNER), cause="conquest_round_loss")
+        # "The Die of Battle" sketch, 2026-09-15: the die/target are picked
+        # from the same round_win_chance already used above; the shown roll
+        # is then drawn from whichever side of that target actually matches
+        # attacker_won_round, so the animated die always lands consistent
+        # with the real outcome, never contradicting it.
+        die, target, die_effective_pct = _pick_battle_die(round_win_chance)
+        die_roll = random.randint(target, die) if attacker_won_round else random.randint(1, target - 1)
         rounds.append({
             "round": round_number, "attacker_won": attacker_won_round,
             "attacker_population": tribe.population, "defender_population": defender.population,
+            "die": die, "die_target": target, "die_roll": die_roll, "die_effective_pct": die_effective_pct,
         })
 
         if defender.extinct or defender.population <= defender_start_population * config.DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION:
@@ -1733,6 +1780,11 @@ def _declare_conquest(sim, tribe, biome, target):
 
     battle_record = {
         "attacker_name": attacker_name, "defender_name": defender_name,
+        # "The Die of Battle" sketch, 2026-09-15, explicit request: "match
+        # the die color to the Tribe rolling" -- each round's die is tinted
+        # to whichever side is actually favored that round (frontend picks
+        # by die_effective_pct), using that tribe's own real board color.
+        "attacker_color": tribe.color, "defender_color": defender.color,
         "attacker_start_population": attacker_start_population, "defender_start_population": defender_start_population,
         "attacker_might": attacker_might, "defender_might": defender_might,
         "attacker_armed": attacker_armed, "defender_armed": defender_armed,

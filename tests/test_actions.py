@@ -2719,12 +2719,73 @@ def test_declare_conquest_attaches_a_round_by_round_battle_record():
     assert battle["outcome"] == "attacker_wins"
     assert battle["attacker_name"] == "Strong Tribe"
     assert battle["defender_name"] == "Weak Tribe"
+    assert battle["attacker_color"] == attacker.color
+    assert battle["defender_color"] == defender.color
     assert "attacker_armed" in battle and "defender_armed" in battle
     assert len(battle["rounds"]) >= 1
     first_round = battle["rounds"][0]
     assert first_round["round"] == 1
     assert first_round["attacker_won"] is True
     assert "attacker_population" in first_round and "defender_population" in first_round
+    # "The Die of Battle" sketch, 2026-09-15 -- each round now also carries
+    # enough for the frontend to animate a physical-feeling roll.
+    assert 1 <= first_round["die_target"] <= first_round["die"]
+    assert first_round["die"] in (4, 6, 10, 20)
+    assert first_round["die_roll"] >= first_round["die_target"]  # attacker_won is True this round
+
+
+def test_pick_battle_die_scales_with_distance_from_a_coin_flip():
+    """Explicit design, 2026-09-15: die size tracks distance from 50%, not
+    which side is favored -- a near-certain round doesn't need fine
+    resolution, a genuine toss-up does."""
+    from backend.actions import _pick_battle_die
+
+    assert _pick_battle_die(0.95)[0] == 4  # 45 points from 50% -> coarsest die
+    assert _pick_battle_die(0.05)[0] == 4  # symmetric on the other side too
+    assert _pick_battle_die(0.75)[0] == 6
+    assert _pick_battle_die(0.65)[0] == 10
+    assert _pick_battle_die(0.50)[0] == 20  # a true coin flip gets the finest die
+
+
+def test_pick_battle_die_target_never_makes_a_loss_face_impossible():
+    """Even at the most lopsided real chance the game allows (config.
+    MIGHT_ADJUSTED_WIN_CHANCE_CEILING = 0.95), the target must stay below
+    the die's own max face -- otherwise every face would read as a win and
+    the rare real loss that still sometimes lands would have no way to
+    show on the die at all."""
+    from backend.actions import _pick_battle_die
+
+    die, target, _ = _pick_battle_die(0.95)
+    assert target >= 2
+    assert target <= die
+
+
+def test_declare_conquest_die_roll_stays_consistent_with_the_real_outcome():
+    """The die is presentation only -- its shown roll must always fall on
+    whichever side of the target actually matches the round's real,
+    already-decided attacker_won_round, in both directions."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Weak Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Strong Tribe", "gemma2:2b", 51, 50, "#fb923c")
+    attacker.population = 100
+    defender.population = 100
+    attacker.wood = config.DECLARE_CONQUEST_WOOD_COST
+    attacker.stone = config.DECLARE_CONQUEST_STONE_COST
+    sim.tribes = {attacker.id: attacker, defender.id: defender}
+
+    with mock.patch("backend.actions.random.random", return_value=0.999), \
+            mock.patch("backend.config.DECLARE_CONQUEST_ROUND_LOSS_FRACTION_LOSER", 0.5):
+        ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
+
+    for round_data in sim.recent_encounters[-1]["battle"]["rounds"]:
+        if round_data["attacker_won"]:
+            assert round_data["die_roll"] >= round_data["die_target"]
+        else:
+            assert round_data["die_roll"] < round_data["die_target"]
 
 
 def test_armed_count_tallies_forge_weapons_and_object_creator_combat_boosts():
