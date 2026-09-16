@@ -2953,9 +2953,12 @@ def test_affordability_gate_shows_construct_wall_when_a_ring_exists_with_nothing
     assert "CONSTRUCT_WALL" in ctx["available_actions"]
 
 
-def test_affordability_gate_hides_forge_item_once_the_item_storage_cap_is_reached():
-    """Even with plenty of ore and wood on hand, a full item store is still a
-    guaranteed no-op -- see config.ITEM_STORAGE_CAP_BASE's own comment."""
+def test_forge_item_retires_from_the_menu_the_moment_the_forge_is_built():
+    """Explicit request, 2026-09-16: "if supplied with Ore from collecting or a
+    Mine, it automatically generates items. There shouldn't be a call for
+    this." FORGE_ITEM is now retired the instant forge_built is set (see
+    ONE_TIME_BUILD_FLAGS) -- Simulation._advance_automatic_forge is what
+    actually crafts items from here on, not a model's own choice."""
     from backend import config
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
@@ -2967,14 +2970,56 @@ def test_affordability_gate_hides_forge_item_once_the_item_storage_cap_is_reache
     tribe.mine_resource_name = "Orosite Ore"
     tribe.unique_resources["Orosite Ore"] = 100
     tribe.wood = tribe.stone = 1000
-    tribe.items = [{"name": "Whetstone", "type": "tool", "value": 8, "cycle_made": 0}] * config.ITEM_STORAGE_CAP_BASE
 
     _, ctx = sim._prepare_turn(tribe)
+
     assert "FORGE_ITEM" not in ctx["available_actions"]
 
-    tribe.items = tribe.items[:-1]
-    _, ctx = sim._prepare_turn(tribe)
-    assert "FORGE_ITEM" in ctx["available_actions"]
+
+def test_advance_automatic_forge_crafts_an_item_from_stored_ore_and_wood():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.forge_built = True
+    tribe.mine_resource_name = "Orosite Ore"
+    tribe.unique_resources["Orosite Ore"] = 100
+    tribe.wood = 1000
+
+    sim._advance_automatic_forge(tribe)
+
+    assert len(tribe.items) == 1
+    assert tribe.unique_resources["Orosite Ore"] == 100 - config.FORGE_ITEM_ORE_COST
+    assert tribe.wood == 1000 - config.FORGE_ITEM_WOOD_COST
+    assert "the forge produces" in tribe.history[-1]
+
+
+def test_advance_automatic_forge_does_nothing_without_a_forge():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.mine_resource_name = "Orosite Ore"
+    tribe.unique_resources["Orosite Ore"] = 100
+    tribe.wood = 1000
+
+    sim._advance_automatic_forge(tribe)
+
+    assert tribe.items == []
+
+
+def test_advance_automatic_forge_stops_once_the_item_storage_cap_is_reached():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.forge_built = True
+    tribe.mine_resource_name = "Orosite Ore"
+    tribe.unique_resources["Orosite Ore"] = 100
+    tribe.wood = 1000
+    tribe.items = [{"name": "Whetstone", "type": "tool", "value": 8, "cycle_made": 0}] * config.ITEM_STORAGE_CAP_BASE
+
+    sim._advance_automatic_forge(tribe)
+
+    assert len(tribe.items) == config.ITEM_STORAGE_CAP_BASE  # unchanged -- no room
 
 
 def test_affordability_gate_hides_gather_ore_without_a_real_mine():

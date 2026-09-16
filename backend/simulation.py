@@ -8,7 +8,7 @@ from collections import deque
 from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
-    _battalion_capacity, _created_object_bonus, _eligible_breeding_pair, _food_multiplier,
+    _battalion_capacity, _created_object_bonus, _eligible_breeding_pair, _food_multiplier, _forge_item,
     _generate_raider_name, _has_room_to_grow, _is_departure_dream, _item_storage_cap, _labor_multiplier,
     _long_house_fur_discount, _mutual_ally_at_top_era, _push_past_visited_ground, _record_combat,
     _storage_cap, _sustainable_population, _territory_has_nearby_threats,
@@ -137,6 +137,14 @@ ONE_TIME_BUILD_FLAGS = {
     "BUILD_CASTLE": "castle_built", "BUILD_TANNERY": "tannery_built",
     "BUILD_DEER_PEN": "deer_pen_built",
     "BUILD_MINE": "mine_built", "BUILD_FORGE": "forge_built",
+    # Explicit request, 2026-09-16: "if supplied with Ore from collecting or a
+    # Mine, it automatically generates items. There shouldn't be a call for
+    # this." FORGE_ITEM retires the moment forge_built is set (immediately, not
+    # after a real craft) -- Simulation._advance_automatic_forge (mirrors
+    # _advance_mine_yield/_advance_tannery_yield's own passive-conversion shape)
+    # is what actually crafts items every cycle now, gated on the same real ore
+    # and wood cost the manual action always required.
+    "FORGE_ITEM": "forge_built",
     "BUILD_ROAD": "road_built", "BUILD_HATCHERY": "hatchery_built",
     "BUILD_COOP": "coop_built",
     "BUILD_BATH_HOUSE": "bath_house_built", "BUILD_LIBRARY": "library_built",
@@ -2830,6 +2838,7 @@ class Simulation:
             if not tribe.settlement_name and not tribe.pending_settlement_naming and self._is_settled_near_water(tribe):
                 self._celebrate_settling(tribe)
             self._advance_mine_yield(tribe)
+            self._advance_automatic_forge(tribe)
             self._advance_in_territory_site_yields(tribe)
             self._advance_deer_pen(tribe)
             self._advance_tannery_yield(tribe)
@@ -7774,6 +7783,26 @@ class Simulation:
         so they have to fetch it once" first."""
         if tribe.mine_built and tribe.ore_ever_gathered and tribe.mine_resource_name and self._is_camped(tribe):
             self._capped_unique_add(tribe, tribe.mine_resource_name, config.MINE_YIELD_PER_CYCLE)
+
+    def _advance_automatic_forge(self, tribe: Tribe) -> None:
+        """Explicit request, 2026-09-16: "the Forge (once built) if supplied with
+        Ore from collecting or a Mine, it automatically generates items. There
+        shouldn't be a call for this." Same passive "the building exists, so the
+        conversion just happens" shape _advance_mine_yield/_advance_tannery_yield
+        already use -- calls actions._forge_item's own unchanged logic (the same
+        real ore/wood cost, the same item-storage cap, the same random item pick)
+        instead of duplicating it, so there's exactly one place that ever crafts
+        an item. FORGE_ITEM itself is retired from available_actions the instant
+        forge_built is set (see ONE_TIME_BUILD_FLAGS) -- this is now the only
+        path that ever fires it. Naturally self-limiting: _forge_item's own
+        no-op guards (no ore, no wood, item stores full) already stop this cold
+        without any extra gating needed here, the same way GATHER_ORE's own cost
+        check already limits how fast unique_resources can climb."""
+        if not tribe.forge_built:
+            return
+        message = _forge_item(self, tribe, "", (tribe.x, tribe.y))
+        if message:
+            tribe.history.append(message)
 
     def _advance_in_territory_site_yields(self, tribe: Tribe) -> None:
         """Explicit request: "if they are lucky enough to have a resource or
