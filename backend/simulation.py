@@ -8017,7 +8017,26 @@ class Simulation:
         that justifies building both, and what makes GATHER_EGGS/_advance_flock_eggs
         depositing into tribe.eggs (see both, and actions.py._gather_eggs) mean
         something once the Coop exists. A tribe with a Hatchery but no Coop yet still
-        gets the old boosted-chance roll unchanged below."""
+        gets the old boosted-chance roll unchanged below.
+
+        Live report, 2026-09-16: a real run showed a tribe's flock starve to 0
+        after its Coop was already built, then stay stuck there for the rest of
+        the game -- the same "gained resource that can strand at zero and never
+        recover" bug class already fixed once for the Deer Pen. Root cause: the
+        Coop+Hatchery incubation check below used to sit AFTER the `flock <= 0`
+        guard, so once flock hit zero it could never run again -- even though
+        tribe.eggs is a genuinely separate stockpile (see actions.py._gather_eggs's
+        own post-Coop branch) that doesn't need a single living flock member to
+        incubate from. Moved above the guard so it runs on the egg stockpile
+        alone, regardless of tribe.flock's current value -- the founding path
+        (actions.py._gather_eggs's pre-Coop branch) already works exactly this
+        way for the same reason."""
+        if tribe.coop_built and tribe.hatchery_built:
+            if tribe.pending_hatch is None and tribe.eggs >= config.EGGS_PER_HATCH:
+                tribe.eggs -= config.EGGS_PER_HATCH
+                parents = tribe.flock_lineage[-2:] if len(tribe.flock_lineage) >= 2 else None
+                tribe.pending_hatch = {"parents": parents}
+
         if tribe.flock <= 0:
             return
         feed_needed = config.FLOCK_UPKEEP_FOOD_PER_MEMBER * tribe.flock
@@ -8027,11 +8046,7 @@ class Simulation:
             return
         tribe.food -= feed_needed
         if tribe.coop_built and tribe.hatchery_built:
-            if tribe.pending_hatch is None and tribe.eggs >= config.EGGS_PER_HATCH:
-                tribe.eggs -= config.EGGS_PER_HATCH
-                parents = tribe.flock_lineage[-2:] if len(tribe.flock_lineage) >= 2 else None
-                tribe.pending_hatch = {"parents": parents}
-            return
+            return  # already handled above, regardless of flock's value at the time
         hatch_chance = config.FLOCK_NATURAL_HATCH_CHANCE
         if tribe.hatchery_built:
             hatch_chance = min(1.0, hatch_chance * config.HATCHERY_HATCH_CHANCE_MULTIPLIER)

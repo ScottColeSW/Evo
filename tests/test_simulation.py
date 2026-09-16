@@ -11556,6 +11556,30 @@ def test_advance_flock_deterministic_hatch_once_coop_and_hatchery_both_exist():
     assert tribe.pending_hatch == {"parents": None}
 
 
+def test_advance_flock_recovers_from_zero_once_coop_and_hatchery_exist():
+    """Live report, 2026-09-16: a real run showed a tribe's flock starve to 0
+    after its Coop was already built, then stay stuck there for the rest of the
+    game -- the same "gained resource that can strand at zero and never
+    recover" bug class already fixed once for the Deer Pen. tribe.eggs is a
+    genuinely separate stockpile (see actions.py._gather_eggs's own post-Coop
+    branch); incubating it into a fresh flock member must not require an
+    existing living flock member."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = 0  # starved out after the Coop already existed
+    tribe.food = 1000
+    tribe.coop_built = True
+    tribe.hatchery_built = True
+    tribe.eggs = config.EGGS_PER_HATCH
+
+    sim._advance_flock(tribe)
+
+    assert tribe.eggs == 0
+    assert tribe.pending_hatch == {"parents": None}
+
+
 def test_advance_flock_deterministic_hatch_waits_for_enough_eggs():
     from backend import config
 
