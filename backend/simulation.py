@@ -1278,7 +1278,7 @@ class Tribe:
         # SCOUT/EXPLORATION_PARTY -- a live run showed 15+ hunting parties sent
         # "toward" the tribe's own home coordinate, the exact same "the model
         # echoes its current position back" failure this project already fixed
-        # once for RELOCATE/SCOUT (see README.md's own account of that bug).
+        # once for RELOCATE/SCOUT (a known, previously-fixed failure mode).
         # Its own rotating heading now, offset from both siblings' sweeps.
         self.hunt_rotation_index = stagger
         self.landmarks: list[dict] = []
@@ -5108,7 +5108,7 @@ class Simulation:
         49% of all 728 turns (and a different run's tribe choose BREED on 63.8%) while
         other real needs went untouched -- see config.ACTION_REPETITION_THROTTLE_*.
         RELOCATE is exempt: a real, sustained multi-cycle journey is documented,
-        desired behavior (see README), not fixation.
+        desired behavior (see DESIGN.md), not fixation.
 
         CONSTRUCT_WALL is exempt for the same reason, confirmed via a live run
         (run_20260911_100258): it's the only action that can unlock or build a wall

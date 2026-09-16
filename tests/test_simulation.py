@@ -2271,7 +2271,7 @@ def test_action_repetition_throttles_once_threshold_is_reached():
 
 def test_action_repetition_relocate_is_exempt_from_throttling():
     """A real, sustained multi-cycle journey is documented, desired behavior (see
-    README), not fixation."""
+    DESIGN.md), not fixation."""
     from backend import config
 
     sim = _bare_simulation()

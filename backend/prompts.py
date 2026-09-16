@@ -150,7 +150,9 @@ def _growth_pressure_text(era_gap_note: str, survival_critical: bool) -> str:
     # threat -- there genuinely is no active danger once a tribe is settled and fed,
     # so claiming otherwise would be exactly the scripted-directive-dressed-as-a-fact
     # pattern this project reverted once already (see get_prime_consciousness_prompt's
-    # leadership_block and the README's own account of that reversal). What IS true:
+    # leadership_block -- a scripted-directive experiment tried and deliberately
+    # reverted, see DESIGN.md's "Informational nudges vs. mechanical enforcement").
+    # What IS true:
     # a small, unchanging population is objectively fragile -- any single ordinary
     # loss (a hazard, a failed hunt, a hard season) costs it proportionally more than
     # it would a larger one. That fragility, not an invented monster, is the honest

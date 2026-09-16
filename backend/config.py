@@ -2522,7 +2522,7 @@ HAZARD_LANDMARK_NAMES = (
 # Once an action has been chosen this many cycles in a row, it's pulled from
 # available_actions for a cooldown, forcing a genuinely different choice.
 # RELOCATE is exempt (Simulation._apply_turn) -- a real, sustained multi-cycle
-# journey is documented, desired behavior (see README), not fixation.
+# journey is documented, desired behavior (see DESIGN.md), not fixation.
 # Threshold=4 is the minimum that still lets CONSTRUCT_WALL finish building one
 # full section (WALL_PROGRESS_PER_ACTION_BASE=30 -- 30/60/90/100, exactly 4
 # actions at baseline population) before ever throttling -- reinforcing a

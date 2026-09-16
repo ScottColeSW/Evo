@@ -1,7 +1,7 @@
 """The action registry: each action name maps to a handler function that mutates a
 tribe's state and returns an optional hazard note for the chronicle. Adding a new
 action means registering a handler here, not extending an if/elif chain in
-Simulation -- this is the Registry Factory referenced in the README/design notes.
+Simulation -- this is the Registry Factory pattern.
 
 Handler signature: (sim: Simulation, tribe: Tribe, biome: str, target: tuple[int, int])
 -> str | None
