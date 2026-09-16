@@ -2718,6 +2718,23 @@ class Simulation:
     def toggle_pause(self) -> None:
         self.paused = not self.paused
 
+    def _round_robin_order(self) -> list[tuple[str, "Tribe"]]:
+        """Fairness report, 2026-09-16: resolving every tribe's turn in the same
+        fixed order every cycle (plain dict-insertion order -- tribe_0 always
+        first) gave whichever tribe happens to be tribe_0 a persistent same-cycle
+        first-mover edge in any direct conflict: a raid or DECLARE_CONQUEST
+        resolves against the other side's still-unfortified state before that
+        side's own same-cycle action ever runs. Rotates the starting tribe by
+        cycle number instead, so that edge is distributed evenly across the
+        whole game rather than permanently owned by one tribe -- a real
+        round-robin, not a fixed swap, so it generalizes to any tribe count
+        (more than 2 agents can theoretically play), not just alternating two."""
+        items = list(self.tribes.items())
+        if len(items) <= 1:
+            return items
+        shift = self.cycle % len(items)
+        return items[shift:] + items[:shift]
+
     async def step(self) -> None:
         if self.paused or self.game_over:
             return
@@ -2789,7 +2806,18 @@ class Simulation:
         # before removal), but the existing `if tribe.extinct: continue` guard
         # right below already correctly skips it (_merge_tribes sets
         # defender.extinct = True before deleting it from the dict).
-        for tid, tribe in list(self.tribes.items()):
+        #
+        # Fairness report, 2026-09-16: this used to always iterate tribe_0 first,
+        # every cycle, for the whole game -- a real, structural first-mover edge
+        # in any cycle where two tribes act directly against each other (a raid/
+        # conquest resolves against the other side's still-unfortified state
+        # before that side's own same-cycle action ever runs). _round_robin_order
+        # rotates the starting tribe by cycle number instead, so the edge is
+        # distributed evenly over time rather than permanently owned by whichever
+        # tribe happened to be created first -- and generalizes to any tribe
+        # count, not just a fixed 2-tribe swap, since more than one agent can
+        # theoretically play.
+        for tid, tribe in self._round_robin_order():
             if tribe.extinct:
                 continue
             outcome = results.get(tid, {"intent": {}, "latency_ms": 0.0})

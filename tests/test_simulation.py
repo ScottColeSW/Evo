@@ -13211,14 +13211,23 @@ async def test_step_survives_a_conquest_merge_mid_loop_and_unloads_the_losers_mo
         t.stone = config.DECLARE_CONQUEST_STONE_COST
 
     def fake_declare_conquest(sim, tribe, biome, target):
-        other = loser if tribe is winner else winner
-        return sim._merge_tribes(tribe, other)
+        return sim._merge_tribes(tribe, loser)
 
     async def fake_run_batch(requests):
-        return {
-            r["id"]: {"intent": {"visual_action": "DECLARE_CONQUEST", "target_vector": [55, 55]}, "latency_ms": 0.0}
-            for r in requests
-        }
+        # Only the winner actually declares conquest -- with both tribes doing
+        # so in the same cycle, whichever one's turn resolves first would win
+        # (a fake-handler artifact, not something a real fight tolerates
+        # order-dependence on), and Simulation._round_robin_order deliberately
+        # doesn't guarantee that's always tribe_0/winner any more. The loser
+        # just takes a harmless action instead -- the crash/unload behavior
+        # this test actually covers doesn't depend on what the loser does.
+        results = {}
+        for r in requests:
+            if r["id"] == winner.id:
+                results[r["id"]] = {"intent": {"visual_action": "DECLARE_CONQUEST", "target_vector": [55, 55]}, "latency_ms": 0.0}
+            else:
+                results[r["id"]] = {"intent": {"visual_action": "GATHER_WOOD"}, "latency_ms": 0.0}
+        return results
 
     with mock.patch.dict("backend.simulation.ACTION_REGISTRY", {"DECLARE_CONQUEST": fake_declare_conquest}), \
          mock.patch.object(sim.scheduler, "run_batch", fake_run_batch), \
@@ -13232,6 +13241,35 @@ async def test_step_survives_a_conquest_merge_mid_loop_and_unloads_the_losers_mo
     assert loser.extinct is True
     assert "tribe_1" not in sim.tribes
     mock_unload.assert_called_once_with("qwen2.5:3b")
+
+
+def test_round_robin_order_rotates_the_starting_tribe_by_cycle():
+    """Fairness report, 2026-09-16: resolving every tribe's turn in the same
+    fixed order every cycle gave whichever tribe is tribe_0 a persistent
+    same-cycle first-mover edge in any direct conflict. Confirms the rotation
+    itself: which tribe goes first cycles through all of them over time,
+    rather than being permanently owned by one."""
+    sim = Simulation([
+        {"name": "A", "model": "gemma2:2b"},
+        {"name": "B", "model": "qwen2.5:3b"},
+        {"name": "C", "model": "gemma2:2b"},
+    ])
+    ids = ["tribe_0", "tribe_1", "tribe_2"]
+
+    sim.cycle = 0
+    assert [tid for tid, _ in sim._round_robin_order()] == ["tribe_0", "tribe_1", "tribe_2"]
+    sim.cycle = 1
+    assert [tid for tid, _ in sim._round_robin_order()] == ["tribe_1", "tribe_2", "tribe_0"]
+    sim.cycle = 2
+    assert [tid for tid, _ in sim._round_robin_order()] == ["tribe_2", "tribe_0", "tribe_1"]
+    sim.cycle = 3  # wraps back around
+    assert [tid for tid, _ in sim._round_robin_order()] == ids
+
+
+def test_round_robin_order_is_unaffected_by_a_single_tribe():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    sim.cycle = 7
+    assert [tid for tid, _ in sim._round_robin_order()] == ["tribe_0"]
 
 
 @run_async
