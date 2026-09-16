@@ -165,6 +165,78 @@ def test_apply_starting_fixtures_returns_none_when_not_set():
     assert run_benchmark._apply_starting_fixtures(sim, scenario) is None
 
 
+def _two_tribe_scenario(category="conflict", cycle_budget=1):
+    return Scenario(
+        key="test", category=category, tribe_count=2, spawn_positions=((0, 0), (1, 1)),
+        cycle_budget=cycle_budget, description="",
+    )
+
+
+def test_only_one_tribe_left_is_false_for_a_single_tribe_scenario_even_if_extinct():
+    """1-tribe scenarios (survival, settlement) start with exactly one living
+    tribe by design -- this must never fire for them, or a trial would stop on
+    its own first check before ever really running."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    sim.tribes["tribe_0"].extinct = True
+    scenario = Scenario(
+        key="test", category="survival", tribe_count=1, spawn_positions=((0, 0),),
+        cycle_budget=1, description="",
+    )
+
+    assert run_benchmark._only_one_tribe_left(sim, scenario) is False
+
+
+def test_only_one_tribe_left_is_false_while_both_tribes_are_alive():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+
+    assert run_benchmark._only_one_tribe_left(sim, _two_tribe_scenario()) is False
+
+
+def test_only_one_tribe_left_is_true_once_a_rival_goes_extinct():
+    """Extinction (Tribe.extinct=True) leaves the tribe in sim.tribes -- see
+    Simulation._lose_population."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    sim.tribes["tribe_1"].extinct = True
+
+    assert run_benchmark._only_one_tribe_left(sim, _two_tribe_scenario()) is True
+
+
+def test_only_one_tribe_left_is_true_after_a_conquest_merge_removes_the_loser():
+    """A conquest merge deletes the loser from sim.tribes outright instead of
+    marking it extinct -- see Simulation._merge_tribes."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    del sim.tribes["tribe_1"]
+
+    assert run_benchmark._only_one_tribe_left(sim, _two_tribe_scenario()) is True
+
+
+@run_async
+async def test_run_trial_stops_early_once_only_one_tribe_is_left(tmp_path, monkeypatch):
+    """Explicit request, 2026-09-16: "the test should end after only 1 tribe
+    remains to save time on this test." Simulation.game_over only fires once
+    EVERY tribe is extinct -- without this, a 2-tribe trial would burn the
+    rest of cycle_budget's real Ollama inference on a lone survivor with
+    nothing left to interact with. _only_one_tribe_left is mocked directly
+    (rather than trying to force a real extinction/merge through the fake
+    scheduler) since it's already covered on its own above -- this test is
+    only about run_trial actually acting on it."""
+    db_path = str(tmp_path / "benchmark.db")
+    monkeypatch.setattr(benchmark_db, "DEFAULT_DB_PATH", db_path)
+    monkeypatch.setitem(SCENARIOS, "cooperation", _small_budget_scenario("cooperation", cycles=10))
+    monkeypatch.setattr(run_benchmark, "_only_one_tribe_left", lambda sim, scenario: sim.cycle >= 2)
+
+    with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls, \
+         mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=_FAKE_CHIEF)), \
+         mock.patch("backend.simulation.breed_individuals", mock.AsyncMock(return_value=_FAKE_CHILD)), \
+         mock.patch("backend.scheduler.ModelBatchScheduler.run_batch", _fake_run_batch), \
+         mock.patch("backend.ollama_client.OllamaClient.unload_model", mock.AsyncMock()):
+        mock_guard_cls.return_value.verify_vram_safety_margin = mock.AsyncMock(return_value=(True, ""))
+        trial = await run_benchmark.run_trial("cooperation", ["gemma2:2b", "qwen2.5:3b"], trial_seed=0)
+
+    assert trial["cycles_run"] == 2  # not the full 10-cycle budget
+    assert trial["ended_reason"] == "single_tribe_remaining"
+
+
 @run_async
 async def test_run_trial_stops_at_the_cycle_budget_and_records_a_row(tmp_path, monkeypatch):
     db_path = str(tmp_path / "benchmark.db")

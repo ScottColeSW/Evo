@@ -75,6 +75,27 @@ def _apply_starting_fixtures(sim: Simulation, scenario) -> int | None:
     return source_cycle
 
 
+def _only_one_tribe_left(sim: Simulation, scenario) -> bool:
+    """Explicit request, 2026-09-16: "the test should end after only 1 tribe
+    remains to save time on this test." A multi-tribe scenario (cooperation,
+    conflict, war_ready_5000[_no_alliance]) has nothing left to compare once
+    one side is gone -- Simulation.game_over only fires once EVERY tribe is
+    extinct (the live game deliberately keeps playing a lone survivor, see
+    DESIGN.md's own note on that), so without this a benchmark trial would
+    burn the rest of cycle_budget's real Ollama inference on a tribe with no
+    rival left to interact with, producing no additional benchmark signal.
+    A living count covers both ways a tribe can leave the game: extinction
+    (Tribe.extinct=True, stays in sim.tribes) and a conquest merge (the loser
+    is deleted from sim.tribes outright, see Simulation._merge_tribes).
+    Deliberately gated on tribe_count -- a 1-tribe scenario (survival,
+    settlement) starts with exactly one living tribe by design and must keep
+    running it for the full budget, not stop immediately on its own first
+    cycle."""
+    if scenario.tribe_count < 2:
+        return False
+    return sum(1 for t in sim.tribes.values() if not t.extinct) <= 1
+
+
 def _apply_disabled_actions(sim: Simulation, scenario) -> None:
     """Sets sim.disabled_actions from scenario.disabled_actions, when set (see
     that field's own comment) -- None (the default for every scenario except
@@ -108,10 +129,14 @@ async def run_trial(scenario_key: str, models: list[str], trial_seed: int) -> di
     _apply_disabled_actions(sim, scenario)
     start_cycle = sim.cycle
     target_cycle = sim.cycle + scenario.cycle_budget
+    single_tribe_remaining = False
     try:
         while sim.cycle < target_cycle and not sim.game_over:
             await sim.step()
             _print_progress(sim)
+            if _only_one_tribe_left(sim, scenario):
+                single_tribe_remaining = True
+                break
     finally:
         await sim.shutdown()
     finished_ts = time.time()
@@ -130,7 +155,7 @@ async def run_trial(scenario_key: str, models: list[str], trial_seed: int) -> di
         "trial_seed": trial_seed,
         "cycle_budget": scenario.cycle_budget,
         "cycles_run": sim.cycle - start_cycle,
-        "ended_reason": sim.game_over_reason or "budget_reached",
+        "ended_reason": sim.game_over_reason or ("single_tribe_remaining" if single_tribe_remaining else "budget_reached"),
         "git_commit": benchmark_db.current_git_commit(),
         "run_id": sim.run_id,
         "started_ts": started_ts,
