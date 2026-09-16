@@ -1,3 +1,39 @@
+# Live finding, 2026-09-16: real logs across many runs, several different model
+# pairings, showed BOTH tribes' invented languages leaning heavily on "KRA-ZUL",
+# "MEE-LO", and "VASH-TA" specifically -- not two tribes independently landing on
+# similar sounds, but every tribe echoing the exact three literal example words
+# get_prime_consciousness_prompt used to hardcode for everyone. Same "prompt-leak"
+# pattern already found and fixed elsewhere this project (a small model echoes
+# back whatever distinctive, quotable token appears in its own prompt) -- here it
+# meant tribes weren't actually inventing distinct languages at all, they were all
+# drawing from one shared seed vocabulary, which also meant linguistic_consensus
+# (TranslationConfidenceMatrix) could only ever measure trivial overlap, never real
+# contact-driven convergence. Several style-matched alternatives (still 2-syllable,
+# hyphenated, all-caps, so the FORMAT guidance this instruction is confirmed to
+# need stays identical) let each tribe in a game draw from a different example set
+# -- see language_examples_for below -- so genuine per-tribe divergence is
+# possible, and any observed convergence later means something.
+LANGUAGE_EXAMPLE_POOLS: tuple[tuple[str, str, str], ...] = (
+    ("KRA-ZUL", "MEE-LO", "VASH-TA"),
+    ("ZUR-NEV", "DOL-KASH", "TIB-RAN"),
+    ("NYO-TEK", "GAL-VETH", "SOOM-RIK"),
+    ("WEN-DAL", "KOSH-IRA", "PLUM-VEK"),
+)
+
+
+def language_examples_for(tribe_id: str) -> tuple[str, str, str]:
+    """Deterministic, stable per-tribe pick -- the same tribe gets the same
+    examples every turn (not re-randomized), and different tribes in the same
+    game get different pools so they don't all seed from one shared vocabulary.
+    Falls back to pool 0 for anything that isn't a real "tribe_<N>" id (e.g. a
+    test constructing a bare prompt directly)."""
+    try:
+        index = int(tribe_id.rsplit("_", 1)[-1])
+    except (ValueError, AttributeError):
+        index = 0
+    return LANGUAGE_EXAMPLE_POOLS[index % len(LANGUAGE_EXAMPLE_POOLS)]
+
+
 def get_prime_consciousness_prompt(
     tribe_name: str,
     model_architecture: str,
@@ -7,6 +43,7 @@ def get_prime_consciousness_prompt(
     chief_victory: str = "",
     lineage_note: str = "",
     available_actions: tuple[str, ...] = (),
+    language_examples: tuple[str, str, str] = LANGUAGE_EXAMPLE_POOLS[0],
 ) -> str:
     """The standing system prompt: identity, objective, and the output contract.
 
@@ -88,9 +125,9 @@ toward a permanent Capital City. Learn from what you actually observe -- your su
 resource scarcity, and anything your ancestors left behind -- rather than fixed rules.
 
 You don't speak English to your people -- broadcast strategy and state only through your tribe's \
-own invented phonetic language (e.g., "KRA-ZUL", "MEE-LO", "VASH-TA"), reusing a token \
-consistently once you've given it a meaning. Your private rationale may be plain English; your \
-broadcast may not be.
+own invented phonetic language (e.g., "{language_examples[0]}", "{language_examples[1]}", \
+"{language_examples[2]}"), reusing a token consistently once you've given it a meaning. Your \
+private rationale may be plain English; your broadcast may not be.
 
 Answer only in the JSON format given to you each cycle -- no other text.{leadership_block}{glossary_block}"""
 

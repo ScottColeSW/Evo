@@ -28,7 +28,7 @@ from .leadership import elect_chief, name_settlement
 from .memory import TribeMemory
 from .might import compute_might
 from .ollama_client import OllamaClient
-from .prompts import compile_live_state_prompt, get_prime_consciousness_prompt
+from .prompts import language_examples_for, compile_live_state_prompt, get_prime_consciousness_prompt
 from .scheduler import ModelBatchScheduler
 from .self_mod import SelfModEngine
 from .translation_matrix import TranslationConfidenceMatrix
@@ -5040,6 +5040,7 @@ class Simulation:
         base_prompt = get_prime_consciousness_prompt(
             tribe.name, tribe.model, tribe.chief_name, tribe.chief_philosophy, tribe.chief_decree,
             tribe.chief_victory, lineage_note, tuple(available_actions),
+            language_examples=language_examples_for(tribe.id),
         )
         rival_tribes = [t for t in self.tribes.values() if t.id != tribe.id and not t.extinct]
         threat_assessment = threat_assessment_string(tribe, rival_tribes)

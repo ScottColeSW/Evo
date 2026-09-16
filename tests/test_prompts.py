@@ -1,4 +1,10 @@
-from backend.prompts import _growth_pressure_text, compile_live_state_prompt, get_prime_consciousness_prompt
+from backend.prompts import (
+    LANGUAGE_EXAMPLE_POOLS,
+    _growth_pressure_text,
+    compile_live_state_prompt,
+    get_prime_consciousness_prompt,
+    language_examples_for,
+)
 
 
 def _world_state(**overrides):
@@ -73,6 +79,40 @@ def test_system_prompt_includes_chief_as_context_not_command():
     assert "Ashgar" in prompt
     assert "expand aggressively" in prompt
     assert "not a command" in prompt
+
+
+def test_system_prompt_shows_the_given_language_examples_not_a_hardcoded_default():
+    """Live finding, 2026-09-16: real logs across many runs/model pairings showed
+    every tribe echoing the exact three literal example words this prompt used to
+    hardcode for everyone ("KRA-ZUL", "MEE-LO", "VASH-TA") -- the same prompt-leak
+    pattern already found elsewhere, meaning tribes weren't actually inventing
+    distinct languages. The examples must come from the parameter, not a baked-in
+    literal, so different tribes can be given different ones."""
+    prompt = get_prime_consciousness_prompt(
+        "Forest Tribe", "gemma2:2b", language_examples=("ZUR-NEV", "DOL-KASH", "TIB-RAN"),
+    )
+    assert "ZUR-NEV" in prompt and "DOL-KASH" in prompt and "TIB-RAN" in prompt
+    assert "KRA-ZUL" not in prompt
+
+
+def test_language_examples_for_gives_different_tribes_different_pools():
+    a = language_examples_for("tribe_0")
+    b = language_examples_for("tribe_1")
+    assert a != b
+    assert a == LANGUAGE_EXAMPLE_POOLS[0]
+    assert b == LANGUAGE_EXAMPLE_POOLS[1]
+
+
+def test_language_examples_for_is_stable_for_the_same_tribe():
+    assert language_examples_for("tribe_2") == language_examples_for("tribe_2")
+
+
+def test_language_examples_for_wraps_around_and_falls_back_for_a_non_standard_id():
+    # More tribes than pools -- wraps rather than crashing.
+    assert language_examples_for(f"tribe_{len(LANGUAGE_EXAMPLE_POOLS)}") == LANGUAGE_EXAMPLE_POOLS[0]
+    # Not a real "tribe_<N>" id (e.g. a test building a prompt directly) -- falls
+    # back to pool 0 instead of raising.
+    assert language_examples_for("not-a-tribe-id") == LANGUAGE_EXAMPLE_POOLS[0]
 
 
 def test_leadership_block_orders_lineage_victory_responsibility_duty_philosophy():
