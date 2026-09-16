@@ -7,6 +7,7 @@ formula changes. SCORING_VERSION exists so a report can say which formula produc
 a given number -- bump it whenever a formula changes materially.
 """
 
+from .benchmark_scenarios import SCENARIOS
 from .eras import ERAS, era_index
 
 # Bumped 2->3, 2026-09-14: score_survival/score_settlement's era_fraction is
@@ -133,15 +134,26 @@ def score_trial(trial: dict) -> list[int]:
     """Dispatches to the right formula by scenario category. Takes a full trial
     record shaped like backend.benchmark_db.list_trials()/read_trial()'s own
     return value (scenario_key, cycle_budget, tribes -- a list of per-tribe fact
-    dicts). Returns one score per tribe, same order as trial["tribes"]."""
+    dicts). Returns one score per tribe, same order as trial["tribes"].
+
+    Dispatches on the scenario's own `category`, not the literal scenario_key --
+    real crash, 2026-09-16: war_ready_5000's category is "conflict" but its key
+    isn't, so the original key-string dispatch (written back when every
+    scenario's key and category were identical) raised "unknown scenario_key"
+    on an otherwise-successful trial, right after the real trial data was
+    already safely recorded to the DB (record_trial runs before this in
+    run_benchmark.py, so no data was lost -- only the report crashed)."""
     scenario_key = trial["scenario_key"]
+    if scenario_key not in SCENARIOS:
+        raise ValueError(f"unknown scenario_key: {scenario_key!r}")
+    category = SCENARIOS[scenario_key].category
     tribes = trial["tribes"]
-    if scenario_key == "survival":
+    if category == "survival":
         return [score_survival({**tribes[0], "cycles_run": trial["cycles_run"]}, trial["cycle_budget"])]
-    if scenario_key == "settlement":
+    if category == "settlement":
         return [score_settlement(tribes[0])]
-    if scenario_key == "cooperation":
+    if category == "cooperation":
         return list(score_cooperation(tribes[0], tribes[1]))
-    if scenario_key == "conflict":
+    if category == "conflict":
         return list(score_conflict(tribes[0], tribes[1]))
-    raise ValueError(f"unknown scenario_key: {scenario_key!r}")
+    raise ValueError(f"unknown scenario category: {category!r}")

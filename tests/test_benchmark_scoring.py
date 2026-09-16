@@ -156,3 +156,17 @@ def test_score_trial_rejects_an_unknown_scenario_key():
 
     with pytest.raises(ValueError):
         score_trial({"scenario_key": "nonexistent", "tribes": []})
+
+
+def test_score_trial_dispatches_by_category_when_the_scenario_key_differs_from_it():
+    """Real crash, 2026-09-16: a completed war_ready_5000 trial raised "unknown
+    scenario_key" from score_trial, right after its real data was already
+    safely recorded to the DB -- war_ready_5000's category is "conflict" but
+    its own key isn't, and the dispatcher was matching on the literal key."""
+    trial = {
+        "scenario_key": "war_ready_5000",
+        "cycle_budget": 200,
+        "cycles_run": 200,
+        "tribes": [_tribe(), _tribe()],
+    }
+    assert score_trial(trial) == list(score_conflict(_tribe(), _tribe()))
