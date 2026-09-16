@@ -14,10 +14,23 @@ import asyncio
 import random
 import time
 
-from backend import benchmark_db, benchmark_scoring
+from backend import benchmark_db, benchmark_scoring, config
 from backend.benchmark_scenarios import SCENARIO_VERSION, SCENARIOS
 from backend.simulation import Simulation
 from backend.tribe_fixtures import apply_tribe_fixture, load_fixture
+
+
+def _print_progress(sim: Simulation) -> None:
+    """A trial is otherwise a total black box while it runs -- explicit request,
+    2026-09-16, made right after a real trial (war_ready_5000, seed=301) sat silent
+    for its whole duration with nothing to check on. Printed every DAY_LENGTH_CYCLES
+    (20) so it lines up with the game's own day boundary, same cadence the frontend
+    uses for anything cyclical."""
+    parts = []
+    for tribe in sim.tribes.values():
+        stances = ",".join(f"{rid}:{s}" for rid, s in tribe.stance_toward.items()) or "-"
+        parts.append(f"{tribe.name}[{tribe.model}] pop={tribe.population} era={tribe.era} stance={stances}")
+    print(f"  cycle {sim.cycle}: " + " | ".join(parts))
 
 
 def _apply_starting_resources(sim: Simulation, scenario) -> None:
@@ -71,6 +84,8 @@ async def run_trial(scenario_key: str, models: list[str], trial_seed: int) -> di
     try:
         while sim.cycle < target_cycle and not sim.game_over:
             await sim.step()
+            if sim.cycle % config.DAY_LENGTH_CYCLES == 0:
+                _print_progress(sim)
     finally:
         await sim.shutdown()
     finished_ts = time.time()
