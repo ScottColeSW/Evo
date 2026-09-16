@@ -12,9 +12,21 @@ Usage:
 import argparse
 import asyncio
 import random
+import sys
 import time
 
-from backend import benchmark_db, benchmark_scoring, config
+from backend import benchmark_db, benchmark_scoring
+
+# Explicit request, 2026-09-16: "these runs take too long to write out; we need
+# to see this faster." Real cause -- not the progress print's own cadence, but
+# that stdout is fully buffered (not line-buffered) whenever it isn't a real
+# terminal, e.g. every `python run_benchmark.py ... > file.log 2>&1` invocation
+# used to kick off a trial in the background. Every print() below was sitting
+# in that buffer, invisible in the log file, until the whole process exited and
+# flushed it all at once -- confirmed live: a completed war_ready_5000 trial's
+# log showed nothing at all until the final flush, despite ~10 progress lines
+# having already printed internally over the ~20-minute run.
+sys.stdout.reconfigure(line_buffering=True)
 from backend.benchmark_scenarios import SCENARIO_VERSION, SCENARIOS
 from backend.simulation import Simulation
 from backend.tribe_fixtures import apply_tribe_fixture, load_fixture
@@ -23,9 +35,10 @@ from backend.tribe_fixtures import apply_tribe_fixture, load_fixture
 def _print_progress(sim: Simulation) -> None:
     """A trial is otherwise a total black box while it runs -- explicit request,
     2026-09-16, made right after a real trial (war_ready_5000, seed=301) sat silent
-    for its whole duration with nothing to check on. Printed every DAY_LENGTH_CYCLES
-    (20) so it lines up with the game's own day boundary, same cadence the frontend
-    uses for anything cyclical."""
+    for its whole duration with nothing to check on. Printed every cycle: real
+    per-cycle Ollama latency (roughly a minute each, for a real two-model trial)
+    means even this isn't spammy, and the follow-up request ("we need to see this
+    faster") ruled out the original once-per-day-length cadence as too sparse."""
     parts = []
     for tribe in sim.tribes.values():
         stances = ",".join(f"{rid}:{s}" for rid, s in tribe.stance_toward.items()) or "-"
@@ -84,8 +97,7 @@ async def run_trial(scenario_key: str, models: list[str], trial_seed: int) -> di
     try:
         while sim.cycle < target_cycle and not sim.game_over:
             await sim.step()
-            if sim.cycle % config.DAY_LENGTH_CYCLES == 0:
-                _print_progress(sim)
+            _print_progress(sim)
     finally:
         await sim.shutdown()
     finished_ts = time.time()
