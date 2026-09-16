@@ -7451,14 +7451,27 @@ def test_disabled_actions_strips_an_action_from_the_menu():
     assert "DECLARE_ALLIANCE" not in ctx["available_actions"]
 
 
-def test_disabled_actions_fails_open_rather_than_emptying_the_menu():
-    """Same fail-open guard every other menu-lock in _prepare_turn uses -- a
-    misconfigured scenario (disabling everything currently offered) should
-    produce a slightly wrong menu, not a soft-locked trial with zero choices."""
-    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+def test_disabled_actions_fails_open_rather_than_emptying_the_base_list():
+    """Same fail-open guard every other menu-lock in _prepare_turn uses, applied
+    at the base list specifically (see the real 2026-09-16 bug this whole
+    mechanism's placement fixed, above) -- a misconfigured scenario disabling
+    everything in the base era-unlocked pool should leave that pool alone
+    rather than run every later filter (camped/rival/etc, none of which know
+    about disabled_actions) against an empty starting point."""
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
     tribe = sim.tribes["tribe_0"]
-    _, ctx = sim._prepare_turn(tribe)
-    sim.disabled_actions = set(ctx["available_actions"])  # disable literally everything just offered
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "tribal_synapse"
+    tribe.wood = tribe.stone = 1000
+    tribe.barracks_built = 1
+    from backend.eras import unlocked_actions_through
+    sim.disabled_actions = set(unlocked_actions_through(tribe.era))  # disable the entire base pool
 
     _, ctx = sim._prepare_turn(tribe)
 

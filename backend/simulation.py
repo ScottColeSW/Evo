@@ -3703,6 +3703,24 @@ class Simulation:
                 available_actions = ["RELOCATE"]
         else:
             available_actions = sorted(unlocked_actions_through(tribe.era))
+        # Benchmark-harness-only override -- see Simulation.__init__'s own comment
+        # on self.disabled_actions. Applied here, at the base list, deliberately
+        # BEFORE any of the narrowing filters below (endgame_only,
+        # battle_ready_only, ...) rather than after all of them: a filter placed
+        # last has to fail open when narrowing would otherwise empty the menu,
+        # and that fail-open guard silently let a genuinely disabled action back
+        # in whenever it happened to be the one survivor of an earlier narrowing
+        # step (confirmed live, 2026-09-16: war_ready_5000_no_alliance's own
+        # first real trial still saw DECLARE_ALLIANCE fire, from exactly this
+        # path -- endgame_only's own result had narrowed to DECLARE_ALLIANCE
+        # alone at that cycle, TRAIN_BATTALION/BUILD_BARRACKS/UPGRADE_BARRACKS
+        # already maxed and DECLARE_CONQUEST momentarily unaffordable). Filtering
+        # the base pool instead means every downstream fail-open guard can never
+        # reintroduce it -- it was never a candidate to begin with.
+        if self.disabled_actions:
+            without_disabled = [a for a in available_actions if a not in self.disabled_actions]
+            if without_disabled:
+                available_actions = without_disabled
         if not camped:
             available_actions = [a for a in available_actions if a not in ("GATHER_WOOD", "GATHER_STONE")]
         # Live report, 2026-09-12: RAID/TRADE/DECLARE_CONQUEST/etc. all need a
@@ -4145,17 +4163,6 @@ class Simulation:
                 if battle_ready_only:
                     available_actions = battle_ready_only
                     battle_ready_locked = True
-
-        # Benchmark-harness-only override -- see Simulation.__init__'s own comment
-        # on self.disabled_actions. Applied last, after every other menu-narrowing
-        # rule above, so it's the final word regardless of era/crisis/lock state.
-        # Fail-open guard, same shape as every other menu-lock above -- never cut
-        # the menu down to nothing (a misconfigured scenario shouldn't soft-lock a
-        # trial rather than just producing a slightly wrong result).
-        if self.disabled_actions:
-            without_disabled = [a for a in available_actions if a not in self.disabled_actions]
-            if without_disabled:
-                available_actions = without_disabled
 
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         if tribe.wall_commitment_active:

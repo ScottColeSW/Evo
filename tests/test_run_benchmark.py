@@ -95,11 +95,22 @@ def test_war_ready_5000_no_alliance_actually_removes_it_from_a_real_tribes_menu(
     sim.cycle = source_cycle
     run_benchmark._apply_disabled_actions(sim, scenario)
 
-    tribe = list(sim.tribes.values())[0]
-    _, ctx = sim._prepare_turn(tribe)
-
-    assert "DECLARE_ALLIANCE" not in ctx["available_actions"]
-    assert ctx["available_actions"]  # never empty
+    # Real bug, 2026-09-16: the fixed fixtures aren't symmetric -- war_ready_b
+    # starts at departure_era (the top rung, no next_era), which makes it
+    # eligible for _prepare_turn's own endgame_locked/battle_ready_locked
+    # narrowing the instant a living rival exists (that check needs no
+    # discovery at all). war_ready_a (object_creator_era) never reaches that
+    # path. A first version of this test only checked tribe index 0 -- exactly
+    # why the original disabled_actions filter (placed after, not before,
+    # endgame_only/battle_ready_only's own narrowing) passed here in testing
+    # but still let DECLARE_ALLIANCE fire in a real trial: those narrowing
+    # steps each fail open to whatever survives when their own filtered
+    # subset is empty, and DECLARE_ALLIANCE was exactly the one survivor at
+    # the real cycle this broke. Both tribes must be checked.
+    for tribe in sim.tribes.values():
+        _, ctx = sim._prepare_turn(tribe)
+        assert "DECLARE_ALLIANCE" not in ctx["available_actions"], tribe.name
+        assert ctx["available_actions"]  # never empty
 
 
 def test_apply_starting_fixtures_applies_the_real_war_ready_fixtures():
