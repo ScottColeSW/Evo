@@ -1478,13 +1478,14 @@ def test_food_warning_omits_kitchen_suggestion_without_cooking_learned():
 
 
 def test_food_warning_omits_kitchen_suggestion_once_kitchen_already_built():
-    """Once Kitchen + Fishery both stand, _is_food_secure is True and the whole
-    warning (base message included) stops firing -- nothing left to suggest."""
+    """Once Kitchen is built and fishing is learned, _is_food_secure is True and
+    the whole warning (base message included) stops firing -- nothing left to
+    suggest."""
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
     tribe.food = 0
     tribe.cooking_learned = True
-    tribe.fishery_built = True
+    tribe.fishing_learned = True
     tribe.long_houses_built = 1
     tribe.kitchen_built = True
 
@@ -2364,12 +2365,40 @@ def test_food_secure_tribe_never_enters_a_food_crisis_regardless_of_the_raw_numb
     tribe.population = 10
     tribe.food = 1  # would be critical on its own -- see the sibling test above
     tribe.kitchen_built = True
-    tribe.fishery_built = True
+    tribe.fishing_learned = True
 
     _, ctx = sim._prepare_turn(tribe)
 
     assert tribe.food_crisis_active is False
     assert "GATHER_STONE" in ctx["available_actions"]  # not in SURVIVAL_CRISIS_ACTIONS -- menu isn't narrowed
+
+
+def test_is_food_secure_checks_fishing_learned_not_the_fishery_building():
+    """Live report, 2026-09-16: a real run showed a ~30-90 cycle gap between a
+    tribe's Kitchen being ready and food_secure ever firing -- traced to
+    checking tribe.fishery_built (the building) rather than tribe.fishing_learned
+    (the skill), even though the passive daily catch (_advance_fish_supply)
+    already starts flowing the moment fishing is learned; fishery_built only
+    ever multiplies that same already-flowing income. fishing_learned alone
+    (no Fishery built) must now be enough."""
+    from backend.simulation import _is_food_secure
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.kitchen_built = True
+    tribe.fishing_learned = True
+    tribe.fishery_built = False
+
+    assert _is_food_secure(tribe) is True
+
+
+def test_is_food_secure_still_requires_kitchen():
+    from backend.simulation import _is_food_secure
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.kitchen_built = False
+    tribe.fishing_learned = True
+
+    assert _is_food_secure(tribe) is False
 
 
 def test_survival_crisis_hysteresis_requires_recovery_past_the_warning_line():
@@ -10146,13 +10175,15 @@ def test_advance_water_supply_uses_the_ordinary_formula_below_the_security_thres
 def test_advance_food_supply_tops_to_the_storage_cap_with_kitchen_and_fishery():
     """Explicit request: "let them have Infinity if they Build a Kitchen and
     have either a Fishery or a Farm." Same permanent-mastery shape as water's
-    own security fix -- see Simulation._advance_water_supply's docstring."""
+    own security fix -- see Simulation._advance_water_supply's docstring.
+    fishing_learned (not fishery_built) is the real gate -- see _is_food_secure's
+    own 2026-09-16 correction."""
     from backend.actions import _storage_cap
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.kitchen_built = True
-    tribe.fishery_built = True
+    tribe.fishing_learned = True
     tribe.food = 5
 
     sim._advance_food_supply(tribe)
@@ -11203,7 +11234,7 @@ def test_hunting_and_egg_gathering_retire_once_genuinely_food_secure():
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
     tribe.kitchen_built = True
-    tribe.fishery_built = True  # _is_food_secure
+    tribe.fishing_learned = True  # _is_food_secure
 
     request, ctx = sim._prepare_turn(tribe)
 
@@ -12031,7 +12062,7 @@ def test_upkeep_skips_food_drain_once_genuinely_food_secure():
     tribe.food = 40
     tribe.water = 40
     tribe.kitchen_built = True
-    tribe.fishery_built = True  # _is_food_secure
+    tribe.fishing_learned = True  # _is_food_secure
 
     sim._apply_upkeep(tribe)
 

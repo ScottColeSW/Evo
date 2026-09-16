@@ -276,7 +276,7 @@ RIVAL_DEPENDENT_ACTIONS = (
 # whole table exists to close). _wall_next_afford_cost mirrors actions.
 # _construct_wall's own cost computation exactly, without mutating any state.
 def _is_food_secure(tribe) -> bool:
-    """A Kitchen plus a genuinely proven, passive food source (a Fishery, or at
+    """A Kitchen plus a genuinely proven, passive food source (fishing, or at
     least one real harvest ever brought in) -- see Simulation._advance_food_supply's
     own docstring for the full reasoning. Module-level (not a Simulation method) so
     both Tribe.to_dict (self) and every Simulation method (tribe) can share the one
@@ -284,8 +284,20 @@ def _is_food_secure(tribe) -> bool:
     live why that matters: tribe.food_crisis_active used to compute this same
     "is food actually a crisis" question from raw numbers alone, correct only by the
     incidental fact that a secure tribe's food happens to already be huge by the
-    time it runs, not by an explicit guarantee."""
-    return tribe.kitchen_built and (tribe.fishery_built or tribe.last_harvest_cycle > 0)
+    time it runs, not by an explicit guarantee.
+
+    Live report, 2026-09-16: a real run showed a ~30-90 cycle gap between a
+    tribe's Kitchen being ready and food_secure ever firing -- traced to this
+    checking tribe.fishery_built (the building) rather than tribe.fishing_learned
+    (the skill), even though Simulation._advance_fish_supply's own passive daily
+    catch already starts flowing the moment fishing is learned -- fishery_built
+    only ever multiplies that same already-flowing income (config.
+    FISHERY_SUPPLY_BONUS_MULTIPLIER), it doesn't gate it. Checking the earlier,
+    real trigger for "is a passive catch actually coming in" instead of the
+    later, optional upgrade closes that gap without weakening what "secure"
+    means -- fishing_learned is exactly as permanent and exactly as proven as
+    fishery_built ever was (Tribe.to_dict confirms neither ever reverts)."""
+    return tribe.kitchen_built and (tribe.fishing_learned or tribe.last_harvest_cycle > 0)
 
 
 def _is_water_secure(tribe) -> bool:
@@ -7608,9 +7620,15 @@ class Simulation:
         last_harvest_cycle (not the live farm_plots count) is the proof: a plot can
         wither and later regrow, but "this tribe has successfully farmed before"
         never un-happens -- the same permanent-proof shape _prepare_turn's own
-        diversification_note already uses for has_farm. kitchen_built/fishery_built
+        diversification_note already uses for has_farm. kitchen_built/fishing_learned
         are themselves already permanent (nothing in this project ever un-builds a
-        structure), so the whole condition only ever turns on, never off."""
+        structure or un-learns a skill), so the whole condition only ever turns on,
+        never off.
+
+        _is_food_secure's own comment has the 2026-09-16 correction: the fishing
+        half now checks fishing_learned, not fishery_built -- the catch itself
+        starts the moment fishing is learned, a Fishery only ever multiplies an
+        already-flowing income on top of that."""
         if _is_food_secure(tribe):
             tribe.food = _storage_cap(tribe)
 
