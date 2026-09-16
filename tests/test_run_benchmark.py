@@ -78,6 +78,30 @@ def test_apply_starting_fixtures_applies_the_real_war_ready_fixtures():
     assert tribes[1].model == "qwen2.5:3b"
 
 
+@run_async
+async def test_run_trial_reports_cycles_actually_run_not_the_absolute_cycle(tmp_path, monkeypatch):
+    """Real bug, 2026-09-16: a fixture-started trial (war_ready_5000's fixtures both
+    start at cycle 344) recorded cycles_run as sim.cycle itself -- the absolute cycle
+    number -- rather than how many cycles the trial actually ran. Harmless for
+    war_ready_5000's own conflict scoring (score_conflict never reads cycles_run),
+    but would silently break score_survival's cycles_run/cycle_budget fraction (which
+    assumes cycles_run <= cycle_budget) for any future fixture-started survival
+    scenario."""
+    db_path = str(tmp_path / "benchmark.db")
+    monkeypatch.setattr(benchmark_db, "DEFAULT_DB_PATH", db_path)
+    monkeypatch.setitem(SCENARIOS, "war_ready_5000", _small_budget_scenario("war_ready_5000", cycles=5))
+
+    with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls, \
+         mock.patch("backend.simulation.elect_chief", mock.AsyncMock(return_value=_FAKE_CHIEF)), \
+         mock.patch("backend.simulation.breed_individuals", mock.AsyncMock(return_value=_FAKE_CHILD)), \
+         mock.patch("backend.scheduler.ModelBatchScheduler.run_batch", _fake_run_batch), \
+         mock.patch("backend.ollama_client.OllamaClient.unload_model", mock.AsyncMock()):
+        mock_guard_cls.return_value.verify_vram_safety_margin = mock.AsyncMock(return_value=(True, ""))
+        trial = await run_benchmark.run_trial("war_ready_5000", ["gemma2:2b", "qwen2.5:3b"], trial_seed=0)
+
+    assert trial["cycles_run"] == 5  # not 344 + 5 == 349, the absolute cycle number
+
+
 def test_apply_starting_fixtures_returns_none_when_not_set():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     scenario = Scenario(

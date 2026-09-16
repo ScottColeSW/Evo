@@ -93,6 +93,7 @@ async def run_trial(scenario_key: str, models: list[str], trial_seed: int) -> di
     fixture_cycle = _apply_starting_fixtures(sim, scenario)
     if fixture_cycle is not None:
         sim.cycle = fixture_cycle
+    start_cycle = sim.cycle
     target_cycle = sim.cycle + scenario.cycle_budget
     try:
         while sim.cycle < target_cycle and not sim.game_over:
@@ -115,7 +116,7 @@ async def run_trial(scenario_key: str, models: list[str], trial_seed: int) -> di
         "scenario_version": SCENARIO_VERSION,
         "trial_seed": trial_seed,
         "cycle_budget": scenario.cycle_budget,
-        "cycles_run": sim.cycle,
+        "cycles_run": sim.cycle - start_cycle,
         "ended_reason": sim.game_over_reason or "budget_reached",
         "git_commit": benchmark_db.current_git_commit(),
         "run_id": sim.run_id,
