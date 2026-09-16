@@ -60,6 +60,48 @@ def test_apply_starting_resources_leaves_defaults_untouched_when_none():
     assert (tribe.wood, tribe.stone, tribe.food, tribe.water) == before
 
 
+def test_apply_disabled_actions_sets_sim_disabled_actions_when_set():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    scenario = Scenario(
+        key="test", category="conflict", tribe_count=1, spawn_positions=((0, 0),),
+        cycle_budget=1, description="", disabled_actions=("DECLARE_ALLIANCE",),
+    )
+
+    run_benchmark._apply_disabled_actions(sim, scenario)
+
+    assert sim.disabled_actions == {"DECLARE_ALLIANCE"}
+
+
+def test_apply_disabled_actions_leaves_the_empty_default_untouched_when_none():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    scenario = Scenario(
+        key="test", category="conflict", tribe_count=1, spawn_positions=((0, 0),),
+        cycle_budget=1, description="", disabled_actions=None,
+    )
+
+    run_benchmark._apply_disabled_actions(sim, scenario)
+
+    assert sim.disabled_actions == set()
+
+
+def test_war_ready_5000_no_alliance_actually_removes_it_from_a_real_tribes_menu():
+    """End-to-end check, not just the plumbing: applying war_ready_5000_no_alliance's
+    real fixtures and disabled_actions together onto a real Simulation must leave
+    DECLARE_ALLIANCE out of a battle-ready tribe's actual _prepare_turn menu."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    scenario = SCENARIOS["war_ready_5000_no_alliance"]
+
+    source_cycle = run_benchmark._apply_starting_fixtures(sim, scenario)
+    sim.cycle = source_cycle
+    run_benchmark._apply_disabled_actions(sim, scenario)
+
+    tribe = list(sim.tribes.values())[0]
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "DECLARE_ALLIANCE" not in ctx["available_actions"]
+    assert ctx["available_actions"]  # never empty
+
+
 def test_apply_starting_fixtures_applies_the_real_war_ready_fixtures():
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
     scenario = SCENARIOS["war_ready_5000"]

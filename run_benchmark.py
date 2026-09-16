@@ -75,6 +75,18 @@ def _apply_starting_fixtures(sim: Simulation, scenario) -> int | None:
     return source_cycle
 
 
+def _apply_disabled_actions(sim: Simulation, scenario) -> None:
+    """Sets sim.disabled_actions from scenario.disabled_actions, when set (see
+    that field's own comment) -- None (the default for every scenario except
+    war_ready_5000_no_alliance) leaves Simulation.__init__'s own empty-set
+    default untouched. Kept as its own function, same "unit-testable without a
+    real Simulation.create() call" reasoning _apply_starting_resources/
+    _apply_starting_fixtures already use."""
+    if scenario.disabled_actions is None:
+        return
+    sim.disabled_actions = set(scenario.disabled_actions)
+
+
 async def run_trial(scenario_key: str, models: list[str], trial_seed: int) -> dict:
     scenario = SCENARIOS[scenario_key]
     random.seed(trial_seed)  # sufficient for every gameplay roll -- see the plan's own note on scope/limits
@@ -93,6 +105,7 @@ async def run_trial(scenario_key: str, models: list[str], trial_seed: int) -> di
     fixture_cycle = _apply_starting_fixtures(sim, scenario)
     if fixture_cycle is not None:
         sim.cycle = fixture_cycle
+    _apply_disabled_actions(sim, scenario)
     start_cycle = sim.cycle
     target_cycle = sim.cycle + scenario.cycle_budget
     try:

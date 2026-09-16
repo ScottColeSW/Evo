@@ -7424,6 +7424,47 @@ def test_declare_alliance_stays_available_before_any_stance_is_declared():
     assert "DECLARE_ALLIANCE" in ctx["available_actions"]
 
 
+def test_disabled_actions_strips_an_action_from_the_menu():
+    """Explicit request, 2026-09-16: "build a fixture that takes alliance off
+    the table." DECLARE_ALLIANCE is deliberately always offered while two
+    tribes aren't already mutually allied (see the sibling tests just above --
+    "suing for peace is real") -- a fixture's tribe *state* alone can't remove
+    it, so this is the explicit, benchmark-harness-only override
+    (Simulation.disabled_actions) that actually can. Empty by default, so
+    normal/live play is entirely unaffected."""
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "tribal_synapse"
+    tribe.wood = tribe.stone = 1000
+    tribe.barracks_built = 1
+    sim.disabled_actions = {"DECLARE_ALLIANCE"}
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "DECLARE_ALLIANCE" not in ctx["available_actions"]
+
+
+def test_disabled_actions_fails_open_rather_than_emptying_the_menu():
+    """Same fail-open guard every other menu-lock in _prepare_turn uses -- a
+    misconfigured scenario (disabling everything currently offered) should
+    produce a slightly wrong menu, not a soft-locked trial with zero choices."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    _, ctx = sim._prepare_turn(tribe)
+    sim.disabled_actions = set(ctx["available_actions"])  # disable literally everything just offered
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert ctx["available_actions"]  # never empty
+
+
 def test_top_era_narrowing_does_not_apply_before_the_final_era():
     from backend import config
 

@@ -47,6 +47,17 @@ class Scenario:
     # effectively unused here -- a fixture's own x/y (copied for consistency with
     # its buildings/territory) overrides it.
     starting_fixtures: tuple[str, ...] | None = None
+    # Explicit request, 2026-09-16: "build a fixture that takes alliance off the
+    # table." DECLARE_ALLIANCE is deliberately always offered while two tribes
+    # are anything but already mutually allied -- "suing for peace is real,"
+    # confirmed in Simulation._prepare_turn's own comment on that action -- so a
+    # fixture's tribe *state* alone can't remove it (the one existing in-game
+    # exclusion, battle_ready_locked, only fires once both tribes reach the era
+    # ceiling fully armed, a much later and stronger condition than "war ready").
+    # Names of actions to strip from every tribe's menu this trial, applied via
+    # Simulation.disabled_actions (see that attribute's own comment) -- None
+    # means no override, identical to every other scenario today.
+    disabled_actions: tuple[str, ...] | None = None
 
 
 # Cycle budget grounded in real data, not guessed: logs/board_history.db's
@@ -130,5 +141,25 @@ SCENARIOS: dict[str, Scenario] = {
         cycle_budget=_CYCLE_BUDGET,
         description="Two tribes starting from a real, already-armed advanced position (population ~5000, Barracks and Battalion already built) -- tests what happens once real war is actually reachable, skipping the early-game grind to get there.",
         starting_fixtures=("war_ready_a", "war_ready_b"),
+    ),
+    # Explicit follow-up, 2026-09-16: two real war_ready_5000 trials (seed=301,
+    # seed=302, both gemma2:2b vs llama3.2:latest) both ended in an early
+    # DECLARE_ALLIANCE rather than any conflict (see the
+    # evolution2civ-benchmark-harness memory note's 2026-09-16 finding) --
+    # alliance was the safe, always-available off-ramp. Same fixtures, same
+    # budget, but DECLARE_ALLIANCE removed from both tribes' menus from cycle
+    # one, so whatever happens next is decided among what's left: RAID,
+    # DECLARE_WAR, DECLARE_CONQUEST, SPY, TRADE, or simply building onward --
+    # not scripting a war, just removing the one exit that reliably out-competed
+    # it twice.
+    "war_ready_5000_no_alliance": Scenario(
+        key="war_ready_5000_no_alliance",
+        category="conflict",
+        tribe_count=2,
+        spawn_positions=((50, 55), (40, 37)),  # unused -- the fixtures' own x/y wins, see Scenario.starting_fixtures
+        cycle_budget=_CYCLE_BUDGET,
+        description="Same real, already-armed starting position as war_ready_5000, but with DECLARE_ALLIANCE removed from the menu -- alliance won that scenario's first two real trials outright, so this variant tests what happens when it isn't an option.",
+        starting_fixtures=("war_ready_a", "war_ready_b"),
+        disabled_actions=("DECLARE_ALLIANCE",),
     ),
 }

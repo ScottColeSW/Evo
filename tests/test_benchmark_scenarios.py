@@ -54,3 +54,14 @@ def test_war_ready_5000_ships_two_real_fixtures():
     scenario = SCENARIOS["war_ready_5000"]
     assert scenario.starting_fixtures == ("war_ready_a", "war_ready_b")
     assert len(scenario.starting_fixtures) == scenario.tribe_count
+    assert scenario.disabled_actions is None
+
+
+def test_war_ready_5000_no_alliance_reuses_the_same_fixtures_without_alliance():
+    """Explicit request, 2026-09-16: "build a fixture that takes alliance off
+    the table" -- follow-up to two real war_ready_5000 trials that both ended
+    in an early DECLARE_ALLIANCE rather than any conflict."""
+    scenario = SCENARIOS["war_ready_5000_no_alliance"]
+    assert scenario.starting_fixtures == ("war_ready_a", "war_ready_b")
+    assert scenario.disabled_actions == ("DECLARE_ALLIANCE",)
+    assert scenario.cycle_budget == SCENARIOS["war_ready_5000"].cycle_budget

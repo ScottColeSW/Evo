@@ -2173,6 +2173,16 @@ class Simulation:
         # "stone": int} once construction has actually started; None until
         # then. See actions._build_joint_castle.
         self.joint_castle: dict | None = None
+        # Benchmark-harness-only override (run_benchmark.py sets this right after
+        # Simulation.create(), never touched by the live app) -- empty by default,
+        # zero behavior change for normal play. DECLARE_ALLIANCE already has one
+        # real in-game way to leave the menu (battle_ready_locked in _prepare_turn,
+        # once both tribes reach the era ceiling fully armed), but that's an
+        # end-game-specific condition, not something a fixture-started scenario can
+        # honestly reach without faking era/resource data it didn't really earn.
+        # This is the explicit, scenario-scoped equivalent -- see Scenario.
+        # disabled_actions and _prepare_turn's own filter below.
+        self.disabled_actions: set[str] = set()
         self.self_mod = (
             SelfModEngine(self.client, tribe_configs[0]["model"], config.SELF_MOD_COOLDOWN_CYCLES)
             if config.ENABLE_SELF_MODIFICATION
@@ -4135,6 +4145,17 @@ class Simulation:
                 if battle_ready_only:
                     available_actions = battle_ready_only
                     battle_ready_locked = True
+
+        # Benchmark-harness-only override -- see Simulation.__init__'s own comment
+        # on self.disabled_actions. Applied last, after every other menu-narrowing
+        # rule above, so it's the final word regardless of era/crisis/lock state.
+        # Fail-open guard, same shape as every other menu-lock above -- never cut
+        # the menu down to nothing (a misconfigured scenario shouldn't soft-lock a
+        # trial rather than just producing a slightly wrong result).
+        if self.disabled_actions:
+            without_disabled = [a for a in available_actions if a not in self.disabled_actions]
+            if without_disabled:
+                available_actions = without_disabled
 
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         if tribe.wall_commitment_active:
