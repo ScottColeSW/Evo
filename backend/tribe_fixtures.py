@@ -72,8 +72,7 @@ FIXTURE_FIELDS = (
     "territory_center", "territory_radius", "wall_rings", "wall_commitment_active", "buildings",
     "fishery_built", "chiefs_elected", "chief_deaths",
     "battalions", "trophies", "fame", "lineage", "custom_awards",
-    "confirmed_water_sites", "lumber_sites", "wildlife_sites", "quarry_sites",
-    "raider_sightings", "raiders_repelled_by_wall",
+    "wildlife_sites", "raiders_repelled_by_wall",
 )
 
 # visited_sectors/discovered_rivals are real `set`s on Tribe but to_dict() renders
@@ -81,6 +80,15 @@ FIXTURE_FIELDS = (
 # excluded (see FIXTURE_FIELDS' own comment) but visited_sectors is real, earned
 # map knowledge tied to nothing relationship-specific, safe to keep.
 FIXTURE_SET_FIELDS = ("visited_sectors",)
+
+# Real Tribe attribute is list[tuple[int, int]] (see Tribe.__init__), but a plain
+# tuple has no JSON equivalent -- board_history's own snapshot round-trip already
+# turns each entry into a plain [x, y] list. Confirmed live, 2026-09-16: leaving
+# these as lists of lists crashed the very first _discover_sites_along_route call
+# that tried set(tribe.lumber_sites) on one (TypeError: unhashable type: 'list').
+# wildlife_sites/mine_sites are excluded -- those are list[dict] ({"x":.., "y":..}),
+# which round-trips through JSON correctly with no conversion needed.
+FIXTURE_LIST_OF_TUPLES_FIELDS = ("confirmed_water_sites", "lumber_sites", "quarry_sites", "raider_sightings")
 
 # Cycle-relative fields: shifted by (new_cycle - source_cycle) so "how long ago"
 # stays meaningful under a different starting cycle, rather than a raw number from
@@ -114,6 +122,9 @@ def apply_tribe_fixture(tribe, fixture: dict, new_cycle: int) -> None:
             # JSON has no tuple type -- to_dict()/json.dump round-trip each
             # coordinate pair as a plain [x, y] list, which isn't hashable.
             setattr(tribe, field, {tuple(item) if isinstance(item, list) else item for item in source[field]})
+    for field in FIXTURE_LIST_OF_TUPLES_FIELDS:
+        if field in source:
+            setattr(tribe, field, [tuple(item) if isinstance(item, list) else item for item in source[field]])
     for field in FIXTURE_CYCLE_SHIFT_FIELDS:
         if field in source and source[field]:
             setattr(tribe, field, source[field] + offset)

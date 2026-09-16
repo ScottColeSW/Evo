@@ -49,6 +49,20 @@ def test_apply_tribe_fixture_never_overrides_identity_or_relationship_fields():
     assert tribe.chief_name == ""
 
 
+def test_apply_tribe_fixture_converts_coordinate_lists_to_tuples():
+    """Live report, 2026-09-16: a real war_ready_5000 trial crashed on its very
+    first cycle -- TypeError: unhashable type: 'list' -- because
+    _discover_sites_along_route calls set(tribe.lumber_sites), but the fixture
+    had left it as a list of [x, y] lists (JSON's own round-trip of Tribe's
+    real list[tuple[int, int]] attribute) instead of tuples."""
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 0, 0, "#c084fc")
+
+    apply_tribe_fixture(tribe, _fixture(lumber_sites=[[1, 2], [3, 4]]), new_cycle=100)
+
+    assert tribe.lumber_sites == [(1, 2), (3, 4)]
+    assert set(tribe.lumber_sites)  # must not raise
+
+
 def test_apply_tribe_fixture_converts_list_back_to_a_real_set():
     """Tribe.to_dict() renders visited_sectors as list(...) for JSON -- must
     come back as a real set, not a list, on the way in."""
