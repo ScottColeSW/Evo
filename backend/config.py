@@ -2518,3 +2518,17 @@ ACTION_REPETITION_THROTTLE_COOLDOWN = 7
 # clearing normal one-or-two-turn noise a healthy model already self-corrects from.
 # See Tribe.consecutive_unresolved_turns and Simulation._handle_model_failure.
 MODEL_FAILURE_STREAK_THRESHOLD = 10
+
+# Explicit request, 2026-09-16: "I'd like to consider turning off our 'nudges'
+# slowly to see where they can and cannot succeed without our guidance." A
+# nudge here means a purely informational fact appended to the prompt (never a
+# menu/mechanic change -- those stay untouched regardless of this set, e.g.
+# SURVIVAL_CRISIS_ACTIONS's own menu-narrowing is computed from the same raw
+# numbers, not from whether the matching warning TEXT fired). Each tag names
+# one coherent nudge category; a site checks its own tag against this set
+# before appending its fact. Empty by default -- today's behavior, unchanged --
+# so this is opt-in per experiment, not a standing switch. First tag exercised:
+# "survival_warning" (instincts.py.survival_bias_string's food/water crisis
+# text), tested against the "survival" benchmark scenario since that's the one
+# whose whole premise is "don't starve" -- see run_benchmark.py.
+DISABLED_NUDGE_TAGS: set[str] = set()

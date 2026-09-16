@@ -1,3 +1,4 @@
+from backend import config
 from backend.instincts import survival_bias_string
 
 # population=8 -> upkeep = max(1, 8//10) = 1/cycle -> critical <= 1, warning <= 4
@@ -16,6 +17,23 @@ def test_low_food_produces_warning_not_critical():
     text, critical = survival_bias_string(food=3, water=50, population=SMALL_TRIBE)
     assert "running low" in text
     assert critical is False
+
+
+def test_survival_warning_tag_suppresses_text_but_keeps_the_critical_flag():
+    """Explicit request, 2026-09-16: "consider turning off our 'nudges' slowly
+    to see where they can and cannot succeed without our guidance." Disabling
+    the "survival_warning" tag must only silence the informational text --
+    `critical` is a real mechanical effect (Simulation._prepare_turn's
+    panicked/temperature branch), not a nudge, and must survive untouched so
+    disabling the tag isolates "does the fact itself help" cleanly."""
+    config.DISABLED_NUDGE_TAGS.add("survival_warning")
+    try:
+        text, critical = survival_bias_string(food=1, water=50, population=SMALL_TRIBE)
+    finally:
+        config.DISABLED_NUDGE_TAGS.discard("survival_warning")
+
+    assert text == ""
+    assert critical is True  # food=1 <= critical threshold (1) -- still true
 
 
 def test_survival_bias_now_names_a_concrete_response():

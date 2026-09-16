@@ -124,4 +124,15 @@ def survival_bias_string(
 
     if not urgent:
         return "", False
+    # Explicit request, 2026-09-16: "consider turning off our 'nudges' slowly
+    # to see where they can and cannot succeed without our guidance." Tagged
+    # "survival_warning" -- see config.DISABLED_NUDGE_TAGS's own comment. Only
+    # the informational TEXT is suppressed; `critical` (a real mechanical
+    # effect -- see Simulation._prepare_turn's panicked/temperature branch) is
+    # still returned untouched, and SURVIVAL_CRISIS_ACTIONS's own menu-
+    # narrowing is computed from these same raw numbers independently of this
+    # string, not from whether this text fired -- disabling the tag isolates
+    # "does the fact itself help" from every mechanical consequence.
+    if "survival_warning" in config.DISABLED_NUDGE_TAGS:
+        return "", critical
     return "[SURVIVAL INSTINCT]: " + " ".join(urgent), critical
