@@ -36,6 +36,17 @@ class Scenario:
     # to deliberately override them -- run_benchmark.py applies this to every tribe
     # in the trial right after Simulation.create(...).
     starting_resources: dict[str, int] | None = None
+    # Explicit request, 2026-09-16: "we could start at 800 even" / "we are going to
+    # want to start a war starting from around [population] 5000." Names of real,
+    # curated tribe_fixtures.py fixtures (backend/fixtures/<name>.json), one per
+    # tribe in spawn_positions order -- run_benchmark.py applies these instead of
+    # starting_resources when set, and also fast-forwards sim.cycle to the
+    # fixture's own source cycle (see cycle_budget's own note below) so a trial
+    # tests "what happens next" from a real advanced position, not another
+    # from-scratch grind. spawn_positions is still required by the dataclass but
+    # effectively unused here -- a fixture's own x/y (copied for consistency with
+    # its buildings/territory) overrides it.
+    starting_fixtures: tuple[str, ...] | None = None
 
 
 # Cycle budget grounded in real data, not guessed: logs/board_history.db's
@@ -44,6 +55,12 @@ class Scenario:
 # cycle 104-119. 200 cycles leaves comfortable room for cooperation/conflict
 # mechanics to actually unlock and play out, without a separate, longer budget per
 # category.
+#
+# For a starting_fixtures scenario, cycle_budget means "how many MORE cycles this
+# trial runs from the fixture's own starting point," not an absolute cycle number
+# -- run_benchmark.py fast-forwards sim.cycle to the fixture's source cycle first,
+# then runs cycle_budget cycles from there. A plain (non-fixture) scenario is
+# unaffected: sim.cycle starts at 0, so this is exactly today's behavior.
 _CYCLE_BUDGET = 200
 
 SCENARIOS: dict[str, Scenario] = {
@@ -94,5 +111,24 @@ SCENARIOS: dict[str, Scenario] = {
         spawn_positions=((50, 55), (40, 37)),
         cycle_budget=_CYCLE_BUDGET,
         description="Two tribes spawned closer together, sharing a scarce resource. Tests conflict judgment, not just aggression.",
+    ),
+    # Explicit request, 2026-09-16: "we are going to want to start a war starting
+    # from around 600" -- corrected to 5000 once real data showed no run has ever
+    # built a Barracks/Battalion below the low thousands (searched every run with
+    # >=100 cycles in logs/board_history.db; the lowest real example was ~3,658).
+    # war_ready_a/war_ready_b (backend/fixtures/) are the real tribe states at
+    # run_20260916_092218 cycle 344 -- population 6,016/4,041, both with a
+    # Barracks and a 100-strong Battalion, both mutually discovered in that run
+    # (though relationship state itself is never copied -- see tribe_fixtures.py's
+    # own docstring, this scenario's two tribes start as strangers regardless of
+    # how that source run's diplomacy played out).
+    "war_ready_5000": Scenario(
+        key="war_ready_5000",
+        category="conflict",
+        tribe_count=2,
+        spawn_positions=((50, 55), (40, 37)),  # unused -- the fixtures' own x/y wins, see Scenario.starting_fixtures
+        cycle_budget=_CYCLE_BUDGET,
+        description="Two tribes starting from a real, already-armed advanced position (population ~5000, Barracks and Battalion already built) -- tests what happens once real war is actually reachable, skipping the early-game grind to get there.",
+        starting_fixtures=("war_ready_a", "war_ready_b"),
     ),
 }

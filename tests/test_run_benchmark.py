@@ -60,6 +60,34 @@ def test_apply_starting_resources_leaves_defaults_untouched_when_none():
     assert (tribe.wood, tribe.stone, tribe.food, tribe.water) == before
 
 
+def test_apply_starting_fixtures_applies_the_real_war_ready_fixtures():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    scenario = SCENARIOS["war_ready_5000"]
+
+    source_cycle = run_benchmark._apply_starting_fixtures(sim, scenario)
+
+    tribes = list(sim.tribes.values())
+    assert source_cycle is not None and source_cycle > 0
+    assert tribes[0].population > 3000
+    assert tribes[1].population > 3000
+    assert tribes[0].barracks_built
+    assert tribes[1].barracks_built
+    # Identity stays the trial's own, never the fixture's -- see
+    # tribe_fixtures.py's own docstring.
+    assert tribes[0].model == "gemma2:2b"
+    assert tribes[1].model == "qwen2.5:3b"
+
+
+def test_apply_starting_fixtures_returns_none_when_not_set():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    scenario = Scenario(
+        key="test", category="settlement", tribe_count=1, spawn_positions=((0, 0),),
+        cycle_budget=1, description="", starting_fixtures=None,
+    )
+
+    assert run_benchmark._apply_starting_fixtures(sim, scenario) is None
+
+
 @run_async
 async def test_run_trial_stops_at_the_cycle_budget_and_records_a_row(tmp_path, monkeypatch):
     db_path = str(tmp_path / "benchmark.db")

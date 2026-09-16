@@ -45,3 +45,12 @@ def test_cooperation_and_conflict_spawn_two_tribes_within_discovery_range():
     for key in ("cooperation", "conflict"):
         (x1, y1), (x2, y2) = SCENARIOS[key].spawn_positions
         assert math.hypot(x2 - x1, y2 - y1) <= config.RIVAL_PRECISE_AWARENESS_RADIUS + 5, key
+
+
+def test_war_ready_5000_ships_two_real_fixtures():
+    """Explicit request, 2026-09-16: "we are going to want to start a war
+    starting from around 600" -- corrected to 5000 once real board_history.db
+    data showed no run has ever built a Barracks below the low thousands."""
+    scenario = SCENARIOS["war_ready_5000"]
+    assert scenario.starting_fixtures == ("war_ready_a", "war_ready_b")
+    assert len(scenario.starting_fixtures) == scenario.tribe_count

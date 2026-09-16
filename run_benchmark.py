@@ -17,6 +17,7 @@ import time
 from backend import benchmark_db, benchmark_scoring
 from backend.benchmark_scenarios import SCENARIO_VERSION, SCENARIOS
 from backend.simulation import Simulation
+from backend.tribe_fixtures import apply_tribe_fixture, load_fixture
 
 
 def _apply_starting_resources(sim: Simulation, scenario) -> None:
@@ -31,6 +32,23 @@ def _apply_starting_resources(sim: Simulation, scenario) -> None:
             setattr(tribe, resource, amount)
 
 
+def _apply_starting_fixtures(sim: Simulation, scenario) -> int | None:
+    """Overrides every tribe's state to scenario.starting_fixtures, when set (see
+    Scenario.starting_fixtures' own comment). Returns the fixtures' shared source
+    cycle (to fast-forward sim.cycle to) when applied, None otherwise -- kept as
+    its own function, same "unit-testable without a real Simulation.create()"
+    reasoning _apply_starting_resources already uses."""
+    if scenario.starting_fixtures is None:
+        return None
+    tribes = list(sim.tribes.values())
+    source_cycle = None
+    for tribe, fixture_name in zip(tribes, scenario.starting_fixtures):
+        fixture = load_fixture(fixture_name)
+        source_cycle = fixture["cycle"]
+        apply_tribe_fixture(tribe, fixture, new_cycle=source_cycle)
+    return source_cycle
+
+
 async def run_trial(scenario_key: str, models: list[str], trial_seed: int) -> dict:
     scenario = SCENARIOS[scenario_key]
     random.seed(trial_seed)  # sufficient for every gameplay roll -- see the plan's own note on scope/limits
@@ -42,8 +60,16 @@ async def run_trial(scenario_key: str, models: list[str], trial_seed: int) -> di
     started_ts = time.time()
     sim = await Simulation.create(tribe_configs)
     _apply_starting_resources(sim, scenario)
+    # See Scenario.starting_fixtures' own comment: cycle_budget means "how many
+    # MORE cycles from here" once a fixture is applied, not an absolute cycle
+    # number -- target_cycle covers both cases (a non-fixture scenario leaves
+    # sim.cycle at its real 0 start, so this is exactly today's behavior).
+    fixture_cycle = _apply_starting_fixtures(sim, scenario)
+    if fixture_cycle is not None:
+        sim.cycle = fixture_cycle
+    target_cycle = sim.cycle + scenario.cycle_budget
     try:
-        while sim.cycle < scenario.cycle_budget and not sim.game_over:
+        while sim.cycle < target_cycle and not sim.game_over:
             await sim.step()
     finally:
         await sim.shutdown()
