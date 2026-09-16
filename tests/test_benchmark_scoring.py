@@ -119,6 +119,21 @@ def test_conflict_score_penalizes_a_losing_raid_against_a_similar_rival_more_tha
     assert lost_to_similar < lost_to_stronger
 
 
+def test_conflict_score_rewards_a_clean_spy_mission():
+    """Explicit request, 2026-09-16: "we need to measure spy too." SPY was
+    already recorded (spy_missions_run/spy_missions_caught) but never read by
+    score_conflict -- real espionage got zero credit."""
+    passive = score_conflict(_tribe(), _tribe())[0]
+    spied = score_conflict(_tribe(spy_missions_run=2, spy_missions_caught=0), _tribe())[0]
+    assert spied > passive
+
+
+def test_conflict_score_penalizes_a_caught_spy_mission():
+    passive = score_conflict(_tribe(), _tribe())[0]
+    caught = score_conflict(_tribe(spy_missions_run=1, spy_missions_caught=1), _tribe())[0]
+    assert caught < passive
+
+
 def test_score_trial_dispatches_by_scenario_key():
     """Compares against a direct score_survival(...) call rather than a
     hardcoded literal -- era_fraction's own denominator shifts whenever the

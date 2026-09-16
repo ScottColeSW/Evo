@@ -18,7 +18,10 @@ from .eras import ERAS, era_index
 # a test asserting self_actualization (backend/wellbeing.py, the same
 # era_fraction shape) maxes out at the real top era -- worth checking this
 # whole codebase for `len(ERAS)` again the next time the ladder changes.
-SCORING_VERSION = 3
+# Bumped 3->4, 2026-09-16: score_conflict now reads spy_missions_run/
+# spy_missions_caught, which it never did before -- a historical conflict
+# score computed under version 3 didn't account for espionage at all.
+SCORING_VERSION = 4
 
 # A tribe that ever settled permanently near water (backend.simulation.Tribe.
 # settled_permanently_near_water) gets this flat bonus on top of the weighted score
@@ -37,6 +40,17 @@ _SURVIVAL_POPULATION_REFERENCE = 1500
 # A population meaningfully ahead of a rival's -- used only to judge whether a raid
 # was a reasonable gamble, not to score population directly.
 _CONFLICT_STRONGER_RIVAL_POPULATION_RATIO = 1.5
+
+# Explicit request, 2026-09-16: "we need to measure spy too." SPY was already
+# recorded in extract_tribe_facts (spy_missions_run/spy_missions_caught) but
+# score_conflict never read either -- a tribe that ran real espionage got zero
+# credit or penalty for it, undercounting actual adversarial behavior. Smaller
+# swings than a raid's on purpose: actions._spy's own real cost/benefit is
+# already smaller than a raid's (a caught mission loses population/supplies,
+# same order as a lost raid but not staged as combat; a clean mission costs
+# nothing and only ever gains intel, never population).
+_SPY_SUCCESS_POINTS = 5
+_SPY_CAUGHT_PENALTY = 10
 
 
 def score_survival(tribe: dict, cycle_budget: int) -> int:
@@ -94,7 +108,10 @@ def score_conflict(tribe_a: dict, tribe_b: dict) -> tuple[int, int]:
     the rival wasn't obviously weaker (a fair fight actually won), and a raid that
     loses against a rival with no real population edge is a worse decision than
     a raid that loses against a genuinely stronger one -- explicit design goal
-    from the scenario discussion, not just "count the wins.\""""
+    from the scenario discussion, not just "count the wins." Espionage (SPY) is
+    real adversarial behavior too -- a clean mission is pure upside (real intel,
+    no cost, see actions._spy), getting caught is a real cost already paid in
+    the game itself (population and supplies), so both get counted here."""
     def _one_sided(mine: dict, theirs: dict) -> int:
         rival_stronger = theirs["max_population"] >= mine["max_population"] * _CONFLICT_STRONGER_RIVAL_POPULATION_RATIO
         score = 50  # a tribe that never engaged at all lands here -- neither reckless nor decisive
@@ -104,6 +121,9 @@ def score_conflict(tribe_a: dict, tribe_b: dict) -> tuple[int, int]:
         elif mine["raids_lost"] > 0:
             score -= 5 * mine["raids_lost"]  # lost against a genuinely stronger rival -- a reasonable risk, still a loss
         score += 10 * mine["raids_defended"]
+        clean_spy_missions = mine["spy_missions_run"] - mine["spy_missions_caught"]
+        score += _SPY_SUCCESS_POINTS * clean_spy_missions
+        score -= _SPY_CAUGHT_PENALTY * mine["spy_missions_caught"]
         return round(max(0, min(100, score)))
 
     return _one_sided(tribe_a, tribe_b), _one_sided(tribe_b, tribe_a)
