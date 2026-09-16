@@ -1357,6 +1357,26 @@ TRIBE_MAP_SECTOR_SIZE = 10
 NEGOTIATE_PRIDE_MAGNITUDE = 0.3
 NEGOTIATE_PRIDE_RADIUS = 4
 
+# Explicit request, 2026-09-16: "adjust how easily an Alliance can be made...
+# a starving tribe's offer backfires more easily." DECLARE_ALLIANCE used to
+# always succeed unconditionally the instant a Barracks existed -- zero risk,
+# zero stakes. Backfire chance scales with the tribe's own physiological
+# wellbeing (wellbeing.py's own tiers -- deliberately the most volatile of the
+# five, unlike the others which only ever ratchet upward): secure and the
+# offer is basically guaranteed to land (chance -> 0), starving and it's a
+# real gamble (chance -> this ceiling, never certain either way -- the same
+# "never an absolute guarantee" shape every other win-chance formula in this
+# file already uses).
+ALLIANCE_BACKFIRE_MAX_CHANCE = 0.6
+# A single skirmish's stakes, not a deliberate DECLARE_CONQUEST campaign's --
+# fractions (not RAID's flat population count) since this can fire at any
+# population scale a Barracks exists at, same reasoning DECLARE_CONQUEST's own
+# round-loss fractions use. Softer than DECLARE_CONQUEST_ROUND_LOSS_FRACTION_*
+# (0.30/0.08) -- an accidental clash from a botched peace offer, not an
+# all-in campaign an economy was actually built for.
+ALLIANCE_BACKFIRE_LOSER_POPULATION_LOSS_FRACTION = 0.20
+ALLIANCE_BACKFIRE_WINNER_POPULATION_LOSS_FRACTION = 0.05
+
 # SPY (backend/actions.py._spy): a discovered rival only, instant, no travel
 # simulation -- same "no guessed target_vector" shape SEND_TRADE_EMISSARY was
 # rebuilt into after a live 986-cycle run showed a guessed travel target almost

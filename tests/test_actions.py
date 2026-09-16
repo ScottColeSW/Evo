@@ -4920,6 +4920,83 @@ def test_declare_war_requires_a_barracks_first():
     assert a.stance_toward == {}
 
 
+def test_declare_alliance_never_backfires_when_physiological_wellbeing_is_secure():
+    """Explicit request, 2026-09-16: "adjust how easily an Alliance can be
+    made... a starving tribe's offer backfires more easily." A fully secure
+    tribe's backfire chance is exactly 0 (config.ALLIANCE_BACKFIRE_MAX_CHANCE
+    * (1 - 1.0)) -- the offer must land even on the unluckiest possible roll."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.discovered_rivals.add("tribe_1")
+    a.barracks_built = 1
+    a.wellbeing = {"tiers": {"physiological": 1.0}}
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # the unluckiest possible roll
+        result = ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
+
+    assert a.stance_toward["tribe_1"] == "ALLIED"
+    assert "declares an alliance" in result
+
+
+def test_declare_alliance_backfires_into_war_when_starving():
+    """A tribe at physiological=0.0 has the maximum backfire chance
+    (config.ALLIANCE_BACKFIRE_MAX_CHANCE) -- forced to fire here via a
+    guaranteed-low roll. Escalates to WAR instead of granting the peace
+    asked for, and fires one real clash (the frontend's battle splash key)."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.discovered_rivals.add("tribe_1")
+    a.barracks_built = 1
+    a.population = 100
+    b.population = 100
+    a.wellbeing = {"tiers": {"physiological": 0.0}}
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # guarantees the backfire fires
+        result = ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
+
+    assert a.stance_toward["tribe_1"] == "WAR"
+    assert b.stance_toward["tribe_0"] == "WAR"
+    assert "backfires into open war" in result or "fighting erupts" in result
+    assert a.pending_cultural_crossover is None  # no alliance was actually formed
+    assert sim.recent_encounters[-1]["kind"] == "tribe_conquest_battle"
+    assert sim.recent_encounters[-1]["battle"]["outcome"] == "stalemate"
+    assert len(sim.recent_encounters[-1]["battle"]["rounds"]) == 1
+
+
+def test_alliance_backfire_costs_population_but_never_merges_either_tribe():
+    """Deliberately proportionate to an accidental skirmish, not a DECLARE_
+    CONQUEST campaign -- both tribes take a real population hit, but neither
+    is annexed regardless of which side's roll wins."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.discovered_rivals.add("tribe_1")
+    a.barracks_built = 1
+    a.population = 100
+    b.population = 100
+    a.wellbeing = {"tiers": {"physiological": 0.0}}
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
+
+    assert a.population < 100
+    assert b.population < 100
+    assert a.extinct is False
+    assert b.extinct is False
+    assert "tribe_0" in sim.tribes and "tribe_1" in sim.tribes
+
+
 def test_declare_alliance_does_not_requeue_a_crossover_while_already_allied():
     """See Simulation._resolve_cultural_crossover -- only a genuinely new
     alliance should trigger it, not a redundant re-declaration."""

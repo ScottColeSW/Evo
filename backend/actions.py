@@ -3033,7 +3033,16 @@ def _declare_alliance(sim, tribe, biome, target):
     belt-and-suspenders shape _build_kitchen's own cooking_learned/
     long_houses_built check already uses. No soft-lock risk for suing for
     peace: a tribe can only ever have reached WAR in the first place via
-    this same barracks_built gate."""
+    this same barracks_built gate.
+
+    Explicit request, 2026-09-16: "adjust how easily an Alliance can be
+    made... a starving tribe's offer backfires more easily." A genuine
+    overture (anything short of a redundant re-declaration while already
+    allied) now rolls a real chance to backfire -- see config.
+    ALLIANCE_BACKFIRE_MAX_CHANCE's own comment for why physiological
+    wellbeing specifically drives it. A backfire escalates straight to WAR
+    (see _alliance_backfire_skirmish) instead of granting the peace asked
+    for."""
     if tribe.barracks_built <= 0:
         return "a barracks must be built before any formal stance toward a rival tribe is worth declaring"
     tx, ty = target
@@ -3042,6 +3051,13 @@ def _declare_alliance(sim, tribe, biome, target):
         return "no rival tribe has been encountered nearby yet to declare a stance toward"
     was_war = tribe.stance_toward.get(rival.id) == "WAR"
     already_allied = tribe.stance_toward.get(rival.id) == "ALLIED"
+
+    if not already_allied:
+        physiological = (getattr(tribe, "wellbeing", None) or {}).get("tiers", {}).get("physiological", 1.0)
+        backfire_chance = config.ALLIANCE_BACKFIRE_MAX_CHANCE * (1 - physiological)
+        if random.random() < backfire_chance:
+            return _alliance_backfire_skirmish(sim, tribe, rival, was_war)
+
     tribe.stance_toward[rival.id] = "ALLIED"
     rival.stance_toward[tribe.id] = "ALLIED"
     sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.NEGOTIATE_PRIDE_MAGNITUDE, config.NEGOTIATE_PRIDE_RADIUS)
@@ -3053,6 +3069,74 @@ def _declare_alliance(sim, tribe, biome, target):
     if was_war:
         return f"{tribe.name} sues for peace with {rival.name} -- the war ends, both now allied"
     return f"{tribe.name} declares an alliance with {rival.name}"
+
+
+def _alliance_backfire_skirmish(sim, tribe, rival, was_already_at_war: bool) -> str:
+    """Explicit request, 2026-09-16: a peace overture that backfires escalates
+    straight to WAR (if not already there) and fires one real, decisive
+    clash on the spot -- the same population-share/Might-adjusted win-chance
+    formula and Die of Battle presentation _declare_conquest uses (the
+    frontend's battle splash already knows how to show this "battle" key),
+    but a single round with no _merge_tribes/annexation. Deliberately
+    proportionate to an accidental skirmish from a botched overture, not a
+    deliberate war campaign an economy was actually built for (DECLARE_
+    CONQUEST is that, and stays War and World Domination era-gated) -- this
+    can fire as soon as a Barracks exists, long before that scale."""
+    tribe.stance_toward[rival.id] = "WAR"
+    rival.stance_toward[tribe.id] = "WAR"
+
+    attacker_start_population = tribe.population
+    defender_start_population = rival.population
+    attacker_might = compute_might(tribe)
+    defender_might = compute_might(rival)
+    attacker_armed = _armed_count(tribe)
+    defender_armed = _armed_count(rival)
+
+    win_chance = tribe.population / max(1, tribe.population + rival.population)
+    win_chance = _might_adjusted_win_chance(tribe, rival, win_chance)
+    tribe_won = random.random() < win_chance
+    winner, loser = (tribe, rival) if tribe_won else (rival, tribe)
+    sim._lose_population(
+        loser, round(loser.population * config.ALLIANCE_BACKFIRE_LOSER_POPULATION_LOSS_FRACTION),
+        cause="alliance_backfire",
+    )
+    sim._lose_population(
+        winner, round(winner.population * config.ALLIANCE_BACKFIRE_WINNER_POPULATION_LOSS_FRACTION),
+        cause="alliance_backfire",
+    )
+
+    die, die_target, die_effective_pct = _pick_battle_die(win_chance)
+    die_roll = random.randint(die_target, die) if tribe_won else random.randint(1, die_target - 1)
+    battle_record = {
+        "attacker_name": tribe.name, "defender_name": rival.name,
+        "attacker_color": tribe.color, "defender_color": rival.color,
+        "attacker_start_population": attacker_start_population, "defender_start_population": defender_start_population,
+        "attacker_might": attacker_might, "defender_might": defender_might,
+        "attacker_armed": attacker_armed, "defender_armed": defender_armed,
+        "rounds": [{
+            "round": 1, "attacker_won": tribe_won,
+            "attacker_population": tribe.population, "defender_population": rival.population,
+            "die": die, "die_target": die_target, "die_roll": die_roll, "die_effective_pct": die_effective_pct,
+        }],
+        # No merge either way -- "stalemate" is the frontend outcome key that
+        # already reads as "both battered, both still standing," which is
+        # exactly what happens here regardless of which side wins the roll.
+        "outcome": "stalemate",
+    }
+    _record_combat(tribe, "Alliance Backfire", "won" if tribe_won else "lost")
+    _record_combat(rival, "Alliance Backfire", "lost" if tribe_won else "won")
+    sim.trauma.radiate_event_wave(rival.x, rival.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
+    sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
+    sim.recent_encounters.append({
+        "x": rival.x, "y": rival.y, "kind": "tribe_conquest_battle",
+        "label": f"{tribe.name}'s peace offer to {rival.name} backfires into open war",
+        "outcome": "stalemate", "battle": battle_record,
+    })
+    aftermath = "the war continues" if was_already_at_war else "war breaks out instead"
+    return (
+        f"{tribe.name}'s desperate offer of peace to {rival.name} is read as weakness -- "
+        f"fighting erupts on the spot, {aftermath}"
+    )
 
 
 def _mutual_ally_at_top_era(sim, tribe):
