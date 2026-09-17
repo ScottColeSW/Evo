@@ -4056,8 +4056,26 @@ class Simulation:
             # Membership in available_actions here already means every real
             # prerequisite (cooking_learned, a Long House, affordability) is
             # genuinely met, not just hoped for.
+            #
+            # BUILD_LONG_HOUSE carved out the same way, 2026-09-17: real live
+            # report -- a tribe (phi4-mini:latest, run_20260917_080441) that
+            # never built one during 214 earlier, affordable, non-crisis
+            # cycles hit food_crisis_active at cycle 215 and stayed stuck
+            # there for 213+ more cycles straight through, sitting on 1,100
+            # wood and 1,100 stone the whole time. Root cause: BUILD_KITCHEN
+            # itself requires a Long House first (_build_kitchen's own gate),
+            # so its carve-out above never actually applied here -- Kitchen
+            # was never once reachable, only ever a name in the menu list, not
+            # a real option, and BUILD_LONG_HOUSE (the one prerequisite that
+            # would have unlocked it) had no crisis carve-out of its own,
+            # sealing off the only real path back to food security. Same
+            # justification as BUILD_KITCHEN: _can_afford_build_long_house
+            # only ever checks wood/stone, never the scarce resource actually
+            # in crisis.
             crisis_allowed = SURVIVAL_CRISIS_ACTIONS | (
                 {"BUILD_KITCHEN"} if "BUILD_KITCHEN" in available_actions else set()
+            ) | (
+                {"BUILD_LONG_HOUSE"} if "BUILD_LONG_HOUSE" in available_actions else set()
             )
             survival_only = [a for a in available_actions if a in crisis_allowed]
             if survival_only:

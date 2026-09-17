@@ -2585,6 +2585,62 @@ def test_kitchen_crisis_carve_out_does_not_reopen_the_menu_when_not_yet_reachabl
     assert "BUILD_KITCHEN" not in ctx["available_actions"]
 
 
+def test_long_house_stays_choosable_during_the_exact_crisis_that_traps_a_tribe_without_one():
+    """Real live report, 2026-09-17: a tribe (phi4-mini:latest,
+    run_20260917_080441) that never built a Long House during 214 earlier,
+    affordable, non-crisis cycles hit food_crisis_active at cycle 215 and
+    stayed permanently stuck there for 213+ more cycles -- BUILD_KITCHEN's
+    own crisis carve-out never applied because Kitchen itself requires a
+    Long House first, and BUILD_LONG_HOUSE had no carve-out of its own,
+    sealing off the only real path back to food security despite the tribe
+    sitting on 1,100 wood and 1,100 stone the whole time. Same justification
+    as BUILD_KITCHEN's own carve-out: _can_afford_build_long_house only ever
+    checks wood/stone, never the scarce resource actually in crisis."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "tribal_synapse"
+    tribe.wood = tribe.stone = 1000
+    tribe.population = 10
+    tribe.food = 1  # <= upkeep(1) * HUNGER_CRITICAL_CYCLES_LEFT(1) -- the critical cutoff
+    tribe.settled_at_cycle = 0
+    sim.cycle = 100  # well past SETTLEMENT_CRISIS_GRACE_CYCLES
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert tribe.food_crisis_active is True  # confirms the crisis narrowing genuinely applies
+    assert "BUILD_LONG_HOUSE" in ctx["available_actions"]
+    assert "GATHER_WOOD" not in ctx["available_actions"]  # crisis narrowing still real for everything else
+
+
+def test_long_house_crisis_carve_out_does_not_reopen_the_menu_when_not_affordable():
+    """The carve-out only widens the crisis menu for BUILD_LONG_HOUSE once it
+    was already genuinely reachable -- a tribe with no wood/stone gets the
+    normal, fully narrow crisis menu, same as before this fix."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "tribal_synapse"
+    tribe.wood = tribe.stone = 0  # BUILD_LONG_HOUSE not affordable
+    tribe.population = 10
+    tribe.food = 1
+    tribe.settled_at_cycle = 0
+    sim.cycle = 100
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert tribe.food_crisis_active is True
+    assert "BUILD_LONG_HOUSE" not in ctx["available_actions"]
+
+
 def test_kitchen_nudge_stays_quiet_before_it_is_actually_reachable():
     """Same 'never dangle' reasoning as the PLANT_CROP nudge -- no point
     naming a fix the tribe can't actually reach this cycle. Checks the
