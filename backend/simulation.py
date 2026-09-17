@@ -3638,10 +3638,17 @@ class Simulation:
         # long house standing -- see actions._build_kitchen), not just food_secure's
         # other half, so this never promises an action the tribe can't actually take
         # yet -- same "facts must be real" discipline every other nudge here follows.
+        # Real gap found and fixed, 2026-09-17: this checked tribe.fishery_built
+        # (the building) instead of tribe.fishing_learned (the skill) -- the
+        # exact same fishery_built-vs-fishing_learned bug _is_food_secure's own
+        # docstring already documents fixing on 2026-09-16, just missed here in
+        # this separate, nearby nudge that duplicates half of its condition
+        # instead of calling it. The passive catch starts the moment fishing is
+        # learned; fishery_built only ever multiplies an already-flowing income.
         if (
             survival_bias and "food" in survival_bias.lower() and not tribe.kitchen_built
             and tribe.cooking_learned and tribe.long_houses_built > 0
-            and (tribe.fishery_built or tribe.last_harvest_cycle > 0)
+            and (tribe.fishing_learned or tribe.last_harvest_cycle > 0)
         ):
             survival_bias += " Building a Kitchen would make this food security permanent, not just this cycle."
         memories = tribe.memory.recall(f"{biome} at {tribe.x},{tribe.y}")

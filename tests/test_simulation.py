@@ -1440,13 +1440,34 @@ def test_food_warning_mentions_building_a_kitchen_once_fishing_and_cooking_alrea
     tribe = sim.tribes["tribe_0"]
     tribe.food = 0  # triggers the starving warning
     tribe.cooking_learned = True
-    tribe.fishery_built = True
+    tribe.fishing_learned = True
     tribe.long_houses_built = 1
     tribe.kitchen_built = False
 
     request, _ctx = sim._prepare_turn(tribe)
 
     assert "Building a Kitchen would make this food security permanent" in request["prompt"]
+
+
+def test_food_warning_kitchen_suggestion_ignores_fishery_built_alone():
+    """Real gap found and fixed, 2026-09-17: this nudge checked
+    tribe.fishery_built (the building) instead of tribe.fishing_learned (the
+    skill) -- the exact fishery_built-vs-fishing_learned bug _is_food_secure's
+    own docstring already documents fixing on 2026-09-16, just missed here in
+    a separate, nearby duplicate of half its condition. fishery_built alone
+    (no real fishing skill ever proven) must not trigger a nudge promising a
+    food source that was never actually proven to exist."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.food = 0
+    tribe.cooking_learned = True
+    tribe.fishery_built = True
+    tribe.fishing_learned = False
+    tribe.long_houses_built = 1
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Building a Kitchen would make this food security permanent" not in request["prompt"]
 
 
 def test_food_warning_omits_kitchen_suggestion_without_a_long_house():
@@ -2545,7 +2566,7 @@ def test_kitchen_stays_choosable_during_the_exact_crisis_that_nudges_toward_it()
     tribe.era = "tribal_synapse"
     tribe.cooking_learned = True
     tribe.long_houses_built = 1
-    tribe.fishery_built = True
+    tribe.fishing_learned = True
     tribe.wood = tribe.stone = 1000
     tribe.population = 10
     tribe.food = 1  # <= upkeep(1) * HUNGER_CRITICAL_CYCLES_LEFT(1) -- the critical cutoff
