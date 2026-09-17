@@ -3190,16 +3190,28 @@ def test_build_kitchen_requires_cooking_and_long_house_first():
 
 
 def test_plant_crop_spends_wood_and_adds_a_plot():
+    from backend.actions import _plant_crop_cost
+
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     _settle(sim, tribe)
     tribe.wood = 50
 
-    from backend import config
     ACTION_REGISTRY["PLANT_CROP"](sim, tribe, "river", _NO_TARGET)
 
     assert tribe.farm_plots == 1
-    assert tribe.wood == 50 - config.PLANT_CROP_WOOD_COST
+    assert tribe.wood == 50 - _plant_crop_cost(0)
+
+
+def test_plant_crop_cost_is_a_graduated_triangular_sequence():
+    """Explicit request, 2026-09-17: "the first crop is supposed to cost 5,
+    not 25. The next crop costs 15, then 30, and so on" -- a real live report:
+    a tribe with only 8 wood left (spent on a Town Hall and a Long House)
+    could never afford PLANT_CROP's old flat 25-wood cost, whether it was the
+    first plot or the fourth."""
+    from backend.actions import _plant_crop_cost
+
+    assert [_plant_crop_cost(n) for n in range(4)] == [5, 15, 30, 50]
 
 
 def test_plant_crop_does_nothing_without_enough_wood():

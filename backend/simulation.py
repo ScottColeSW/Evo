@@ -9,7 +9,7 @@ from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _battalion_capacity, _conquest_ready, _created_object_bonus, _dmm_ready, _eligible_breeding_pair,
-    _food_multiplier, _forge_item,
+    _food_multiplier, _forge_item, _plant_crop_cost,
     _generate_raider_name, _has_room_to_grow, _is_departure_dream, _item_storage_cap, _labor_multiplier,
     _long_house_fur_discount, _mutual_ally_at_top_era, _push_past_visited_ground, _record_combat,
     _storage_cap, _sustainable_population, _territory_has_nearby_threats,
@@ -779,7 +779,7 @@ AFFORDABILITY_CHECKS = {
     ),
     "BUILD_ROAD": lambda t, w: t.wood >= config.ROAD_WOOD_COST and t.stone >= config.ROAD_STONE_COST,
     "PLANT_CROP": lambda t, w: (
-        t.farm_plots < config.MAX_FARM_PLOTS and t.wood >= config.PLANT_CROP_WOOD_COST
+        t.farm_plots < config.MAX_FARM_PLOTS and t.wood >= _plant_crop_cost(t.farm_plots)
         and _can_place(t, w, "farm_plot")
     ),
     # Real gap found and fixed, 2026-09-17: actions._breed's own real guard

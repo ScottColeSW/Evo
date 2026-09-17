@@ -406,7 +406,17 @@ FARMING_REQUIRES_ADJACENT_WATER = ("river", "lake")
 # Explicit request (2026-09-05): "make it cost 25 wood for a simple fence and
 # scarecrow, it's common sense" -- a real plot needs more than seed money to
 # keep wildlife off it while it grows.
-PLANT_CROP_WOOD_COST = 25
+#
+# Corrected 2026-09-17: a flat 25 up front was too steep an on-ramp -- real
+# live report, a tribe that spent its starting wood on a Town Hall and a Long
+# House (8 wood left) had no path to ever afford its first plot, since 25 was
+# the SAME price whether it was the first plot or the fourth. Now graduated
+# like every other repeatable structure in this file (Long House/Warehouse/
+# Barracks upgrades): "the first crop is supposed to cost 5, not 25. The next
+# crop costs 15, then 30, and so on" -- a triangular sequence
+# (PLANT_CROP_WOOD_COST_BASE * the 1-indexed plot number's own triangular
+# number), see actions._plant_crop_cost. 5, 15, 30, 50 for MAX_FARM_PLOTS(4).
+PLANT_CROP_WOOD_COST_BASE = 5
 MAX_FARM_PLOTS = 4
 CROP_GROWTH_PER_CYCLE = 10  # a plot matures in ~10 cycles once planted
 CROP_HARVEST_YIELD = 15  # food per plot, per harvest

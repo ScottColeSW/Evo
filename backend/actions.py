@@ -1872,6 +1872,18 @@ def _depart(sim, tribe, biome, target):
     return f"the tribe boards the vessel and sails beyond the horizon, chasing the dream Chief {tribe.chief_name} once spoke of"
 
 
+def _plant_crop_cost(farm_plots: int) -> int:
+    """Explicit correction, 2026-09-17: "the first crop is supposed to cost 5,
+    not 25. The next crop costs 15, then 30, and so on." A triangular
+    sequence, not a flat repeat: the Nth plot (farm_plots=N-1 already
+    standing) costs PLANT_CROP_WOOD_COST_BASE times the Nth triangular number
+    -- 5, 15, 30, 50 for MAX_FARM_PLOTS(4). Cheap enough that a tribe still on
+    its starting stock can afford a first plot, steep enough that a fourth
+    plot is a real, later-game commitment."""
+    n = farm_plots + 1
+    return config.PLANT_CROP_WOOD_COST_BASE * n * (n + 1) // 2
+
+
 def _plant_crop(sim, tribe, biome, target):
     """Only reachable at all once Simulation._prepare_turn's settled-near-water gate
     (Simulation._is_settled_near_water) allows it -- plains alone doesn't mean a tribe
@@ -1879,12 +1891,15 @@ def _plant_crop(sim, tribe, biome, target):
     farming. Growth itself is a passive per-cycle tick (Simulation._advance_farming),
     not something this action does directly -- planting just adds one more plot to
     tend."""
-    if tribe.farm_plots >= config.MAX_FARM_PLOTS or tribe.wood < config.PLANT_CROP_WOOD_COST:
+    if tribe.farm_plots >= config.MAX_FARM_PLOTS:
+        return None
+    cost = _plant_crop_cost(tribe.farm_plots)
+    if tribe.wood < cost:
         return None
     slot = architect.find_free_slot(sim.world, tribe, "farm_plot")
     if slot is None:
         return None
-    tribe.wood -= config.PLANT_CROP_WOOD_COST
+    tribe.wood -= cost
     w, h = config.BUILDING_FOOTPRINTS["farm_plot"]
     architect.record_building(tribe, "farm_plot", slot[0], slot[1], w, h, sim.cycle)
     tribe.farm_plots += 1
