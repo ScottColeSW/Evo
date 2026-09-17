@@ -1770,7 +1770,7 @@ class Tribe:
         survival_warning, _ = survival_bias_string(
             self.food, self.water, self.population, self.fishing_learned, self.cooking_learned,
             water_secure=_is_water_secure(self), food_secure=_is_food_secure(self),
-            kitchen_built=self.kitchen_built,
+            kitchen_built=self.kitchen_built, long_houses_built=self.long_houses_built,
         )
         nxt = next_era(self.era)
         next_era_info = None
@@ -2486,7 +2486,7 @@ class Simulation:
         survival_bias, _critical = survival_bias_string(
             tribe.food, tribe.water, tribe.population, tribe.fishing_learned, tribe.cooking_learned,
             water_secure=_is_water_secure(tribe), food_secure=_is_food_secure(tribe),
-            kitchen_built=tribe.kitchen_built,
+            kitchen_built=tribe.kitchen_built, long_houses_built=tribe.long_houses_built,
         )
         if survival_bias:
             lines.append(survival_bias)
@@ -3581,7 +3581,7 @@ class Simulation:
         survival_bias, survival_critical = survival_bias_string(
             tribe.food, tribe.water, tribe.population, tribe.fishing_learned, tribe.cooking_learned,
             water_secure=_is_water_secure(tribe), food_secure=_is_food_secure(tribe),
-            kitchen_built=tribe.kitchen_built,
+            kitchen_built=tribe.kitchen_built, long_houses_built=tribe.long_houses_built,
         )
         # NUDGE (2026-08-31, explicit request: "the warnings do not mention settling
         # as an alternative to low water"). A tribe already sitting on a chronic water

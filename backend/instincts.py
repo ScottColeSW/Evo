@@ -14,7 +14,7 @@ def survival_bias_string(
     food: int, water: int, population: int,
     fishing_learned: bool = False, cooking_learned: bool = False,
     water_secure: bool = False, food_secure: bool = False,
-    kitchen_built: bool = False,
+    kitchen_built: bool = False, long_houses_built: int = 0,
 ) -> tuple[str, bool]:
     """Returns (bias_text, is_critical). is_critical raises inference temperature the
     same way ancestral dread does -- panic should read as less predictable model
@@ -94,6 +94,16 @@ def survival_bias_string(
     # CATCH_FISH stays behind the same fishing_learned gate as before (a
     # pre-existing, separate question of whether it can dangle for an unsettled
     # tribe -- not what was reported here, left alone).
+    #
+    # Explicit correction, 2026-09-17: "mentioning it and not giving the action to
+    # perform makes it seem like we are torturing our agents." Confirmed live
+    # (run_20260917_080441): this message told a tribe to "build a kitchen" for
+    # 213+ straight cycles while it had zero long houses -- BUILD_KITCHEN's own
+    # real prerequisite (actions._build_kitchen requires long_houses_built > 0)
+    # -- so the one thing it was told would fix the crisis was never actually one
+    # step away. Now names the real next step (a long house) first when that's
+    # what's actually missing, instead of jumping straight to a kitchen that
+    # cannot yet be built.
     if food_secure:
         pass
     elif food <= upkeep * config.HUNGER_CRITICAL_CYCLES_LEFT:
@@ -101,6 +111,8 @@ def survival_bias_string(
         message += ", or try fishing." if not fishing_learned else "."
         if not cooking_learned:
             message += " Building a fire, then cooking after a successful hunt, would make every future harvest go much further."
+        elif not long_houses_built:
+            message += " A long house would be the real next step -- it's what a kitchen requires, and a kitchen would multiply every future harvest even further."
         elif not kitchen_built:
             message += " Building a kitchen would multiply every future harvest even further, on top of what cooking already does."
         urgent.append(message)
@@ -110,6 +122,8 @@ def survival_bias_string(
         message += ", or try fishing." if not fishing_learned else "."
         if not cooking_learned:
             message += " Building a fire, then cooking after a successful hunt, would help stored food last much longer too."
+        elif not long_houses_built:
+            message += " A long house would be the real next step toward a kitchen, which would stretch it further still."
         elif not kitchen_built:
             message += " Building a kitchen would stretch it further still."
         urgent.append(message)

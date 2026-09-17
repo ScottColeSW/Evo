@@ -100,24 +100,50 @@ def test_critical_food_omits_fishing_suggestion_once_already_learned():
 
 
 def test_critical_food_omits_cooking_suggestion_once_already_learned_and_kitchen_built():
-    text, _ = survival_bias_string(food=1, water=50, population=SMALL_TRIBE, cooking_learned=True, kitchen_built=True)
+    text, _ = survival_bias_string(
+        food=1, water=50, population=SMALL_TRIBE, cooking_learned=True, kitchen_built=True, long_houses_built=1,
+    )
     assert "cook" not in text.lower()
     assert "kitchen" not in text.lower()
 
 
-def test_critical_food_suggests_kitchen_once_cooking_is_learned_but_kitchen_is_not_built():
+def test_critical_food_suggests_kitchen_once_cooking_is_learned_and_a_long_house_stands():
     """Explicit report, 2026-09-13: "the 'starving' warning does not mention
     cooking or kitchen." Confirmed live: cooking_learned flips true early and
     this whole message went permanently silent about food multipliers for the
     rest of a 746-cycle game, even though Kitchen -- a real, still-available
     further 3x -- remained unbuilt the entire run."""
-    text, _ = survival_bias_string(food=1, water=50, population=SMALL_TRIBE, cooking_learned=True, kitchen_built=False)
+    text, _ = survival_bias_string(
+        food=1, water=50, population=SMALL_TRIBE, cooking_learned=True, kitchen_built=False, long_houses_built=1,
+    )
     assert "kitchen" in text.lower()
 
 
-def test_warning_food_suggests_kitchen_once_cooking_is_learned_but_kitchen_is_not_built():
-    text, _ = survival_bias_string(food=3, water=50, population=SMALL_TRIBE, cooking_learned=True, kitchen_built=False)
+def test_warning_food_suggests_kitchen_once_cooking_is_learned_and_a_long_house_stands():
+    text, _ = survival_bias_string(
+        food=3, water=50, population=SMALL_TRIBE, cooking_learned=True, kitchen_built=False, long_houses_built=1,
+    )
     assert "kitchen" in text.lower()
+
+
+def test_critical_food_suggests_a_long_house_first_when_kitchen_has_no_real_path_yet():
+    """Explicit correction, 2026-09-17: "mentioning it and not giving the action
+    to perform makes it seem like we are torturing our agents." Confirmed live
+    (run_20260917_080441): this message told a tribe to "build a kitchen" for
+    213+ straight cycles while it had zero long houses -- BUILD_KITCHEN's own
+    real prerequisite -- so the one thing it was told would fix the crisis was
+    never actually reachable. Must name the real next step instead."""
+    text, _ = survival_bias_string(
+        food=1, water=50, population=SMALL_TRIBE, cooking_learned=True, kitchen_built=False, long_houses_built=0,
+    )
+    assert "long house" in text.lower()
+
+
+def test_warning_food_suggests_a_long_house_first_when_kitchen_has_no_real_path_yet():
+    text, _ = survival_bias_string(
+        food=3, water=50, population=SMALL_TRIBE, cooking_learned=True, kitchen_built=False, long_houses_built=0,
+    )
+    assert "long house" in text.lower()
 
 
 def test_water_secure_suppresses_the_thirst_warning_even_at_zero_water():
