@@ -230,9 +230,26 @@ WALL_LOCK_ACTIONS = {"CONSTRUCT_WALL", "GATHER_WOOD", "GATHER_STONE", "BUILD_LON
 # config.BARRACKS_MAX_COUNT and UPGRADE_BARRACKS takes over, exactly the same
 # ordering every other menu-lock in this file already relies on (this set is
 # filtered against available_actions *after* the affordability pass).
+#
+# Real gap found and fixed, 2026-09-17, same audit that found the
+# BUILD_LONG_HOUSE/survival-crisis dead-end: BUILD_BARRACKS itself requires
+# kitchen_built AND keep_built (actions._build_barracks), and keep_built
+# requires long_houses_built (+upgrades) >= KEEP_LONG_HOUSES_REQUIRED, but
+# none of BUILD_LONG_HOUSE/BUILD_KITCHEN/BUILD_KEEP were ever in this set. A
+# tribe that reached the era ceiling without already having built all three
+# would be endgame_locked into a menu where BUILD_BARRACKS -- and everything
+# downstream of it (TRAIN_BATTALION, DECLARE_ALLIANCE itself also requires
+# barracks_built, DECLARE_CONQUEST) -- could never actually become reachable
+# again, despite DECLARE_ALLIANCE's own name suggesting peace always stays
+# an option here. Safe to add unconditionally (unlike the crisis_allowed
+# carve-out's own "if already in available_actions" guard) since endgame_only
+# is already intersected against available_actions -- adding a name to this
+# set can never dangle a guaranteed no-op, only widen what's kept when it
+# was already real and reachable.
 ENDGAME_RESOLUTION_ACTIONS = {
     "DECLARE_ALLIANCE", "DECLARE_CONQUEST",
     "TRAIN_BATTALION", "BUILD_BARRACKS", "UPGRADE_BARRACKS", "SCOUT",
+    "BUILD_LONG_HOUSE", "BUILD_KITCHEN", "BUILD_KEEP",
 } | SURVIVAL_CRISIS_ACTIONS
 
 # Live report, 2026-09-12: "After one Tribe was eliminated, the actions

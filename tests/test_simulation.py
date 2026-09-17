@@ -7151,6 +7151,39 @@ def test_top_era_narrows_the_menu_to_endgame_resolution_when_a_rival_exists():
     assert "settling things with the known rival tribe once and for all" in request["prompt"]
 
 
+def test_endgame_lock_keeps_the_real_path_to_barracks_reachable():
+    """Real gap found and fixed, 2026-09-17, same class as the survival-crisis
+    BUILD_LONG_HOUSE dead-end above: BUILD_BARRACKS itself requires
+    kitchen_built AND keep_built, and keep_built requires long_houses_built
+    (+upgrades) at or past KEEP_LONG_HOUSES_REQUIRED -- but none of
+    BUILD_LONG_HOUSE/BUILD_KITCHEN/BUILD_KEEP used to be in
+    ENDGAME_RESOLUTION_ACTIONS. A tribe that reached the era ceiling without
+    ever building any of the three would have been endgame_locked into a menu
+    where BUILD_BARRACKS -- and everything downstream, including
+    DECLARE_ALLIANCE itself -- could never become reachable again."""
+    from backend.eras import ERAS
+
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = ERAS[-1].key
+    tribe.wood = tribe.stone = 1000
+    tribe.discovered_rivals.add("tribe_1")
+    # barracks_built stays 0 and kitchen/keep/long_houses stay at their
+    # Tribe.__init__ defaults -- the exact "never built any of it" state that
+    # got a real tribe permanently stuck.
+
+    request, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_LONG_HOUSE" in ctx["available_actions"]
+
+
 def test_top_era_menu_stays_normal_with_no_living_rival():
     """"there is no rival left and they have built it all, they can end in
     Peace" -- a tribe genuinely alone at the top keeps its ordinary menu
