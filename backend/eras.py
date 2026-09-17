@@ -321,3 +321,32 @@ def unlocked_actions_through(current_key: str) -> set[str]:
     for era in ERAS[: idx + 1]:
         actions.update(era.unlocks_actions)
     return actions
+
+
+def ordered_actions_through(current_key: str) -> list[str]:
+    """Same membership as unlocked_actions_through, but in a real order instead
+    of a set's arbitrary one -- explicit request, 2026-09-17: "the actions are
+    not ordered well for them, so like, if they have fire, the next logical
+    action is cooking, not build a well or something." Confirmed: the menu was
+    being alphabetized (`sorted(unlocked_actions_through(...))`), with zero
+    connection to how foundational or immediate an action actually is --
+    BUILD_WELL (cognitive_horizon) sorts as a near-neighbor of COOK_FOOD
+    (primitive_dawn) purely because both start with letters early in that
+    stretch of the alphabet, not because they're related in any real sense.
+
+    Orders by era first (earlier-unlocked actions first, the same progression
+    already used to gate them), then by each era's own declared position within
+    unlocks_actions (already hand-sequenced there in a roughly logical order --
+    e.g. primitive_dawn lists BUILD_FIRE well before COOK_FOOD, matching the
+    real prerequisite relationship between them) -- reuses the exact same data
+    this project already maintains for gating, so it can never drift out of
+    sync the way a separately hand-curated priority list would."""
+    idx = era_index(current_key)
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for era in ERAS[: idx + 1]:
+        for action in era.unlocks_actions:
+            if action not in seen:
+                seen.add(action)
+                ordered.append(action)
+    return ordered

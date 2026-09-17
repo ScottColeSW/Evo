@@ -19,7 +19,7 @@ from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
 from .genetics import breed, hatch
 from .reflection import AWARD_CATEGORIES, generate_endgame_narrative, reflect_on_history
-from .eras import ERAS, era_index, next_era, reached_era_or_later, unlocked_actions_through
+from .eras import ERAS, era_index, next_era, ordered_actions_through, reached_era_or_later, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
 from .instincts import survival_bias_string
@@ -3739,7 +3739,7 @@ class Simulation:
             # Explicit request: narrow the choice set before a tribe has ever proven
             # it can settle properly -- see config.PRE_SETTLEMENT_ACTIONS. A one-way
             # unlock (has_ever_settled never clears again) once it does.
-            available_actions = sorted(set(unlocked_actions_through(tribe.era)) & set(config.PRE_SETTLEMENT_ACTIONS))
+            available_actions = [a for a in ordered_actions_through(tribe.era) if a in config.PRE_SETTLEMENT_ACTIONS]
             if not tribe.confirmed_water_sites:
                 # Explicit request: "RELOCATE should not show until they find water
                 # and the place to settle" -- relocating without a known destination
@@ -3758,7 +3758,15 @@ class Simulation:
                 # just delays reaching water it already knows is there.
                 available_actions = ["RELOCATE"]
         else:
-            available_actions = sorted(unlocked_actions_through(tribe.era))
+            # Explicit request, 2026-09-17: "the actions are not ordered well
+            # for them... if they have fire, the next logical action is
+            # cooking, not build a well or something." This was alphabetized
+            # (sorted(unlocked_actions_through(...))), with zero connection to
+            # how foundational or immediate an action actually is -- see
+            # eras.ordered_actions_through's own docstring for the full
+            # reasoning. Every filter below is a plain list comprehension, so
+            # this order survives all of them.
+            available_actions = ordered_actions_through(tribe.era)
         # Benchmark-harness-only override -- see Simulation.__init__'s own comment
         # on self.disabled_actions. Applied here, at the base list, deliberately
         # BEFORE any of the narrowing filters below (endgame_only,

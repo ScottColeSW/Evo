@@ -1,4 +1,4 @@
-from backend.eras import ERAS, era_index, next_era, unlocked_actions_through
+from backend.eras import ERAS, era_index, next_era, ordered_actions_through, unlocked_actions_through
 
 _EXPECTED_KEYS = [
     "primitive_dawn", "cognitive_horizon", "tribal_synapse", "monolithic_era",
@@ -31,6 +31,35 @@ def test_unlocked_actions_accumulate_across_eras():
     assert "CONSTRUCT_WALL" not in primitive
     assert "CONSTRUCT_WALL" in tribal
     assert primitive.issubset(tribal)  # nothing is ever un-learned by advancing
+
+
+def test_ordered_actions_through_matches_unlocked_actions_through_as_a_set():
+    """Same membership, just ordered -- see ordered_actions_through's own
+    docstring for why the menu shouldn't just be alphabetized."""
+    for era in ERAS:
+        assert set(ordered_actions_through(era.key)) == unlocked_actions_through(era.key)
+
+
+def test_ordered_actions_through_puts_fire_before_a_later_era_action():
+    """Explicit request, 2026-09-17: "if they have fire, the next logical
+    action is cooking, not build a well or something." BUILD_FIRE and
+    COOK_FOOD both unlock in primitive_dawn; BUILD_WELL only unlocks in
+    cognitive_horizon -- confirmed real ordering, not alphabetized (BUILD_WELL
+    would otherwise sort as a near-neighbor of BUILD_FIRE)."""
+    ordered = ordered_actions_through("cognitive_horizon")
+    assert ordered.index("BUILD_FIRE") < ordered.index("COOK_FOOD") < ordered.index("BUILD_WELL")
+
+
+def test_ordered_actions_through_preserves_each_eras_own_declared_order():
+    """Doesn't re-sort within an era either -- reuses exactly the order each
+    Era.unlocks_actions was hand-written in."""
+    ordered = ordered_actions_through("primitive_dawn")
+    assert ordered == list(ERAS[0].unlocks_actions)
+
+
+def test_ordered_actions_through_never_duplicates_an_action_repeated_across_eras():
+    ordered = ordered_actions_through(ERAS[-1].key)
+    assert len(ordered) == len(set(ordered))
 
 
 def test_only_monolithic_era_founds_a_city():

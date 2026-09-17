@@ -3322,6 +3322,33 @@ def test_spy_is_offered_once_a_barracks_and_a_living_rival_both_exist():
     assert "SPY" in ctx["available_actions"]
 
 
+def test_available_actions_are_era_ordered_not_alphabetized():
+    """Explicit request, 2026-09-17: "if they have fire, the next logical
+    action is cooking, not build a well or something." Confirmed live: the
+    menu was alphabetized, with zero connection to how foundational an action
+    actually is -- BUILD_WELL sorted as a near-neighbor of BUILD_FIRE/COOK_FOOD
+    purely by spelling. Now ordered by era, then each era's own declared
+    sequence (see eras.ordered_actions_through)."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "cognitive_horizon"  # unlocks BUILD_WELL on top of primitive_dawn's set
+    # COOK_FOOD's own real prerequisite -- fire_ever_built also retires
+    # BUILD_FIRE itself from the menu (a separate, one-way "already proven"
+    # rule), so this checks COOK_FOOD vs. BUILD_WELL, not BUILD_FIRE.
+    tribe.fire_ever_built = True
+    tribe.hunt_ever_succeeded = True
+    tribe.wood_ever_gathered = True  # BUILD_WELL's own real prerequisite
+    tribe.stone_ever_gathered = True
+    tribe.wood = tribe.stone = 1000
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    actions = ctx["available_actions"]
+    assert actions.index("COOK_FOOD") < actions.index("BUILD_WELL")
+
+
 def test_fresh_tribe_has_only_pre_settlement_actions_available():
     """Explicit request: a weak model faced with the full Stone Age action list from
     cycle one has no structural push toward the single most important early decision
