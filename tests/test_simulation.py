@@ -3453,6 +3453,28 @@ def test_clear_territory_pops_to_the_very_front_of_the_menu():
     assert actions[0] == "CLEAR_TERRITORY"
 
 
+def test_clear_territory_never_appears_before_a_tribe_has_a_real_territory():
+    """Explicit follow-up, 2026-09-17: "'CLEAR_TERRITORY' isn't available
+    until they HAVE a territory to clear." The new front-of-menu reorder
+    above only ever moves CLEAR_TERRITORY when it's already in
+    available_actions -- it can't manufacture the action out of nothing.
+    Confirms the two real gates that keep it out pre-settlement still hold:
+    config.PRE_SETTLEMENT_ACTIONS doesn't list it at all, and
+    AFFORDABILITY_CHECKS["CLEAR_TERRITORY"] (_territory_has_nearby_threats)
+    returns False outright while tribe.territory_center is still None --
+    even with a "raider" sighting sitting right on top of the tribe's own
+    unsettled position."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    assert not tribe.has_ever_settled
+    assert tribe.territory_center is None
+    tribe.raider_sightings = [(tribe.x, tribe.y)]
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "CLEAR_TERRITORY" not in ctx["available_actions"]
+
+
 def test_evergreen_gathering_stays_in_its_normal_order_without_a_real_build_available():
     """The reprioritization only fires once a real construction action is
     genuinely reachable -- a tribe with nothing buildable yet (no wood/stone
