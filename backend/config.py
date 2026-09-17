@@ -891,6 +891,18 @@ CELEBRATION_COOKING_COST_MULTIPLIER = 0.5
 # stockpiled food rather than producing new food.
 COOKING_FOOD_MULTIPLIER = 3
 
+# Explicit request, 2026-09-17: "wood cost and stone if any for these should
+# at least cost 5 each." COOK_FOOD/GATHER_EGGS/CATCH_FISH were the last three
+# actions with zero real cost at all (unlike PLANT_CROP, which already starts
+# at 5 wood for its first plot -- see PLANT_CROP_WOOD_COST_BASE) -- a genuine
+# resource tension for even the cheapest food-security investments, not a
+# fully free action anywhere in the registry. No stone component fits any of
+# the three (none involve a tool or structure a stone cost would make sense
+# for), so wood alone.
+COOK_FOOD_WOOD_COST = 5
+GATHER_EGGS_WOOD_COST = 5
+CATCH_FISH_WOOD_COST = 5
+
 # Milestone trophies (backend/simulation.py._award_trophy's `individual` param): unlike
 # the chief-credited trophies above, these are earned by a specific named scout or
 # hunter and credit them by name, not the chief. Also the pool of "named individuals"

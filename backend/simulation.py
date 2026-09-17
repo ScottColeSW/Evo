@@ -800,6 +800,15 @@ AFFORDABILITY_CHECKS = {
         t.farm_plots < config.MAX_FARM_PLOTS and t.wood >= _plant_crop_cost(t.farm_plots)
         and _can_place(t, w, "farm_plot")
     ),
+    # Explicit request, 2026-09-17: COOK_FOOD/GATHER_EGGS/CATCH_FISH each
+    # picked up a real, if minimal, wood cost (see config.COOK_FOOD_WOOD_COST's
+    # own comment) -- these never had an AFFORDABILITY_CHECKS entry before
+    # since there was never a cost to check. Real prerequisites (cooking_learned/
+    # fire_ever_built etc.) still live entirely in _prepare_turn's own menu
+    # filters, same as before -- these three lambdas are only the cost half.
+    "COOK_FOOD": lambda t, w: t.wood >= config.COOK_FOOD_WOOD_COST,
+    "GATHER_EGGS": lambda t, w: t.wood >= config.GATHER_EGGS_WOOD_COST,
+    "CATCH_FISH": lambda t, w: t.wood >= config.CATCH_FISH_WOOD_COST,
     # Real gap found and fixed, 2026-09-17: actions._breed's own real guard
     # clauses are _has_room_to_grow and _eligible_breeding_pair -- a solo
     # chief with no trophy-holder, or a tribe that's already outgrown what
@@ -4299,21 +4308,29 @@ class Simulation:
         # Confirmed live: a tribe sat on 69 wood/59 stone -- comfortably past
         # BUILD_LONG_HOUSE's own cost -- and spent 78 straight cycles
         # alternating GATHER_WOOD/GATHER_STONE/GATHER_FOOD instead, never once
-        # building anything past its starting Town Hall. The four basic
-        # gathers never retire and stay affordable forever (unlike every
-        # other action, which either has a real prerequisite or eventually
-        # retires) -- era-ordering alone (this session's earlier fix) still
-        # left them sitting at the front of the menu, level with everything
-        # else. Applied last, after every other filter above, so it's the
-        # final word regardless of era/crisis/lock state: whenever a real
-        # construction action is currently reachable (already passed its own
-        # affordability check to even be in available_actions), the evergreen
-        # gathers move to the back instead of competing with it on equal
-        # footing.
+        # building anything past its starting Town Hall.
+        #
+        # First version of this fix (same day) only pushed the four evergreen
+        # gathers to the back -- confirmed still wrong by a real Monitor
+        # capture: HUNT_DEER/RAID/TRADE/BREED/COOK_FOOD/PLANT_CROP/
+        # GATHER_EGGS/CATCH_FISH (all primitive_dawn actions, era-ordered
+        # ahead of anything from a later era) still sat in front of
+        # BUILD_LONG_HOUSE/BUILD_SAWMILL/BUILD_TANNERY -- "overriding choice"
+        # has to mean the front of the whole menu, not just ahead of
+        # gathering specifically. Real construction actions now move to the
+        # front outright whenever any are currently reachable (already
+        # passed their own affordability check to even be in
+        # available_actions) -- we already know the resource math that makes
+        # spending a currently-affordable, permanent structural gain the
+        # better move than continuing to gather/hunt/trade, even though the
+        # tribe itself never computes that. Applied last, after every other
+        # filter above, so it's the final word regardless of era/crisis/lock
+        # state.
         if any(_is_construction_action(a) for a in available_actions):
+            construction = [a for a in available_actions if _is_construction_action(a)]
             gathers = [a for a in available_actions if a in _EVERGREEN_GATHER_ACTIONS]
-            if gathers:
-                available_actions = [a for a in available_actions if a not in _EVERGREEN_GATHER_ACTIONS] + gathers
+            rest = [a for a in available_actions if a not in construction and a not in gathers]
+            available_actions = construction + rest + gathers
 
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         if tribe.wall_commitment_active:

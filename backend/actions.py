@@ -380,9 +380,15 @@ def _cook_food(sim, tribe, biome, target):
     tied to a specific structure. One-way, like fishing_learned: once learned, it
     isn't unlearned. No further effect on its own here -- Simulation._celebration_
     cost charges less, and _food_multiplier (above) makes every future food
-    harvest go further from then on."""
-    if tribe.cooking_learned:
+    harvest go further from then on.
+
+    Explicit request, 2026-09-17: a flat, minimal wood cost -- see config.
+    COOK_FOOD_WOOD_COST's own comment for why this and its two siblings went
+    from the only genuinely free actions in the registry to a real, if
+    small, resource tension."""
+    if tribe.cooking_learned or tribe.wood < config.COOK_FOOD_WOOD_COST:
         return None
+    tribe.wood -= config.COOK_FOOD_WOOD_COST
     tribe.cooking_learned = True
     sim._award_trophy(tribe, "Master Chef")
     return "the tribe learns to cook -- stored food will go much further from now on"
@@ -1923,8 +1929,17 @@ def _gather_eggs(sim, tribe, biome, target):
     GATHER_EGGS_STOCKPILE_AMOUNT) instead of hatching directly. Simulation.
     _advance_flock is what actually incubates that stockpile into new flock from then
     on, once a Hatchery exists too. Explicit follow-up, 2026-09-11: "eggs gathered
-    are put into the Hatchery... fowl caught are put into the Coop.\""""
+    are put into the Hatchery... fowl caught are put into the Coop."
+
+    Explicit request, 2026-09-17: a flat, minimal wood cost -- see config.
+    GATHER_EGGS_WOOD_COST's own comment. Charged on every real attempt
+    (found or not -- searching costs the same effort either way), but never
+    on the "one thing at a time" no-op below, since no attempt actually
+    happens there."""
+    if tribe.wood < config.GATHER_EGGS_WOOD_COST:
+        return None
     if tribe.coop_built:
+        tribe.wood -= config.GATHER_EGGS_WOOD_COST
         if random.random() >= config.GATHER_EGGS_SUCCESS_CHANCE:
             return "no eggs found this time"
         tribe.eggs += config.GATHER_EGGS_STOCKPILE_AMOUNT
@@ -1933,6 +1948,7 @@ def _gather_eggs(sim, tribe, biome, target):
         return f"an egg is found and brought back to the coop -- {tribe.eggs} now stored for the hatchery"
     if tribe.pending_hatch is not None:
         return "an egg is already being tended -- one thing at a time"
+    tribe.wood -= config.GATHER_EGGS_WOOD_COST
     if random.random() >= config.GATHER_EGGS_SUCCESS_CHANCE:
         return "no eggs found this time"
     parents = tribe.flock_lineage[-2:] if len(tribe.flock_lineage) >= 2 else None
@@ -1947,7 +1963,14 @@ def _catch_fish(sim, tribe, biome, target):
     the first successful catch just flips tribe.fishing_learned, which is all
     Simulation._advance_fish_supply checks to start a passive daily food supply from
     then on, the same "action unlocks a passive system" shape crops and water already
-    use. Every catch (including the first) still pays out its own food too."""
+    use. Every catch (including the first) still pays out its own food too.
+
+    Explicit request, 2026-09-17: a flat, minimal wood cost -- see config.
+    CATCH_FISH_WOOD_COST's own comment. Charged on every real attempt (caught
+    or not -- casting a line costs the same effort either way)."""
+    if tribe.wood < config.CATCH_FISH_WOOD_COST:
+        return None
+    tribe.wood -= config.CATCH_FISH_WOOD_COST
     if random.random() >= config.CATCH_FISH_SUCCESS_CHANCE:
         return "no fish caught this time"
     caught = random.randint(config.FISHING_CATCH_FOOD_MIN, config.FISHING_CATCH_FOOD_MAX)
@@ -3460,7 +3483,7 @@ ACTION_DESCRIPTIONS = {
     "GATHER_FOOD": "Forage for berries, fruit, and wild plants at your current tile -- plains yields the most, forest some, mountains and ocean almost none. No hazard, unlike hunting, but a lower yield ceiling. Yield also drops the more this exact spot has been foraged recently.",
     "HUNT_DEER": "Attempt to harvest food at your current tile -- forest has the most game, plains and river tiles some, mountains and ocean almost none. Small risk of losing a hunter to a wolf pack, most likely in forest.",
     "BUILD_FIRE": "Build a fire at your current tile using stored wood. Does nothing if one is already built here.",
-    "COOK_FOOD": "Learn to cook -- only possible once you've successfully hunted or foraged, and successfully built a fire, at some point. A one-time skill, usable anywhere from then on: every future forage, hunt, or catch brings home three times as much food, and every future celebration feast costs less.",
+    "COOK_FOOD": "Learn to cook using a little stored wood -- only possible once you've successfully hunted or foraged, and successfully built a fire, at some point. A one-time skill, usable anywhere from then on: every future forage, hunt, or catch brings home three times as much food, and every future celebration feast costs less.",
     "CONSTRUCT_WALL": "Work on your wall using stored wood and stone -- a real defensive structure built up over several turns, not finished in one. Automatically does whatever the wall needs next: unlocks a new section if none is currently open, continues an unlocked section's progress (more per turn with more people to put to the work), reinforces a completed section with another tier, or -- once a whole ring is fully built and reinforced -- opens a brand new ring further out. A more complete wall meaningfully improves your odds of defending against a raider attack. Repeatable; does nothing further once maxed out.",
     "BUILD_LONG_HOUSE": "Build a long house at your current tile using stored wood and stone -- real, lasting shelter for the tribe, one house at a time. Repeatable as population grows, up to 5; UPGRADE_LONG_HOUSE takes over from there.",
     "UPGRADE_LONG_HOUSE": "Expand the long houses already standing to support more households -- only worth considering once 5 long houses already stand. No new structure, no placement needed. Repeatable, but each upgrade costs more than the last.",
@@ -3500,8 +3523,8 @@ ACTION_DESCRIPTIONS = {
     "BUILD_KEEP": "Build a keep using stored wood and stone -- only possible once enough long houses stand. A one-time, permanent structure: a further defense bonus for the settlement.",
     "BUILD_FORTRESS": "Build a fortress using stored wood and stone -- only possible once a keep stands and enough long houses have been built. A one-time, permanent structure: a further defense bonus for the settlement.",
     "PLANT_CROP": "Plant a farm plot at your current tile, fenced and set with a scarecrow using stored wood -- only possible once the tribe has settled here. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
-    "GATHER_EGGS": "Search for wild fowl nests near your current tile -- only possible once the tribe has settled here. A found egg is set aside and hatches on its own, growing the tribe's flock by one.",
-    "CATCH_FISH": "Attempt to harvest food by fishing at your current tile -- only possible once the tribe has settled here. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",
+    "GATHER_EGGS": "Search for wild fowl nests near your current tile, spending a little stored wood on the attempt -- only possible once the tribe has settled here. A found egg is set aside and hatches on its own, growing the tribe's flock by one.",
+    "CATCH_FISH": "Attempt to harvest food by fishing at your current tile, spending a little stored wood on the attempt -- only possible once the tribe has settled here. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",
     "SCOUT": "Dispatch an expedition to explore -- the direction is chosen automatically to spread coverage out over time, not from target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home. Your tribe can have several parties out at once (scouting or hunting, any mix -- more as your population grows) -- choosing SCOUT again sends another one if there's room, or just reports on whoever's already out once you're at capacity.",
     "EXPLORATION_PARTY": "Dispatch a deeper, longer-ranging expedition than SCOUT -- direction chosen automatically, its own sweep separate from SCOUT's. Gathers real wood and stone along the way on top of the food and water any expedition forages, until they're carrying as much as they can manage, then heads home. Can discover anything SCOUT can (water, resource sites, raider camps) plus rival settlements and Landmarks -- rare points of interest that yield a real, unique treasure the moment they're found. Shares the same expedition capacity as SCOUT/HUNTING_PARTY.",
     "HUNTING_PARTY": "Send a hunting party toward known game -- the destination is chosen automatically (a confirmed wildlife site once one is known, otherwise a rotating search direction), not from target_vector. Shares the same expedition capacity as SCOUT (several parties, scouting or hunting in any mix, can be out at once -- more as your population grows). They travel and hunt on their own supply for up to several days, facing the same wolf-pack risk as an instant hunt on every day out, until they catch something or give up. Any food caught only becomes real, usable food once they've walked all the way home -- a hunt still in the field does nothing for hunger right now, no matter how promising.",

@@ -3331,25 +3331,30 @@ def test_available_actions_are_era_ordered_not_alphabetized():
     menu was alphabetized, with zero connection to how foundational an action
     actually is -- BUILD_WELL sorted as a near-neighbor of BUILD_FIRE/COOK_FOOD
     purely by spelling. Now ordered by era, then each era's own declared
-    sequence (see eras.ordered_actions_through)."""
+    sequence (see eras.ordered_actions_through).
+
+    Deliberately keeps no construction action affordable here (a later,
+    separate fix pulls any affordable BUILD_*/UPGRADE_*/CONSTRUCT_WALL to the
+    very front, overriding era-order outright -- see
+    test_evergreen_gathering_gets_pushed_behind_an_affordable_build) --
+    this test is only about era-order among everything else."""
+    from backend import config
+
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
     sim._found_territory(tribe)
-    tribe.era = "cognitive_horizon"  # unlocks BUILD_WELL on top of primitive_dawn's set
-    # COOK_FOOD's own real prerequisite -- fire_ever_built also retires
-    # BUILD_FIRE itself from the menu (a separate, one-way "already proven"
-    # rule), so this checks COOK_FOOD vs. BUILD_WELL, not BUILD_FIRE.
+    tribe.era = "tribal_synapse"  # unlocks RESEARCH well after primitive_dawn's COOK_FOOD
     tribe.fire_ever_built = True
     tribe.hunt_ever_succeeded = True
-    tribe.wood_ever_gathered = True  # BUILD_WELL's own real prerequisite
-    tribe.stone_ever_gathered = True
-    tribe.wood = tribe.stone = 1000
+    tribe.library_built = True  # RESEARCH's own real prerequisite
+    tribe.wood = config.RESEARCH_WOOD_COST  # affords COOK_FOOD/RESEARCH, not any construction
 
     _, ctx = sim._prepare_turn(tribe)
 
     actions = ctx["available_actions"]
-    assert actions.index("COOK_FOOD") < actions.index("BUILD_WELL")
+    assert not any(_is_construction_action(a) for a in actions)
+    assert actions.index("COOK_FOOD") < actions.index("RESEARCH")
 
 
 def test_evergreen_gathering_gets_pushed_behind_an_affordable_build():

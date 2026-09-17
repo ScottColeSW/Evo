@@ -3293,6 +3293,71 @@ def test_gather_eggs_crosses_the_two_most_recent_flock_members_once_available():
     assert [p["trait"] for p in tribe.pending_hatch["parents"]] == ["second", "third"]
 
 
+def test_gather_eggs_spends_wood_on_a_successful_attempt():
+    """Explicit request, 2026-09-17: "wood cost and stone if any for these
+    should at least cost 5 each." Charged on the pre-Coop founding path,
+    the same as the Coop-stockpile path below."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 50
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
+
+    assert tribe.pending_hatch is not None
+    assert tribe.wood == 50 - config.GATHER_EGGS_WOOD_COST
+
+
+def test_gather_eggs_spends_wood_even_on_a_failed_attempt():
+    """Searching costs the same effort whether or not anything is found."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 50
+
+    with mock.patch("backend.actions.random.random", return_value=0.999):
+        ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
+
+    assert tribe.pending_hatch is None
+    assert tribe.wood == 50 - config.GATHER_EGGS_WOOD_COST
+
+
+def test_gather_eggs_does_nothing_without_enough_wood():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = config.GATHER_EGGS_WOOD_COST - 1
+
+    result = ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
+
+    assert result is None
+    assert tribe.pending_hatch is None
+    assert tribe.wood == config.GATHER_EGGS_WOOD_COST - 1  # untouched, no attempt happened
+
+
+def test_gather_eggs_refusing_a_pending_hatch_costs_no_wood():
+    """The "one thing at a time" no-op is checked before any wood is spent --
+    no real attempt happens there."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = config.GATHER_EGGS_WOOD_COST
+    tribe.pending_hatch = {"parents": None}
+
+    ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
+
+    assert tribe.wood == config.GATHER_EGGS_WOOD_COST
+
+
 def test_gather_eggs_deposits_into_the_stockpile_once_a_coop_exists():
     """Explicit follow-up, 2026-09-11: "eggs gathered are put into the Hatchery...
     fowl caught are put into the Coop." Once a Coop exists there's a real home for
@@ -3343,6 +3408,39 @@ def test_catch_fish_does_nothing_on_a_failed_roll():
     assert tribe.fishing_learned is False
 
 
+def test_catch_fish_spends_wood_even_on_a_failed_attempt():
+    """Explicit request, 2026-09-17: "wood cost and stone if any for these
+    should at least cost 5 each." Casting a line costs the same effort
+    whether or not anything is caught."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 50
+
+    with mock.patch("backend.actions.random.random", return_value=0.999):
+        ACTION_REGISTRY["CATCH_FISH"](sim, tribe, "river", _NO_TARGET)
+
+    assert tribe.wood == 50 - config.CATCH_FISH_WOOD_COST
+
+
+def test_catch_fish_does_nothing_without_enough_wood():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = config.CATCH_FISH_WOOD_COST - 1
+    tribe.food = 0
+
+    result = ACTION_REGISTRY["CATCH_FISH"](sim, tribe, "river", _NO_TARGET)
+
+    assert result is None
+    assert tribe.food == 0
+    assert tribe.wood == config.CATCH_FISH_WOOD_COST - 1  # untouched, no attempt happened
+
+
 def test_first_successful_catch_learns_fishing_and_celebrates():
     """Explicit request: "learning to fish" isn't a separate knowledge system --
     the first catch just flips fishing_learned, awards a trophy, and throws the same
@@ -3387,6 +3485,35 @@ def test_cook_food_is_a_no_op_once_already_learned():
 
     assert result is None
     assert tribe.trophies == trophies_before
+
+
+def test_cook_food_spends_a_little_wood():
+    """Explicit request, 2026-09-17: "wood cost and stone if any for these
+    should at least cost 5 each" -- COOK_FOOD was the last genuinely free
+    action left in the registry besides GATHER_EGGS/CATCH_FISH."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = 50
+
+    ACTION_REGISTRY["COOK_FOOD"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.cooking_learned is True
+    assert tribe.wood == 50 - config.COOK_FOOD_WOOD_COST
+
+
+def test_cook_food_does_nothing_without_enough_wood():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = config.COOK_FOOD_WOOD_COST - 1
+
+    result = ACTION_REGISTRY["COOK_FOOD"](sim, tribe, "plains", _NO_TARGET)
+
+    assert result is None
+    assert tribe.cooking_learned is False
 
 
 def test_build_fire_marks_fire_ever_built():
