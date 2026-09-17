@@ -4294,6 +4294,26 @@ def test_apply_turn_still_falls_back_when_no_recognizable_field_exists_at_all():
     assert tribe.last_confusion["raw"] == "(no action provided)"
 
 
+def test_no_intent_fields_gets_a_plain_chronicle_line_not_the_internal_sentinel():
+    """Real gap found and fixed, 2026-09-17: "(no action provided)" is
+    _apply_turn's own internal sentinel for "the response had none of
+    visual_action/action/chosen_action at all" -- not something the model
+    actually said. Confirmed live: it was quoted verbatim in the tribe's
+    public chronicle as if it were the model's own garbled text
+    ("HUNT_DEER:  (unrecognized decision text: '(no action provided)')"), a
+    genuinely code-like message a player reads as part of the story.
+    last_confusion['raw'] (the internal diagnostic, tested above) still
+    tracks the real sentinel -- only the chronicle wording changes."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    ctx = {"biome": "plains", "available_actions": ["GATHER_FOOD", "GATHER_WATER", "SCOUT", "RELOCATE"]}
+
+    sim._apply_turn(tribe, {"metacognitive_rationale": "I choose to reflect."}, 50.0, ctx)
+
+    assert "(no action provided)" not in tribe.history[-1]
+    assert "the chief's intent didn't come through clearly this cycle" in tribe.history[-1]
+
+
 def test_case_and_spacing_variants_resolve_cleanly_without_confusion():
     """Cheap normalization (case, spaces/hyphens for underscores) should recover the
     intended action with no correction nudge needed -- these aren't confusion, just

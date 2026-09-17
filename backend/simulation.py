@@ -5303,6 +5303,7 @@ class Simulation:
         # substitute are checked before giving up, the same spirit as
         # _resolve_action's own normalization pass recovering "gather-food" as
         # GATHER_FOOD instead of treating it as a parse failure.
+        no_intent_fields = not (intent.get("visual_action") or intent.get("action") or intent.get("chosen_action"))
         raw_action = (
             intent.get("visual_action")
             or intent.get("action")
@@ -5436,7 +5437,20 @@ class Simulation:
         if unresolved_raw is not None:
             # Marks the chronicle entry as a fallback substitution (action was
             # chosen by _resolve_action, not the tribe) rather than a real decision.
-            entry += f" (unrecognized decision text: '{unresolved_raw[:60]}')"
+            #
+            # Real gap found and fixed, 2026-09-17: "(no action provided)" is
+            # this module's own internal sentinel for "the response had none of
+            # visual_action/action/chosen_action at all" -- not something the
+            # model actually said. Quoting it verbatim here made an internal
+            # placeholder read as if it were the model's own garbled text, a
+            # genuinely code-like message leaking into the tribe's public
+            # chronicle. A real parse failure (the model said something, just
+            # nothing recognizable) still gets the honest quote; a genuinely
+            # empty response gets a plain, in-fiction line instead.
+            if no_intent_fields:
+                entry += " (the chief's intent didn't come through clearly this cycle)"
+            else:
+                entry += f" (unrecognized decision text: '{unresolved_raw[:60]}')"
         if hazard_note:
             entry += f" | {hazard_note}"
         tribe.history.append(entry)
