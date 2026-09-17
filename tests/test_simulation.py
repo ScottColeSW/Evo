@@ -1436,17 +1436,48 @@ def test_food_warning_mentions_building_a_kitchen_once_fishing_and_cooking_alrea
     (_is_food_secure) once a real food source already exists. Same "old advice
     never refreshed for how far the tribe has actually grown" bug the water-side
     settling addendum above already fixed for thirst."""
-    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river, settled
     tribe = sim.tribes["tribe_0"]
+    sim._found_territory(tribe)  # BUILD_KITCHEN's own real placement check needs it
     tribe.food = 0  # triggers the starving warning
     tribe.cooking_learned = True
     tribe.fishing_learned = True
     tribe.long_houses_built = 1
     tribe.kitchen_built = False
+    tribe.wood = config.KITCHEN_WOOD_COST
+    tribe.stone = config.KITCHEN_STONE_COST
 
     request, _ctx = sim._prepare_turn(tribe)
 
     assert "Building a Kitchen would make this food security permanent" in request["prompt"]
+
+
+def test_food_warning_omits_kitchen_suggestion_without_wood_or_stone_to_afford_it():
+    """Real gap found and fixed, 2026-09-17: this nudge only ever checked
+    BUILD_KITCHEN's structural prerequisites (cooking_learned, a long house)
+    -- never cost or placement, the other two halves
+    AFFORDABILITY_CHECKS["BUILD_KITCHEN"] requires. Confirmed live: a tribe
+    got told "building a Kitchen would make this permanent" while
+    BUILD_KITCHEN wasn't even in that turn's available_actions, because it
+    currently lacked the wood/stone to afford it."""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    sim._found_territory(tribe)
+    tribe.food = 0
+    tribe.cooking_learned = True
+    tribe.fishing_learned = True
+    tribe.long_houses_built = 1
+    tribe.kitchen_built = False
+    tribe.wood = config.KITCHEN_WOOD_COST - 1  # can't actually afford it this cycle
+    tribe.stone = config.KITCHEN_STONE_COST
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "Building a Kitchen would make this food security permanent" not in request["prompt"]
 
 
 def test_food_warning_kitchen_suggestion_ignores_fishery_built_alone():

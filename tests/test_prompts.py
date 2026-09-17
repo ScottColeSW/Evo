@@ -65,13 +65,27 @@ def test_prompt_clarifies_only_relocate_moves_the_tribe():
     assert "SCOUT dispatches a party to explore without moving anyone here" in prompt
 
 
+def test_prompt_does_not_explain_relocate_when_its_not_actually_available():
+    """Real gap found and fixed, 2026-09-17: this used to explain RELOCATE's
+    mechanics unconditionally every turn, regardless of whether it was actually
+    in available_actions for this tribe right now. Confirmed live: a tribe long
+    past settled_permanently_near_water (RELOCATE removed from its menu for
+    good) kept reading the full explanation and chose RELOCATE with a real
+    target_vector anyway -- _resolve_action gives no correction nudge for a
+    real-but-currently-unavailable action name, so it silently landed on
+    something else every time with no explanation, and the tribe looked stuck."""
+    prompt = compile_live_state_prompt("base", _world_state(available_actions=["GATHER_WOOD", "IDLE"]), "", "")
+    assert "RELOCATE is not available to you right now" in prompt
+    assert "target_vector must be that exact coordinate" not in prompt
+
+
 def test_prompt_ties_target_vector_to_a_confirmed_site_coordinate():
     """Bug report: the chief's RELOCATE rationale/target kept ignoring the nearest
     confirmed water site even though it's named as a fact earlier in the prompt --
     the JSON schema's target_vector field never explicitly told the model that a
     site fact's coordinate belongs there, so small models weren't reliably
     carrying it over on their own."""
-    prompt = compile_live_state_prompt("base", _world_state(), "", "")
+    prompt = compile_live_state_prompt("base", _world_state(available_actions=["RELOCATE", "IDLE"]), "", "")
     assert "target_vector must be that exact coordinate" in prompt
 
 

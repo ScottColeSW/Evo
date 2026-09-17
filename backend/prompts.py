@@ -188,6 +188,22 @@ def compile_live_state_prompt(
     Evolution spec's Module A (see threat.py) -- real distance-weighted danger from
     a declared-WAR rival, stated as a fact, never a forced response.
 
+    Real gap found and fixed, 2026-09-17: the MOVEMENT section below used to
+    explain RELOCATE's mechanics unconditionally, every single turn, regardless
+    of whether RELOCATE was actually in world_state['available_actions'] for
+    this tribe right now. Confirmed live: a tribe long past
+    settled_permanently_near_water (RELOCATE removed from its menu for good,
+    see Simulation._prepare_turn) kept reading a detailed explanation of how to
+    RELOCATE and chose it with a real target_vector anyway -- _resolve_action
+    deliberately gives no correction nudge for a syntactically real action name
+    that just isn't currently available (that's a legitimate "can't do that
+    here," not a parse failure), so the model was never told why it kept
+    silently landing on something else instead, and the tribe looked stuck.
+    RELOCATE's own explanation is now built conditionally on real menu
+    membership, the same "never describe a mechanic that isn't actually
+    reachable" principle BUILD_KITCHEN's own crisis-carve-out and the
+    survival_bias nudge fixes already follow elsewhere.
+
     Live-run finding: metacognitive_rationale used to precede visual_action in the
     JSON schema below, on the (wrong, for these small models) assumption that
     writing the "why" first would make the eventual "what" follow from it, like a
@@ -199,6 +215,16 @@ def compile_live_state_prompt(
     actually decided independently; putting rationale second means it's generated
     *conditioned on* the real chosen action instead of racing ahead of it.
     """
+    if "RELOCATE" in world_state["available_actions"]:
+        movement_note = (
+            "RELOCATE moves the whole tribe up to several tiles per cycle toward "
+            "target_vector; this may take multiple cycles for a distant destination. If "
+            "you choose RELOCATE toward a specific confirmed site mentioned above (water, "
+            "lumber, wildlife, a quarry, a mine, a rival tribe), target_vector must be that "
+            "exact coordinate -- not a new, unconfirmed guess."
+        )
+    else:
+        movement_note = "RELOCATE is not available to you right now -- your tribe stays where it stands this cycle."
     state_injection = f"""
 ========================================================================
 LIVE CORE TELEMETRY: CYCLE {world_state['cycle']}
@@ -218,11 +244,7 @@ MOVEMENT: Only RELOCATE moves your tribe -- every other action (gathering, hunti
 building, idling) happens wherever you currently stand this cycle and does not move you.
 SCOUT dispatches a party to explore without moving anyone here or requiring
 target_vector -- their direction is chosen for you to cover new ground, reporting back
-what is found once they return. RELOCATE moves the whole tribe up to several tiles per
-cycle toward target_vector; this may take multiple cycles for a distant destination. If
-you choose RELOCATE toward a specific confirmed site mentioned above (water, lumber,
-wildlife, a quarry, a mine, a rival tribe), target_vector must be that exact coordinate
--- not a new, unconfirmed guess.
+what is found once they return. {movement_note}
 {world_state.get('journey_note') or ''}
 
 target_vector only matters for RELOCATE, RAID, TRADE, DECLARE_ALLIANCE, DECLARE_WAR,

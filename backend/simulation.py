@@ -3645,10 +3645,25 @@ class Simulation:
         # this separate, nearby nudge that duplicates half of its condition
         # instead of calling it. The passive catch starts the moment fishing is
         # learned; fishery_built only ever multiplies an already-flowing income.
+        #
+        # Second real gap found and fixed, 2026-09-17: even with that fix, this
+        # only ever checked BUILD_KITCHEN's structural prerequisites
+        # (cooking_learned, a long house standing) -- never its cost or
+        # placement, the other two halves AFFORDABILITY_CHECKS["BUILD_KITCHEN"]
+        # requires. Confirmed live: a tribe got told "building a Kitchen would
+        # make this permanent" while BUILD_KITCHEN wasn't even in that turn's
+        # available_actions, because it currently lacked the wood/stone to
+        # afford it. This nudge is built earlier in this same function, before
+        # available_actions exists yet (see the crisis carve-out's own comment
+        # below for why), so it can't just check menu membership directly --
+        # mirroring AFFORDABILITY_CHECKS's exact remaining conditions here is
+        # the only way to keep this promise honest.
         if (
             survival_bias and "food" in survival_bias.lower() and not tribe.kitchen_built
             and tribe.cooking_learned and tribe.long_houses_built > 0
             and (tribe.fishing_learned or tribe.last_harvest_cycle > 0)
+            and tribe.wood >= config.KITCHEN_WOOD_COST and tribe.stone >= config.KITCHEN_STONE_COST
+            and _can_place(tribe, self.world, "kitchen")
         ):
             survival_bias += " Building a Kitchen would make this food security permanent, not just this cycle."
         memories = tribe.memory.recall(f"{biome} at {tribe.x},{tribe.y}")
