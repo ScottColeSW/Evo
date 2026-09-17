@@ -2513,6 +2513,38 @@ def _find_minor_settlement(sim, x, y):
     return None
 
 
+def _transfer_stolen_resources(sim, source, resources, fraction, dest=None) -> dict:
+    """Shared by every one-directional "steal a fraction of resource X from
+    source, subtract it, hand it to dest" pattern in this file --
+    _raid_minor_settlement, both branches of _raid, _expel_raiders_from_
+    territory's failed-wave cost, and _trade_with_minor_settlement all had
+    their own copy of this exact loop, differing only in which fraction,
+    which resources, and where (if anywhere) the stolen amount landed. Code-
+    quality pass only -- same rolls, same formulas, same messages as before,
+    just written once.
+
+    `source` is either a Tribe (read/written via getattr/setattr) or a minor
+    settlement (a plain dict) -- both call sites already exist for each.
+    `dest`, when given, receives every stolen amount through sim._capped_add
+    (the tribe's own storage cap, same as every call site already routed
+    through); left as None, the amount is simply lost with nowhere to go
+    (EXPEL_RAIDERS_FROM_TERRITORY's failed-wave penalty, which has no
+    destination at all). Returns exactly what landed at dest per resource (0
+    for all of them when dest is None), since some callers build their own
+    return message from those real delivered amounts."""
+    is_dict = isinstance(source, dict)
+    delivered = {}
+    for resource in resources:
+        current = source[resource] if is_dict else getattr(source, resource)
+        stolen = round(current * fraction)
+        if is_dict:
+            source[resource] -= stolen
+        else:
+            setattr(source, resource, current - stolen)
+        delivered[resource] = sim._capped_add(dest, resource, stolen) if dest is not None else 0
+    return delivered
+
+
 def _raid_minor_settlement(sim, tribe, settlement):
     """No people, no chief, no LLM on the other side -- explicit request: 'no
     advanced logic like battle... stealing only.' A raid here always succeeds, at
@@ -2533,11 +2565,9 @@ def _raid_minor_settlement(sim, tribe, settlement):
 
     Code-quality pass: routed through sim._capped_add instead of inlining the
     same cap arithmetic that helper already implements."""
-    looted = {}
-    for resource in ("wood", "stone", "food", "water"):
-        stolen = round(settlement[resource] * config.MINOR_SETTLEMENT_RAID_STEAL_FRACTION)
-        settlement[resource] -= stolen
-        looted[resource] = sim._capped_add(tribe, resource, stolen)
+    looted = _transfer_stolen_resources(
+        sim, settlement, ("wood", "stone", "food", "water"), config.MINOR_SETTLEMENT_RAID_STEAL_FRACTION, dest=tribe
+    )
     settlement["raids_remaining"] -= 1
     if settlement["raids_remaining"] <= 0:
         settlement["depleted_at_cycle"] = sim.cycle
@@ -2591,10 +2621,7 @@ def _raid(sim, tribe, biome, target):
         # on the raider-camp-strike/minor-settlement-raid paths (see
         # _raid_minor_settlement's own comment), just missed on the one path
         # where a tribe raids a real rival tribe instead of a camp/settlement.
-        for resource in ("wood", "stone", "food", "water"):
-            stolen = round(getattr(defender, resource) * config.RAID_STEAL_FRACTION)
-            setattr(defender, resource, getattr(defender, resource) - stolen)
-            sim._capped_add(tribe, resource, stolen)
+        _transfer_stolen_resources(sim, defender, ("wood", "stone", "food", "water"), config.RAID_STEAL_FRACTION, dest=tribe)
         tribe.raids_won += 1
         _record_combat(tribe, "Raiding", "won")
         _record_combat(defender, "Raid Defense", "lost")
@@ -2649,10 +2676,7 @@ def _raid(sim, tribe, biome, target):
             sim._award_trophy(defender, "Raid Breaker")
         # Code-quality pass: same uncapped-mutation fix as the win branch above,
         # mirrored -- the defender's gain here was equally uncapped.
-        for resource in ("wood", "stone", "food", "water"):
-            stolen = round(getattr(tribe, resource) * config.RAID_STEAL_FRACTION)
-            setattr(tribe, resource, getattr(tribe, resource) - stolen)
-            sim._capped_add(defender, resource, stolen)
+        _transfer_stolen_resources(sim, tribe, ("wood", "stone", "food", "water"), config.RAID_STEAL_FRACTION, dest=defender)
 
         sim._lose_population(tribe, config.RAID_ATTACKER_POPULATION_LOSS_ON_LOSS, cause="failed_raid")
         sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
@@ -2796,9 +2820,7 @@ def _expel_raiders_from_territory(sim, tribe, biome, target):
         _record_combat(tribe, "Expel Raiders", "lost")
         if tribe.extinct:
             return "the frenzied defense collapses entirely -- nothing left to expel with"
-        for resource in ("wood", "stone", "food"):
-            stolen = round(getattr(tribe, resource) * config.RAID_STEAL_FRACTION)
-            setattr(tribe, resource, getattr(tribe, resource) - stolen)
+        _transfer_stolen_resources(sim, tribe, ("wood", "stone", "food"), config.RAID_STEAL_FRACTION)
         sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
         reward_multiplier = max(
             config.EXPEL_RAIDERS_MIN_REWARD_MULTIPLIER, reward_multiplier - config.EXPEL_RAIDERS_REWARD_REDUCTION_PER_WAVE
@@ -2998,12 +3020,11 @@ def _trade_with_minor_settlement(sim, tribe, settlement):
 
     Code-quality pass: routed through sim._capped_add instead of inlining the
     same cap arithmetic that helper already implements."""
-    gained = {}
-    for resource in ("wood", "stone", "food", "water"):
-        taken = round(settlement[resource] * config.MINOR_SETTLEMENT_TRADE_FRACTION)
-        settlement[resource] -= taken
-        gained[resource] = sim._capped_add(tribe, resource, taken)
-        _record_trade(tribe, resource, received=gained[resource])  # one-way -- nothing given up
+    gained = _transfer_stolen_resources(
+        sim, settlement, ("wood", "stone", "food", "water"), config.MINOR_SETTLEMENT_TRADE_FRACTION, dest=tribe
+    )
+    for resource, amount in gained.items():
+        _record_trade(tribe, resource, received=amount)  # one-way -- nothing given up
     tribe.trades_completed += 1
     if tribe.trades_completed == 1:
         sim._award_trophy(tribe, "First Contact")
