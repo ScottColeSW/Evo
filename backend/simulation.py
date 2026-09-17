@@ -206,6 +206,19 @@ def _is_construction_action(action: str) -> bool:
     other action shares either prefix)."""
     return action.startswith("BUILD_") or action.startswith("UPGRADE_") or action == "CONSTRUCT_WALL"
 
+
+# Explicit follow-up, 2026-09-17: ranked ahead of construction in
+# _prepare_turn's own reordering pass below -- each is free or nearly-free
+# (none has a stone cost, and none costs more than a few wood -- see
+# COOK_FOOD_WOOD_COST/GATHER_EGGS_WOOD_COST/CATCH_FISH_WOOD_COST and
+# PLANT_CROP_WOOD_COST_BASE) and each directly serves the tribe's ongoing
+# food need, unlike real construction, which spends banked wood/stone that
+# could go toward something else. HUNTING_PARTY/HUNT_DEER are deliberately
+# excluded -- also food-directed, but HUNT_DEER carries a real wolf-pack
+# hazard risk and HUNTING_PARTY spends an expedition slot, neither of which
+# fits "free or nearly-free."
+_FOOD_SECURITY_INVESTMENT_ACTIONS = frozenset({"COOK_FOOD", "PLANT_CROP", "GATHER_EGGS", "CATCH_FISH"})
+
 # Explicit request: "if they choose Wall, they have to complete it, no changing
 # orders other than to collect what is needed to complete it. gather, build,
 # gather, build, and so forth, until the Wall is 100%." Once tribe.
@@ -4317,20 +4330,28 @@ class Simulation:
         # ahead of anything from a later era) still sat in front of
         # BUILD_LONG_HOUSE/BUILD_SAWMILL/BUILD_TANNERY -- "overriding choice"
         # has to mean the front of the whole menu, not just ahead of
-        # gathering specifically. Real construction actions now move to the
-        # front outright whenever any are currently reachable (already
-        # passed their own affordability check to even be in
-        # available_actions) -- we already know the resource math that makes
-        # spending a currently-affordable, permanent structural gain the
-        # better move than continuing to gather/hunt/trade, even though the
-        # tribe itself never computes that. Applied last, after every other
-        # filter above, so it's the final word regardless of era/crisis/lock
-        # state.
+        # gathering specifically.
+        #
+        # Second follow-up, same day: food-security-investment actions
+        # (_FOOD_SECURITY_INVESTMENT_ACTIONS -- free or nearly-free, each
+        # setting up a lasting food-economy gain) rank even ahead of
+        # construction, since they cost less and don't compete with
+        # construction for the same banked wood/stone. Final order: food-
+        # security investment, then construction, then everything else in
+        # its normal order, then the evergreen gathers last. We already know
+        # the resource math that makes each tier a better default than the
+        # next, even though the tribe itself never computes it. Applied
+        # last, after every other filter above, so it's the final word
+        # regardless of era/crisis/lock state.
         if any(_is_construction_action(a) for a in available_actions):
+            food_security = [a for a in available_actions if a in _FOOD_SECURITY_INVESTMENT_ACTIONS]
             construction = [a for a in available_actions if _is_construction_action(a)]
             gathers = [a for a in available_actions if a in _EVERGREEN_GATHER_ACTIONS]
-            rest = [a for a in available_actions if a not in construction and a not in gathers]
-            available_actions = construction + rest + gathers
+            rest = [
+                a for a in available_actions
+                if a not in food_security and a not in construction and a not in gathers
+            ]
+            available_actions = food_security + construction + rest + gathers
 
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         if tribe.wall_commitment_active:

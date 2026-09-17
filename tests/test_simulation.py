@@ -4,8 +4,8 @@ from unittest import mock
 from backend.actions import GAME_SPECIES_BY_BIOME
 from backend.ancestral_matrix import AncestralTraumaMatrix
 from backend.simulation import (
-    SPAWN_POINTS, Simulation, Tribe, _celebration_shout, _guess_intended_action, _is_construction_action,
-    _resolve_action,
+    SPAWN_POINTS, Simulation, Tribe, _celebration_shout, _FOOD_SECURITY_INVESTMENT_ACTIONS,
+    _guess_intended_action, _is_construction_action, _resolve_action,
 )
 from backend.world import Landscape
 from tests.conftest import run_async
@@ -3383,6 +3383,43 @@ def test_evergreen_gathering_gets_pushed_behind_an_affordable_build():
     # GATHER_WATER isn't asserted here -- this tribe spawned on a river tile,
     # so watering_retired (a separate, unrelated one-way rule) already
     # removed it from the menu entirely by this point.
+    for gather in ("GATHER_WOOD", "GATHER_STONE", "GATHER_FOOD"):
+        assert actions.index(gather) > last_construction_index
+
+
+def test_food_security_investment_ranks_ahead_of_construction_which_ranks_ahead_of_the_rest():
+    """Explicit follow-up, 2026-09-17: reproduces a real Monitor capture
+    almost exactly -- ['HUNT_DEER', 'RAID', 'TRADE', 'BREED', 'COOK_FOOD',
+    'PLANT_CROP', 'GATHER_EGGS', 'CATCH_FISH', 'BUILD_LONG_HOUSE',
+    'BUILD_SAWMILL', 'BUILD_TANNERY', 'GATHER_WOOD', 'GATHER_STONE',
+    'GATHER_FOOD']. User's own correction: COOK_FOOD/PLANT_CROP/
+    GATHER_EGGS/CATCH_FISH (free or nearly-free, each a lasting food-economy
+    investment) belong ahead of construction, not behind it -- construction
+    spends banked wood/stone these don't need."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "cognitive_horizon"
+    tribe.fire_ever_built = True  # COOK_FOOD's own real prerequisite
+    tribe.hunt_ever_succeeded = True
+    tribe.wood_ever_gathered = True  # BUILD_SAWMILL's own real prerequisite
+    tribe.wood = tribe.stone = 1000
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    actions = ctx["available_actions"]
+    for food_security_action in ("COOK_FOOD", "PLANT_CROP", "GATHER_EGGS", "CATCH_FISH"):
+        assert food_security_action in actions
+    for construction_action in ("BUILD_LONG_HOUSE", "BUILD_SAWMILL", "BUILD_TANNERY"):
+        assert construction_action in actions
+    last_food_security_index = max(actions.index(a) for a in _FOOD_SECURITY_INVESTMENT_ACTIONS if a in actions)
+    first_construction_index = min(i for i, a in enumerate(actions) if _is_construction_action(a))
+    last_construction_index = max(i for i, a in enumerate(actions) if _is_construction_action(a))
+    assert last_food_security_index < first_construction_index
     for gather in ("GATHER_WOOD", "GATHER_STONE", "GATHER_FOOD"):
         assert actions.index(gather) > last_construction_index
 
