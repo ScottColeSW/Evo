@@ -3,7 +3,10 @@ from unittest import mock
 
 from backend.actions import GAME_SPECIES_BY_BIOME
 from backend.ancestral_matrix import AncestralTraumaMatrix
-from backend.simulation import SPAWN_POINTS, Simulation, Tribe, _celebration_shout, _guess_intended_action, _resolve_action
+from backend.simulation import (
+    SPAWN_POINTS, Simulation, Tribe, _celebration_shout, _guess_intended_action, _is_construction_action,
+    _resolve_action,
+)
 from backend.world import Landscape
 from tests.conftest import run_async
 
@@ -3347,6 +3350,57 @@ def test_available_actions_are_era_ordered_not_alphabetized():
 
     actions = ctx["available_actions"]
     assert actions.index("COOK_FOOD") < actions.index("BUILD_WELL")
+
+
+def test_evergreen_gathering_gets_pushed_behind_an_affordable_build():
+    """Explicit request, 2026-09-17: "gather wood is always available and
+    viable... but when they have enough and qualify for a build, it should
+    be the overriding choice, pushing gathering actions down." Confirmed
+    live: a tribe sat on 69 wood/59 stone -- comfortably past
+    BUILD_LONG_HOUSE's own cost -- and spent 78 straight cycles alternating
+    GATHER_WOOD/GATHER_STONE/GATHER_FOOD instead, never building anything
+    past its starting Town Hall."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES  # camped -- GATHER_WOOD/STONE reachable
+    tribe.era = "cognitive_horizon"
+    tribe.wood = tribe.stone = 1000  # comfortably past BUILD_LONG_HOUSE's own cost
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    actions = ctx["available_actions"]
+    assert "BUILD_LONG_HOUSE" in actions
+    last_construction_index = max(i for i, a in enumerate(actions) if _is_construction_action(a))
+    # GATHER_WATER isn't asserted here -- this tribe spawned on a river tile,
+    # so watering_retired (a separate, unrelated one-way rule) already
+    # removed it from the menu entirely by this point.
+    for gather in ("GATHER_WOOD", "GATHER_STONE", "GATHER_FOOD"):
+        assert actions.index(gather) > last_construction_index
+
+
+def test_evergreen_gathering_stays_in_its_normal_order_without_a_real_build_available():
+    """The reprioritization only fires once a real construction action is
+    genuinely reachable -- a tribe with nothing buildable yet (no wood/stone
+    at all) keeps the ordinary era-based order, gathers included."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES  # camped -- GATHER_WOOD/STONE reachable
+    tribe.era = "primitive_dawn"
+    tribe.wood = tribe.stone = 0  # nothing buildable at all this cycle
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    actions = ctx["available_actions"]
+    assert not any(_is_construction_action(a) for a in actions)
+    assert actions.index("GATHER_WOOD") == 0  # primitive_dawn's own first-declared action
 
 
 def test_fresh_tribe_has_only_pre_settlement_actions_available():

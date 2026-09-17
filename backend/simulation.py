@@ -188,6 +188,24 @@ SURVIVAL_CRISIS_ACTIONS = {
     "GATHER_WATER", "SCOUT", "PLANT_CROP",
 }
 
+# See _prepare_turn's own use of this, right before visible_entities is built.
+# The four basic gathers never retire and stay affordable forever (unlike
+# every other action, which either has a real prerequisite or eventually
+# retires once proven) -- explicit request, 2026-09-17: "gather wood is
+# always available and viable... but when they have enough and qualify for a
+# build, it should be the overriding choice, pushing gathering actions down."
+# Confirmed live: a tribe sat on 69 wood/59 stone -- comfortably past
+# BUILD_LONG_HOUSE's own cost -- and spent 78 straight cycles alternating
+# these four instead, never building anything past its starting Town Hall.
+_EVERGREEN_GATHER_ACTIONS = frozenset({"GATHER_WOOD", "GATHER_STONE", "GATHER_WATER", "GATHER_FOOD"})
+
+
+def _is_construction_action(action: str) -> bool:
+    """BUILD_*/UPGRADE_*/CONSTRUCT_WALL -- real structures and their upgrades,
+    matching ACTION_REGISTRY's own naming convention exactly (confirmed no
+    other action shares either prefix)."""
+    return action.startswith("BUILD_") or action.startswith("UPGRADE_") or action == "CONSTRUCT_WALL"
+
 # Explicit request: "if they choose Wall, they have to complete it, no changing
 # orders other than to collect what is needed to complete it. gather, build,
 # gather, build, and so forth, until the Wall is 100%." Once tribe.
@@ -4274,6 +4292,28 @@ class Simulation:
                 if battle_ready_only:
                     available_actions = battle_ready_only
                     battle_ready_locked = True
+
+        # Explicit request, 2026-09-17: "gather wood is always available and
+        # viable... but when they have enough and qualify for a build, it
+        # should be the overriding choice, pushing gathering actions down."
+        # Confirmed live: a tribe sat on 69 wood/59 stone -- comfortably past
+        # BUILD_LONG_HOUSE's own cost -- and spent 78 straight cycles
+        # alternating GATHER_WOOD/GATHER_STONE/GATHER_FOOD instead, never once
+        # building anything past its starting Town Hall. The four basic
+        # gathers never retire and stay affordable forever (unlike every
+        # other action, which either has a real prerequisite or eventually
+        # retires) -- era-ordering alone (this session's earlier fix) still
+        # left them sitting at the front of the menu, level with everything
+        # else. Applied last, after every other filter above, so it's the
+        # final word regardless of era/crisis/lock state: whenever a real
+        # construction action is currently reachable (already passed its own
+        # affordability check to even be in available_actions), the evergreen
+        # gathers move to the back instead of competing with it on equal
+        # footing.
+        if any(_is_construction_action(a) for a in available_actions):
+            gathers = [a for a in available_actions if a in _EVERGREEN_GATHER_ACTIONS]
+            if gathers:
+                available_actions = [a for a in available_actions if a not in _EVERGREEN_GATHER_ACTIONS] + gathers
 
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         if tribe.wall_commitment_active:
