@@ -225,6 +225,11 @@ wildlife, a quarry, a mine, a rival tribe), target_vector must be that exact coo
 -- not a new, unconfirmed guess.
 {world_state.get('journey_note') or ''}
 
+target_vector only matters for RELOCATE, RAID, TRADE, DECLARE_ALLIANCE, DECLARE_WAR,
+SEND_TRADE_EMISSARY, SPY, STRIKE_RAIDER_CAMP, and DECLARE_CONQUEST -- for every other
+action, it is ignored entirely, so set it to null rather than guessing a coordinate that
+means nothing.
+
 ========================================================================
 EPISTEMOLOGICAL INHERITANCE LAYER
 ========================================================================
@@ -264,7 +269,7 @@ exactly "visual_action" -- not "action" or any other name:
     "visual_action": "<one action name from the list above, nothing else>",
     "metacognitive_rationale": "<one short sentence: why this action, given everything above>",
     "synthetic_language_broadcast": "<your invented-language phrase, or empty string>",
-    "target_vector": [x, y]
+    "target_vector": [x, y] or null if this action does not use one
 }}
 ========================================================================
 EXECUTION LAYER INITIALIZED. EMIT JSON PAYLOAD NOW:

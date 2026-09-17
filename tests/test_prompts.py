@@ -28,6 +28,24 @@ def test_target_vector_placeholder_is_not_the_tribes_current_position():
     assert '"target_vector": [x, y]' in prompt
 
 
+def test_prompt_tells_models_to_null_the_target_vector_when_unused():
+    """Explicit request, 2026-09-17: "let's enforce the vector info so it doesn't
+    look so sloppy or a mistake." Real observation from the LLM Monitor: models
+    filled target_vector with null, [0,0], or [] inconsistently for the 53 of 62
+    actions that never read it at all (confirmed by direct code audit -- only
+    RELOCATE/RAID/TRADE/DECLARE_ALLIANCE/DECLARE_WAR/SEND_TRADE_EMISSARY/SPY/
+    STRIKE_RAIDER_CAMP/DECLARE_CONQUEST actually use it), because the schema never
+    told them there was a clean alternative to guessing a coordinate. Now names
+    exactly which 9 actions it matters for and says null otherwise."""
+    prompt = compile_live_state_prompt("base", _world_state(), "", "")
+    assert "set it to null rather than guessing a coordinate" in prompt
+    for real_target_action in (
+        "RELOCATE", "RAID", "TRADE", "DECLARE_ALLIANCE", "DECLARE_WAR",
+        "SEND_TRADE_EMISSARY", "SPY", "STRIKE_RAIDER_CAMP", "DECLARE_CONQUEST",
+    ):
+        assert real_target_action in prompt
+
+
 def test_action_placeholder_does_not_repeat_select_strictly_one_pattern():
     """Regression test: the old "SELECT STRICTLY ONE: [...]" phrasing sat directly in the
     JSON value position, and models would copy that instruction text verbatim as their

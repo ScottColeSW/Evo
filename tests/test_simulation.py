@@ -2756,6 +2756,8 @@ def test_affordability_gate_reproduces_the_diagnosed_wood_neglect_scenario():
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.era = "monolithic_era"  # unlocks every action, so the filter is doing the work
     tribe.dock_built = True  # BUILD_FISHERY's own real prerequisite, unrelated to cost
+    tribe.chief_name = "Test Chief"  # a real eligible pair -- see BREED's own assertion below
+    tribe.trophies = [{"chief": "Test Other"}]
     tribe.wood = 1
     tribe.stone = 200
     tribe.food = 200
@@ -2765,7 +2767,7 @@ def test_affordability_gate_reproduces_the_diagnosed_wood_neglect_scenario():
 
     assert "BUILD_WAREHOUSE" not in ctx["available_actions"]
     assert "BUILD_FISHERY" not in ctx["available_actions"]
-    assert "BREED" in ctx["available_actions"]  # food/water only, unaffected by low wood
+    assert "BREED" in ctx["available_actions"]  # food/water/pair-eligibility only, unaffected by low wood
     assert "GATHER_WOOD" in ctx["available_actions"]
     assert "GATHER_STONE" in ctx["available_actions"]
 
@@ -3289,10 +3291,14 @@ def test_fresh_tribe_has_only_pre_settlement_actions_available():
     # fix: RAID/TRADE/DECLARE_CONQUEST/etc. are guaranteed no-ops with nobody to
     # target, the same "dangling menu option" class this project already fixes
     # everywhere else).
-    assert set(ctx["available_actions"]) == set(config.PRE_SETTLEMENT_ACTIONS) - {"RELOCATE", "RAID"}
+    # BREED is also absent here -- not locked behind settling, but a genuinely
+    # fresh tribe (no _install_chief run yet, see bare Simulation() vs.
+    # Simulation.create()) has no chief and no trophy-holder yet, so
+    # _eligible_breeding_pair correctly finds nobody to pair -- the same real
+    # guaranteed-no-op AFFORDABILITY_CHECKS's BREED entry was fixed to catch
+    # everywhere else, 2026-09-17.
+    assert set(ctx["available_actions"]) == set(config.PRE_SETTLEMENT_ACTIONS) - {"RELOCATE", "RAID", "BREED"}
     assert "HUNT_DEER" not in ctx["available_actions"]
-    # BREED is explicitly never locked behind settling -- see the set equality
-    # assertion above, which already accounts for it being present.
     assert "only survival and exploration actions are available" in request["prompt"]
 
 
@@ -3302,6 +3308,13 @@ def test_settling_near_water_permanently_unlocks_the_full_action_set():
     sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
     tribe = sim.tribes["tribe_0"]
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    # A real eligible pair -- see _eligible_breeding_pair -- so the BREED
+    # assertion below tests "settling doesn't newly block it," not the
+    # separate, always-real "nobody named yet" gate a bare Simulation()
+    # tribe starts without (see AFFORDABILITY_CHECKS's BREED entry, fixed
+    # 2026-09-17 to actually check for this).
+    tribe.chief_name = "Test Chief"
+    tribe.trophies = [{"chief": "Test Other"}]
 
     _request, ctx = sim._prepare_turn(tribe)
 
@@ -3647,6 +3660,31 @@ def test_build_vessel_is_available_once_the_dream_and_cost_are_both_met():
     assert "BUILD_VESSEL" in ctx["available_actions"]
 
 
+def test_build_vessel_retires_once_built_like_every_other_one_time_structure():
+    """Real gap found and fixed, 2026-09-17: every other one-time structure
+    (Kitchen, Keep, Mine, Dock...) has a ONE_TIME_BUILD_FLAGS entry retiring it
+    from the menu the instant its flag is set -- BUILD_VESSEL was the one
+    exception, with no entry there at all. Only AFFORDABILITY_CHECKS' own
+    _can_place slot check happened to keep it from dangling afterward; this
+    closes the gap directly instead of relying on that side effect."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.territory_radius = 40
+    tribe.era = "departure_era"
+    tribe.departure_dreamed = True
+    tribe.wood = tribe.stone = config.VESSEL_WOOD_COST
+    tribe.food = tribe.water = 500
+    tribe.vessel_built = True
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_VESSEL" not in ctx["available_actions"]
+
+
 def test_depart_is_available_only_once_the_vessel_stands():
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
     tribe = sim.tribes["tribe_0"]
@@ -3845,6 +3883,85 @@ def test_create_item_nudge_names_the_cooldown_once_thats_the_real_blocker():
 
     assert "The Dream Manifestation Machine is still resting -- 7 cycle(s) left" in request["prompt"]
     assert "The Dream Manifestation Machine stands ready" not in request["prompt"]
+
+
+def test_create_item_and_create_useful_structure_hidden_during_the_dmm_cooldown():
+    """Real gap found and fixed, 2026-09-17: AFFORDABILITY_CHECKS's lambdas only
+    ever receive (tribe, world) -- no current cycle -- so _dmm_ready's own real
+    cooldown was never mirrored there, and a tribe mid-cooldown kept seeing
+    CREATE_ITEM/CREATE_USEFUL_STRUCTURE listed and got a silent no-op on every
+    attempt. Fixed with an explicit _prepare_turn filter using _dmm_ready
+    directly (it takes a real Simulation, available as `self` there)."""
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "object_creator_era"
+    tribe.wood = tribe.stone = tribe.food = tribe.water = 500
+    tribe.dmm_built = True
+    tribe.dmm_cooldown_until_cycle = sim.cycle + 7
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "CREATE_ITEM" not in ctx["available_actions"]
+    assert "CREATE_USEFUL_STRUCTURE" not in ctx["available_actions"]
+
+
+def test_create_item_reappears_once_the_dmm_cooldown_actually_clears():
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "object_creator_era"
+    tribe.wood = tribe.stone = tribe.food = tribe.water = 500
+    tribe.dmm_built = True
+    tribe.dmm_cooldown_until_cycle = sim.cycle  # already ready
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "CREATE_ITEM" in ctx["available_actions"]
+
+
+def test_declare_conquest_hidden_during_its_own_real_cooldown():
+    """Same class of gap as the DMM cooldown above -- actions._conquest_ready's
+    real cooldown was never mirrored in AFFORDABILITY_CHECKS either."""
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe, rival = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "war_and_world_domination_era"
+    tribe.wood = tribe.stone = 500
+    tribe.discovered_rivals.add(rival.id)
+    tribe.conquest_cooldown_until_cycle = sim.cycle + 7
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "DECLARE_CONQUEST" not in ctx["available_actions"]
+
+
+def test_declare_conquest_reappears_once_its_cooldown_actually_clears():
+    sim = Simulation(
+        [
+            {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
+            {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60},
+        ]
+    )
+    tribe, rival = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "war_and_world_domination_era"
+    tribe.wood = tribe.stone = 500
+    tribe.discovered_rivals.add(rival.id)
+    tribe.conquest_cooldown_until_cycle = sim.cycle  # already ready
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "DECLARE_CONQUEST" in ctx["available_actions"]
 
 
 def test_create_item_nudge_silent_without_a_dmm():
@@ -11388,21 +11505,28 @@ def test_hunting_and_egg_gathering_retire_once_genuinely_food_secure():
     assert any("no longer needs to hunt or gather eggs" in e for e in tribe.history)
 
 
-def test_gather_eggs_retires_once_coop_and_hatchery_both_stand_even_without_kitchen():
+def test_gather_eggs_retires_once_a_hatchery_stands_even_without_kitchen():
     """Explicit report, 2026-09-13: "I see we are still offering Gather_Eggs when
     they clearly have that taken care of already." Confirmed live (run_20260913_
     080742): Kitchen was never built the whole 746-cycle run, so
     food_security_actions_retired never fired, and GATHER_EGGS stayed offered
     (162/159 uses) despite both Coop and Hatchery existing. This retirement is
-    independent of Kitchen/_is_food_secure entirely."""
+    independent of Kitchen/_is_food_secure entirely.
+
+    Corrected 2026-09-17: originally required coop_built too -- backwards from
+    the real chain. Confirmed live a second time (phi4-mini, run_20260917_080441):
+    hatchery_built=True, coop_built=False, GATHER_EGGS stayed offered 200+ cycles
+    despite a large, healthy flock. _advance_flock already gives a Hatchery a
+    real, standalone effect (boosted natural hatch chance) with no Coop needed --
+    Coop is a later building a large flock justifies, not a co-requirement."""
     from backend import config
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES  # camped, so GATHER_EGGS would otherwise be reachable
-    tribe.coop_built = True
     tribe.hatchery_built = True
+    tribe.coop_built = False  # the exact real state that stranded a live tribe
     assert not tribe.kitchen_built  # confirms this fires without the unrelated milestone
 
     request, ctx = sim._prepare_turn(tribe)
@@ -11413,7 +11537,10 @@ def test_gather_eggs_retires_once_coop_and_hatchery_both_stand_even_without_kitc
     assert any("no longer needs to gather wild eggs" in e for e in tribe.history)
 
 
-def test_gather_eggs_stays_available_with_only_a_coop_or_only_a_hatchery():
+def test_gather_eggs_stays_available_with_only_a_coop_and_no_hatchery():
+    """A Coop alone (no Hatchery) has nothing that incubates the egg stockpile
+    it starts collecting into (see actions._gather_eggs's own post-Coop branch)
+    -- GATHER_EGGS must stay reachable, unlike the Hatchery-alone case above."""
     from backend import config
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}])

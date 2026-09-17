@@ -8,7 +8,8 @@ from collections import deque
 from . import architect, city_layout, config, physics
 from .actions import (
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
-    _battalion_capacity, _created_object_bonus, _eligible_breeding_pair, _food_multiplier, _forge_item,
+    _battalion_capacity, _conquest_ready, _created_object_bonus, _dmm_ready, _eligible_breeding_pair,
+    _food_multiplier, _forge_item,
     _generate_raider_name, _has_room_to_grow, _is_departure_dream, _item_storage_cap, _labor_multiplier,
     _long_house_fur_discount, _mutual_ally_at_top_era, _push_past_visited_ground, _record_combat,
     _storage_cap, _sustainable_population, _territory_has_nearby_threats,
@@ -149,6 +150,12 @@ ONE_TIME_BUILD_FLAGS = {
     "BUILD_COOP": "coop_built",
     "BUILD_BATH_HOUSE": "bath_house_built", "BUILD_LIBRARY": "library_built",
     "BUILD_WELL": "well_built", "BUILD_DMM": "dmm_built",
+    # Real gap found and fixed, 2026-09-17: every other one-time structure
+    # retires the instant its flag is set -- BUILD_VESSEL was the one
+    # exception, with no entry here at all. Only AFFORDABILITY_CHECKS'
+    # _can_place slot check happened to keep it from dangling in the menu
+    # after a real build; this closes the gap the same way as every sibling.
+    "BUILD_VESSEL": "vessel_built",
 }
 
 # See _prepare_turn's survival-crisis filter. A live run showed a tribe stay at 0
@@ -775,7 +782,17 @@ AFFORDABILITY_CHECKS = {
         t.farm_plots < config.MAX_FARM_PLOTS and t.wood >= config.PLANT_CROP_WOOD_COST
         and _can_place(t, w, "farm_plot")
     ),
-    "BREED": lambda t, w: t.food >= config.BREED_FOOD_COST and t.water >= config.BREED_WATER_COST,
+    # Real gap found and fixed, 2026-09-17: actions._breed's own real guard
+    # clauses are _has_room_to_grow and _eligible_breeding_pair -- a solo
+    # chief with no trophy-holder, or a tribe that's already outgrown what
+    # it can sustain, both make BREED a guaranteed no-op regardless of food/
+    # water on hand, but neither was ever mirrored here. Both helpers only
+    # take `tribe` (no world/cycle needed), so this is a direct match to the
+    # handler's own exact guard order, not a new mechanic.
+    "BREED": lambda t, w: (
+        _has_room_to_grow(t) and _eligible_breeding_pair(t) is not None
+        and t.food >= config.BREED_FOOD_COST and t.water >= config.BREED_WATER_COST
+    ),
     # Gating audit, 2026-09-08: confirmed via a real run's own chronicle log
     # that both of these failed as a no-op every single time they were ever
     # chosen ("no known raider camp at that location" / "no raiders are
@@ -3837,15 +3854,27 @@ class Simulation:
 
         # Explicit report, 2026-09-13: GATHER_EGGS specifically becomes redundant on
         # its own, earlier milestone than food_security_actions_retired above --
-        # Coop + Hatchery, not Kitchen + a proven food source. A tribe that never
+        # a Hatchery, not Kitchen + a proven food source. A tribe that never
         # builds a Kitchen (a real, observed live-run outcome) would otherwise see
         # GATHER_EGGS offered forever even with a large, self-sustaining flock.
-        if tribe.coop_built and tribe.hatchery_built:
+        #
+        # Corrected 2026-09-17: this used to require coop_built too, but that's
+        # backwards from the real chain -- confirmed live (phi4-mini,
+        # run_20260917_080441): hatchery_built=True, coop_built=False, and
+        # GATHER_EGGS stayed offered for 200+ cycles despite a large, healthy
+        # flock (87). _advance_flock's own logic already gives a Hatchery a
+        # real, standalone effect (a boosted natural hatch chance) with no Coop
+        # required, and _advance_flock_eggs already has a living flock laying
+        # eggs passively every cycle regardless of either building -- a Coop
+        # only matters once there's already "a lot of fowl" to justify one, a
+        # later building fed BY the flock, not a co-requirement for the
+        # Hatchery's own basic incubation.
+        if tribe.hatchery_built:
             if not tribe.egg_gathering_retired:
                 tribe.egg_gathering_retired = True
                 tribe.history.append(
-                    f"\U0001f95a {tribe.name} no longer needs to gather wild eggs -- the coop and hatchery "
-                    "keep the flock fed and growing on their own from here on"
+                    f"\U0001f95a {tribe.name} no longer needs to gather wild eggs -- the hatchery "
+                    "keeps the flock fed and growing on its own from here on"
                 )
             available_actions = [a for a in available_actions if a != "GATHER_EGGS"]
 
@@ -3991,6 +4020,23 @@ class Simulation:
             a for a in available_actions
             if a not in AFFORDABILITY_CHECKS or AFFORDABILITY_CHECKS[a](tribe, self.world)
         ]
+
+        # Real gap found and fixed, 2026-09-17: DECLARE_CONQUEST/CREATE_ITEM/
+        # CREATE_USEFUL_STRUCTURE each have a real cooldown their own handler
+        # checks (_conquest_ready/_dmm_ready), but AFFORDABILITY_CHECKS's own
+        # lambdas only ever receive (tribe, world) -- no current cycle -- so
+        # neither cooldown was ever mirrored there, and a tribe mid-cooldown
+        # kept seeing the action listed and got a silent no-op on every
+        # attempt. Both helpers take `self` (a real Simulation, for
+        # self.cycle) directly, so this is a plain, explicit filter here
+        # rather than a wider signature change to every other entry in that
+        # table -- the same "never dangle a guaranteed no-op" reasoning
+        # AFFORDABILITY_CHECKS already exists for, just for the one class of
+        # gate that table structurally can't express.
+        if "DECLARE_CONQUEST" in available_actions and not _conquest_ready(self, tribe):
+            available_actions = [a for a in available_actions if a != "DECLARE_CONQUEST"]
+        if not _dmm_ready(self, tribe):
+            available_actions = [a for a in available_actions if a not in ("CREATE_ITEM", "CREATE_USEFUL_STRUCTURE")]
 
         # See config.ACTION_REPETITION_THROTTLE_THRESHOLD/COOLDOWN and
         # Simulation._track_action_repetition -- once an action has been thrown out
@@ -4870,8 +4916,16 @@ class Simulation:
         # the model. Also names the cooldown explicitly once it's actually the
         # blocker -- the same "name the real gap, not just the goal" fix the
         # post-conquest Castle nudge just got.
-        if "CREATE_ITEM" in available_actions or "CREATE_USEFUL_STRUCTURE" in available_actions:
-            if tribe.dmm_built and self.cycle >= tribe.dmm_cooldown_until_cycle:
+        # Explicit gate fixed 2026-09-17: used to check "CREATE_ITEM in
+        # available_actions" as a proxy for "the DMM exists at all" -- broke
+        # the instant CREATE_ITEM/CREATE_USEFUL_STRUCTURE got their own real
+        # cooldown filter above (this same session's fix for the matching
+        # AFFORDABILITY_CHECKS gap), since being on cooldown now means
+        # neither name is in available_actions any more, silencing this
+        # nudge exactly when the "still resting" branch needs to fire.
+        # tribe.dmm_built is the real, direct condition that always mattered.
+        if tribe.dmm_built:
+            if self.cycle >= tribe.dmm_cooldown_until_cycle:
                 dream_note = (
                     f' The Chief has lately dreamed of "{tribe.chief_dream}" -- the DMM will draw on that.'
                     if tribe.chief_dream else ""
@@ -4906,7 +4960,16 @@ class Simulation:
         # whose own Might is meaningfully behind (config.
         # DECLARE_CONQUEST_NUDGE_MIGHT_RATIO), the same "nudge harder once a real
         # gate is met" shape the COOK_FOOD/CONSTRUCT_WALL nudges above already use.
-        if "DECLARE_CONQUEST" in available_actions and tribe.battalion_size > 0:
+        #
+        # Explicit gate fixed 2026-09-17: used to check "DECLARE_CONQUEST in
+        # available_actions" as a proxy for "this era has unlocked it" -- broke
+        # the instant DECLARE_CONQUEST got its own real cooldown filter above
+        # (this same session's fix for the matching AFFORDABILITY_CHECKS gap),
+        # since being on cooldown now means the name is missing from
+        # available_actions entirely, silencing the "still recovering" branch
+        # right below exactly when it needs to fire. Checking era-unlock
+        # directly is the real, narrower condition that always mattered here.
+        if "DECLARE_CONQUEST" in unlocked_actions_through(tribe.era) and tribe.battalion_size > 0:
             # Gated on discovery (tribe.discovered_rivals), not a live distance
             # snapshot -- see _note_rival_discovery's own docstring for why a live
             # check alone could never fire once both tribes are settled and spawned

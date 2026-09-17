@@ -1216,14 +1216,16 @@ def _build_coop(sim, tribe, biome, target):
 
 
 def _build_bath_house(sim, tribe, biome, target):
-    """Explicit request: "bath house bolsters Well-Being upkeep once built."
-    No special prerequisite beyond being settled and affordable, the same
-    "infrastructure every tribe can use from the moment it's unlocked" shape
-    Warehouse/Road already use -- hygiene isn't gated behind a proven success
-    the way hunting/fishing/mining are. Its real effect lives in Simulation.
-    _apply_upkeep (a genuine reduction to per-cycle food/water consumption,
-    mirrored into wellbeing.py's physiological tier so that score reflects
-    the real number being charged)."""
+    """Explicit request: "bath house bolsters Well-Being upkeep once built." No
+    prerequisite building or skill -- hygiene isn't gated behind a proven success
+    the way hunting/fishing/mining are -- but real gathering has to come first,
+    the same wood_ever_gathered/stone_ever_gathered gate Well shares, enforced
+    in AFFORDABILITY_CHECKS rather than repeated here (this handler is only
+    ever reached through the menu, so a second check here would just restate
+    the same fact). Its real effect lives in Simulation._apply_upkeep (a
+    genuine reduction to per-cycle food/water consumption, mirrored into
+    wellbeing.py's physiological tier so that score reflects the real number
+    being charged)."""
     if tribe.bath_house_built:
         return None
     if tribe.wood < config.BATH_HOUSE_WOOD_COST or tribe.stone < config.BATH_HOUSE_STONE_COST:
@@ -1289,9 +1291,13 @@ def _research(sim, tribe, biome, target):
 
 def _build_well(sim, tribe, biome, target):
     """Explicit request: water's passive income had no equivalent of Fishery/Dock's
-    stacking bonus for food. No special prerequisite beyond being settled and
-    affordable, the same "infrastructure from the moment it's unlocked" shape
-    Bath House/Warehouse already use. Its real effect lives in Simulation.
+    stacking bonus for food. No prerequisite building or skill, just affordability
+    -- but real gathering has to come first ("Food and Water and Building
+    Materials... should be next on my mind. Then when we have resources I want to
+    build"), the same wood_ever_gathered/stone_ever_gathered gate Bath House
+    shares, enforced in AFFORDABILITY_CHECKS rather than repeated here (this
+    handler is only ever reached through the menu, so a second check here would
+    just restate the same fact). Its real effect lives in Simulation.
     _advance_water_supply (a genuine multiplier on top of the settled-near-water
     passive supply, not a one-time top-up)."""
     if tribe.well_built:
