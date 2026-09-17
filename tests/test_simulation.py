@@ -3424,6 +3424,35 @@ def test_food_security_investment_ranks_ahead_of_construction_which_ranks_ahead_
         assert actions.index(gather) > last_construction_index
 
 
+def test_clear_territory_pops_to_the_very_front_of_the_menu():
+    """Explicit request, 2026-09-17: "CLEAR_TERRITORY need to pop to the top
+    of the actions if it becomes available." Confirmed the bug first: with a
+    raider camp near the boundary (era-order alone, plus the food-security/
+    construction tiers above it) buried CLEAR_TERRITORY behind COOK_FOOD/
+    PLANT_CROP/GATHER_EGGS/CATCH_FISH and BUILD_FIRE, even though it's the
+    one action actually unblocking every other real BUILD_*/CONSTRUCT_WALL
+    action in the meantime."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = "cognitive_horizon"
+    tribe.fire_ever_built = True  # COOK_FOOD's own real prerequisite
+    tribe.hunt_ever_succeeded = True
+    tribe.wood = tribe.stone = 1000
+    tx, ty = tribe.territory_center
+    tribe.raider_sightings = [(tx + tribe.territory_radius + config.TERRITORY_CLEARING_RADIUS_MARGIN - 1, ty)]
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    actions = ctx["available_actions"]
+    assert "CLEAR_TERRITORY" in actions
+    assert actions[0] == "CLEAR_TERRITORY"
+
+
 def test_evergreen_gathering_stays_in_its_normal_order_without_a_real_build_available():
     """The reprioritization only fires once a real construction action is
     genuinely reachable -- a tribe with nothing buildable yet (no wood/stone

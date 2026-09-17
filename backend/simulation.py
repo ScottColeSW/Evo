@@ -4353,6 +4353,20 @@ class Simulation:
             ]
             available_actions = food_security + construction + rest + gathers
 
+        # Explicit request, 2026-09-17: "CLEAR_TERRITORY need to pop to the
+        # top of the actions if it becomes available." Applied unconditionally,
+        # after every tier above -- CLEAR_TERRITORY isn't just another
+        # investment competing for priority, it's already gating every real
+        # BUILD_*/CONSTRUCT_WALL action out of the menu entirely while a
+        # raider camp sits near the boundary (territory_threatened, above),
+        # so once it's on the menu at all it's the one action that actually
+        # unblocks everything else. Without this, era-declared-order (and the
+        # food-security/construction tiers above) buried it behind COOK_FOOD/
+        # PLANT_CROP/GATHER_EGGS/CATCH_FISH and BUILD_FIRE -- see eras.py's
+        # own primitive_dawn declaration, where it's listed last.
+        if "CLEAR_TERRITORY" in available_actions:
+            available_actions = ["CLEAR_TERRITORY"] + [a for a in available_actions if a != "CLEAR_TERRITORY"]
+
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         if tribe.wall_commitment_active:
             visible_entities.append(
