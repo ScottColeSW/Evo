@@ -242,7 +242,16 @@ def _add_capped(sim, tribe, resource: str, amount: int, label: str) -> str | Non
     thing... for waste when they overfill the storage." Real waste -- current
     stores already full, or this harvest partially wasted -- radiates a real
     negative trauma wave (config.WASTE_TRAUMA_MAGNITUDE), not just a narrated
-    warning with no consequence."""
+    warning with no consequence.
+
+    Live report, 2026-09-19: this used to return None on a normal, non-wasteful
+    gain -- verified live (a seeded GATHER_FOOD comparison with/without cooking
+    showed the real 100->130 stockpile change), but the chronicle itself never
+    stated it: a turn's own "| outcome" suffix only ever appeared when there was
+    waste to report, so a completely ordinary, successful harvest read as a bare
+    decision with no result at all. Every caller here is a plain `return
+    _add_capped(...)`, so this one line fixes it for all five (wood/stone/water/
+    food x2) at once."""
     cap = _storage_cap(tribe)
     current = getattr(tribe, resource)
     if current >= cap:
@@ -253,7 +262,7 @@ def _add_capped(sim, tribe, resource: str, amount: int, label: str) -> str | Non
     if added < amount:
         sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.WASTE_TRAUMA_MAGNITUDE, config.WASTE_TRAUMA_RADIUS)
         return f"the {label} stores are nearly full -- only {added} of {amount} fits"
-    return None
+    return f"{added} {label} gathered"
 
 
 def _gather_wood(sim, tribe, biome, target):

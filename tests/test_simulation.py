@@ -60,7 +60,7 @@ def test_hunting_succeeds_when_hazard_roll_misses():
     with mock.patch("backend.actions.random.random", return_value=0.99):
         note = sim._apply_action(tribe, "HUNT_DEER", "forest", (0, 0))
 
-    assert note is None
+    assert note == "15 food gathered"
     assert tribe.food == 55
 
 
@@ -72,7 +72,7 @@ def test_hunting_hazard_never_fires_outside_forest():
     with mock.patch("backend.actions.random.random", return_value=0.01):
         note = sim._apply_action(tribe, "HUNT_DEER", "mountains", (0, 0))
 
-    assert note is None
+    assert note == "2 food gathered"
     assert tribe.food == 42  # 40 + round(15 * 0.15 mountains game multiplier)
 
 
@@ -3802,8 +3802,13 @@ def test_apply_turn_still_caps_an_extremely_long_rationale():
         {"biome": "plains", "available_actions": ["GATHER_FOOD"]},
     )
 
-    assert tribe.history[-1].endswith("…")
-    assert len(tribe.history[-1]) < len(rationale)
+    # Legibility fix, 2026-09-19: GATHER_FOOD's own real gain now gets appended
+    # as a "| outcome" suffix after the rationale, so the truncation mark is no
+    # longer necessarily the entry's very last character -- it still marks
+    # where the rationale itself was cut off, just followed by a real result.
+    assert "…" in tribe.history[-1]
+    assert "10 food gathered" in tribe.history[-1]
+    assert len(tribe.history[-1]) < len(rationale) + len(" | 10 food gathered")
 
 
 def test_unsettled_fact_reports_real_progress():
@@ -4397,7 +4402,7 @@ def test_gather_water_on_a_lake_matches_river_yield_with_no_drowning_risk():
     with mock.patch("backend.actions.random.random", return_value=0.0):
         note = sim._apply_action(lake_tribe, "GATHER_WATER", "lake", (0, 0))
 
-    assert note is None  # no drowning note
+    assert note is not None and "drown" not in note.lower()  # a real gain, no drowning note
     assert lake_tribe.water > config.STARTING_WATER  # river-level yield, not the off-water rate
 
 
@@ -14282,7 +14287,7 @@ def test_drowning_hazard_never_fires_off_river():
     with mock.patch("backend.actions.random.random", return_value=0.01):
         note = sim._apply_action(tribe, "GATHER_WATER", "plains", (0, 0))
 
-    assert note is None
+    assert note is not None and "drown" not in note.lower()  # a real gain, no drowning note
     assert tribe.population == 10
 
 

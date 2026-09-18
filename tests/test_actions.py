@@ -186,7 +186,11 @@ def test_gather_wood_partially_fits_right_at_the_edge_of_the_cap():
     assert "DREAD" in sim.trauma.bias_string(50, 50)
 
 
-def test_gather_wood_below_the_cap_is_unaffected():
+def test_gather_wood_below_the_cap_states_the_real_amount_gained():
+    """Legibility fix, 2026-09-19: a normal, non-wasteful gain used to return
+    None -- the chronicle's own "| outcome" suffix only ever appeared when
+    there was waste to report, so an ordinary successful harvest read as a
+    bare decision with no result at all."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.wood = 0
@@ -194,7 +198,7 @@ def test_gather_wood_below_the_cap_is_unaffected():
     result = ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "forest", _NO_TARGET)
 
     assert tribe.wood == 10
-    assert result is None
+    assert result == "10 wood gathered"
     assert "DREAD" not in sim.trauma.bias_string(50, 50)  # no waste, no punishment
 
 
