@@ -1598,6 +1598,11 @@ class Tribe:
         # carries, redeemable via USE_ITEM or handed over in a TRADE.
         self.forge_built = False
         self.items: list[dict] = []
+        # Edge-triggered, not a per-cycle fact -- see _advance_automatic_forge's
+        # own comment for the live bug this closes (the same "already full"
+        # message spamming tribe.history every single cycle, forever, once the
+        # item stores cap out).
+        self.item_stores_full_notified = False
         # DMM (Dream Manifestation Machine) era, renamed 2026-09-13 from
         # "Object Creator" (see actions.py._build_dmm/_create_item/
         # _create_useful_structure, eras.py's object_creator_era -- the era
@@ -8206,9 +8211,29 @@ class Simulation:
         path that ever fires it. Naturally self-limiting: _forge_item's own
         no-op guards (no ore, no wood, item stores full) already stop this cold
         without any extra gating needed here, the same way GATHER_ORE's own cost
-        check already limits how fast unique_resources can climb."""
+        check already limits how fast unique_resources can climb.
+
+        Live report, 2026-09-19: "the item stores are already full..." was
+        showing up as the Orders banner's "TODAY'S ORDER" for a tribe, crowding
+        out its real, most recent decision. Root cause: this ran every single
+        cycle once the item stores capped out, appending that exact same bare
+        line to tribe.history forever with no throttling -- since it always ran
+        after _apply_turn in the same cycle, it permanently became the newest
+        entry the frontend's updateOrdersBanner reads as "the last thing that
+        happened." item_stores_full_notified makes this edge-triggered (once
+        per full-to-not-full transition) instead of a per-cycle repeat, the
+        same "never dangle a repeating no-op" shape UPGRADE_WAREHOUSE's own
+        cooldown-menu fix and GATHER_EGGS's retirement flag already use."""
         if not tribe.forge_built:
             return
+        if len(tribe.items) >= _item_storage_cap(tribe):
+            if not tribe.item_stores_full_notified:
+                tribe.item_stores_full_notified = True
+                tribe.history.append(
+                    "the item stores are already full -- USE_ITEM or a TRADE must free up room before another can be forged"
+                )
+            return
+        tribe.item_stores_full_notified = False
         message = _forge_item(self, tribe, "", (tribe.x, tribe.y))
         if message:
             tribe.history.append(message)

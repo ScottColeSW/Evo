@@ -3167,6 +3167,55 @@ def test_advance_automatic_forge_stops_once_the_item_storage_cap_is_reached():
     assert len(tribe.items) == config.ITEM_STORAGE_CAP_BASE  # unchanged -- no room
 
 
+def test_advance_automatic_forge_only_announces_a_full_item_store_once():
+    """Live report, 2026-09-19: "the item stores are already full..." was
+    permanently crowding out a tribe's real most-recent decision in the
+    Orders banner, because this ran every single cycle once the item store
+    capped out -- appending the exact same bare line to tribe.history
+    forever with no throttling. Now edge-triggered: announced once on the
+    cycle it fills, silent on every following cycle it's still full."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.forge_built = True
+    tribe.mine_resource_name = "Orosite Ore"
+    tribe.unique_resources["Orosite Ore"] = 100
+    tribe.wood = 1000
+    tribe.items = [{"name": "Whetstone", "type": "tool", "value": 8, "cycle_made": 0}] * config.ITEM_STORAGE_CAP_BASE
+
+    sim._advance_automatic_forge(tribe)
+    assert "already full" in tribe.history[-1]
+    history_len_after_first = len(tribe.history)
+
+    sim._advance_automatic_forge(tribe)
+    sim._advance_automatic_forge(tribe)
+
+    assert len(tribe.history) == history_len_after_first  # no repeat lines
+
+
+def test_advance_automatic_forge_re_announces_after_room_opens_and_fills_again():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.forge_built = True
+    tribe.mine_resource_name = "Orosite Ore"
+    tribe.unique_resources["Orosite Ore"] = 1000
+    tribe.wood = 10000
+    tribe.items = [{"name": "Whetstone", "type": "tool", "value": 8, "cycle_made": 0}] * config.ITEM_STORAGE_CAP_BASE
+
+    sim._advance_automatic_forge(tribe)  # first full notice
+    tribe.items.pop()  # room opens up
+    sim._advance_automatic_forge(tribe)  # crafts one, refilling the cap
+    assert "the forge produces" in tribe.history[-1]
+
+    sim._advance_automatic_forge(tribe)  # full again -- a real, new notice
+
+    assert "already full" in tribe.history[-1]
+    assert sum("already full" in e for e in tribe.history) == 2
+
+
 def test_affordability_gate_hides_gather_ore_without_a_real_mine():
     """Live-run correction: GATHER_ORE showed up in a tribe's menu and got
     chosen before it had a mine at all -- a guaranteed no-op the same way an
