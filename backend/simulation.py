@@ -114,7 +114,25 @@ from .world import (
 # for slot 0 (was 59.0) and 2.2 tiles from the lake for slot 1 (was 31.0),
 # each comfortably within a single expedition's reach and 34-42 tiles clear
 # of the untouched slot 2/3 fallbacks.
-SPAWN_POINTS = [(66, 23), (63, 66), (50, 55), (40, 37)]
+#
+# Retuned again 2026-09-18, explicit design correction: "they should not be
+# able to camp at the spawn location... find water, find food, etc." --
+# every prior retune above optimized distance/clearance but left both slots
+# 0 and 1 on FARMABLE_BIOMES ground (plains), which let a tribe camp and
+# start gathering wood/stone/farming immediately, before ever scouting for
+# real water -- the exact "free lunch" this project's own SCOUT-before-
+# RELOCATE, confirmed-water-before-settling pattern elsewhere already
+# refuses to give. Slot 0 moved to (76, 17), forest; slot 1 to (65, 76),
+# desert -- both confirmed off FARMABLE_BIOMES (plains/river/lake), so
+# _is_camped can't pass on biome alone at either any more, only by actually
+# reaching confirmed water. Each stays within a single expedition's real
+# reach of a river/lake tile (29.1 and 22.0 tiles respectively, well under
+# EXPEDITION_SPEED*EXPEDITION_MAX_DAYS's 100-tile ceiling), so this delays
+# camping, it doesn't strand anyone. Slots 0/1 are now 60.0 tiles apart
+# (was 75.0) -- see BROADCAST_HEARING_RADIUS's own comment (config.py),
+# raised from 50 to 65 the same day so this pairing still converges on
+# shared vocabulary once both are genuinely settled.
+SPAWN_POINTS = [(76, 17), (65, 76), (50, 55), (40, 37)]
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 # Design intent, not just "whichever body is closest": Tribe 1 settles the
 # river, Tribe 2 the lake -- each gets a distinct natural-barrier wall ring

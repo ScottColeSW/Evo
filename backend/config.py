@@ -2256,7 +2256,14 @@ TERRITORY_CLEARING_RADIUS_MARGIN = 5
 # the alternative (leaving distance real and instead strengthening whatever would
 # make a settled tribe relocate toward a rival, which isn't otherwise incentivized
 # today either).
-BROADCAST_HEARING_RADIUS = 50
+#
+# Raised again, 2026-09-18: SPAWN_POINTS[0]/[1] moved onto deliberately non-
+# farmable ground each ("they should not be able to camp at the spawn
+# location... find water, find food") widened the widest pairing to 60 (was
+# 43) -- same "set above the widest real pairing" reasoning as the first
+# raise above, not a new principle. User's explicit choice over nudging the
+# two coordinates closer together instead.
+BROADCAST_HEARING_RADIUS = 65
 
 # Cross-tribe proximity awareness, independent of whether the other tribe has ever
 # broadcast anything -- real data this session showed every single run (25/25 tribe-

@@ -117,10 +117,10 @@ def test_broadcast_not_overheard_beyond_hearing_radius():
     forest = sim.tribes["tribe_0"]
     mountain = sim.tribes["tribe_1"]
     # Explicit placement, not "default spawns are far apart" -- BROADCAST_HEARING_RADIUS
-    # was raised to 50 (2026-09-15, config.py's own comment has the real-data grounding)
-    # specifically so every default SPAWN_POINTS pairing (max real distance 43) now
-    # falls WITHIN hearing range once settled, so this test can no longer lean on
-    # default spawn distance to stay out of range.
+    # is deliberately set (config.py's own comments have the real-data grounding, most
+    # recently raised to 65 on 2026-09-18) above every default SPAWN_POINTS pairing
+    # (currently 60 at the widest) so all of them fall WITHIN hearing range once
+    # settled -- this test can't lean on default spawn distance to stay out of range.
     mountain.x, mountain.y = forest.x + 200, forest.y
     mountain.last_broadcast = "KRA-ZUL"
     mountain.last_action = "HUNT_DEER"
@@ -11828,7 +11828,11 @@ def test_gather_eggs_retires_once_a_hatchery_stands_even_without_kitchen():
     Coop is a later building a large flock justifies, not a co-requirement."""
     from backend import config
 
-    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    # Explicit x/y, not the bare default spawn: SPAWN_POINTS[0] is now
+    # deliberately non-farmable ground (2026-09-18, "they should not be able
+    # to camp at the spawn location"), so this test needs its own farmable
+    # tile to isolate the coop/hatchery logic from that unrelated change.
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 65, "y": 65}])
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES  # camped, so GATHER_EGGS would otherwise be reachable
@@ -11850,7 +11854,10 @@ def test_gather_eggs_stays_available_with_only_a_coop_and_no_hatchery():
     -- GATHER_EGGS must stay reachable, unlike the Hatchery-alone case above."""
     from backend import config
 
-    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    # Explicit x/y, same reason as the sibling test above -- SPAWN_POINTS[0]
+    # is now deliberately non-farmable ground, unrelated to what this test
+    # actually checks.
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 65, "y": 65}])
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
