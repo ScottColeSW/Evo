@@ -7,14 +7,57 @@ from tests.conftest import run_async
 
 
 class _FakeResponse:
-    def __init__(self, payload):
+    # status_code/text added 2026-09-18 alongside _raise_with_body's own real
+    # 500-body-surfacing fix -- matches real httpx.Response's shape closely
+    # enough for raise_for_status() to behave the same way here as it does for
+    # real network failures (a >=400 status actually raises).
+    def __init__(self, payload, status_code: int = 200, text: str = ""):
         self._payload = payload
+        self.status_code = status_code
+        self.text = text
+        self.request = httpx.Request("POST", "http://localhost:11434/api/generate")
 
     def raise_for_status(self):
-        return None
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                f"Server error '{self.status_code}' for url", request=self.request, response=self,
+            )
 
     def json(self):
         return self._payload
+
+
+@run_async
+async def test_generate_json_surfaces_the_response_body_on_a_server_error():
+    """Live report, 2026-09-18: a real 500 from /api/generate crashed a tick
+    with nothing but 'Server error 500' to go on -- plain raise_for_status()
+    discards the body, but Ollama's own 500s carry a real reason there
+    (commonly VRAM exhaustion or a model crash mid-generation). The raised
+    exception's own message must include it, so a live traceback actually
+    says why next time."""
+    client = OllamaClient()
+    fake = _FakeResponse({}, status_code=500, text='{"error": "model requires more system memory"}')
+
+    with mock.patch.object(httpx.AsyncClient, "post", mock.AsyncMock(return_value=fake)):
+        try:
+            await client.generate_json("gemma2:2b", "prompt")
+            assert False, "expected an HTTPStatusError"
+        except httpx.HTTPStatusError as exc:
+            assert "model requires more system memory" in str(exc)
+            assert "gemma2:2b" in str(exc)
+
+
+@run_async
+async def test_generate_text_surfaces_the_response_body_on_a_server_error():
+    client = OllamaClient()
+    fake = _FakeResponse({}, status_code=500, text='{"error": "CUDA out of memory"}')
+
+    with mock.patch.object(httpx.AsyncClient, "post", mock.AsyncMock(return_value=fake)):
+        try:
+            await client.generate_text("gemma2:2b", "prompt")
+            assert False, "expected an HTTPStatusError"
+        except httpx.HTTPStatusError as exc:
+            assert "CUDA out of memory" in str(exc)
 
 
 @run_async

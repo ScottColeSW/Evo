@@ -14,6 +14,26 @@ UNLOAD_POLL_INTERVAL_SECONDS = 0.5
 UNLOAD_POLL_MAX_ATTEMPTS = 20
 
 
+def _raise_with_body(r: httpx.Response, model: str) -> None:
+    """Live report, 2026-09-18: a real 500 from /api/generate crashed a tick with
+    nothing but "500 Internal Server Error" to go on -- plain raise_for_status()
+    discards the response body, but Ollama's own 500s carry a real reason there
+    (commonly VRAM exhaustion or a model crash mid-generation, the exact risk this
+    project's VRAM-contention history keeps running into with multiple resident
+    models). Surfaced in the exception message itself so app.py's existing
+    traceback.print_exc() (the tick-level catch that already keeps a bad response
+    from crashing the whole server) shows the real cause next time, not just a
+    status code to guess from."""
+    if r.status_code >= 400:
+        try:
+            r.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise httpx.HTTPStatusError(
+                f"{exc.args[0]} -- model={model!r} body={r.text[:500]!r}",
+                request=exc.request, response=exc.response,
+            ) from None
+
+
 class OllamaClient:
     """Thin async wrapper around a local Ollama server."""
 
@@ -65,7 +85,7 @@ class OllamaClient:
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             r = await client.post(f"{self.base_url}/api/generate", json=payload)
-            r.raise_for_status()
+            _raise_with_body(r, model)
             raw = r.json().get("response", "{}")
             try:
                 parsed = json.loads(raw)
@@ -90,7 +110,7 @@ class OllamaClient:
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             r = await client.post(f"{self.base_url}/api/generate", json=payload)
-            r.raise_for_status()
+            _raise_with_body(r, model)
             return r.json().get("response", "")
 
     async def list_loaded_models(self) -> list[str]:
