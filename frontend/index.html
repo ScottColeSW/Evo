@@ -4349,7 +4349,7 @@ function chronicleEntryIcon(entry) {
 
 // Mirrors backend/config.py's SETTLEMENT_STABILITY_CYCLES -- how many consecutive
 // cycles without RELOCATE (see Simulation._is_settled) counts as settled.
-const SETTLEMENT_STABILITY_CYCLES = 10;
+const SETTLEMENT_STABILITY_CYCLES = 5;
 // Mirrors backend/config.py's FARMABLE_BIOMES -- Simulation._is_settled also requires
 // standing on ground a farm could actually work, not just having stayed put.
 const FARMABLE_BIOMES = ["plains", "river", "lake"];
