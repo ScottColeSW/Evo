@@ -2570,6 +2570,17 @@ class Simulation:
             f"Population: {tribe.population}.",
             f"Resources on hand: {tribe.wood} wood, {tribe.stone} stone, {tribe.food} food, {tribe.water} water.",
         ]
+        # Live report, 2026-09-19: "flock in dream says it is 0." Traced to this
+        # inventory never mentioning the flock/eggs at all -- the reviewer had no
+        # real number to go on, only whatever chronicle text happened to survive
+        # the 20-entry window, so any specific flock figure in a reflection was
+        # invented, not read from a wrong value. Same real-fact-not-hallucination
+        # fix as every other line here; omitted entirely once a tribe has never
+        # had a flock or any eggs, matching this file's own "don't mention a
+        # mechanic that isn't reachable" pattern rather than reporting a flat 0
+        # forever.
+        if tribe.flock or tribe.eggs:
+            lines.append(f"Flock: {tribe.flock} birds, {tribe.eggs} eggs in store.")
         survival_bias, _critical = survival_bias_string(
             tribe.food, tribe.water, tribe.population, tribe.fishing_learned, tribe.cooking_learned,
             water_secure=_is_water_secure(tribe), food_secure=_is_food_secure(tribe),

@@ -9632,6 +9632,33 @@ def test_night_inventory_includes_spied_rival_intelligence():
     assert "2 long houses, 1 wall rings" in inventory
 
 
+def test_night_inventory_includes_the_real_flock_and_egg_counts():
+    """Live report, 2026-09-19: "flock in dream says it is 0." Traced to this
+    inventory never mentioning the flock/eggs at all -- the night-cycle
+    reviewer had no real number to reflect on, so any flock figure in a
+    reflection was invented, not read from a wrong value. Grounds it the
+    same way population/resources already are."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.flock = 7
+    tribe.eggs = 3
+
+    inventory = sim._build_night_inventory(tribe)
+
+    assert "Flock: 7 birds, 3 eggs in store." in inventory
+
+
+def test_night_inventory_omits_the_flock_line_when_there_has_never_been_one():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    assert tribe.flock == 0 and tribe.eggs == 0
+
+    inventory = sim._build_night_inventory(tribe)
+
+    assert "Flock" not in inventory
+    assert "birds" not in inventory
+
+
 def test_night_inventory_drops_intelligence_on_a_rival_that_no_longer_exists():
     """A stale reference shouldn't leak a stale fact -- looked up fresh in
     self.tribes rather than trusted, matching how _build_night_inventory reads
