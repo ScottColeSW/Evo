@@ -12576,6 +12576,55 @@ def test_advance_flock_eggs_does_nothing_with_an_empty_flock():
     assert tribe.eggs == 0
 
 
+def test_advance_flock_eggs_can_lay_from_a_small_flock_via_stochastic_rounding():
+    """Live report, 2026-09-19: "it always says 0 eggs laid even when there is
+    a Flock." Confirmed against real run data -- plain integer floor division
+    (flock // 5) truncated any flock under 5 to zero, forever. A flock of 1
+    (exact = 0.2) must now have a real, if partial, chance to lay -- forcing
+    the stochastic roll to succeed proves that path exists at all."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = 1
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_flock_eggs(tribe)
+
+    assert tribe.eggs == 1
+    assert tribe.eggs_laid_total == 1
+
+
+def test_advance_flock_eggs_can_lay_nothing_from_a_small_flock_on_an_unlucky_roll():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = 1
+
+    with mock.patch("backend.simulation.random.random", return_value=0.999):
+        sim._advance_flock_eggs(tribe)
+
+    assert tribe.eggs == 0
+    assert tribe.eggs_laid_total == 0
+
+
+def test_advance_flock_eggs_matches_the_same_long_run_average_as_the_old_floor_division():
+    """The fix must not change the balance, only stop it from truncating to
+    zero below the divisor -- averaged over many cycles, a flock's egg output
+    should land on the same rate plain flock/DIVISOR always implied."""
+    from backend import config
+    import random as random_module
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = 7  # not an exact multiple of the divisor -- exercises the roll for real
+    random_module.seed(12345)
+
+    trials = 20000
+    for _ in range(trials):
+        sim._advance_flock_eggs(tribe)
+
+    expected = trials * tribe.flock / config.EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR
+    assert abs(tribe.eggs_laid_total - expected) / expected < 0.02  # within 2%
+
+
 def test_advance_livestock_feast_converts_surplus_eggs_to_food():
     """Explicit request: "let them feast and use Eggs and Chickens/Flock for
     food after the stock grows... let them use everything more than a dozen

@@ -8525,10 +8525,23 @@ class Simulation:
         """A living flock lays eggs passively each cycle into tribe.eggs -- see
         config.EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR's own comment. Entirely
         separate from GATHER_EGGS/_advance_flock's natural-hatch chance, both of
-        which grow tribe.flock directly and never touch this stockpile."""
+        which grow tribe.flock directly and never touch this stockpile.
+
+        Live report, 2026-09-19: "it always says 0 eggs laid even when there is
+        a Flock." Confirmed against three real runs: eggs_laid_total sat at
+        exactly 0 for every tribe whose flock never reached
+        EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR (5) -- plain integer floor
+        division truncates any flock under 5 to zero, forever, not just
+        occasionally. Stochastic rounding keeps the exact same long-run average
+        rate (flock/5 eggs per cycle) but a small flock now has a real, if
+        partial, chance to lay an egg on any given cycle instead of a
+        guaranteed zero every time."""
         if tribe.flock <= 0:
             return
-        laid = tribe.flock // config.EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR
+        exact = tribe.flock / config.EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR
+        laid = int(exact)
+        if random.random() < (exact - laid):
+            laid += 1
         if laid:
             tribe.eggs += laid
             tribe.eggs_laid_total += laid
