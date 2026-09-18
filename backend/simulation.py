@@ -12,7 +12,7 @@ from .actions import (
     _food_multiplier, _forge_item, _plant_crop_cost,
     _generate_raider_name, _has_room_to_grow, _is_departure_dream, _item_storage_cap, _labor_multiplier,
     _long_house_fur_discount, _mutual_ally_at_top_era, _push_past_visited_ground, _record_combat,
-    _storage_cap, _sustainable_population, _territory_has_nearby_threats,
+    _storage_cap, _sustainable_population, _territory_has_nearby_threats, _warehouse_upgrade_ready,
     expedition_capacity,
 )
 from .ancestral_matrix import AncestralTraumaMatrix
@@ -4107,6 +4107,21 @@ class Simulation:
             available_actions = [a for a in available_actions if a != "DECLARE_CONQUEST"]
         if not _dmm_ready(self, tribe):
             available_actions = [a for a in available_actions if a not in ("CREATE_ITEM", "CREATE_USEFUL_STRUCTURE")]
+
+        # Same exact gap, found live 2026-09-18: "they didn't reach a cap for
+        # ...warehouse upgrade and it was super annoying to watch until the
+        # end." Confirmed against a real 1733-cycle run
+        # (run_20260918_083503) -- UPGRADE_WAREHOUSE was chosen 480 times,
+        # the large majority landing on actions._upgrade_warehouse's own
+        # WAREHOUSE_UPGRADE_COOLDOWN_DAYS no-op branch (a bare chronicle line
+        # with no "| outcome" at all, just the chief's reasoning going
+        # nowhere) because AFFORDABILITY_CHECKS["UPGRADE_WAREHOUSE"] mirrors
+        # the cost/need checks but -- same structural reason as DECLARE_
+        # CONQUEST/CREATE_ITEM above -- has no way to see the cooldown.
+        # _warehouse_upgrade_ready already takes `self` directly, same shape
+        # as _conquest_ready/_dmm_ready.
+        if "UPGRADE_WAREHOUSE" in available_actions and not _warehouse_upgrade_ready(self, tribe):
+            available_actions = [a for a in available_actions if a != "UPGRADE_WAREHOUSE"]
 
         # See config.ACTION_REPETITION_THROTTLE_THRESHOLD/COOLDOWN and
         # Simulation._track_action_repetition -- once an action has been thrown out

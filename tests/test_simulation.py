@@ -4190,6 +4190,54 @@ def test_declare_conquest_reappears_once_its_cooldown_actually_clears():
     assert "DECLARE_CONQUEST" in ctx["available_actions"]
 
 
+def test_upgrade_warehouse_hidden_during_its_own_real_cooldown():
+    """Same class of gap as the DMM/DECLARE_CONQUEST cooldowns above -- live
+    finding, 2026-09-18: "they didn't reach a cap for... warehouse upgrade
+    and it was super annoying to watch until the end." Confirmed against a
+    real 1733-cycle run (run_20260918_083503): UPGRADE_WAREHOUSE was chosen
+    480 times, most landing on actions._upgrade_warehouse's own cooldown
+    no-op branch with no explanation in the chronicle at all. The nudge
+    already named the cooldown correctly (see
+    test_upgrade_warehouse_nudge_names_the_cooldown_instead_while_recovering
+    just above) -- available_actions itself was the one thing that never
+    checked it."""
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "monolithic_era"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT
+    tribe.population = config.STORAGE_CAP_BASE + config.WAREHOUSE_MAX_COUNT * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+    tribe.wood = tribe.stone = tribe.food = tribe.water = 5000
+    tribe.warehouse_upgrade_cooldown_until_cycle = sim.cycle + 5
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "UPGRADE_WAREHOUSE" not in ctx["available_actions"]
+
+
+def test_upgrade_warehouse_reappears_once_its_cooldown_actually_clears():
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "monolithic_era"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT
+    tribe.population = config.STORAGE_CAP_BASE + config.WAREHOUSE_MAX_COUNT * config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+    tribe.wood = tribe.stone = tribe.food = tribe.water = 5000
+    tribe.warehouse_upgrade_cooldown_until_cycle = sim.cycle  # already ready
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "UPGRADE_WAREHOUSE" in ctx["available_actions"]
+
+
 def test_create_item_nudge_silent_without_a_dmm():
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
     tribe = sim.tribes["tribe_0"]
@@ -8996,7 +9044,19 @@ async def test_step_advances_a_settled_tribes_expedition_day_and_gains_on_the_da
     """Companion to the test above: on the dawn boundary itself, day-bookkeeping
     (the day count, and EXPEDITION_OUTBOUND_DAILY_FOOD) fires exactly as it did
     before movement was decoupled from it -- only the per-cycle distance changed,
-    not the once-a-day totals a scout's own tuning depends on."""
+    not the once-a-day totals a scout's own tuning depends on.
+
+    Order-dependent flake found and fixed, 2026-09-18: this landed on real,
+    unseeded backend.simulation.random.random -- almost always a harmless miss,
+    but whatever earlier test happened to run first in the same process could
+    shift the global random stream enough that _expedition_raider_ambush's own
+    roll (also gated on has_ever_settled, which this fixture sets) actually
+    fires, ending the trip early and leaving food_gathered short of the full
+    daily amount this test asserts. A fixed high roll forces every chance-based
+    branch in this cycle (ambush included) to miss, same "force a roll
+    deterministically" convention this file's own ambush-specific tests
+    already use (see test_expedition_raider_ambush_ends_the_trip_and_costs_
+    population)."""
     from backend import config
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
@@ -9011,7 +9071,8 @@ async def test_step_advances_a_settled_tribes_expedition_day_and_gains_on_the_da
     }]
     sim.cycle = config.DAY_LENGTH_CYCLES - 1  # step() increments before checking -- lands ON the boundary
 
-    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})):
+    with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
+         mock.patch("backend.simulation.random.random", return_value=1.0):
         await sim.step()
 
     assert tribe.expeditions[0]["day"] == 1
