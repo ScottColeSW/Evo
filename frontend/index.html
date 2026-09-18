@@ -3344,7 +3344,7 @@ function drawTerritory(t) {
 }
 
 function drawSettlementMarker(t) {
-  if (!isCamped(t)) return;
+  if (!t.is_camped) return;
   // Explicit visual note: "it looks better when the Territory boundaries
   // encompass the Hut." drawTerritory's circle is centered on territory_center
   // (the fixed founding anchor -- see Simulation._found_territory), but this
@@ -4348,32 +4348,19 @@ function chronicleEntryIcon(entry) {
 /* ---------- Sidebar ---------- */
 
 // Mirrors backend/config.py's SETTLEMENT_STABILITY_CYCLES -- how many consecutive
-// cycles without RELOCATE (see Simulation._is_settled) counts as settled.
+// cycles without RELOCATE (see Simulation._is_settled) counts as settled. Only the
+// numerator/denominator progress text ("nomadic (n/N)") needs this on the frontend
+// side -- the real camped predicate itself is server-computed, see is_camped below.
 const SETTLEMENT_STABILITY_CYCLES = 5;
-// Mirrors backend/config.py's FARMABLE_BIOMES -- Simulation._is_settled also requires
-// standing on ground a farm could actually work, not just having stayed put.
-const FARMABLE_BIOMES = ["plains", "river", "lake"];
-// Mirrors backend/config.py's SETTLEMENT_WATER_TERRITORY_RADIUS -- Simulation.
-// _near_confirmed_water. Bug report: "way too many cycles go by with the Tribe on
-// the Water and still unsettled" -- the tribe actually WAS settled per the backend
-// (has_ever_settled was already true, current tile within this radius of a
-// confirmed site), this sidebar label just never got the same territory-radius
-// fallback the backend gained, only ever checking the exact-biome-match case.
-// Tightened 6 -> 4 (2026-09-02): a settlement exactly at the old radius's edge read
-// as visually disconnected from the water it was supposedly settled near.
-const SETTLEMENT_WATER_TERRITORY_RADIUS = 4;
 
-function nearConfirmedWater(t) {
-  return (t.confirmed_water_sites || []).some(
-    ([wx, wy]) => Math.max(Math.abs(t.x - wx), Math.abs(t.y - wy)) <= SETTLEMENT_WATER_TERRITORY_RADIUS
-  );
-}
-
-function isCamped(t) {
-  const n = t.cycles_since_relocate || 0;
-  if (n < SETTLEMENT_STABILITY_CYCLES) return false;
-  return FARMABLE_BIOMES.includes(biomeNameAt(t.x, t.y)) || nearConfirmedWater(t);
-}
+// Explicit request, 2026-09-19 ("really get that separation of powers nailed"):
+// this used to independently re-derive Simulation._is_camped's own real formula
+// (FARMABLE_BIOMES/SETTLEMENT_WATER_TERRITORY_RADIUS mirrored by hand, a whole
+// nearConfirmedWater()/isCamped() reimplementation) -- the exact "frontend
+// re-derives a backend predicate instead of reading it" pattern that caused a
+// real, live bug twice already. Tribe.to_dict() now sends the real, server-
+// computed value directly as t.is_camped; this file no longer owns a second copy
+// of the formula at all.
 
 function settlementLine(t) {
   // Live report: "the line... 🏕️ settled... is confusing me since they have not
@@ -4397,7 +4384,7 @@ function settlementLine(t) {
   const n = t.cycles_since_relocate || 0;
   if (n < SETTLEMENT_STABILITY_CYCLES) return `🚶 nomadic (${n}/${SETTLEMENT_STABILITY_CYCLES})`;
   if (t.has_ever_settled) return t.founded_city ? "🏛️ settled" : "🛖 settled";
-  return isCamped(t) ? "🏕️ camped" : "🚶 nomadic (unfarmable ground)";
+  return t.is_camped ? "🏕️ camped" : "🚶 nomadic (unfarmable ground)";
 }
 
 // Live report: "The area that lists [one line per expedition, day/position/

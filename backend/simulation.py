@@ -1850,7 +1850,20 @@ class Tribe:
         self.explore_rotation_index = step
         self.hunt_rotation_index = step
 
-    def to_dict(self) -> dict:
+    def to_dict(self, is_camped: bool | None = None) -> dict:
+        # Explicit request, 2026-09-19 ("really get that separation of powers
+        # nailed"): _is_camped's real formula (Simulation._is_camped, needs
+        # self.world -- a Tribe alone can't compute it) used to be duplicated
+        # by hand in frontend/index.html's own isCamped()/FARMABLE_BIOMES/
+        # nearConfirmedWater -- the exact "frontend re-derives a backend
+        # predicate instead of reading it" pattern that caused a real, live
+        # bug twice already (see evolution2civ-open-threads-and-risks memory).
+        # The caller (Simulation.snapshot/debug_snapshot, where self.world is
+        # available) computes the real value and passes it in; the frontend
+        # now just reads tribe.is_camped instead of owning a second copy of
+        # the formula. Optional/defaults to None only so every existing
+        # direct `Tribe(...).to_dict()` test call (which doesn't care about
+        # this field) keeps working unchanged.
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
         survival_warning, _ = survival_bias_string(
             self.food, self.water, self.population, self.fishing_learned, self.cooking_learned,
@@ -2022,6 +2035,7 @@ class Tribe:
                 }
                 for exp in self.expeditions
             ],
+            "is_camped": is_camped,
         }
 
 
@@ -2861,7 +2875,7 @@ class Simulation:
             "lightning_strike": list(self.lightning_strike) if self.lightning_strike else None,
             "recent_encounters": self.recent_encounters,
             "joint_castle": self.joint_castle,
-            "tribes": {tid: t.to_dict() for tid, t in self.tribes.items()},
+            "tribes": {tid: t.to_dict(is_camped=self._is_camped(t)) for tid, t in self.tribes.items()},
             "minor_settlements": self.minor_settlements,
             "structures": [{"x": x, "y": y, **info} for (x, y), info in self.world.constructions.items()],
             "trails": [
@@ -2889,7 +2903,7 @@ class Simulation:
             "cycle": self.cycle,
             "status": self.status,
             "tribes": {
-                tid: {"tribe": tribe.to_dict(), "transcript": list(tribe.debug_transcript)}
+                tid: {"tribe": tribe.to_dict(is_camped=self._is_camped(tribe)), "transcript": list(tribe.debug_transcript)}
                 for tid, tribe in self.tribes.items()
             },
         }
