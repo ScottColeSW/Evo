@@ -171,7 +171,11 @@ async def test_prompt_offers_the_award_as_optional_not_required():
 
     await reflect_on_history(client, "llama3", "Forest Tribe", "caution and hoarding", [])
 
-    assert "This is entirely optional" in client.last_prompt
+    # Reworded 2026-09-18 (the "private_thoughts"-first restructure): the award,
+    # decree, and dream sections now share one optionality statement up front
+    # instead of each repeating "this is optional" -- same real guarantee, one
+    # sentence, not three.
+    assert "none of the following are owed just because a night has passed" in client.last_prompt
     for category in AWARD_CATEGORIES:
         assert category in client.last_prompt
 
@@ -186,7 +190,8 @@ async def test_prompt_asks_for_honest_judgment_not_a_scripted_outcome():
     await reflect_on_history(client, "llama3", "Forest Tribe", "caution and hoarding", ["a poor harvest"])
 
     assert "not what should have happened" in client.last_prompt
-    assert "That judgment is yours to make" in client.last_prompt
+    # Reworded 2026-09-18, same meaning: "yours to make" -> "yours".
+    assert "that judgment is yours" in client.last_prompt
 
 
 @run_async

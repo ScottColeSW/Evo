@@ -1,10 +1,15 @@
-"""The "night cycle": periodically, a larger reviewing model looks back at a tribe's
-own recent history and decides for itself whether its guiding philosophy should
-change. This is the piece from the original design transcript that was never built --
-see the genetics_and_night_cycle_gap memory note -- distinct from breed()/breed_
+"""The "night cycle": periodically, a dedicated reviewer model (config.
+REFLECTION_MODEL -- see that constant's own comment for why it's a separate model
+again as of 2026-09-18, after a 2026-09-12 through 2026-09-17 stretch of self-
+review with the tribe's own live model) looks back at a tribe's own recent history
+and decides for itself whether its guiding philosophy should change. This is the
+piece from the original design transcript that was never built -- see the
+genetics_and_night_cycle_gap memory note -- distinct from breed()/breed_
 individuals' cross-tribe/cross-individual crossover. Fast small models handle every
 live turn; this is the "day reviewed at night" pass, run much less often, using a
-different (larger) model than whatever the tribe uses live.
+different model than whatever the tribe uses live -- not necessarily a larger one
+(REFLECTION_MODEL is deliberately one of the smaller models this project uses, to
+keep the VRAM-contention risk this reintroduces as small as possible).
 
 Still a real, non-scripted LLM call reasoning over real facts (the tribe's own recent
 chronicle, its current philosophy) -- the simulation states what actually happened, the
@@ -119,27 +124,33 @@ tribe. Its current guiding philosophy is: "{current_philosophy}"
 Here is what has actually happened recently, in order:
 {events_block}
 
-Consider honestly whether this philosophy is still serving the tribe well, given what \
-actually happened -- not what should have happened. You may keep it unchanged, adjust it, \
-or replace it entirely. That judgment is yours to make, based on the tribe's own real \
-experience.
+Before anything else, just think. What's actually on your mind tonight, given what's \
+happened? You don't owe the tribe a decision every night -- most nights, a private thought \
+with nothing else attached is a completely honest answer.
 
-Separately, if you wish, you may create a new honor of your own for your people -- a title \
-you will personally bestow on whoever excels at one of: {categories_list}. This is entirely \
-optional; leave it out if nothing comes to mind.
+Separately, if that thinking leads somewhere concrete, you may also act on it below -- but \
+only if it genuinely does; none of the following are owed just because a night has passed.
 
-Separately again, you may also set a standing decree -- not a philosophy, an actual concrete \
-order the tribe can act on starting tomorrow: a specific task, not a value or a goal statement, \
-worded the way you would actually give an order, in your own voice. {decree_line} Leave it as \
-it is unless something you've just reflected on genuinely calls for a new one -- this is your \
-own idea, not ours, so only propose one if it truly comes from what actually happened to THIS \
-tribe, not a generic-sounding order that could apply to any tribe, any time.{dream_block}{departure_dream_block}
+You may reconsider whether the current philosophy is still serving the tribe well, given \
+what actually happened -- not what should have happened. Keep it unchanged, adjust it, or \
+replace it entirely -- that judgment is yours, based on the tribe's own real experience.
+
+You may create a new honor of your own for your people -- a title you will personally \
+bestow on whoever excels at one of: {categories_list}.
+
+You may set a standing decree -- not a philosophy, an actual concrete order the tribe can \
+act on starting tomorrow: a specific task, not a value or a goal statement, worded the way \
+you would actually give an order, in your own voice. {decree_line} Leave it as it is unless \
+something you've just reflected on genuinely calls for a new one -- this is your own idea, \
+not ours, so only propose one if it truly comes from what actually happened to THIS tribe, \
+not a generic-sounding order that could apply to any tribe, any time.{dream_block}{departure_dream_block}
 
 Reply with ONLY JSON:
 {{
+  "private_thoughts": "whatever is actually on your mind tonight, in your own words -- this is yours alone, no one else reads it, and it's completely fine for this to be the only thing you have to say",
   "revised_philosophy": "the guiding philosophy going forward, whether changed or the same",
   "changed": true or false,
-  "reasoning": "your decision in ONE short sentence, 20 words or fewer -- this is a private thought, not an essay",
+  "reasoning": "your decision in ONE short sentence, 20 words or fewer -- a private thought, not an essay",
   "proposed_award": {{"name": "a short title of your own invention", "category": "one of: {categories_list}"}} or null,
   "proposed_decree": "a short, concrete standing duty, in your own words" or null,
   "proposed_dream": "a short description of a real, grounded dream, in your own words" or null
@@ -147,6 +158,7 @@ Reply with ONLY JSON:
     result = await client.generate_json(reviewer_model, prompt, temperature=0.7, num_ctx=8192)
     if not result or not result.get("revised_philosophy"):
         return {
+            "private_thoughts": (result or {}).get("private_thoughts", ""),
             "revised_philosophy": current_philosophy,
             "changed": False,
             "reasoning": "the review produced nothing usable; philosophy stands unchanged",

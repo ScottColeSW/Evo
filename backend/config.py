@@ -177,6 +177,32 @@ MEMORY_CONSOLIDATE_EVERY_N_CYCLES = 40
 NIGHT_CYCLE_EVERY_N_CYCLES = 30
 NIGHT_CYCLE_HISTORY_WINDOW = 20
 
+# Reversed back, 2026-09-18, explicit request: "I wanted to use gemma since it
+# seems to understand the game best based on all our runs... this is a smaller
+# model and shouldn't cause a lot of contention." Same real contention risk the
+# 2026-09-12 comment above documents still exists in principle (a third model
+# loading mid-run, on the same 8GB RTX 2080), but gemma2:2b is small enough
+# (already one of the two live tribe models in most runs this session) that the
+# user is accepting that residual risk deliberately, in exchange for a real
+# outside voice -- "friction to bounce off" -- instead of a tribe only ever
+# reviewing itself. Simulation._run_night_cycle passes this instead of
+# tribe.model now.
+REFLECTION_MODEL = "gemma2:2b"
+
+# Explicit request, 2026-09-18: "I like the flavor but it doesn't help them
+# really does it" -- a recalled private thought was pure ambient text, no
+# more behavioral pull than a taboo/memory line, weaker even (softer
+# framing). chief_decree already reaches every live turn as an explicit
+# "DUTY:" line (prompts.py's duty_text), not a passive fact -- real signal
+# by this project's own repeated facts-vs-mechanics finding. Once a private
+# thought has recurred this many times (TribeMemory.remember's own
+# reinforcement check, kind="reflection"), Simulation._run_night_cycle
+# promotes it straight into chief_decree, but only into an EMPTY slot --
+# never overriding a decree the chief explicitly set, same "sticky, never
+# silently erased" rule that field already follows. First-cut threshold, no
+# real run data yet behind this specific number.
+REFLECTION_STABILIZED_REINFORCEMENT_COUNT = 2
+
 # One-time narrative synthesis at game-over (Simulation._trigger_game_over), distinct
 # from the plain factual _generate_game_over_summary (no model call, just string
 # templating) -- an actual outside voice telling the whole game's story once, when

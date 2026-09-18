@@ -1307,6 +1307,11 @@ class Tribe:
         # night-time thought bubble.
         self.last_reflection = ""
         self.last_reflection_cycle = 0
+        # How often the night cycle fires, and of those, how often it actually
+        # changed chief_philosophy rather than reaffirming it -- see
+        # Simulation._run_night_cycle's own comment.
+        self.reflections_run = 0
+        self.reflections_changed_philosophy = 0
         self.lumber_sites: list[tuple[int, int]] = []
         # Explicit request: "are the scouts finding Wolves Dens and Bear Caves
         # and Deer Stands? if not, they should be." {"x", "y", "type"} dicts,
@@ -1878,6 +1883,8 @@ class Tribe:
             "cycles_since_relocate": self.cycles_since_relocate,
             "last_reflection": self.last_reflection,
             "last_reflection_cycle": self.last_reflection_cycle,
+            "reflections_run": self.reflections_run,
+            "reflections_changed_philosophy": self.reflections_changed_philosophy,
             "last_celebration_cycle": self.last_celebration_cycle,
             "scout_successes": self.scout_successes,
             "hunt_successes": self.hunt_successes,
@@ -2604,13 +2611,15 @@ class Simulation:
         history and decides for itself whether its guiding philosophy should change.
         Runs far less often than a live turn (see config.NIGHT_CYCLE_EVERY_N_CYCLES).
 
-        Self-review with the tribe's own model (below), not a dedicated reviewer --
-        see config.py's own comment above ENDGAME_SUMMARY_MODEL for why: a third
-        model loading mid-run was a real, measured VRAM-contention risk on real
-        hardware, not just a design nicety. The piece from the original design
-        transcript that gives a tribe's own accumulated experience a chance to
-        compound into wisdom over time, distinct from breed()/breed_individuals'
-        cross-tribe/cross-individual crossover."""
+        Reversed back to a dedicated reviewer, 2026-09-18 (config.REFLECTION_MODEL,
+        currently gemma2:2b) -- explicit request, after self-review with the tribe's
+        own model (2026-09-12 through 2026-09-17) worked but gave a chief nothing to
+        push against but itself. See config.py's own comment above REFLECTION_MODEL
+        for the VRAM-contention risk this reopens and why it's accepted this time
+        (small model, real user call). The piece from the original design transcript
+        that gives a tribe's own accumulated experience a chance to compound into
+        wisdom over time, distinct from breed()/breed_individuals' cross-tribe/
+        cross-individual crossover."""
         # Explicit report, 2026-09-14/15: "the chief is getting every hatch not
         # just the latest or greatest (singular)." A flat last-N slice of
         # tribe.history is fine early on, but the Coop/Hatchery's automatic
@@ -2644,18 +2653,58 @@ class Simulation:
             and len(tribe.created_objects) >= config.DMM_WARMUP_CREATIONS_REQUIRED
         )
         result = await reflect_on_history(
-            self.client, tribe.model, tribe.name,
+            self.client, config.REFLECTION_MODEL, tribe.name,
             tribe.chief_philosophy, recent_events, inventory,
             tribe.chief_decree, tribe.dmm_built, departure_eligible,
         )
-        # The chief's own reasoning for this reflection -- kept even when the
-        # philosophy didn't change, so the frontend has something real to show as a
-        # night-time thought bubble (see index.html's drawThoughtBubble) beyond just
-        # "nothing changed."
-        if result.get("reasoning"):
-            tribe.last_reflection = result["reasoning"]
+        # Explicit request, 2026-09-18: "I'm not sure we are measuring [reflection]
+        # much." Two plain counts, not a scored quality judgment (there's no real
+        # ground truth for "was this a good reflection") -- how often the night
+        # cycle actually fires, and of those, how often it actually moved the
+        # chief's philosophy versus reaffirming it. reflections_changed_philosophy
+        # / reflections_run is the real, checkable "how often does this outside
+        # voice actually change anything" rate a future look at real run data can
+        # use, instead of guessing from a handful of watched runs.
+        tribe.reflections_run += 1
+        # Explicit request, 2026-09-18: "a subconscious 'helper' to pare down the
+        # info and store it in an easy to use way (less browser load is better)."
+        # A private thought is remembered the same way a hazard or discovery
+        # already is (TribeMemory.remember, kind="reflection") -- reusing the
+        # same weighted, self-pruning store rather than a second structure, and
+        # never serialized to the frontend (Tribe.to_dict never exposes
+        # tribe.memory), so this costs nothing in browser payload. Recalled back
+        # into a live turn contextually -- see _prepare_turn, just before
+        # _build_visible_entities.
+        private_thoughts = result.get("private_thoughts") or ""
+        if private_thoughts:
+            stored_reflection = tribe.memory.remember(private_thoughts, self.cycle, weight=0.5, kind="reflection")
+            # "I like the flavor but it doesn't help them really does it" --
+            # explicit request, 2026-09-18: give a genuinely recurring private
+            # thought the same real behavioral pull chief_decree already has
+            # (an explicit "DUTY:" line every live turn, not ambient text --
+            # see prompts.py's duty_text), instead of leaving it as scenery.
+            # Only ever fills an EMPTY decree slot -- never overrides a decree
+            # the chief actually, explicitly set (proposed_decree above), same
+            # "sticky, never silently erased" rule that field already follows.
+            if (
+                stored_reflection["reinforced"] >= config.REFLECTION_STABILIZED_REINFORCEMENT_COUNT
+                and not tribe.chief_decree
+            ):
+                tribe.chief_decree = stored_reflection["text"][:200]
+                tribe.history.append(
+                    f"A thought that has come back to Chief {tribe.chief_name} night after night finally "
+                    f"settles into a standing decree: {tribe.chief_decree}"
+                )
+        # The chief's own private thought is what the frontend's night-time thought
+        # bubble shows (index.html's drawThoughtBubble) -- more genuinely personal
+        # than the terse mechanical "reasoning" line below, which exists to justify
+        # a changed/unchanged decision, not to be read as a thought. Falls back to
+        # reasoning when a model omits the new field (defensive, not the normal case).
+        if private_thoughts or result.get("reasoning"):
+            tribe.last_reflection = private_thoughts or result.get("reasoning", "")
             tribe.last_reflection_cycle = self.cycle
         if result.get("changed"):
+            tribe.reflections_changed_philosophy += 1
             old_philosophy = tribe.chief_philosophy
             tribe.chief_philosophy = result.get("revised_philosophy", old_philosophy)
             reasoning = result.get("reasoning", "")
@@ -4401,6 +4450,25 @@ class Simulation:
             available_actions = ["CLEAR_TERRITORY"] + [a for a in available_actions if a != "CLEAR_TERRITORY"]
 
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
+        # Explicit request, 2026-09-18: surface a chief's own past private
+        # reflection back into its live reasoning, not just the spectator's
+        # thought bubble (see _run_night_cycle's own comment on why this is
+        # stored via tribe.memory.remember(kind="reflection") instead of a new
+        # structure). Queried against chief_philosophy plus whatever's
+        # actually under real pressure right now (survival_bias, already
+        # computed above) rather than philosophy alone -- philosophy rarely
+        # changes turn to turn, so a philosophy-only query would keep
+        # resurfacing the exact same thought every cycle regardless of what's
+        # actually happening. kind="reflection" keeps this from ever crossing
+        # with a geographic/hazard memory (and vice versa) just because they
+        # happen to share a few words.
+        reflection_query = f"{tribe.chief_philosophy} {survival_bias}".strip()
+        if reflection_query:
+            recalled_thoughts = tribe.memory.recall(reflection_query, top_k=1, kind="reflection")
+            visible_entities += [
+                f"a private thought from cycle {t['cycle']} comes back to you: {t['text']}"
+                for t in recalled_thoughts
+            ]
         if tribe.wall_commitment_active:
             visible_entities.append(
                 "The wall section already under construction has to be finished before anything else -- "

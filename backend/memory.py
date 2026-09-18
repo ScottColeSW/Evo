@@ -37,6 +37,17 @@ class TribeMemory:
         "it", "this", "that",
     })
 
+    # Explicit request, 2026-09-18: "give him the signal" for a reflection that
+    # keeps recurring, not just a one-off. Same Jaccard-overlap scoring recall()
+    # already uses (cruder than real embeddings, but it correlates with real
+    # topical similarity -- see this class's own docstring), just checked at
+    # store time instead of query time: a new kind="reflection" text that
+    # substantially overlaps an existing one is the SAME recurring thought
+    # showing up again, not a new, unrelated one. First-cut threshold, no real
+    # run data behind it yet (this mechanic is brand new) -- worth revisiting
+    # once real reflection text exists to check it against.
+    REFLECTION_REINFORCEMENT_OVERLAP_THRESHOLD = 0.3
+
     def __init__(self, tribe_id: str, max_episodes: int = 40):
         self.tribe_id = tribe_id
         self.max_episodes = max_episodes
@@ -50,22 +61,57 @@ class TribeMemory:
     def _tokenize(self, text: str) -> set[str]:
         return set(self._WORD_RE.findall(text.lower())) - self._STOPWORDS
 
-    def remember(self, text: str, cycle: int, weight: float = 0.5) -> None:
-        self.entries.append({
+    def remember(self, text: str, cycle: int, weight: float = 0.5, kind: str = "episode") -> dict:
+        # `kind` (added 2026-09-18): defaults to "episode" so every existing call
+        # site -- geographic discoveries, hazard warnings -- is untouched. A chief's
+        # own private night-cycle reflection (Simulation._run_night_cycle) is stored
+        # here too, tagged kind="reflection", so it rides the same weighted,
+        # self-pruning store instead of a second structure -- see consolidate()'s
+        # own comment for why reflections are excluded from ever becoming a taboo.
+        #
+        # Reflections alone also check for reinforcement first (below) instead of
+        # always appending fresh -- a recurring conviction (the same private
+        # thought, worded differently or the same, coming back night after
+        # night) is real signal a one-off musing isn't, and Simulation.
+        # _run_night_cycle uses the returned entry's "reinforced" count to decide
+        # whether it's earned real standing-decree weight. Restricted to
+        # kind="reflection" only -- episode entries (hazards/discoveries) are
+        # each tied to their own real coordinates and were never meant to merge.
+        tokens = self._tokenize(text)
+        if kind == "reflection":
+            for entry in self.entries:
+                if entry.get("kind") != "reflection" or not entry["tokens"] or not tokens:
+                    continue
+                overlap = len(tokens & entry["tokens"]) / len(tokens | entry["tokens"])
+                if overlap >= self.REFLECTION_REINFORCEMENT_OVERLAP_THRESHOLD:
+                    entry["reinforced"] = entry.get("reinforced", 0) + 1
+                    entry["cycle"] = cycle
+                    entry["weight"] = max(entry["weight"], weight)
+                    entry["ts"] = time.time()
+                    return entry
+
+        entry = {
             "text": text,
-            "tokens": self._tokenize(text),
+            "tokens": tokens,
             "cycle": cycle,
             "weight": weight,
             "ts": time.time(),
-        })
+            "kind": kind,
+            "reinforced": 0,
+        }
+        self.entries.append(entry)
         if len(self.entries) > self.max_episodes * 2:
             self.consolidate()
+        return entry
 
-    def recall(self, query: str, top_k: int = 2) -> list[dict]:
+    def recall(self, query: str, top_k: int = 2, kind: str | None = None) -> list[dict]:
         """Returns up to `top_k` past entries that actually share vocabulary with
         `query`, ranked by Jaccard overlap. Entries with zero shared tokens are
         excluded rather than padded in -- no match is a more honest answer than a
-        random one."""
+        random one. `kind`, when given, restricts the search to that one category
+        (e.g. "reflection") so a geographic/hazard memory and a private thought can
+        never surface in each other's place just because they happen to share a
+        few words."""
         if not self.entries:
             return []
         query_tokens = self._tokenize(query)
@@ -74,6 +120,8 @@ class TribeMemory:
 
         scored = []
         for entry in self.entries:
+            if kind is not None and entry.get("kind", "episode") != kind:
+                continue
             tokens = entry["tokens"]
             if not tokens:
                 continue
@@ -85,8 +133,17 @@ class TribeMemory:
         return [entry for _, entry in scored[:top_k]]
 
     def consolidate(self) -> None:
-        """Distills high-weight memories into permanent taboos, then trims the log."""
-        ranked = sorted(self.entries, key=lambda e: e["weight"], reverse=True)
+        """Distills high-weight memories into permanent taboos, then trims the log.
+
+        Restricted to kind="episode" (added 2026-09-18): a taboo is framed
+        elsewhere (_build_visible_entities: "taboo: ...") as a real danger to
+        avoid -- a chief's own private reflection is self-knowledge, not a
+        hazard, and would read as a non-sequitur next to "the volcano near
+        (x,y) is deadly." Reflections still get pruned by the plain entries
+        trim below same as everything else; they just never graduate into this
+        specific, danger-framed permanent slot."""
+        candidates = [e for e in self.entries if e.get("kind", "episode") == "episode"]
+        ranked = sorted(candidates, key=lambda e: e["weight"], reverse=True)
         known_texts = {t["text"] for t in self.taboos}
         for e in ranked[:3]:
             if e["weight"] >= 0.75 and e["text"] not in known_texts:

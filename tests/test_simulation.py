@@ -9174,6 +9174,197 @@ async def test_night_cycle_leaves_philosophy_and_history_untouched_when_nothing_
 
 
 @run_async
+async def test_night_cycle_uses_the_dedicated_reflection_model_not_the_tribes_own():
+    """Explicit request, 2026-09-18: "I wanted to use gemma since it seems to
+    understand the game best... this is a smaller model and shouldn't cause
+    a lot of contention." Reverses the 2026-09-12 self-review design
+    (which passed tribe.model) back to a dedicated reviewer -- confirms
+    config.REFLECTION_MODEL is what actually gets passed, not the tribe's
+    own live model, using a tribe whose own model is deliberately different
+    from REFLECTION_MODEL so the two can't be confused."""
+    from backend import config
+
+    assert config.REFLECTION_MODEL != "qwen2.5:3b"
+    sim = Simulation([{"name": "Forest Tribe", "model": "qwen2.5:3b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+
+    captured = {}
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
+        captured["reviewer_model"] = reviewer_model
+        return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": "ok"}
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert captured["reviewer_model"] == config.REFLECTION_MODEL
+
+
+@run_async
+async def test_night_cycle_counts_reflections_run_and_when_philosophy_actually_changed():
+    """Explicit request, 2026-09-18: "I'm not sure we are measuring [reflection]
+    much." Two plain counts -- how often the night cycle fires at all, and of
+    those, how often it actually changed the philosophy versus reaffirming it."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    assert tribe.reflections_run == 0
+    assert tribe.reflections_changed_philosophy == 0
+
+    async def fake_reflect_no_change(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
+        return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": "ok"}
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect_no_change):
+        await sim._run_night_cycle(tribe)
+
+    assert tribe.reflections_run == 1
+    assert tribe.reflections_changed_philosophy == 0
+
+    async def fake_reflect_changed(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
+        return {"revised_philosophy": "caution and hoarding", "changed": True, "reasoning": "too many losses"}
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect_changed):
+        await sim._run_night_cycle(tribe)
+
+    assert tribe.reflections_run == 2
+    assert tribe.reflections_changed_philosophy == 1
+
+
+@run_async
+async def test_night_cycle_remembers_private_thoughts_as_reflection_kind_memory():
+    """Explicit request, 2026-09-18: "a subconscious 'helper' to pare down the
+    info and store it in an easy to use way." A private thought rides the same
+    TribeMemory store as hazards/discoveries, tagged kind="reflection" so it
+    can never be confused with either."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    assert tribe.memory.entries == []
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
+        return {
+            "private_thoughts": "the tribe feels ready to expand beyond the valley",
+            "revised_philosophy": current_philosophy, "changed": False, "reasoning": "ok",
+        }
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert len(tribe.memory.entries) == 1
+    stored = tribe.memory.entries[0]
+    assert stored["kind"] == "reflection"
+    assert stored["text"] == "the tribe feels ready to expand beyond the valley"
+    assert tribe.last_reflection == "the tribe feels ready to expand beyond the valley"
+
+
+@run_async
+async def test_night_cycle_promotes_a_stabilized_reflection_into_an_empty_decree():
+    """Explicit request, 2026-09-18: "I like the flavor but it doesn't help
+    them really does it... give him the signal." Once a private thought has
+    recurred config.REFLECTION_STABILIZED_REINFORCEMENT_COUNT times (real
+    reinforcement, not a one-off), it earns the same real behavioral pull
+    chief_decree already has (an explicit "DUTY:" line every live turn) --
+    but only into an empty decree slot."""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    assert tribe.chief_decree == ""
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
+        return {
+            "private_thoughts": "the tribe must secure the river before winter grain runs out",
+            "revised_philosophy": current_philosophy, "changed": False, "reasoning": "ok",
+        }
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        for _ in range(config.REFLECTION_STABILIZED_REINFORCEMENT_COUNT):
+            await sim._run_night_cycle(tribe)
+            assert tribe.chief_decree == ""  # not stabilized yet
+        await sim._run_night_cycle(tribe)
+
+    assert tribe.chief_decree == "the tribe must secure the river before winter grain runs out"
+    assert any("finally settles into a standing decree" in e for e in tribe.history)
+
+
+@run_async
+async def test_night_cycle_never_overrides_an_existing_decree_with_a_stabilized_reflection():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.chief_decree = "the chief's own explicit standing order"
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
+        return {
+            "private_thoughts": "the tribe must secure the river before winter grain runs out",
+            "revised_philosophy": current_philosophy, "changed": False, "reasoning": "ok",
+        }
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        for _ in range(config.REFLECTION_STABILIZED_REINFORCEMENT_COUNT + 1):
+            await sim._run_night_cycle(tribe)
+
+    assert tribe.chief_decree == "the chief's own explicit standing order"
+
+
+@run_async
+async def test_night_cycle_falls_back_to_reasoning_for_the_thought_bubble_without_private_thoughts():
+    """Defensive path, not the normal case: a model that omits the new optional
+    private_thoughts field shouldn't blank out the frontend's thought bubble,
+    and nothing should be stored in memory with nothing real to store."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
+        return {"revised_philosophy": current_philosophy, "changed": False, "reasoning": "still working"}
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect):
+        await sim._run_night_cycle(tribe)
+
+    assert tribe.memory.entries == []
+    assert tribe.last_reflection == "still working"
+
+
+def test_prepare_turn_surfaces_a_relevant_recalled_reflection():
+    """The recalled thought must actually be topically relevant (queried
+    against chief_philosophy + survival_bias), not just the most recent one,
+    and must be clearly framed as the chief's own past private thought, not
+    a geographic memory or a taboo."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.chief_philosophy = "growth above all else"
+    tribe.memory.remember(
+        "growth without enough food stores nearly starved the tribe last time", cycle=3, weight=0.5, kind="reflection"
+    )
+    tribe.memory.remember("gathered stone at the quarry", cycle=4, weight=0.5, kind="episode")
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "a private thought from cycle 3 comes back to you" in request["prompt"]
+    assert "growth without enough food" in request["prompt"]
+    assert "gathered stone at the quarry" not in request["prompt"]
+
+
+def test_prepare_turn_stays_silent_when_no_reflection_is_relevant():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.chief_philosophy = "growth above all else"
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "comes back to you" not in request["prompt"]
+
+
+@run_async
 async def test_night_cycle_collapses_repeated_hatches_to_the_single_latest_one():
     """Live report, 2026-09-14/15: "the chief is getting every hatch not just
     the latest or greatest (singular)." Confirmed against two real runs: a
