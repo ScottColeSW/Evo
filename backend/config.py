@@ -49,7 +49,17 @@ HYDROLOGY_SEED = 20260906
 # real water access). A tribe's starting stockpile (Tribe.__init__) still covers early
 # BUILD_FIRE/CONSTRUCT_WALL needs before that -- this gates *replenishing* the economy,
 # not survival itself (GATHER_WATER/GATHER_FOOD/HUNT_DEER are never touched).
-SETTLEMENT_STABILITY_CYCLES = 10
+#
+# Trimmed from 10 to 5, 2026-09-18: was a free-running clock alongside the water
+# search when spawn ground was farmable (both could finish "at the same time"),
+# but SPAWN_POINTS[0]/[1] moving off farmable ground that same day means this
+# clock can no longer start until AFTER a tribe actually reaches real water --
+# search time and stability time now run sequentially, not in parallel. A real
+# run (run_20260918_123236) confirmed this roughly doubled time-to-first-gather
+# (cycle ~10 to ~20 for the exact same water-search pace). Halved back to a
+# quarter-day (DAY_LENGTH_CYCLES=20) to bring the total back toward the old
+# pace without giving up the "find water first" requirement itself.
+SETTLEMENT_STABILITY_CYCLES = 5
 FARMABLE_BIOMES = ("plains", "river", "lake")
 
 # Explicit request: "the proposed settlement sites, water found, are making it

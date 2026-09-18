@@ -280,7 +280,10 @@ def test_not_settled_yet_names_ground_already_qualifying_and_warns_against_reloc
 
     request, _ctx = sim._prepare_turn(tribe)
 
-    assert "This ground already qualifies for settling -- 3/10 cycles" in request["prompt"]
+    assert (
+        f"This ground already qualifies for settling -- 3/{config.SETTLEMENT_STABILITY_CYCLES} cycles"
+        in request["prompt"]
+    )
     assert "relocating somewhere that no longer qualifies resets this progress back to 0" in request["prompt"]
 
 
