@@ -1363,25 +1363,24 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
 
 const RESOURCE_ICON = { wood: "🪵", stone: "🪨", food: "🍖", water: "💧" };
 
-// Explicit request: "every water source a Tribe finds, adds to the passive
-// Water income, so they should just get an Infinity sign for water once they
-// find 2 or 3." Mirrors backend/config.py's WATER_SECURITY_SITE_THRESHOLD --
-// once a tribe has confirmed this many distinct sources (Simulation.
-// _advance_water_supply keeps water topped to the storage cap from then on,
-// unconditionally), the number itself stops being the interesting fact.
-const WATER_SECURITY_SITE_THRESHOLD = 3;
+// Explicit request, 2026-09-19 ("continue making the frontend dynamic to
+// eliminate the grep bs"): this used to independently re-derive Simulation.
+// _is_water_secure's own formula (a duplicated WATER_SECURITY_SITE_THRESHOLD
+// constant, confirmed_water_sites.length alone) -- and it was genuinely
+// wrong, not just duplicated: the backend's real condition is `well_built OR
+// enough confirmed sites` (explicit fix, 2026-09-09, "Tribe 2 built a Well
+// which should have gotten them to the infinity Water"), but this only ever
+// checked the site count, so a Well-secured tribe showed a raw finite number
+// here while the backend's own survival warning already correctly treated
+// it as secure. Tribe.to_dict() now sends the real, server-computed value
+// directly as t.is_water_secure/t.is_food_secure; this file no longer owns
+// a second copy of either formula.
 function waterDisplay(t) {
-  return (t.confirmed_water_sites || []).length >= WATER_SECURITY_SITE_THRESHOLD ? "∞" : t.water;
+  return t.is_water_secure ? "∞" : t.water;
 }
 
-// Same treatment, food's own qualification: "let them have Infinity if they
-// Build a Kitchen and have either a Fishery or a Farm." Mirrors Simulation.
-// _advance_food_supply's real condition exactly -- last_harvest_cycle (not
-// the live farm_plots count) is the proof a farm has ever actually paid off,
-// since a plot withering shouldn't flicker this back off.
 function foodDisplay(t) {
-  const secure = t.kitchen_built && (t.fishery_built || t.last_harvest_cycle > 0);
-  return secure ? "∞" : t.food;
+  return t.is_food_secure ? "∞" : t.food;
 }
 
 // Explicit request: "The Forge isn't recognizing all the different types of

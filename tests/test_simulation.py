@@ -10413,6 +10413,49 @@ def test_snapshot_surfaces_the_stance_between_two_tribes():
     assert allied_pair["stance"] == "ALLIED"
 
 
+def test_snapshot_exposes_real_camped_food_secure_and_water_secure_booleans():
+    """Explicit request, 2026-09-19: "continue making the frontend dynamic to
+    eliminate the grep bs." The frontend used to re-derive all three of these
+    by hand (isCamped()/FARMABLE_BIOMES, foodDisplay()'s own kitchen_built/
+    fishery_built expression, waterDisplay()'s own WATER_SECURITY_SITE_
+    THRESHOLD/confirmed_water_sites check) -- the snapshot now sends the
+    real, server-computed values directly instead."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.kitchen_built = True
+    tribe.last_harvest_cycle = 5
+    tribe.confirmed_water_sites = [(1, 1)] * config.WATER_SECURITY_SITE_THRESHOLD
+
+    t = sim.snapshot()["tribes"]["tribe_0"]
+
+    assert t["is_camped"] is True
+    assert t["is_food_secure"] is True
+    assert t["is_water_secure"] is True
+
+
+def test_snapshot_water_secure_is_true_from_a_well_alone_no_confirmed_sites():
+    """The actual bug this closed: frontend/index.html's own waterDisplay()
+    only ever checked confirmed_water_sites.length, missing the real
+    well_built path entirely (Simulation._is_water_secure's own explicit
+    fix, 2026-09-09: "Tribe 2 built a Well which should have gotten them to
+    the infinity Water") -- a Well-secured tribe showed a raw finite number
+    in the sidebar instead of the infinity symbol the backend's own survival
+    warning already treated it as earning."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.well_built = True
+    assert tribe.confirmed_water_sites == []
+
+    t = sim.snapshot()["tribes"]["tribe_0"]
+
+    assert t["is_water_secure"] is True
+
+
 def test_snapshot_includes_worn_trails_for_the_frontend_to_render():
     sim = _bare_simulation()
     sim.world.wear_trail(12, 34, 0.5, color="#c084fc")

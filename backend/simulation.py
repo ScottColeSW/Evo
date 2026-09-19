@@ -1871,9 +1871,23 @@ class Tribe:
         # direct `Tribe(...).to_dict()` test call (which doesn't care about
         # this field) keeps working unchanged.
         era_label = next((e.label for e in ERAS if e.key == self.era), self.era)
+        # Explicit request, 2026-09-19: "continue making the frontend dynamic
+        # to eliminate the grep bs" -- foodDisplay()/waterDisplay()
+        # (frontend/index.html) used to re-derive these exact two booleans by
+        # hand (a duplicated WATER_SECURITY_SITE_THRESHOLD constant, a
+        # duplicated kitchen_built/fishery_built/last_harvest_cycle
+        # expression) just to decide when to show "∞" instead of a number --
+        # the same "frontend re-derives a backend predicate" pattern the
+        # is_camped fix already closed once. Both functions already take just
+        # `tribe` (no `world` dependency, unlike _is_camped), so -- unlike
+        # that fix -- they don't need threading through the caller at all;
+        # to_dict() already computed both for survival_warning below, this
+        # just also keeps the raw booleans instead of only their derived text.
+        food_secure = _is_food_secure(self)
+        water_secure = _is_water_secure(self)
         survival_warning, _ = survival_bias_string(
             self.food, self.water, self.population, self.fishing_learned, self.cooking_learned,
-            water_secure=_is_water_secure(self), food_secure=_is_food_secure(self),
+            water_secure=water_secure, food_secure=food_secure,
             kitchen_built=self.kitchen_built, long_houses_built=self.long_houses_built,
         )
         nxt = next_era(self.era)
@@ -2000,6 +2014,8 @@ class Tribe:
             "buildings": self.buildings,
             "fishery_built": self.fishery_built,
             "survival_warning": survival_warning,
+            "is_food_secure": food_secure,
+            "is_water_secure": water_secure,
             "extinct": self.extinct,
             "chief_name": self.chief_name,
             "chief_philosophy": self.chief_philosophy,
