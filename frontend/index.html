@@ -770,8 +770,6 @@ async function fetchGameConfig() {
     JOINT_CASTLE_STONE_COST = cfg.joint_castle_stone_cost;
     BATTALION_CAPACITY_PER_BARRACKS = cfg.battalion_capacity_per_barracks;
     BARRACKS_MAX_COUNT = cfg.barracks_max_count;
-    UPKEEP_POPULATION_DIVISOR = cfg.upkeep_population_divisor;
-    FISHING_SUPPLY_MULTIPLIER = cfg.fishing_supply_multiplier;
     WALL_MAX_LAYERS = cfg.wall_max_layers;
     ERA_ORDER = cfg.era_order;
   } catch (e) { /* server not reachable yet -- keep the hardcoded fallbacks */ }
@@ -4543,15 +4541,6 @@ let JOINT_CASTLE_STONE_COST = 100;
 // (barracks_built + barracks_upgrades) * BATTALION_CAPACITY_PER_BARRACKS.
 let BATTALION_CAPACITY_PER_BARRACKS = 20;
 let BARRACKS_MAX_COUNT = 5;
-// Mirrors backend/config.py's UPKEEP_POPULATION_DIVISOR/FISHING_SUPPLY_MULTIPLIER
-// -- fishing's passive supply scales with population the same way upkeep does
-// (bug report: "we have hit a food and water scaling problem"), not a flat number.
-let UPKEEP_POPULATION_DIVISOR = 10;
-let FISHING_SUPPLY_MULTIPLIER = 1.5;
-function fishSupplyPerCycle(t) {
-  const upkeep = Math.max(1, Math.floor((t.population || 0) / UPKEEP_POPULATION_DIVISOR));
-  return Math.round(upkeep * FISHING_SUPPLY_MULTIPLIER);
-}
 
 // A dedicated mini-panel for each real production system or structure a tribe has
 // stood up -- per explicit request ("you might as well show the rest, like Fire and
@@ -4781,7 +4770,13 @@ function farmingPanel(t) {
     }
   }
   if (t.fishing_learned) food.push("🎣 Fishing — mastered, fish now caught for food");
-  if (t.fishery_built) food.push(`🐟 Fishery — ${fishSupplyPerCycle(t)} food/day flows in automatically`);
+  // Explicit request 2026-09-19 (codebase redundancy audit finding #2): this
+  // used to re-derive upkeep * FISHING_SUPPLY_MULTIPLIER by hand and silently
+  // dropped fishery_bonus/dock_bonus/the cooking multiplier -- understating
+  // the real number for any tribe with a Fishery. Reads the real backend-
+  // computed value now (Tribe.to_dict's fish_supply_per_cycle, Simulation.
+  // _fish_supply_per_cycle), same Bucket B pattern as is_camped.
+  if (t.fishery_built) food.push(`🐟 Fishery — ${t.fish_supply_per_cycle || 0} food/day flows in automatically`);
   if (t.fire_ever_built) food.push("🔥 Fire — mastered, enables cooking");
   if (t.cooking_learned && !t.kitchen_built) food.push("🍳 Cooking — mastered, every forage/hunt/catch worth 3x as much food");
   if (t.kitchen_built) food.push(`🍲 Kitchen — every hunt, forage, or catch yields ${COOKING_FOOD_MULTIPLIER}x as much food`);

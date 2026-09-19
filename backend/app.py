@@ -78,8 +78,6 @@ async def game_config(request: web.Request) -> web.Response:
     snapshot instead, since they genuinely change turn to turn)."""
     return web.json_response({
         "settlement_stability_cycles": config.SETTLEMENT_STABILITY_CYCLES,
-        "upkeep_population_divisor": config.UPKEEP_POPULATION_DIVISOR,
-        "fishing_supply_multiplier": config.FISHING_SUPPLY_MULTIPLIER,
         "crop_harvest_yield_per_plot": config.CROP_HARVEST_YIELD,
         "wall_ring_section_count": config.WALL_RING_SECTION_COUNT,
         "wall_max_layers": config.WALL_MAX_LAYERS,

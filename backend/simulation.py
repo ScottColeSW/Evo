@@ -1904,6 +1904,12 @@ class Tribe:
         # just also keeps the raw booleans instead of only their derived text.
         food_secure = _is_food_secure(self)
         water_secure = _is_water_secure(self)
+        # Codebase audit, 2026-09-19: frontend/index.html's own fishSupplyPerCycle()
+        # re-derived this formula by hand and silently dropped fishery_bonus/
+        # dock_bonus/the cooking multiplier -- see _fish_supply_per_cycle's own
+        # docstring. Needs the real is_camped (unlike food/water_secure above),
+        # same threading-through-the-caller shape as the is_camped field itself.
+        fish_supply_per_cycle = _fish_supply_per_cycle(self, bool(is_camped))
         survival_warning, _ = survival_bias_string(
             self.food, self.water, self.population, self.fishing_learned, self.cooking_learned,
             water_secure=water_secure, food_secure=food_secure,
@@ -1949,6 +1955,7 @@ class Tribe:
             "farm_plots": self.farm_plots,
             "crop_growth": self.crop_growth,
             "fishing_learned": self.fishing_learned,
+            "fish_supply_per_cycle": fish_supply_per_cycle,
             "cooking_learned": self.cooking_learned,
             "hunt_ever_succeeded": self.hunt_ever_succeeded,
             "foraged_ever_succeeded": self.foraged_ever_succeeded,
@@ -2210,6 +2217,24 @@ def _livestock_surplus_threshold(tribe: "Tribe") -> int:
     "surplus feasted on" display can never drift from what actually happened
     server-side."""
     return max(config.LIVESTOCK_SURPLUS_THRESHOLD, tribe.population // config.LIVESTOCK_SURPLUS_POPULATION_DIVISOR)
+
+
+def _fish_supply_per_cycle(tribe: "Tribe", is_camped: bool) -> int:
+    """The real per-cycle passive fish income once fishing_learned -- shared by
+    Simulation._advance_fish_supply (which actually pays it out) and
+    Tribe.to_dict() (which reports it to the frontend). Codebase audit,
+    2026-09-19: frontend/index.html's own fishSupplyPerCycle() re-derived
+    `upkeep * FISHING_SUPPLY_MULTIPLIER` by hand and silently dropped
+    fishery_bonus/dock_bonus/_food_multiplier entirely -- a real, active bug
+    (understating the sidebar's own displayed number for any tribe with a
+    Fishery), not just a duplication risk. Sent as a real computed field
+    instead, same Bucket B pattern as is_camped/is_food_secure/is_water_secure."""
+    if not (tribe.fishing_learned and is_camped):
+        return 0
+    upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+    fishery_bonus = config.FISHERY_SUPPLY_BONUS_MULTIPLIER if tribe.fishery_built else 1.0
+    dock_bonus = (1 + config.DOCK_FISH_CATCH_BONUS_FRACTION) if tribe.dock_built else 1.0
+    return round(upkeep * config.FISHING_SUPPLY_MULTIPLIER * fishery_bonus * dock_bonus * _food_multiplier(tribe))
 
 
 def _scaled_population_loss(tribe: "Tribe") -> int:
@@ -8344,13 +8369,8 @@ class Simulation:
         the same general settled check CATCH_FISH's own availability used, not the
         stricter settled_near_water -- explicit correction that the extra
         water-adjacency distinction was bogus."""
-        if tribe.fishing_learned and self._is_camped(tribe):
-            upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
-            fishery_bonus = config.FISHERY_SUPPLY_BONUS_MULTIPLIER if tribe.fishery_built else 1.0
-            dock_bonus = (1 + config.DOCK_FISH_CATCH_BONUS_FRACTION) if tribe.dock_built else 1.0
-            amount = round(
-                upkeep * config.FISHING_SUPPLY_MULTIPLIER * fishery_bonus * dock_bonus * _food_multiplier(tribe)
-            )
+        amount = _fish_supply_per_cycle(tribe, self._is_camped(tribe))
+        if amount:
             self._capped_add(tribe, "food", amount)
 
     def _advance_mine_yield(self, tribe: Tribe) -> None:

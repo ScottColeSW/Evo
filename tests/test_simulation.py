@@ -11643,6 +11643,44 @@ def test_advance_fish_supply_dock_bonus_stacks_with_fishery():
     assert tribe.food == expected
 
 
+def test_to_dict_fish_supply_per_cycle_matches_what_advance_fish_supply_actually_pays():
+    """Codebase redundancy audit, 2026-09-19: frontend/index.html's own
+    fishSupplyPerCycle() re-derived `upkeep * FISHING_SUPPLY_MULTIPLIER` by
+    hand and silently dropped fishery_bonus/dock_bonus/the cooking
+    multiplier -- an active bug, understating the real number for any tribe
+    with a Fishery, not just a duplication risk. Tribe.to_dict() now sends
+    the real value (Simulation._fish_supply_per_cycle, the same shared
+    function _advance_fish_supply itself calls) -- this proves the two can
+    never drift apart, by comparing the food actually paid out against the
+    payload field from the exact same tribe state."""
+    from backend import config
+
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])  # river
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.fishing_learned = True
+    tribe.dock_built = True
+    tribe.fishery_built = True
+    tribe.cooking_learned = True
+    tribe.population = 50  # small enough that the payout stays under the storage cap
+    tribe.food = 0
+
+    is_camped = sim._is_camped(tribe)
+    reported = tribe.to_dict(is_camped=is_camped)["fish_supply_per_cycle"]
+    sim._advance_fish_supply(tribe)
+
+    assert reported > 0
+    assert tribe.food == reported
+
+
+def test_to_dict_fish_supply_per_cycle_is_zero_before_fishing_is_learned():
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = 999
+
+    assert tribe.to_dict(is_camped=sim._is_camped(tribe))["fish_supply_per_cycle"] == 0
+
+
 def test_advance_fish_supply_is_capped_by_storage():
     from backend import config
 
