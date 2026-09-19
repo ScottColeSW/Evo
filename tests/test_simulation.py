@@ -9228,6 +9228,28 @@ async def test_night_cycle_leaves_philosophy_and_history_untouched_when_nothing_
 
 
 @run_async
+async def test_night_cycle_degrades_gracefully_when_the_llm_call_raises():
+    """Live report, 2026-09-19: a real Ollama 500 must not propagate out of
+    _run_night_cycle and take the whole tick down with it -- philosophy and
+    history should simply stay untouched, same as an unusable-but-not-raised
+    response already degrades to."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+    tribe.chief_philosophy = "expand aggressively"
+    history_before = list(tribe.history)
+
+    async def failing_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
+        raise RuntimeError("Server error '500' -- token repeat limit reached")
+
+    with mock.patch("backend.simulation.reflect_on_history", failing_reflect):
+        await sim._run_night_cycle(tribe)  # must not raise
+
+    assert tribe.chief_philosophy == "expand aggressively"
+    assert list(tribe.history) == history_before
+
+
+@run_async
 async def test_night_cycle_uses_the_dedicated_reflection_model_not_the_tribes_own():
     """Explicit request, 2026-09-18: "I wanted to use gemma since it seems to
     understand the game best... this is a smaller model and shouldn't cause
@@ -12968,6 +12990,61 @@ async def test_resolve_hatch_falls_back_gracefully_if_the_llm_call_fails():
 
     with mock.patch("backend.simulation.hatch", fake_hatch):
         await sim._resolve_hatch(tribe)
+
+    assert tribe.flock == 3
+    assert tribe.flock_lineage[-1]["trait"] == "unremarkable but hardy"
+
+
+@run_async
+async def test_safe_llm_result_returns_empty_dict_instead_of_raising():
+    """Live report, 2026-09-19: a real Ollama 500 ("prediction aborted, token
+    repeat limit reached") from _resolve_hatch used to propagate all the way
+    up through step() to app.py._tick_session's outer catch-all, skipping the
+    WHOLE tick for every tribe in the session -- not just the one resolution
+    that actually failed. ModelBatchScheduler.run_batch already isolates
+    this exact failure for ordinary turns; _safe_llm_result gives these six
+    unbatched resolve-with-a-real-LLM-call sites the same protection."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+
+    async def failing_call():
+        raise RuntimeError("Server error '500' -- token repeat limit reached")
+
+    result = await sim._safe_llm_result(failing_call(), "test_call")
+
+    assert result == {}
+
+
+@run_async
+async def test_safe_llm_result_passes_through_a_real_result_unchanged():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+
+    async def real_call():
+        return {"trait": "hardy forager"}
+
+    result = await sim._safe_llm_result(real_call(), "test_call")
+
+    assert result == {"trait": "hardy forager"}
+
+
+@run_async
+async def test_resolve_hatch_degrades_gracefully_when_the_llm_call_raises():
+    """Same fallback as the empty-dict case above, but for a real exception
+    (an Ollama 500, a dropped connection, etc.) instead of a merely-unusable
+    response -- the flock must still grow, and the tick must not die."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.flock = 2
+    parents = [
+        {"trait": "hardy", "parents": [], "cycle": 1, "note": ""},
+        {"trait": "quick to forage", "parents": [], "cycle": 2, "note": ""},
+    ]
+    tribe.pending_hatch = {"parents": parents}
+
+    async def failing_hatch(client, model, parent_a, parent_b, era):
+        raise RuntimeError("Server error '500' -- token repeat limit reached")
+
+    with mock.patch("backend.simulation.hatch", failing_hatch):
+        await sim._resolve_hatch(tribe)  # must not raise
 
     assert tribe.flock == 3
     assert tribe.flock_lineage[-1]["trait"] == "unremarkable but hardy"
