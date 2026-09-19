@@ -5461,6 +5461,83 @@ def test_boxed_in_give_up_lets_a_settled_expedition_start_walking_home_immediate
     assert tribe.expeditions[0]["pos"] != pos_before
 
 
+def test_environmental_hazard_death_lets_a_settled_scout_start_walking_home_immediately():
+    """Live report, 2026-09-19: "watching scouts visibly stuck for a day
+    cycle, then moving a little, then stuck, then return." Grounded against
+    a real run (run_20260919_121206): a scout's shoals-hazard roll killed
+    someone and flipped phase to "returning," but without pushing_onward the
+    party then sat at that tile for a full extra day before its first step
+    home -- the same symptom test_boxed_in_give_up_lets_a_settled_expedition_
+    start_walking_home_immediately already regression-tests for the boxed-in
+    trigger, now covered for the environmental-hazard trigger too."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.population = 10
+    sim.cycle = 20  # a real day boundary
+    # target == pos on a known shoals tile -- terrain_aware_step trivially
+    # "arrives" at its own target with no movement, so the hazard check below
+    # fires against that exact shoals tile without needing to predict a step.
+    tribe.expeditions = [{
+        "kind": "scout", "pos": [86, 40], "origin": [50, 40], "target": [86, 40],
+        "day": 5, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 9, "path": [],
+    }]
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):  # guarantees the shoals hazard kills
+        sim._advance_one_expedition(tribe, tribe.expeditions[0])
+
+    assert tribe.expeditions[0]["phase"] == "returning"
+    assert tribe.expeditions[0]["pushing_onward"] is True
+    assert tribe.population == 9  # the hazard death itself still happened
+
+    # Next cycle is still not a day boundary -- without pushing_onward this call
+    # would have been a no-op (settled + not is_new_day), leaving the party
+    # sitting at the hazard tile for up to 20 more cycles before its first step
+    # home.
+    sim.cycle += 1
+    pos_before = list(tribe.expeditions[0]["pos"])
+    with mock.patch("backend.simulation.random.random", return_value=1.0):
+        sim._advance_one_expedition(tribe, tribe.expeditions[0])
+
+    assert tribe.expeditions[0]["pos"] != pos_before
+
+
+def test_raider_ambush_lets_a_settled_scout_start_walking_home_immediately():
+    """Sibling to the environmental-hazard test above -- an ambush flips
+    phase to "returning" the exact same way (backend/simulation.py's
+    _advance_one_expedition, the outbound leg's ambush check) and needed the
+    identical pushing_onward fix."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    sim.cycle = 20  # a real day boundary
+    tribe.expeditions = [{
+        "kind": "scout", "pos": [50, 50], "origin": [50, 50], "target": [60, 60],
+        "day": 3, "phase": "outbound", "found": None, "terrain_report": None,
+        "food_gathered": 0, "water_gathered": 0,
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 9, "path": [],
+    }]
+
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_one_expedition(tribe, tribe.expeditions[0])
+
+    assert tribe.expeditions[0]["phase"] == "returning"
+    assert tribe.expeditions[0]["pushing_onward"] is True
+
+    sim.cycle += 1
+    pos_before = list(tribe.expeditions[0]["pos"])
+    with mock.patch("backend.simulation.random.random", return_value=1.0):
+        sim._advance_one_expedition(tribe, tribe.expeditions[0])
+
+    assert tribe.expeditions[0]["pos"] != pos_before
+
+
 def test_returning_expedition_gives_up_when_physically_boxed_in_on_the_way_home():
     """Live bug report ("Scouts, after settlement, are doing weird things"):
     confirmed via board_history.db -- a settled tribe's scout got stuck at a

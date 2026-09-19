@@ -6428,6 +6428,18 @@ class Simulation:
                     or self._ocean_hazard(tribe, nx, ny)
                     or self._shoals_hazard(tribe, nx, ny)
                 ):
+                    # Live report, 2026-09-19: "watching scouts visibly stuck for a
+                    # day cycle, then moving a little, then stuck, then return."
+                    # Grounded against a real run: a scout survived a shoals hazard
+                    # roll on day 5 (no death, no phase change), then a fresh roll
+                    # on day 6 actually killed someone and flipped phase to
+                    # "returning" -- but without pushing_onward, the party then sat
+                    # at that same tile for a full extra day before its first step
+                    # home, the exact "looks stuck" symptom the boxed-in fix below
+                    # already exists to solve. Same treatment, same reasoning: a
+                    # party that just survived a hazard death has every reason to
+                    # move fast, not amble home at the ordinary once-a-day pace.
+                    exp["pushing_onward"] = True
                     exp["phase"] = "returning"
                     return False
                 exp["food_gathered"] += config.EXPEDITION_OUTBOUND_DAILY_FOOD
@@ -6446,6 +6458,12 @@ class Simulation:
             # moving settled tribe's party far more likely to be ambushed than
             # one that used to cross the same ground in a single fast jump.
             if is_new_day and self._expedition_raider_ambush(tribe, exp, nx, ny):
+                # Same pushing_onward fix as the environmental hazards just above,
+                # for the same reason -- an ambush is exactly as much "a real
+                # danger just proved itself" as a volcano/shoals death, and left
+                # this party with the identical "sits still for a day" symptom
+                # otherwise.
+                exp["pushing_onward"] = True
                 exp["phase"] = "returning"
                 return False
 
