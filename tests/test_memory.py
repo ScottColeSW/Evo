@@ -123,6 +123,65 @@ def test_remember_does_not_reinforce_an_unrelated_reflection():
     assert all(e["reinforced"] == 0 for e in memory.entries)
 
 
+def test_remember_reflection_reinforces_on_real_embedding_similarity():
+    """Explicit request, 2026-09-19: "I like honest and upgrade and we have
+    nomic-embed-text." Two paraphrases of the same underlying worry -- the
+    exact class of pair plain Jaccard overlap measurably missed in a real
+    run (0.09-0.17, under the 0.3 threshold) -- must reinforce via cosine
+    similarity on their (here, hand-supplied) embeddings instead."""
+    memory = TribeMemory("tribe_0")
+    first = memory.remember_reflection(
+        "resource management is becoming a real concern", cycle=1, weight=0.5, embedding=[1.0, 0.0, 0.0],
+    )
+    assert first["reinforced"] == 0
+
+    second = memory.remember_reflection(
+        "the scarcity of resources worries me", cycle=10, weight=0.5, embedding=[0.99, 0.01, 0.0],
+    )
+
+    assert len(memory.entries) == 1
+    assert second is first
+    assert second["reinforced"] == 1
+    assert second["cycle"] == 10
+
+
+def test_remember_reflection_does_not_reinforce_a_dissimilar_embedding():
+    memory = TribeMemory("tribe_0")
+    memory.remember_reflection("resource management is becoming a real concern", cycle=1, weight=0.5, embedding=[1.0, 0.0, 0.0])
+
+    memory.remember_reflection("the raiders to the north are a real threat", cycle=2, weight=0.5, embedding=[0.0, 1.0, 0.0])
+
+    assert len(memory.entries) == 2
+    assert all(e["reinforced"] == 0 for e in memory.entries)
+
+
+def test_remember_reflection_falls_back_to_token_overlap_without_an_embedding():
+    """embed() fails open (returns None on any error) -- remember_reflection
+    must degrade to exactly remember()'s own existing token-overlap
+    behavior, never leave a reflection permanently unable to reinforce just
+    because one embedding call happened to fail."""
+    memory = TribeMemory("tribe_0")
+    first = memory.remember_reflection("the tribe should focus on growth above all else", cycle=1, weight=0.5, embedding=None)
+
+    second = memory.remember_reflection("growth above all else should be the tribe's focus", cycle=10, weight=0.5, embedding=None)
+
+    assert second is first
+    assert second["reinforced"] == 1
+
+
+def test_remember_reflection_stores_tokens_too_for_recall_compatibility():
+    """recall() (used by _prepare_turn to surface a relevant past reflection
+    into a live turn) deliberately stays on token overlap -- an entry stored
+    via remember_reflection must still populate "tokens" so it's just as
+    findable there as one stored via plain remember()."""
+    memory = TribeMemory("tribe_0")
+    memory.remember_reflection("the flock's growth is a welcome sign", cycle=1, weight=0.5, embedding=[1.0, 0.0])
+
+    results = memory.recall("the flock's growth", kind="reflection")
+
+    assert len(results) == 1
+
+
 def test_remember_never_reinforces_across_episode_and_reflection_kinds():
     """Episode entries (hazards/discoveries) are each tied to their own real
     coordinates and were never meant to merge, even if wording overlaps."""

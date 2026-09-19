@@ -203,6 +203,22 @@ REFLECTION_MODEL = "gemma2:2b"
 # real run data yet behind this specific number.
 REFLECTION_STABILIZED_REINFORCEMENT_COUNT = 2
 
+# Explicit request, 2026-09-19: "I like honest and upgrade and we have nomic-
+# embed-text." Real Jaccard overlap couldn't reliably detect a chief's own
+# recurring private thought -- measured live against a real run's reflection
+# text: the two most thematically-similar reflections found (both genuinely
+# about the same underlying worry, just reworded each time) scored 0.09-0.17
+# overlap, well under the 0.3 reinforcement threshold. Scoped deliberately to
+# just this one already-async, low-frequency call site (Simulation.
+# _run_night_cycle, once per NIGHT_CYCLE_EVERY_N_CYCLES per tribe) -- not the
+# per-turn recall() calls in _prepare_turn, which would add a real network
+# round-trip to every tribe's every live turn for no proven benefit yet. The
+# similarity threshold itself (TribeMemory.REFLECTION_EMBEDDING_SIMILARITY_
+# THRESHOLD, backend/memory.py) lives next to its own token-overlap sibling
+# rather than here -- memory.py stays deliberately free of any config.py
+# import, same as every constant it already owns.
+REFLECTION_EMBEDDING_MODEL = "nomic-embed-text"
+
 # One-time narrative synthesis at game-over (Simulation._trigger_game_over), distinct
 # from the plain factual _generate_game_over_summary (no model call, just string
 # templating) -- an actual outside voice telling the whole game's story once, when

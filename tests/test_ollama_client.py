@@ -222,3 +222,56 @@ async def test_unload_model_still_best_effort_when_the_post_itself_fails():
         await client.unload_model("qwen2.5:3b")  # must not raise
 
     mock_list.assert_not_awaited()  # no point polling if the unload request never even went out
+
+
+@run_async
+async def test_embed_returns_the_real_vector_on_success():
+    client = OllamaClient()
+    fake = _FakeResponse({"embedding": [0.1, 0.2, 0.3]})
+
+    with mock.patch.object(httpx.AsyncClient, "post", mock.AsyncMock(return_value=fake)) as mock_post:
+        result = await client.embed("the tribe worries about defense", model="nomic-embed-text")
+
+    assert result == [0.1, 0.2, 0.3]
+    _, kwargs = mock_post.call_args
+    assert kwargs["json"] == {"model": "nomic-embed-text", "prompt": "the tribe worries about defense"}
+
+
+@run_async
+async def test_embed_fails_open_on_a_server_error():
+    """Explicit request, 2026-09-19: "I like honest and upgrade." embed()
+    must never raise -- a bad embedding call falls back to TribeMemory's own
+    token-overlap reinforcement path (remember_reflection), the same "a
+    missing nice-to-have shouldn't break the real work" pattern vram_guard.py
+    already uses."""
+    client = OllamaClient()
+    fake = _FakeResponse({}, status_code=500, text='{"error": "model not found"}')
+
+    with mock.patch.object(httpx.AsyncClient, "post", mock.AsyncMock(return_value=fake)):
+        result = await client.embed("some reflection text")
+
+    assert result is None
+
+
+@run_async
+async def test_embed_fails_open_when_the_connection_itself_fails():
+    client = OllamaClient()
+
+    with mock.patch.object(httpx.AsyncClient, "post", mock.AsyncMock(side_effect=httpx.ConnectError("down"))):
+        result = await client.embed("some reflection text")
+
+    assert result is None
+
+
+@run_async
+async def test_embed_fails_open_on_a_malformed_response():
+    """format="json"-style guarantee doesn't apply to /api/embeddings -- a
+    missing or wrong-shaped "embedding" key must degrade the same as a real
+    HTTP failure, not crash the caller."""
+    client = OllamaClient()
+    fake = _FakeResponse({"embedding": "not-a-list"})
+
+    with mock.patch.object(httpx.AsyncClient, "post", mock.AsyncMock(return_value=fake)):
+        result = await client.embed("some reflection text")
+
+    assert result is None

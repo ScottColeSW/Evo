@@ -1,5 +1,23 @@
+import math
 import re
 import time
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Plain-Python cosine similarity -- no numpy dependency for one small
+    per-reflection comparison. Two embeddings of different length (a model
+    swap between remember_reflection calls, in practice never expected)
+    can't be meaningfully compared; treated as no similarity rather than
+    raising, matching this class's own "no match is a more honest answer
+    than a random one" philosophy."""
+    if len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    mag_a = math.sqrt(sum(x * x for x in a))
+    mag_b = math.sqrt(sum(y * y for y in b))
+    if mag_a == 0.0 or mag_b == 0.0:
+        return 0.0
+    return dot / (mag_a * mag_b)
 
 
 class TribeMemory:
@@ -11,10 +29,20 @@ class TribeMemory:
     danger") got essentially random similarity scores. It looked like semantic search
     but was closer to retrieving noise. Replaced with token-overlap (Jaccard) scoring:
     cruder than real embeddings, but it actually correlates with what the text is
-    about, which the hash version never did. A real upgrade path is Ollama's
-    /api/embeddings with a model like nomic-embed-text, but that's an async network
-    call and today's remember()/recall() call sites are synchronous -- left as a
-    follow-up, not bundled into this fix.
+    about, which the hash version never did.
+
+    Upgraded 2026-09-19, scoped narrowly: remember_reflection() (below) uses a real
+    embedding (Ollama's /api/embeddings, nomic-embed-text) for reinforcement detection
+    specifically, called from Simulation._run_night_cycle -- already async, and only
+    once every NIGHT_CYCLE_EVERY_N_CYCLES per tribe, not the per-turn hot path. Measured
+    live why this mattered: the two most thematically-similar reflections found across
+    a real run (both genuinely the same underlying worry, just reworded each time)
+    scored 0.09-0.17 Jaccard overlap, well under the 0.3 reinforcement threshold below --
+    paraphrases just don't share enough literal vocabulary for token overlap to catch,
+    even when they're clearly "the same recurring thought" to a reader. recall() itself
+    (used by _prepare_turn every live turn) deliberately stays on token overlap -- an
+    embedding call there would add a real network round-trip to every tribe's every
+    turn for a benefit that isn't proven yet.
 
     Found and fixed 2026-09-12: every memory in this game is phrased from a small
     set of narrative templates ("Scouts confirmed X at (x,y)", "X near (x,y) is
@@ -47,6 +75,18 @@ class TribeMemory:
     # run data behind it yet (this mechanic is brand new) -- worth revisiting
     # once real reflection text exists to check it against.
     REFLECTION_REINFORCEMENT_OVERLAP_THRESHOLD = 0.3
+
+    # Explicit request, 2026-09-19: "I like honest and upgrade and we have
+    # nomic-embed-text." Used by remember_reflection() instead of the plain
+    # Jaccard threshold above, when a real embedding is available -- see this
+    # class's own docstring for the measured 0.09-0.17-vs-0.3 gap that made
+    # token overlap unreliable here. First-cut cosine-similarity bar, no real
+    # embedding data yet behind this specific number -- real sentence
+    # embeddings for genuine paraphrases typically score far higher than
+    # token overlap ever could, 0.75 is a common "these are about the same
+    # thing" starting point for this class of model, worth revisiting once
+    # real reinforcement data exists to check it against.
+    REFLECTION_EMBEDDING_SIMILARITY_THRESHOLD = 0.75
 
     def __init__(self, tribe_id: str, max_episodes: int = 40):
         self.tribe_id = tribe_id
@@ -98,6 +138,58 @@ class TribeMemory:
             "ts": time.time(),
             "kind": kind,
             "reinforced": 0,
+            "embedding": None,
+        }
+        self.entries.append(entry)
+        if len(self.entries) > self.max_episodes * 2:
+            self.consolidate()
+        return entry
+
+    def remember_reflection(self, text: str, cycle: int, weight: float, embedding: list[float] | None) -> dict:
+        """Sibling to remember(kind="reflection"), used by Simulation.
+        _run_night_cycle once it has a real embedding (Ollama's /api/embeddings,
+        nomic-embed-text) to check reinforcement with -- explicit request,
+        2026-09-19: "I like honest and upgrade." remember()'s own token-overlap
+        reinforcement check missed real recurring convictions: measured live,
+        the two most thematically-similar reflections in a real run (both
+        genuinely the same underlying worry, reworded each time) scored
+        0.09-0.17 Jaccard overlap, well under its 0.3 threshold. Cosine
+        similarity between real sentence embeddings doesn't have that
+        problem -- paraphrases of the same idea score far higher than
+        unrelated ones, even with no literal vocabulary in common.
+
+        `embedding=None` (a failed/best-effort embed call, or the caller
+        simply doesn't have one) falls back to remember()'s own token-overlap
+        check unchanged -- an embedding failure should degrade this to
+        exactly today's behavior, never leave a reflection permanently
+        unable to reinforce. Still populates "tokens" on every stored entry
+        regardless (recall() -- used by _prepare_turn to surface a relevant
+        past reflection into a live turn -- stays on token overlap; only
+        reinforcement detection is upgraded here, not the per-turn hot path,
+        see config.REFLECTION_EMBEDDING_MODEL's own comment)."""
+        if embedding is None:
+            return self.remember(text, cycle, weight, kind="reflection")
+
+        for entry in self.entries:
+            if entry.get("kind") != "reflection" or entry.get("embedding") is None:
+                continue
+            similarity = _cosine_similarity(embedding, entry["embedding"])
+            if similarity >= self.REFLECTION_EMBEDDING_SIMILARITY_THRESHOLD:
+                entry["reinforced"] = entry.get("reinforced", 0) + 1
+                entry["cycle"] = cycle
+                entry["weight"] = max(entry["weight"], weight)
+                entry["ts"] = time.time()
+                return entry
+
+        entry = {
+            "text": text,
+            "tokens": self._tokenize(text),
+            "cycle": cycle,
+            "weight": weight,
+            "ts": time.time(),
+            "kind": "reflection",
+            "reinforced": 0,
+            "embedding": embedding,
         }
         self.entries.append(entry)
         if len(self.entries) > self.max_episodes * 2:

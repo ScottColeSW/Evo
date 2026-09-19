@@ -49,6 +49,30 @@ class OllamaClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
+    async def embed(self, text: str, model: str = "nomic-embed-text") -> list[float] | None:
+        """Real semantic embedding via Ollama's /api/embeddings -- explicit
+        request, 2026-09-19: real Jaccard token-overlap couldn't reliably
+        detect a chief's own recurring private thought (measured live: the
+        two most thematically-similar reflections found across a real run
+        scored 0.09-0.17 overlap, well under the 0.3 reinforcement
+        threshold, since the same underlying worry gets reworded every time
+        rather than repeating literal vocabulary). Fails open -- returns
+        None on any error -- same "a missing nice-to-have shouldn't break
+        the real work" pattern vram_guard.py's own docstring already uses;
+        TribeMemory.remember_reflection falls back to token-overlap when
+        this comes back None, so a bad embedding call never needs
+        Simulation._safe_llm_result's own protection -- it can't raise out
+        into a resolve_* call in the first place."""
+        payload = {"model": model, "prompt": text}
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                r = await client.post(f"{self.base_url}/api/embeddings", json=payload)
+                _raise_with_body(r, model)
+                embedding = r.json().get("embedding")
+                return embedding if isinstance(embedding, list) and embedding else None
+        except Exception:
+            return None
+
     async def list_models(self) -> list[str]:
         async with httpx.AsyncClient(timeout=5.0) as client:
             try:

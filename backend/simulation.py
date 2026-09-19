@@ -2768,7 +2768,7 @@ class Simulation:
         # Explicit request, 2026-09-18: "a subconscious 'helper' to pare down the
         # info and store it in an easy to use way (less browser load is better)."
         # A private thought is remembered the same way a hazard or discovery
-        # already is (TribeMemory.remember, kind="reflection") -- reusing the
+        # already is (TribeMemory.remember/remember_reflection) -- reusing the
         # same weighted, self-pruning store rather than a second structure, and
         # never serialized to the frontend (Tribe.to_dict never exposes
         # tribe.memory), so this costs nothing in browser payload. Recalled back
@@ -2776,7 +2776,16 @@ class Simulation:
         # _build_visible_entities.
         private_thoughts = result.get("private_thoughts") or ""
         if private_thoughts:
-            stored_reflection = tribe.memory.remember(private_thoughts, self.cycle, weight=0.5, kind="reflection")
+            # Explicit request, 2026-09-19: "I like honest and upgrade and we
+            # have nomic-embed-text." Real embedding for reinforcement
+            # detection -- see TribeMemory's own docstring for why plain
+            # token overlap missed real recurring convictions. embed() fails
+            # open (returns None on any error, never raises), so a bad
+            # embedding call just falls back to remember_reflection's own
+            # token-overlap path, exactly today's behavior -- no extra
+            # protection needed here.
+            embedding = await self.client.embed(private_thoughts, model=config.REFLECTION_EMBEDDING_MODEL)
+            stored_reflection = tribe.memory.remember_reflection(private_thoughts, self.cycle, 0.5, embedding)
             # "I like the flavor but it doesn't help them really does it" --
             # explicit request, 2026-09-18: give a genuinely recurring private
             # thought the same real behavioral pull chief_decree already has

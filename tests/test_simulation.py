@@ -9335,6 +9335,58 @@ async def test_night_cycle_remembers_private_thoughts_as_reflection_kind_memory(
 
 
 @run_async
+async def test_night_cycle_embeds_the_private_thought_and_stores_the_real_vector():
+    """Explicit request, 2026-09-19: "I like honest and upgrade and we have
+    nomic-embed-text." A real embedding must actually be requested (the
+    right text, config.REFLECTION_EMBEDDING_MODEL) and land on the stored
+    entry, not just get silently discarded."""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
+        return {
+            "private_thoughts": "the tribe feels ready to expand beyond the valley",
+            "revised_philosophy": current_philosophy, "changed": False, "reasoning": "ok",
+        }
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect), \
+         mock.patch.object(sim.client, "embed", mock.AsyncMock(return_value=[0.4, 0.5, 0.6])) as mock_embed:
+        await sim._run_night_cycle(tribe)
+
+    mock_embed.assert_awaited_once_with(
+        "the tribe feels ready to expand beyond the valley", model=config.REFLECTION_EMBEDDING_MODEL
+    )
+    assert tribe.memory.entries[0]["embedding"] == [0.4, 0.5, 0.6]
+
+
+@run_async
+async def test_night_cycle_still_stores_the_reflection_when_the_embedding_call_fails():
+    """embed() fails open (returns None) -- the reflection itself must still
+    be remembered (via remember_reflection's own token-overlap fallback),
+    not silently dropped just because the embedding call failed."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"
+
+    async def fake_reflect(client, reviewer_model, tribe_name, current_philosophy, recent_events, inventory="", current_decree="", dmm_built=False, departure_eligible=False):
+        return {
+            "private_thoughts": "the tribe feels ready to expand beyond the valley",
+            "revised_philosophy": current_philosophy, "changed": False, "reasoning": "ok",
+        }
+
+    with mock.patch("backend.simulation.reflect_on_history", fake_reflect), \
+         mock.patch.object(sim.client, "embed", mock.AsyncMock(return_value=None)):
+        await sim._run_night_cycle(tribe)
+
+    assert len(tribe.memory.entries) == 1
+    assert tribe.memory.entries[0]["embedding"] is None
+    assert tribe.memory.entries[0]["text"] == "the tribe feels ready to expand beyond the valley"
+
+
+@run_async
 async def test_night_cycle_promotes_a_stabilized_reflection_into_an_empty_decree():
     """Explicit request, 2026-09-18: "I like the flavor but it doesn't help
     them really does it... give him the signal." Once a private thought has
