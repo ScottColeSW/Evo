@@ -199,9 +199,15 @@ ERAS: tuple[Era, ...] = (
         # isn't a core Tribe attribute -- see simulation.py._era_resource_amount/
         # _spend_era_resource, added the same pass specifically so this works
         # (getattr/setattr alone would have silently always read/spent 0 against
-        # tribe.unique_resources). Tannery yields TANNERY_YIELD_PER_CYCLE (4)
-        # Fur/cycle once built, so 20 is a handful of cycles, not a bottleneck --
-        # population is the real pacing lever at this tier, not Fur.
+        # tribe.unique_resources). Historical note, no longer accurate: this was
+        # originally sized against a flat TANNERY_YIELD_PER_CYCLE (4) Fur/cycle
+        # trickle that fired regardless of real activity ("so 20 is a handful of
+        # cycles, not a bottleneck"). The 2026-09-19 rework made Fur fully
+        # activity-driven (hunts + a fed Deer Pen only -- see Simulation.
+        # _advance_tannery_yield), so this 20-Fur threshold's real pacing now
+        # depends on how much a tribe actually hunts/farms deer -- worth
+        # rechecking against a live run before assuming it's still not a
+        # bottleneck.
         requires_resources={"water": 65, "stone": 65, "wood": 65, "Fur": 20},
         advancement_cost={"wood": 45, "stone": 45, "water": 45, "Fur": 15},
         unlocks_actions=(

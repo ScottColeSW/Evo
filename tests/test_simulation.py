@@ -6251,6 +6251,43 @@ def test_hunting_party_arrival_home_empty_handed_still_delivers_forage_and_clear
     assert any("nothing caught, though not empty-handed" in entry for entry in tribe.history)
 
 
+def test_hunting_party_arrival_home_accumulates_tannery_fur_when_it_caught_something():
+    """Sibling to actions.py's test_hunt_deer_accumulates_tannery_fur_once_
+    tannery_is_built -- a returning HUNTING_PARTY's real catch counts the
+    same way (Simulation._report_hunting_party_home)."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.tannery_built = True
+    tribe.expeditions = [{
+        "kind": "hunt", "pos": [50, 50], "origin": [50, 50], "target": [50, 50],
+        "day": 2, "phase": "returning", "food_caught": 25,
+        "food_gathered": 7, "water_gathered": 5,
+        "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
+    }]
+
+    sim._advance_expeditions(tribe)
+
+    assert tribe.tannery_fur_pending_from_hunts == config.TANNERY_FUR_BONUS_PER_HUNT
+
+
+def test_hunting_party_arrival_home_empty_handed_does_not_accumulate_tannery_fur():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.tannery_built = True
+    tribe.expeditions = [{
+        "kind": "hunt", "pos": [50, 50], "origin": [50, 50], "target": [50, 50],
+        "day": 4, "phase": "returning", "food_caught": 0,
+        "food_gathered": 7, "water_gathered": 5,
+        "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
+    }]
+
+    sim._advance_expeditions(tribe)
+
+    assert tribe.tannery_fur_pending_from_hunts == 0
+
+
 def test_send_trade_emissary_unlocked_from_primitive_dawn():
     from backend.eras import unlocked_actions_through
 
@@ -12010,9 +12047,10 @@ def test_advance_deer_pen_does_nothing_with_an_empty_herd():
     assert tribe.deer == 0
 
 
-def test_advance_tannery_yield_feeds_deer_into_extra_fur_once_pen_exists():
-    """Explicit follow-up, 2026-09-11: "DEER_PEN that will auto-feed the Tannery
-    1-3 deer a day" -- additive on top of the flat yield, never replacing it."""
+def test_advance_tannery_yield_pen_feed_produces_fur_and_meat():
+    """2026-09-19 rework: "N = the automatic yield from Pen + hunting
+    yields... M = %meat_preserved * N... 75% (nearest whole int)." With no
+    hunting this day, N is purely the Pen's own feed."""
     from unittest import mock
 
     from backend import config
@@ -12023,12 +12061,20 @@ def test_advance_tannery_yield_feeds_deer_into_extra_fur_once_pen_exists():
     tribe.tannery_built = True
     tribe.deer_pen_built = True
     tribe.deer = 10
+    food_before = tribe.food
 
     with mock.patch("backend.simulation.random.randint", return_value=3):
         sim._advance_tannery_yield(tribe)
 
+    from backend.actions import _food_multiplier
+
+    expected_n = 3 * config.FUR_PER_DEER_FED
+    expected_m = round(expected_n * config.TANNERY_MEAT_PRESERVED_FRACTION)
     assert tribe.deer == 7  # 3 fed in
-    assert tribe.unique_resources["Fur"] == config.TANNERY_YIELD_PER_CYCLE + 3 * config.FUR_PER_DEER_FED
+    assert tribe.unique_resources["Fur"] == expected_n
+    assert tribe.tannery_fur_today == expected_n
+    assert tribe.tannery_meat_today == expected_m
+    assert tribe.food == food_before + round(expected_m * _food_multiplier(tribe))
 
 
 def test_advance_tannery_yield_feed_is_capped_by_the_herd_size_above_the_floor():
@@ -12051,7 +12097,7 @@ def test_advance_tannery_yield_feed_is_capped_by_the_herd_size_above_the_floor()
         sim._advance_tannery_yield(tribe)
 
     assert tribe.deer == config.DEER_PEN_MINIMUM_HERD_SIZE
-    assert tribe.unique_resources["Fur"] == config.TANNERY_YIELD_PER_CYCLE + 2 * config.FUR_PER_DEER_FED
+    assert tribe.unique_resources["Fur"] == 2 * config.FUR_PER_DEER_FED
 
 
 def test_advance_tannery_yield_feeds_nothing_when_the_herd_is_already_at_the_floor():
@@ -12070,18 +12116,18 @@ def test_advance_tannery_yield_feeds_nothing_when_the_herd_is_already_at_the_flo
         sim._advance_tannery_yield(tribe)
 
     assert tribe.deer == config.DEER_PEN_MINIMUM_HERD_SIZE
-    assert tribe.unique_resources["Fur"] == config.TANNERY_YIELD_PER_CYCLE  # base trickle only, nothing fed
+    assert tribe.unique_resources.get("Fur", 0) == 0  # nothing fed, nothing hunted -- no flat trickle any more
+    assert tribe.tannery_fur_today == 0
 
 
-def test_advance_tannery_yield_only_feeds_the_deer_pen_once_per_real_day():
-    """Live bug, confirmed against run_20260913_113112: a Deer Pen founded at
-    cycle 81 with its starting 2 deer was back down to 0 the very next cycle
-    (82) -- this ran every single cycle instead of once a day as its own
-    DEER_PEN_DAILY_FEED_MIN/MAX naming (and the original explicit request,
-    "auto-feed the Tannery 1-3 deer a day") intended, devouring the herd
-    before _advance_deer_pen's 15% per-cycle breed chance ever had a real
-    shot at growing it. Same "once per real day is good enough" gate
-    _advance_resource_trails already uses for the identical mistake."""
+def test_advance_tannery_yield_only_resolves_once_per_real_day():
+    """Live bug, confirmed against run_20260913_113112 (the Deer Pen half of
+    this): a Deer Pen founded at cycle 81 with its starting 2 deer was back
+    down to 0 the very next cycle (82). 2026-09-19 rework: the whole function
+    (not just the Pen feed) is now gated to a real day boundary, since the old
+    flat per-cycle trickle that used to run alongside it is gone -- Fur is
+    fully activity-driven, so there's nothing left to resolve off a boundary
+    at all."""
     from unittest import mock
 
     from backend import config
@@ -12092,89 +12138,41 @@ def test_advance_tannery_yield_only_feeds_the_deer_pen_once_per_real_day():
     tribe.tannery_built = True
     tribe.deer_pen_built = True
     tribe.deer = 2
+    tribe.tannery_fur_pending_from_hunts = 5  # a real hunt earlier today -- still shouldn't resolve yet
     sim.cycle = 82  # not a multiple of DAY_LENGTH_CYCLES (20)
 
     with mock.patch("backend.simulation.random.randint", return_value=3):
         sim._advance_tannery_yield(tribe)
 
     assert tribe.deer == 2  # untouched off a day boundary
-    assert tribe.unique_resources["Fur"] == config.TANNERY_YIELD_PER_CYCLE  # base yield only
-
-
-def test_advance_tannery_yield_does_nothing_extra_without_a_deer_pen():
-    """No Deer Pen, but hunt_deer_success_count still proves real deer
-    activity -- the flat trickle should still flow, just with no herd to
-    additionally feed. Distinct from the no-deer-activity-at-all case below."""
-    from backend import config
-
-    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
-    tribe = sim.tribes["tribe_0"]
-    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
-    tribe.tannery_built = True
-    tribe.hunt_deer_success_count = 1
-    tribe.deer = 10  # a herd with no pen shouldn't happen in practice, but prove it's inert regardless
-
-    sim._advance_tannery_yield(tribe)
-
-    assert tribe.deer == 10
-    assert tribe.unique_resources["Fur"] == config.TANNERY_YIELD_PER_CYCLE
-
-
-def test_advance_tannery_yield_produces_nothing_without_real_deer_activity():
-    """Live report, 2026-09-14: "tannery only works if deer hunt or deer pen
-    work." BUILD_TANNERY's own gate (hunt_ever_succeeded) is satisfied by ANY
-    successful hunt, including a HUNTING_PARTY catch at a Rabbit Warren or
-    Wolf Den that never involved a deer -- a tribe that built a Tannery that
-    way should NOT get a free, disconnected Fur trickle."""
-    from backend import config
-
-    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
-    tribe = sim.tribes["tribe_0"]
-    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
-    tribe.tannery_built = True
-    tribe.hunt_ever_succeeded = True  # e.g. from a HUNTING_PARTY catch at a Wolf Den
-    tribe.hunt_deer_success_count = 0
-    tribe.deer_pen_built = False
-
-    sim._advance_tannery_yield(tribe)
-
     assert tribe.unique_resources.get("Fur", 0) == 0
+    assert tribe.tannery_fur_pending_from_hunts == 5  # still waiting for the next real boundary
 
 
-def test_advance_tannery_yield_flows_in_once_built_settled_and_deer_proven():
+def test_advance_tannery_yield_hunting_alone_produces_fur_with_no_pen():
+    """Explicit design, 2026-09-19: "N = the automatic yield from Pen +
+    hunting yields" -- hunting is a real, independent source, not just a
+    prerequisite for the Pen. tribe.tannery_fur_pending_from_hunts stands in
+    for a real day's worth of hunts already accumulated by actions.py.
+    _hunt_deer/Simulation._report_hunting_party_home."""
     from backend import config
 
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
     tribe = sim.tribes["tribe_0"]
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.tannery_built = True
-    tribe.hunt_deer_success_count = 1
+    tribe.deer_pen_built = False
+    tribe.tannery_fur_pending_from_hunts = 3 * config.TANNERY_FUR_BONUS_PER_HUNT  # 3 real catches today
 
     sim._advance_tannery_yield(tribe)
 
-    assert tribe.unique_resources["Fur"] == config.TANNERY_YIELD_PER_CYCLE
+    expected_n = 3 * config.TANNERY_FUR_BONUS_PER_HUNT
+    assert tribe.unique_resources["Fur"] == expected_n
+    assert tribe.tannery_fur_today == expected_n
+    assert tribe.tannery_fur_pending_from_hunts == 0  # consumed at the boundary
 
 
-def test_advance_tannery_yield_is_capped_by_storage():
-    from backend import config
-
-    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
-    tribe = sim.tribes["tribe_0"]
-    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
-    tribe.tannery_built = True
-    tribe.hunt_deer_success_count = 1
-    tribe.unique_resources["Fur"] = config.STORAGE_CAP_BASE
-
-    sim._advance_tannery_yield(tribe)
-
-    assert tribe.unique_resources["Fur"] == config.STORAGE_CAP_BASE
-
-
-def test_advance_tannery_yield_deer_pen_feed_also_yields_meat():
-    """Live report, 2026-09-14: "deer pen output is for both kitchen and
-    tannery; meat, skin." Each deer fed now yields food too, through
-    _food_multiplier like every other food source in this game -- not a bare
-    addition."""
+def test_advance_tannery_yield_combines_pen_and_hunting_in_the_same_day():
     from unittest import mock
 
     from backend import config
@@ -12185,15 +12183,65 @@ def test_advance_tannery_yield_deer_pen_feed_also_yields_meat():
     tribe.tannery_built = True
     tribe.deer_pen_built = True
     tribe.deer = 10
-    food_before = tribe.food
+    tribe.tannery_fur_pending_from_hunts = 2 * config.TANNERY_FUR_BONUS_PER_HUNT
 
     with mock.patch("backend.simulation.random.randint", return_value=3):
         sim._advance_tannery_yield(tribe)
 
-    from backend.actions import _food_multiplier
+    expected_n = 3 * config.FUR_PER_DEER_FED + 2 * config.TANNERY_FUR_BONUS_PER_HUNT
+    assert tribe.unique_resources["Fur"] == expected_n
+    assert tribe.tannery_fur_today == expected_n
 
-    expected_meat = round(3 * config.MEAT_PER_DEER_FED * _food_multiplier(tribe))
-    assert tribe.food == food_before + expected_meat
+
+def test_advance_tannery_yield_produces_nothing_without_real_activity():
+    """Building the Tannery alone (no Pen, no real hunt yet this day) must
+    not produce anything on its own -- both real sources have to actually
+    contribute something."""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.tannery_built = True
+
+    sim._advance_tannery_yield(tribe)
+
+    assert tribe.unique_resources.get("Fur", 0) == 0
+    assert tribe.tannery_fur_today == 0
+    assert tribe.tannery_meat_today == 0
+
+
+def test_advance_tannery_yield_is_capped_by_storage():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.tannery_built = True
+    tribe.tannery_fur_pending_from_hunts = config.TANNERY_FUR_BONUS_PER_HUNT
+    tribe.unique_resources["Fur"] = config.STORAGE_CAP_BASE
+
+    sim._advance_tannery_yield(tribe)
+
+    assert tribe.unique_resources["Fur"] == config.STORAGE_CAP_BASE
+
+
+def test_advance_tannery_yield_meat_is_75_percent_of_fur_rounded():
+    """Explicit design, 2026-09-19: "%meat_preserved = 75% (nearest whole
+    int)." Picked an N (7) that doesn't divide evenly by 4 to prove the
+    rounding, not just the fraction."""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.tannery_built = True
+    tribe.tannery_fur_pending_from_hunts = 7
+
+    sim._advance_tannery_yield(tribe)
+
+    assert tribe.tannery_fur_today == 7
+    assert tribe.tannery_meat_today == round(7 * 0.75)  # 5
 
 
 def test_catch_fish_gated_the_same_as_farming_and_eggs():

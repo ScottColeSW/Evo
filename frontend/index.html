@@ -753,7 +753,6 @@ async function fetchGameConfig() {
     SETTLEMENT_STABILITY_CYCLES = cfg.settlement_stability_cycles;
     MINE_YIELD_PER_CYCLE = cfg.mine_yield_per_cycle;
     CROP_HARVEST_YIELD_PER_PLOT = cfg.crop_harvest_yield_per_plot;
-    TANNERY_YIELD_PER_CYCLE = cfg.tannery_yield_per_cycle;
     KEEP_DEFENSE_BONUS = cfg.keep_defense_bonus;
     FORTRESS_DEFENSE_BONUS = cfg.fortress_defense_bonus;
     CASTLE_DEFENSE_BONUS = cfg.castle_defense_bonus;
@@ -763,7 +762,6 @@ async function fetchGameConfig() {
     COOP_LAY_CHANCE_MULTIPLIER = cfg.coop_lay_chance_multiplier;
     DEER_PEN_DAILY_FEED_MIN = cfg.deer_pen_daily_feed_min;
     DEER_PEN_DAILY_FEED_MAX = cfg.deer_pen_daily_feed_max;
-    FUR_PER_DEER_FED = cfg.fur_per_deer_fed;
     COOKING_FOOD_MULTIPLIER = cfg.cooking_food_multiplier;
     JOINT_CASTLE_WOOD_COST = cfg.joint_castle_wood_cost;
     JOINT_CASTLE_STONE_COST = cfg.joint_castle_stone_cost;
@@ -4488,12 +4486,11 @@ function landmarkCounts(t) {
   return counts.length ? " · " + counts.join(" ") : "";
 }
 
-// Mirrors backend/config.py's MINE_YIELD_PER_CYCLE/TANNERY_YIELD_PER_CYCLE -- the
-// real, passive daily yields _advance_mine_yield/_advance_tannery_yield pay out,
-// same numbers the lines below report rather than a vaguer "mastered" label.
+// Mirrors backend/config.py's MINE_YIELD_PER_CYCLE -- the real, passive daily
+// yield _advance_mine_yield pays out, same number the line below reports
+// rather than a vaguer "mastered" label.
 let MINE_YIELD_PER_CYCLE = 5;
 let CROP_HARVEST_YIELD_PER_PLOT = 15; // mirrors backend/config.py's CROP_HARVEST_YIELD
-let TANNERY_YIELD_PER_CYCLE = 4;
 // Explicit request, 2026-09-10: "sidebar comments on Buildings are not good;
 // not informative about the bonus provided." Mirrors backend/config.py's own
 // KEEP_DEFENSE_BONUS/FORTRESS_DEFENSE_BONUS/CASTLE_DEFENSE_BONUS/
@@ -4509,11 +4506,10 @@ let HATCHERY_HATCH_CHANCE_MULTIPLIER = 2.0;
 // Mirrors backend/config.py's COOP_LAY_CHANCE_MULTIPLIER -- Coop boosts the daily
 // egg-laying rate (Hatchery boosts the hatch rate above instead).
 let COOP_LAY_CHANCE_MULTIPLIER = 1.5;
-// Mirrors backend/config.py's DEER_PEN_DAILY_FEED_MIN/_MAX/FUR_PER_DEER_FED --
-// the Deer Pen's own daily feed-into-Tannery range, for its Establishments line.
+// Mirrors backend/config.py's DEER_PEN_DAILY_FEED_MIN/_MAX -- the Deer Pen's
+// own daily feed-into-Tannery range, for its Establishments line.
 let DEER_PEN_DAILY_FEED_MIN = 1;
 let DEER_PEN_DAILY_FEED_MAX = 3;
-let FUR_PER_DEER_FED = 2;
 let COOKING_FOOD_MULTIPLIER = 3;
 // Mirrors backend/config.py's JOINT_CASTLE_WOOD_COST/JOINT_CASTLE_STONE_COST
 // -- for drawJointCastle's own progress label.
@@ -4858,18 +4854,21 @@ function farmingPanel(t) {
   }
   if (t.tannery_built) {
     // Live report, 2026-09-19: "Tannery -- 4 Fur/day is static and isn't
-    // taking from hunts or pen like intended." Grounded against Simulation.
-    // _advance_tannery_yield's real formula: the base TANNERY_YIELD_PER_CYCLE
-    // really is a flat rate once a hunt or Deer Pen has ever proven deer
-    // activity (a one-time gate, not an ongoing scale -- more hunts don't
-    // raise this number) -- that half was already accurate. What was missing
-    // is the Deer Pen's own real, additive bonus (fed deer -> extra Fur,
-    // same function) -- this line never reflected it at all.
+    // taking from hunts or pen like intended." Redesigned per explicit
+    // follow-up: Fur is now fully activity-driven, once a real day
+    // (Simulation._advance_tannery_yield) -- N = that day's real Deer Pen
+    // yield + hunting yield, M = 75% of N as meat "fed to Kitchen" (goes
+    // toward food through the same cooking multiplier chain every other
+    // food source uses). Both are real backend-computed facts
+    // (tannery_fur_today/tannery_meat_today), not re-derived here, so this
+    // line can never drift stale again the way the old flat number did.
     const amount = (t.unique_resources || {})["Fur"] || 0;
-    const deerPenBonus = t.deer_pen_built
-      ? ` + up to ${DEER_PEN_DAILY_FEED_MAX * FUR_PER_DEER_FED} more/day from the Deer Pen`
-      : "";
-    industry.push(`🦫 Tannery — ${TANNERY_YIELD_PER_CYCLE} Fur/day flat${deerPenBonus} (${amount} stored)`);
+    const n = t.tannery_fur_today || 0;
+    const m = t.tannery_meat_today || 0;
+    industry.push(
+      `🦫 Tannery — ${n} Fur${n === 1 ? "" : "s"} produced, ${m} meat produced fed to Kitchen ` +
+      `(${amount} Fur${amount === 1 ? "" : "s"} stored for Clothing and Building)`
+    );
   }
   if (t.deer_pen_built) {
     // Live bug, confirmed 2026-09-14: this said "/cycle" until the backend's

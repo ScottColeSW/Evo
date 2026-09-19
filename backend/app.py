@@ -94,10 +94,8 @@ async def game_config(request: web.Request) -> web.Response:
         "joint_castle_wood_cost": config.JOINT_CASTLE_WOOD_COST,
         "joint_castle_stone_cost": config.JOINT_CASTLE_STONE_COST,
         "mine_yield_per_cycle": config.MINE_YIELD_PER_CYCLE,
-        "tannery_yield_per_cycle": config.TANNERY_YIELD_PER_CYCLE,
         "deer_pen_daily_feed_min": config.DEER_PEN_DAILY_FEED_MIN,
         "deer_pen_daily_feed_max": config.DEER_PEN_DAILY_FEED_MAX,
-        "fur_per_deer_fed": config.FUR_PER_DEER_FED,
         "era_order": [e.key for e in ERAS],
     })
 

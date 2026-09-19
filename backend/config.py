@@ -1862,11 +1862,13 @@ SAWMILL_WOOD_MULTIPLIER = 6
 # permanent-mastery idea as water/food's own security fixes, softened by
 # explicit design choice (see Simulation._advance_wood_supply's own
 # docstring): unlike food/water, wood has no automatic per-cycle drain to
-# guard against, so a real passive income (same shape MINE_YIELD_PER_CYCLE/
-# TANNERY_YIELD_PER_CYCLE already use for their own resource) instead of
-# "always topped to the cap" -- large enough to feel like real security
-# without making every future building free outright. Runs every cycle, the
-# same cadence fish/mine/tannery's own passive income already use.
+# guard against, so a real passive income (same shape MINE_YIELD_PER_CYCLE
+# already uses for its own resource) instead of "always topped to the cap" --
+# large enough to feel like real security without making every future
+# building free outright. Runs every cycle, the same cadence fish/mine's own
+# passive income already use (Tannery's own Fur income moved to a once-a-day,
+# fully activity-driven formula in the 2026-09-19 rework -- see
+# Simulation._advance_tannery_yield -- no longer a comparable flat trickle).
 WOOD_SECURITY_DAILY_INCOME = 10
 QUARRY_WOOD_COST = 15
 QUARRY_STONE_COST = 30
@@ -1994,13 +1996,31 @@ GATHER_ORE_BASE_YIELD = 8
 # not a second parallel resource system.
 TANNERY_WOOD_COST = 15
 TANNERY_STONE_COST = 15
-TANNERY_YIELD_PER_CYCLE = 4
+# RETIRED 2026-09-19 (see cheerful-weaving-blanket.md's sibling design, this
+# session's Tannery rework): TANNERY_YIELD_PER_CYCLE was a flat trickle that
+# fired regardless of real activity. Explicit request: "N = the automatic
+# yield from Pen + hunting yields" -- Fur is now fully activity-driven, no
+# passive baseline. See Simulation._advance_tannery_yield.
+#
 # Explicit request: "it also gives the meat to the kitchen (2 meat per catch)
 # which cooks it (multiplier)" -- a flat bonus added to every successful hunt's
 # food yield once the Tannery is built (see actions.py._hunt_deer and
 # Simulation._report_hunting_party_home), on the theory that a real tannery
 # means less of the catch goes to waste.
 TANNERY_MEAT_BONUS_PER_HUNT = 2
+# Explicit design, 2026-09-19: "N = the automatic yield from Pen + hunting
+# yields... 1:1, 1 deer = 1 fur." Every successful hunt (instant HUNT_DEER or
+# a returning HUNTING_PARTY's real catch) contributes this much Fur once a
+# Tannery stands, same gate TANNERY_MEAT_BONUS_PER_HUNT already uses --
+# accumulates in tribe.tannery_fur_pending_from_hunts until the next day
+# boundary folds it into that day's real total (Simulation.
+# _advance_tannery_yield).
+TANNERY_FUR_BONUS_PER_HUNT = 1
+# Explicit design, 2026-09-19: "M = %meat_preserved * N... %meat_preserved =
+# 75% (nearest whole int)." Replaces the old per-deer-fed MEAT_PER_DEER_FED --
+# one unified formula for meat regardless of whether the day's Fur came from
+# the Pen or from hunts, instead of two independently-tuned rates.
+TANNERY_MEAT_PRESERVED_FRACTION = 0.75
 
 # BUILD_DEER_PEN (backend/actions.py): explicit follow-up, 2026-09-11 -- "if they
 # successfully HUNT_DEER 3-5 they can build a DEER_PEN that will auto-feed the
@@ -2044,17 +2064,18 @@ DEER_NATURAL_BREED_CHANCE = 0.15
 DEER_BREED_LITTER_SIZES = (1, 2, 3, 4)
 DEER_BREED_LITTER_WEIGHTS = (50, 30, 15, 5)
 # The literal "1-3 deer a day" -- Simulation._advance_tannery_yield feeds this
-# many captive deer (capped by however many actually exist) into Fur production
-# each cycle, on top of the existing flat TANNERY_YIELD_PER_CYCLE, never
-# replacing it.
+# many captive deer (capped by however many actually exist) into Fur
+# production once a real day, one of Tannery Fur's two sources (hunting is
+# the other -- TANNERY_FUR_BONUS_PER_HUNT above).
 DEER_PEN_DAILY_FEED_MIN = 1
 DEER_PEN_DAILY_FEED_MAX = 3
 FUR_PER_DEER_FED = 2
-# Live report, 2026-09-14: "deer pen output is for both kitchen and tannery;
-# meat, skin." A deer fed to the tannery yields meat too, not just hide --
-# same shape actions._hunt_deer's own TANNERY_MEAT_BONUS_PER_HUNT already
-# uses for an instant hunt, just applied to the Pen's daily feed instead.
-MEAT_PER_DEER_FED = 2
+# RETIRED 2026-09-19 (see cheerful-weaving-blanket.md's sibling design):
+# meat used to be computed per-deer-fed, separate from hunting's own flat
+# TANNERY_MEAT_BONUS_PER_HUNT -- two independently-tuned rates for
+# conceptually the same thing. TANNERY_MEAT_PRESERVED_FRACTION above now
+# covers meat from both sources with one formula, applied once a day to
+# that day's total real Fur output (Simulation._advance_tannery_yield).
 
 # BUILD_KITCHEN (backend/actions.py): explicit follow-up -- "we might have to let
 # them build a kitchen which improves cooked food to excellent food yielding 3

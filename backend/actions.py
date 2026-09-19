@@ -332,6 +332,12 @@ def _hunt_deer(sim, tribe, biome, target):
         # same pre-multiplier harvest amount, not a separate resource, so it
         # rides the existing cook/kitchen multiplier chain like any other food.
         base += config.TANNERY_MEAT_BONUS_PER_HUNT
+        # 2026-09-19 design: "N = the automatic yield from Pen + hunting
+        # yields... 1:1, 1 deer = 1 fur." Accumulates until the next real day
+        # boundary folds it into that day's total (Simulation.
+        # _advance_tannery_yield) -- see tribe.tannery_fur_pending_from_hunts'
+        # own comment in Tribe.__init__.
+        tribe.tannery_fur_pending_from_hunts += config.TANNERY_FUR_BONUS_PER_HUNT
     amount = round(base * _food_multiplier(tribe))
     tribe.hunt_ever_succeeded = True  # see actions.py._cook_food's own prerequisite
     # See actions.py._build_deer_pen -- a real hunt-success count, distinct from

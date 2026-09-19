@@ -1986,6 +1986,38 @@ def test_hunt_deer_yields_a_meat_bonus_once_tannery_is_built():
     assert tribe_b.food == without_tannery + config.TANNERY_MEAT_BONUS_PER_HUNT
 
 
+def test_hunt_deer_accumulates_tannery_fur_once_tannery_is_built():
+    """Explicit design, 2026-09-19: "N = the automatic yield from Pen +
+    hunting yields... 1:1, 1 deer = 1 fur." A real hunt now also contributes
+    toward the Tannery's next day-boundary total (Simulation.
+    _advance_tannery_yield), same gate as the existing meat bonus above --
+    accumulates rather than applying instantly, since Fur itself only
+    resolves once a real day."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.tannery_built = True
+    with mock.patch("backend.actions.random.random", return_value=1.0):
+        ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "forest", _NO_TARGET)
+
+    assert tribe.tannery_fur_pending_from_hunts == config.TANNERY_FUR_BONUS_PER_HUNT
+    assert tribe.unique_resources.get("Fur", 0) == 0  # not resolved into real Fur yet -- that's the day boundary's job
+
+
+def test_hunt_deer_does_not_accumulate_tannery_fur_without_a_tannery():
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    with mock.patch("backend.actions.random.random", return_value=1.0):
+        ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "forest", _NO_TARGET)
+
+    assert tribe.tannery_fur_pending_from_hunts == 0
+
+
 def test_gather_eggs_success_sets_the_hatchery_prerequisite():
     from unittest import mock
 

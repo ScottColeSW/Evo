@@ -1581,10 +1581,24 @@ class Tribe:
         # unique_resources dict rather than a second parallel system.
         self.tannery_built = False
         self.tannery_site: tuple[int, int] | None = None
+        # 2026-09-19 rework (see C:\Users\scott\.claude\plans\cheerful-weaving-
+        # blanket.md's sibling design): Fur is now fully activity-driven, once
+        # a real day (Simulation._advance_tannery_yield) -- N = a fed Deer
+        # Pen's own yield + real hunting yields accumulated since the last
+        # boundary (this counter; actions.py._hunt_deer/Simulation.
+        # _report_hunting_party_home each add TANNERY_FUR_BONUS_PER_HUNT here
+        # per real catch, once Tannery stands). Meat is a fixed fraction of
+        # that same day's total (TANNERY_MEAT_PRESERVED_FRACTION), not a
+        # separate per-source rate. tannery_fur_today/tannery_meat_today are
+        # real per-day facts recomputed at every boundary and sent straight to
+        # the frontend (Bucket B pattern, matches eggs_laid_today).
+        self.tannery_fur_pending_from_hunts = 0
+        self.tannery_fur_today = 0
+        self.tannery_meat_today = 0
         # See actions.py._build_deer_pen -- a live, breeding captive herd (same
         # feed-or-shrink/natural-breed shape as tribe.flock, see Simulation.
-        # _advance_deer_pen), feeding Fur into the Tannery above on top of its
-        # existing flat passive yield.
+        # _advance_deer_pen), feeding Fur into the Tannery above alongside real
+        # hunting.
         self.deer_pen_built = False
         self.deer = 0
         self.deer_pen_site: tuple[int, int] | None = None
@@ -1997,6 +2011,8 @@ class Tribe:
             "hazard_landmarks": self.hazard_landmarks,
             "kitchen_built": self.kitchen_built,
             "tannery_built": self.tannery_built,
+            "tannery_fur_today": self.tannery_fur_today,
+            "tannery_meat_today": self.tannery_meat_today,
             "deer_pen_built": self.deer_pen_built,
             "deer": self.deer,
             "forge_built": self.forge_built,
@@ -7435,6 +7451,10 @@ class Simulation:
         base_caught = exp.get("food_caught", 0)
         if base_caught and tribe.tannery_built:
             base_caught += config.TANNERY_MEAT_BONUS_PER_HUNT
+            # See actions.py._hunt_deer's own matching Fur comment -- a
+            # returning hunting party's real catch counts the same as an
+            # instant hunt toward the next day boundary's Tannery total.
+            tribe.tannery_fur_pending_from_hunts += config.TANNERY_FUR_BONUS_PER_HUNT
         caught_gained = round(base_caught * _food_multiplier(tribe))
         if caught_gained:
             # See the matching fix/comment on the general homecoming branch above --
@@ -8227,9 +8247,9 @@ class Simulation:
         dies of a wood shortage -- so topping it to the cap every cycle
         regardless of spending would make every future building free forever, a
         much bigger change than "never starve." A real, generous passive income
-        instead, the same shape config.MINE_YIELD_PER_CYCLE/
-        TANNERY_YIELD_PER_CYCLE already use for their own resource, just at
-        wood's own larger scale -- genuinely solves the "wood starved at scale"
+        instead, the same shape config.MINE_YIELD_PER_CYCLE already uses for
+        its own resource, just at wood's own larger scale -- genuinely solves
+        the "wood starved at scale"
         problem this whole fix is a response to, without erasing the building
         economy outright.
 
@@ -8513,67 +8533,56 @@ class Simulation:
             tribe.deer += litter
 
     def _advance_tannery_yield(self, tribe: Tribe) -> None:
-        """Once a tannery is built (actions.py._build_tannery), Fur flows in
-        daily -- mirrors _advance_mine_yield exactly, into the same
-        unique_resources dict.
+        """2026-09-19 rework (see C:\\Users\\scott\\.claude\\plans\\cheerful-weaving-
+        blanket.md's sibling design). Explicit design: "N = the automatic yield
+        from Pen + hunting yields... M = %meat_preserved * N... %meat_preserved
+        = 75% (nearest whole int)." Replaces the old flat TANNERY_YIELD_PER_CYCLE
+        trickle (fired regardless of real activity) and the old separate
+        per-deer-fed MEAT_PER_DEER_FED rate -- Fur is now fully activity-driven,
+        and meat is one unified fraction of whatever Fur that activity actually
+        produced, not two independently-tuned numbers.
 
-        Live report, 2026-09-14: "tannery only works if deer hunt or deer pen
-        work." BUILD_TANNERY's own gate (tribe.hunt_ever_succeeded) is
-        satisfied by ANY successful hunt -- including a HUNTING_PARTY catch at
-        a Rabbit Warren or Wolf Den that never involved a deer at all
-        (Simulation._report_hunting_party_home sets the same flag regardless
-        of species). The ongoing flat Fur trickle used to fire off that same
-        generic flag, meaning a tribe that only ever hunted rabbits could
-        still passively process hides with no real deer connection. Now
-        requires real, deer-specific activity: at least one successful
-        HUNT_DEER (tribe.hunt_deer_success_count, distinct from the generic
-        hunt_ever_succeeded) or a Deer Pen actually standing. Not touching
-        BUILD_TANNERY's own build gate -- "the Tannery should come online
-        easily, as they only need to have hunted" was itself an explicit
-        simplification; this only tightens what keeps it *producing*.
+        Resolves once per real day (self.cycle % DAY_LENGTH_CYCLES), the same
+        gating idiom _advance_deer_pen_yield/_advance_flock_daily already use,
+        combining two real sources:
+        1. The Deer Pen's own daily feed (unchanged mechanically from before --
+           see config.DEER_PEN_MINIMUM_HERD_SIZE's own comment for why feeding
+           is clamped -- just no longer computing its own separate meat figure).
+        2. Real hunting activity accumulated since the last boundary
+           (tribe.tannery_fur_pending_from_hunts, incremented by
+           actions.py._hunt_deer and Simulation._report_hunting_party_home per
+           real catch, config.TANNERY_FUR_BONUS_PER_HUNT each -- "1 deer = 1
+           fur").
 
-        Explicit follow-up, 2026-09-11: "DEER_PEN that will auto-feed the Tannery
-        1-3 deer a day." Once a Deer Pen exists too (which already implies a
-        Tannery -- see actions.py._build_deer_pen's own gate), this feeds a real
-        number of captive deer into extra Fur each cycle, additive on top of the
-        flat yield above, never replacing it -- a tribe with a Pen is strictly
-        better off, never worse. The herd's own upkeep/breeding (_advance_deer_pen,
-        called just before this in step()) is what makes this sustainable
-        ("automagically") instead of a one-time drain.
-
-        Live report, 2026-09-14: "deer pen output is for both kitchen and
-        tannery; meat, skin." Each deer fed now also yields meat (config.
-        MEAT_PER_DEER_FED), same shape actions._hunt_deer's own
-        TANNERY_MEAT_BONUS_PER_HUNT already gives an instant hunt -- through
-        _food_multiplier like every other food source in this game (fishing,
-        farming, expedition catches), not a bare addition.
-
-        Live bug, confirmed against a real run (run_20260913_113112): a Deer Pen
-        founded at cycle 81 with its starting 2 deer (config.DEER_PEN_FOUNDING_COUNT)
-        was back down to 0 by cycle 82 -- one cycle later. DEER_PEN_DAILY_FEED_MIN/MAX
-        is named (and was explicitly requested) as a daily amount, but this block ran
-        unconditionally every cycle, feeding 1-3 deer to the Tannery roughly
-        DAY_LENGTH_CYCLES times more often than intended -- the exact same "ran every
-        cycle instead of once a day" mistake _advance_resource_trails's own docstring
-        already tells the story of once. The herd never had a chance to breed
-        (_advance_deer_pen's 15% per-cycle chance, gated on tribe.deer >= 2) before
-        being fed to zero. Gated the same way, on a day boundary."""
-        deer_proven = tribe.hunt_deer_success_count > 0 or tribe.deer_pen_built
-        if tribe.tannery_built and deer_proven and self._is_camped(tribe):
-            self._capped_unique_add(tribe, "Fur", config.TANNERY_YIELD_PER_CYCLE)
-        if tribe.deer_pen_built and tribe.deer > 0 and self.cycle % config.DAY_LENGTH_CYCLES == 0:
+        tannery_fur_today/tannery_meat_today are real per-day facts, recomputed
+        (not accumulated) at every boundary and sent straight to the frontend --
+        same Bucket B pattern eggs_laid_today/etc. use, so the sidebar never has
+        to guess. Also requires self._is_camped(tribe), same general settled
+        check _advance_mine_yield/_advance_fish_supply already use."""
+        if not tribe.tannery_built or self.cycle % config.DAY_LENGTH_CYCLES != 0 or not self._is_camped(tribe):
+            return
+        pen_fur = 0
+        if tribe.deer_pen_built and tribe.deer > 0:
             # Live-run finding, 2026-09-15: "Deer Pen showing 0" -- with a small
             # herd, min(deer, randint(1,3)) could equal the herd's own size,
             # feeding it to exactly 0 in one day. Clamped to never feed below
             # config.DEER_PEN_MINIMUM_HERD_SIZE, same floor _advance_deer_pen's
-            # own starvation-loss path now respects.
+            # own starvation-loss path respects.
             feedable = max(0, tribe.deer - config.DEER_PEN_MINIMUM_HERD_SIZE)
             fed = min(feedable, random.randint(config.DEER_PEN_DAILY_FEED_MIN, config.DEER_PEN_DAILY_FEED_MAX))
             if fed > 0:
                 tribe.deer -= fed
-                self._capped_unique_add(tribe, "Fur", fed * config.FUR_PER_DEER_FED)
-                meat = round(fed * config.MEAT_PER_DEER_FED * _food_multiplier(tribe))
-                self._capped_add(tribe, "food", meat)
+                pen_fur = fed * config.FUR_PER_DEER_FED
+        hunt_fur = tribe.tannery_fur_pending_from_hunts
+        tribe.tannery_fur_pending_from_hunts = 0
+        n = pen_fur + hunt_fur
+        if n > 0:
+            self._capped_unique_add(tribe, "Fur", n)
+        meat = round(n * config.TANNERY_MEAT_PRESERVED_FRACTION)
+        if meat > 0:
+            self._capped_add(tribe, "food", round(meat * _food_multiplier(tribe)))
+        tribe.tannery_fur_today = n
+        tribe.tannery_meat_today = meat
 
     def _advance_resource_trails(self, tribe: Tribe) -> None:
         """Explicit request: "if they have found a Quarry, Mine, Stand of Trees
