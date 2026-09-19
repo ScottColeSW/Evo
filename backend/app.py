@@ -85,7 +85,7 @@ async def game_config(request: web.Request) -> web.Response:
         "wall_max_layers": config.WALL_MAX_LAYERS,
         "bath_house_upkeep_multiplier": config.BATH_HOUSE_UPKEEP_MULTIPLIER,
         "hatchery_hatch_chance_multiplier": config.HATCHERY_HATCH_CHANCE_MULTIPLIER,
-        "eggs_per_hatch": config.EGGS_PER_HATCH,
+        "coop_lay_chance_multiplier": config.COOP_LAY_CHANCE_MULTIPLIER,
         "cooking_food_multiplier": config.COOKING_FOOD_MULTIPLIER,
         "battalion_capacity_per_barracks": config.BATTALION_CAPACITY_PER_BARRACKS,
         "barracks_max_count": config.BARRACKS_MAX_COUNT,

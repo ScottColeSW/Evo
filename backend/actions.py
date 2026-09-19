@@ -1182,9 +1182,10 @@ def _build_hatchery(sim, tribe, biome, target):
     after they GATHER_EGGS in the wild, they can have a Hatchery." Gated on a
     real wild find (tribe.eggs_ever_gathered), the same "proven success, not
     flock size alone" pattern Sawmill/Quarry/Tannery use. Boosts Simulation.
-    _advance_flock's own natural-hatch chance rather than the passive
-    egg-laying rate (_advance_flock_eggs) -- a hatchery is where eggs get
-    incubated into new flock faster, not where more eggs get laid."""
+    _advance_flock_daily's own daily hatch success rate (config.
+    HATCHERY_HATCH_CHANCE_MULTIPLIER against EGG_HATCH_BASE_SUCCESS_RATE) rather
+    than the passive egg-laying rate -- a hatchery is where eggs get incubated
+    more reliably, not where more eggs get laid."""
     if tribe.hatchery_built or not tribe.eggs_ever_gathered:
         return None
     if tribe.wood < config.HATCHERY_WOOD_COST or tribe.stone < config.HATCHERY_STONE_COST:
@@ -1209,11 +1210,14 @@ def _build_coop(sim, tribe, biome, target):
     _resolve_hatch, the instant the first egg ever hatched) into a real, chief-built
     structure -- the same "prove it, then build it for real, not a free ride" pattern
     Sawmill/Quarry/Dock already established. Gated on tribe.flock > 0 (a founding
-    fowl already exists), not eggs_ever_gathered like Hatchery -- see config.
-    COOP_WOOD_COST's own comment for why that avoids a bootstrap deadlock. Once both
-    this and the Hatchery exist, Simulation._advance_flock switches from a
-    probabilistic natural-hatch roll to actually consuming stored eggs for a
-    deterministic hatch each cycle -- see that method's own docstring."""
+    fowl already exists) -- see config.COOP_WOOD_COST's own comment: under the
+    2026-09-19 daily lay/hatch/spoil rework (Simulation._advance_flock_daily), a
+    founding egg waits one real day to hatch like everything else instead of
+    resolving instantly, so this gate is simply satisfied a day later, not a
+    bootstrap deadlock either way. Coop's own mechanical effect moved to the LAY
+    side of that rework (config.COOP_LAY_CHANCE_MULTIPLIER) -- Hatchery boosts the
+    hatch side, Coop boosts the lay side, explicit design: "the coop is to
+    increase the chance of getting pregnant with eggs.\""""
     if tribe.coop_built or tribe.flock <= 0:
         return None
     if tribe.wood < config.COOP_WOOD_COST or tribe.stone < config.COOP_STONE_COST:
@@ -1925,45 +1929,27 @@ def _gather_eggs(sim, tribe, biome, target):
     """Wild fowl near a real water source -- gated the same as PLANT_CROP (Simulation.
     _is_settled_near_water).
 
-    Before a Coop exists, a find doesn't hatch here: this only sets
-    tribe.pending_hatch; Simulation.step() resolves it with a real, non-scripted LLM
-    call (backend/genetics.py's hatch()) the same cycle, the same pattern BREED already
-    uses for pending_birth. Once the flock has at least two members, the two most
-    recently hatched are what get crossed -- mirrors _eligible_breeding_pair preferring
-    a fresh milestone over the whole population. This is the founding path (how a
-    flock starts existing at all) and stays exactly as it always has.
-
-    Once a Coop exists (see actions.py._build_coop), there's a real home for a caught
-    fowl already -- a find now deposits into tribe.eggs (config.
-    GATHER_EGGS_STOCKPILE_AMOUNT) instead of hatching directly. Simulation.
-    _advance_flock is what actually incubates that stockpile into new flock from then
-    on, once a Hatchery exists too. Explicit follow-up, 2026-09-11: "eggs gathered
-    are put into the Hatchery... fowl caught are put into the Coop."
+    2026-09-19 rework (see C:\\Users\\scott\\.claude\\plans\\cheerful-weaving-blanket.md):
+    a find always deposits into tribe.eggs, regardless of buildings -- the old
+    pre-Coop "instant hatch" founding path (setting tribe.pending_hatch directly here)
+    is gone. Under the new daily lay/hatch/spoil mechanic (Simulation.
+    _advance_flock_daily) there's no bootstrap problem to work around any more: a
+    founding egg just waits one real day to hatch like every other egg, passively
+    laid or manually gathered alike -- "eggs take a day to hatch" applies uniformly
+    now instead of only to the passive-laying path.
 
     Explicit request, 2026-09-17: a flat, minimal wood cost -- see config.
-    GATHER_EGGS_WOOD_COST's own comment. Charged on every real attempt
-    (found or not -- searching costs the same effort either way), but never
-    on the "one thing at a time" no-op below, since no attempt actually
-    happens there."""
+    GATHER_EGGS_WOOD_COST's own comment. Charged on every real attempt (found or
+    not -- searching costs the same effort either way)."""
     if tribe.wood < config.GATHER_EGGS_WOOD_COST:
         return None
-    if tribe.coop_built:
-        tribe.wood -= config.GATHER_EGGS_WOOD_COST
-        if random.random() >= config.GATHER_EGGS_SUCCESS_CHANCE:
-            return "no eggs found this time"
-        tribe.eggs += config.GATHER_EGGS_STOCKPILE_AMOUNT
-        tribe.eggs_laid_total += config.GATHER_EGGS_STOCKPILE_AMOUNT
-        tribe.eggs_ever_gathered = True
-        return f"an egg is found and brought back to the coop -- {tribe.eggs} now stored for the hatchery"
-    if tribe.pending_hatch is not None:
-        return "an egg is already being tended -- one thing at a time"
     tribe.wood -= config.GATHER_EGGS_WOOD_COST
     if random.random() >= config.GATHER_EGGS_SUCCESS_CHANCE:
         return "no eggs found this time"
-    parents = tribe.flock_lineage[-2:] if len(tribe.flock_lineage) >= 2 else None
-    tribe.pending_hatch = {"parents": parents}
-    tribe.eggs_ever_gathered = True  # see actions.py._build_hatchery's own prerequisite
-    return "an egg is found and set aside to hatch"
+    tribe.eggs += config.GATHER_EGGS_STOCKPILE_AMOUNT
+    tribe.eggs_laid_total += config.GATHER_EGGS_STOCKPILE_AMOUNT
+    tribe.eggs_ever_gathered = True
+    return f"an egg is found and set aside -- {tribe.eggs} now stored, ready to hatch tomorrow"
 
 
 def _catch_fish(sim, tribe, biome, target):
@@ -3553,7 +3539,7 @@ ACTION_DESCRIPTIONS = {
     "BUILD_KEEP": "Build a keep using stored wood and stone -- only possible once enough long houses stand. A one-time, permanent structure: a further defense bonus for the settlement.",
     "BUILD_FORTRESS": "Build a fortress using stored wood and stone -- only possible once a keep stands and enough long houses have been built. A one-time, permanent structure: a further defense bonus for the settlement.",
     "PLANT_CROP": "Plant a farm plot at your current tile, fenced and set with a scarecrow using stored wood -- only possible once the tribe has settled here. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
-    "GATHER_EGGS": "Search for wild fowl nests near your current tile, spending a little stored wood on the attempt -- only possible once the tribe has settled here. A found egg is set aside and hatches on its own, growing the tribe's flock by one.",
+    "GATHER_EGGS": "Search for wild fowl nests near your current tile, spending a little stored wood on the attempt -- only possible once the tribe has settled here. A found egg is set aside and, like the rest of the flock's own eggs, takes a full day to hatch -- most survive to grow the flock, but not every egg makes it.",
     "CATCH_FISH": "Attempt to harvest food by fishing at your current tile, spending a little stored wood on the attempt -- only possible once the tribe has settled here. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",
     "SCOUT": "Dispatch an expedition to explore -- the direction is chosen automatically to spread coverage out over time, not from target_vector. They travel and camp on their own supply, searching up to a few days before turning back if they find nothing. What they find only becomes known once they've walked all the way home. Your tribe can have several parties out at once (scouting or hunting, any mix -- more as your population grows) -- choosing SCOUT again sends another one if there's room, or just reports on whoever's already out once you're at capacity.",
     "EXPLORATION_PARTY": "Dispatch a deeper, longer-ranging expedition than SCOUT -- direction chosen automatically, its own sweep separate from SCOUT's. Gathers real wood and stone along the way on top of the food and water any expedition forages, until they're carrying as much as they can manage, then heads home. Can discover anything SCOUT can (water, resource sites, raider camps) plus rival settlements and Landmarks -- rare points of interest that yield a real, unique treasure the moment they're found. Shares the same expedition capacity as SCOUT/HUNTING_PARTY.",

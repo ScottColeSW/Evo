@@ -12515,293 +12515,300 @@ def test_resource_priority_fact_ranks_stockpiles_lowest_to_highest():
     assert "Resource priority, lowest to highest: food (5), stone (20), water (30), wood (50)" in request["prompt"]
 
 
-def test_advance_flock_consumes_feed():
+def test_advance_flock_daily_is_a_no_op_outside_the_day_boundary():
+    """Explicit design, 2026-09-19: "It should only be once a day/night
+    cycle" -- unlike the old per-cycle _advance_flock/_advance_flock_eggs,
+    nothing happens at all except on a real day boundary."""
+    sim = _bare_simulation()
+    sim.cycle = 5  # not a multiple of DAY_LENGTH_CYCLES
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = 3
+    tribe.food = 100
+    tribe.eggs_incubating = 10
+
+    sim._advance_flock_daily(tribe)
+
+    assert tribe.food == 100
+    assert tribe.eggs_incubating == 10
+    assert tribe.eggs_laid_today == 0
+    assert tribe.eggs_hatched_today == 0
+
+
+def test_advance_flock_daily_consumes_feed_at_the_day_boundary():
     from backend import config
 
     sim = _bare_simulation()
+    sim.cycle = 20
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.flock = 3
     tribe.food = 100
 
-    with mock.patch("backend.simulation.random.random", return_value=0.999):  # no natural hatch
-        sim._advance_flock(tribe)
+    with mock.patch("backend.simulation.random.random", return_value=0.999):  # no lay round-up
+        sim._advance_flock_daily(tribe)
 
     assert tribe.food == 100 - config.FLOCK_UPKEEP_FOOD_PER_MEMBER * 3
     assert tribe.flock == 3
 
 
-def test_advance_flock_shrinks_without_enough_feed():
+def test_advance_flock_daily_shrinks_without_enough_feed():
     sim = _bare_simulation()
+    sim.cycle = 20
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.flock = 2
     tribe.food = 0
 
-    sim._advance_flock(tribe)
+    sim._advance_flock_daily(tribe)
 
     assert tribe.flock == 1
     assert any("lost for lack of feed" in entry for entry in tribe.history)
 
 
-def test_advance_flock_loss_stays_silent_during_cooldown_but_still_shrinks():
+def test_advance_flock_daily_loss_stays_silent_during_cooldown_but_still_shrinks():
     """Live report, 2026-09-19: "'flock' messages overwhelming actions
     visible... only once in a while." A sustained famine used to append an
-    identical loss line every single cycle it lasted. The flock still
-    shrinks every cycle below -- only the narration is cooldown-gated."""
+    identical loss line every single day it lasted. The flock still shrinks
+    every day below -- only the narration is cooldown-gated."""
     sim = _bare_simulation()
+    sim.cycle = 20
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.flock = 5
     tribe.food = 0
     tribe.flock_loss_chronicle_cooldown_until_cycle = sim.cycle + 100
 
-    sim._advance_flock(tribe)
+    sim._advance_flock_daily(tribe)
 
     assert tribe.flock == 4  # the real mechanic is untouched
     assert not any("lost for lack of feed" in entry for entry in tribe.history)
 
 
-def test_advance_flock_loss_narrates_again_once_the_cooldown_actually_clears():
+def test_advance_flock_daily_loss_narrates_again_once_the_cooldown_actually_clears():
     sim = _bare_simulation()
+    sim.cycle = 20
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.flock = 2
     tribe.food = 0
     tribe.flock_loss_chronicle_cooldown_until_cycle = sim.cycle  # already ready
 
-    sim._advance_flock(tribe)
+    sim._advance_flock_daily(tribe)
 
     assert any("lost for lack of feed" in entry for entry in tribe.history)
     assert tribe.flock_loss_chronicle_cooldown_until_cycle > sim.cycle  # refreshed
 
 
-def test_advance_flock_can_naturally_hatch_once_established_and_fed():
-    from backend import config
-
+def test_advance_flock_daily_does_nothing_with_an_empty_flock():
     sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.flock = config.FLOCK_MIN_SIZE_TO_BREED
-    tribe.food = 1000
-
-    with mock.patch("backend.simulation.random.random", return_value=0.0):  # below any chance
-        sim._advance_flock(tribe)
-
-    assert tribe.pending_hatch == {"parents": None}
-
-
-def test_advance_flock_does_nothing_with_an_empty_flock():
-    sim = _bare_simulation()
+    sim.cycle = 20
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.food = 100
 
-    sim._advance_flock(tribe)
+    sim._advance_flock_daily(tribe)
 
     assert tribe.food == 100
     assert tribe.pending_hatch is None
+    assert tribe.eggs_laid_today == 0
 
 
-def test_advance_flock_hatchery_boosts_the_natural_hatch_chance():
-    """Explicit follow-up: a Hatchery is where eggs get incubated into new
-    flock faster -- boosts the natural-hatch chance, not the passive laying
-    rate."""
-    from backend import config
-
+def test_advance_flock_daily_breeding_units_pair_flock_sizes_identically():
+    """Explicit design: "in order to have eggs to lay, the Flock needs to
+    Breed" -- resolved with "assume the first flock is pregnant," so laying
+    scales off breeding_units = (flock + 1) // 2, never 0 for any living
+    flock. flock=1 and flock=2 both resolve to 1 breeding unit (an unpaired
+    fowl is already fertile on its own); flock=3 and flock=4 both resolve to
+    2 -- proven structurally (matching pairs lay identically) rather than by
+    hand-replicating the stochastic-rounding formula in the test."""
     sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.flock = config.FLOCK_MIN_SIZE_TO_BREED
-    tribe.food = 1000
-    tribe.hatchery_built = True
-    # Between the base chance and the hatchery-boosted chance -- only hatches
-    # with the multiplier applied.
-    midpoint = config.FLOCK_NATURAL_HATCH_CHANCE * (config.HATCHERY_HATCH_CHANCE_MULTIPLIER + 1) / 2
+    sim.cycle = 20
 
-    with mock.patch("backend.simulation.random.random", return_value=midpoint):
-        sim._advance_flock(tribe)
+    def laid_for(flock):
+        tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+        tribe.flock = flock
+        tribe.food = 1000
+        with mock.patch("backend.simulation.random.random", return_value=0.0):
+            sim._advance_flock_daily(tribe)
+        return tribe.eggs_laid_today
 
-    assert tribe.pending_hatch == {"parents": None}
+    assert laid_for(1) == laid_for(2)
+    assert laid_for(3) == laid_for(4)
+    assert laid_for(9) > laid_for(1)  # more breeding units really do lay more overall
 
 
-def test_advance_flock_deterministic_hatch_once_coop_and_hatchery_both_exist():
-    """Explicit follow-up, 2026-09-11: once BOTH buildings exist, a real, earned
-    stockpile of eggs funds a hatch every time -- no dice roll needed."""
-    from backend import config
-
+def test_advance_flock_daily_eggs_laid_today_are_not_eligible_to_hatch_today():
+    """The bug report this whole rework grew out of, made explicit: "eggs that
+    were laid that day can not hatch. eggs take a day to hatch." Lay today,
+    confirm nothing hatched from it; advance to the next real day and confirm
+    that exact batch is now what resolves."""
     sim = _bare_simulation()
+    sim.cycle = 20
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.flock = config.FLOCK_MIN_SIZE_TO_BREED
+    tribe.flock = 4
     tribe.food = 1000
-    tribe.coop_built = True
-    tribe.hatchery_built = True
-    tribe.eggs = config.EGGS_PER_HATCH
 
-    with mock.patch("backend.simulation.random.random", return_value=0.999):  # would fail any roll
-        sim._advance_flock(tribe)
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_flock_daily(tribe)  # today: lays eggs, nothing was incubating yet
 
-    assert tribe.eggs == 0
-    assert tribe.pending_hatch == {"parents": None}
+    assert tribe.eggs_laid_today > 0
+    assert tribe.eggs_hatched_today == 0  # today's own lay did not hatch today
+    assert tribe.eggs_incubating == tribe.eggs_laid_today
+    assert tribe.eggs == 0  # moved out of the running stockpile already
+
+    sim.cycle = 40  # the next real day
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_flock_daily(tribe)
+
+    assert tribe.eggs_hatched_today > 0  # NOW yesterday's batch is eligible
 
 
-def test_advance_flock_recovers_from_zero_once_coop_and_hatchery_exist():
-    """Live report, 2026-09-16: a real run showed a tribe's flock starve to 0
-    after its Coop was already built, then stay stuck there for the rest of the
-    game -- the same "gained resource that can strand at zero and never
-    recover" bug class already fixed once for the Deer Pen. tribe.eggs is a
-    genuinely separate stockpile (see actions.py._gather_eggs's own post-Coop
-    branch); incubating it into a fresh flock member must not require an
-    existing living flock member."""
-    from backend import config
-
+def test_advance_flock_daily_a_fowl_hatched_today_does_not_count_toward_todays_lay():
+    """Sibling invariant, caught on plan review: "fowl just hatched can not
+    lay eggs." A same-day hatchling must not inflate the SAME day's
+    breeding_units. Mirrors the real two-phase step() ordering --
+    _advance_flock_daily only SETS pending_hatch; tribe.flock itself is only
+    bumped later by the separate, async _resolve_hatch call."""
     sim = _bare_simulation()
+    sim.cycle = 20
+
+    baseline = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    baseline.flock = 1
+    baseline.food = 1000
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_flock_daily(baseline)
+    baseline_laid = baseline.eggs_laid_today
+    assert baseline_laid > 0  # otherwise this test can't tell the difference
+
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.flock = 0  # starved out after the Coop already existed
+    tribe.flock = 1
     tribe.food = 1000
-    tribe.coop_built = True
-    tribe.hatchery_built = True
-    tribe.eggs = config.EGGS_PER_HATCH
+    tribe.eggs_incubating = 8  # a big eligible batch, guaranteed to hatch several
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_flock_daily(tribe)
 
-    sim._advance_flock(tribe)
+    assert tribe.pending_hatch["count"] > 0  # something really did hatch today
+    assert tribe.flock == 1  # not bumped synchronously by _advance_flock_daily itself
+    assert tribe.eggs_laid_today == baseline_laid  # today's lay is unaffected by it
 
-    assert tribe.eggs == 0
-    assert tribe.pending_hatch == {"parents": None}
 
-
-def test_advance_flock_deterministic_hatch_waits_for_enough_eggs():
-    from backend import config
-
+def test_advance_flock_daily_resolves_yesterdays_batch_into_hatched_and_spoiled():
     sim = _bare_simulation()
+    sim.cycle = 20
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.flock = config.FLOCK_MIN_SIZE_TO_BREED
+    tribe.flock = 0
     tribe.food = 1000
-    tribe.coop_built = True
-    tribe.hatchery_built = True
-    tribe.eggs = config.EGGS_PER_HATCH - 1
+    tribe.eggs_incubating = 10
 
-    sim._advance_flock(tribe)
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_flock_daily(tribe)
 
-    assert tribe.eggs == config.EGGS_PER_HATCH - 1
+    assert tribe.eggs_hatched_today + tribe.eggs_spoiled_today == 10
+    assert tribe.eggs_hatched_today > 0
+    assert tribe.eggs_incubating == 0  # fully resolved, no carryover
+    assert tribe.pending_hatch == {"parents": None, "count": tribe.eggs_hatched_today}
+
+
+def test_advance_flock_daily_no_batch_incubating_hatches_and_spoils_nothing():
+    sim = _bare_simulation()
+    sim.cycle = 20
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = 0
+    tribe.food = 1000
+
+    sim._advance_flock_daily(tribe)
+
+    assert tribe.eggs_hatched_today == 0
+    assert tribe.eggs_spoiled_today == 0
     assert tribe.pending_hatch is None
 
 
-def test_advance_flock_deterministic_hatch_does_not_double_trigger():
-    from backend import config
-
+def test_advance_flock_daily_hatchery_boosts_the_hatch_success_rate():
+    """Hatchery boosts the HATCH side (config.HATCHERY_HATCH_CHANCE_MULTIPLIER
+    against EGG_HATCH_BASE_SUCCESS_RATE) -- Coop boosts the LAY side instead,
+    see the sibling Coop test below."""
     sim = _bare_simulation()
+    sim.cycle = 20
+
+    def hatched_for(hatchery_built):
+        tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+        tribe.flock = 0
+        tribe.food = 1000
+        tribe.eggs_incubating = 10
+        tribe.hatchery_built = hatchery_built
+        with mock.patch("backend.simulation.random.random", return_value=0.0):
+            sim._advance_flock_daily(tribe)
+        return tribe.eggs_hatched_today
+
+    assert hatched_for(True) > hatched_for(False)
+
+
+def test_advance_flock_daily_coop_boosts_the_lay_rate():
+    """Explicit design, 2026-09-19: "the coop is to increase the chance of
+    getting pregnant with eggs." Coop multiplies the daily lay rate
+    (config.COOP_LAY_CHANCE_MULTIPLIER) -- Hatchery multiplies the hatch rate
+    instead, see the sibling Hatchery test above."""
+    sim = _bare_simulation()
+    sim.cycle = 20
+
+    def laid_for(coop_built):
+        tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+        tribe.flock = 3
+        tribe.food = 1000
+        tribe.coop_built = coop_built
+        with mock.patch("backend.simulation.random.random", return_value=0.0):
+            sim._advance_flock_daily(tribe)
+        return tribe.eggs_laid_today
+
+    assert laid_for(True) > laid_for(False)
+
+
+def test_advance_flock_daily_accumulates_the_lifetime_totals():
+    """Explicit request, 2026-09-15 (eggs_laid_total's original ask), extended
+    2026-09-19 to spoilage's own symmetric cumulative ledger -- unlike the
+    per-day snapshot fields, these only ever grow."""
+    sim = _bare_simulation()
+    sim.cycle = 20
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.flock = config.FLOCK_MIN_SIZE_TO_BREED
+    tribe.flock = 3
     tribe.food = 1000
-    tribe.coop_built = True
-    tribe.hatchery_built = True
-    tribe.eggs = config.EGGS_PER_HATCH * 3
-    tribe.pending_hatch = {"parents": None}  # already tending one
-
-    sim._advance_flock(tribe)
-
-    assert tribe.eggs == config.EGGS_PER_HATCH * 3  # untouched -- one hatch at a time
-
-
-def test_advance_flock_coop_alone_without_hatchery_keeps_the_old_random_roll():
-    """Only once BOTH buildings exist does the deterministic loop take over --
-    a Coop with no Hatchery yet falls back to the same random roll a tribe with
-    neither building already has."""
-    from backend import config
-
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.flock = config.FLOCK_MIN_SIZE_TO_BREED
-    tribe.food = 1000
-    tribe.coop_built = True
-    tribe.eggs = config.EGGS_PER_HATCH * 3
-
-    with mock.patch("backend.simulation.random.random", return_value=0.0):  # below any chance
-        sim._advance_flock(tribe)
-
-    assert tribe.pending_hatch == {"parents": None}
-    assert tribe.eggs == config.EGGS_PER_HATCH * 3  # the deterministic path never touched it
-
-
-def test_advance_flock_eggs_lays_passively_from_a_living_flock():
-    from backend import config
-
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.flock = config.EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR * 3
-
-    sim._advance_flock_eggs(tribe)
-
-    assert tribe.eggs == 3
-
-
-def test_advance_flock_eggs_also_grows_the_lifetime_laid_total():
-    """Explicit request, 2026-09-15: a real "eggs laid" total for the Egg
-    Genesis Factory/Industrial Farm sidebar consolidation -- unlike
-    tribe.eggs itself (a live stockpile that drains as eggs hatch),
-    eggs_laid_total only ever grows."""
-    from backend import config
-
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.flock = config.EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR * 3
-
-    sim._advance_flock_eggs(tribe)
-    sim._advance_flock_eggs(tribe)
-
-    assert tribe.eggs_laid_total == 6  # cumulative across both cycles
-    assert tribe.eggs == 6  # the live stockpile also just hasn't drained yet
-
-
-def test_advance_flock_eggs_does_nothing_with_an_empty_flock():
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-
-    sim._advance_flock_eggs(tribe)
-
-    assert tribe.eggs == 0
-
-
-def test_advance_flock_eggs_can_lay_from_a_small_flock_via_stochastic_rounding():
-    """Live report, 2026-09-19: "it always says 0 eggs laid even when there is
-    a Flock." Confirmed against real run data -- plain integer floor division
-    (flock // 5) truncated any flock under 5 to zero, forever. A flock of 1
-    (exact = 0.2) must now have a real, if partial, chance to lay -- forcing
-    the stochastic roll to succeed proves that path exists at all."""
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.flock = 1
+    tribe.eggs_incubating = 10
+    tribe.hatchery_built = False  # base 50% rate -- guarantees some real spoilage
 
     with mock.patch("backend.simulation.random.random", return_value=0.0):
-        sim._advance_flock_eggs(tribe)
+        sim._advance_flock_daily(tribe)
 
-    assert tribe.eggs == 1
-    assert tribe.eggs_laid_total == 1
+    assert tribe.eggs_spoiled_total == tribe.eggs_spoiled_today
+    assert tribe.eggs_spoiled_total > 0
+    assert tribe.eggs_laid_total == tribe.eggs_laid_today
+    assert tribe.eggs_laid_total > 0
 
+    sim.cycle = 40
+    with mock.patch("backend.simulation.random.random", return_value=0.0):
+        sim._advance_flock_daily(tribe)
 
-def test_advance_flock_eggs_can_lay_nothing_from_a_small_flock_on_an_unlucky_roll():
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.flock = 1
-
-    with mock.patch("backend.simulation.random.random", return_value=0.999):
-        sim._advance_flock_eggs(tribe)
-
-    assert tribe.eggs == 0
-    assert tribe.eggs_laid_total == 0
+    assert tribe.eggs_laid_total == 2 * tribe.eggs_laid_today  # cumulative, not reset
 
 
-def test_advance_flock_eggs_matches_the_same_long_run_average_as_the_old_floor_division():
-    """The fix must not change the balance, only stop it from truncating to
-    zero below the divisor -- averaged over many cycles, a flock's egg output
-    should land on the same rate plain flock/DIVISOR always implied."""
+def test_advance_flock_daily_lay_matches_the_expected_long_run_average():
+    """Mirrors the old _advance_flock_eggs stochastic-rounding average check --
+    the same discipline applies to the new breeding_units-based formula."""
     from backend import config
     import random as random_module
 
     sim = _bare_simulation()
+    sim.cycle = 20
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.flock = 7  # not an exact multiple of the divisor -- exercises the roll for real
+    tribe.flock = 7  # breeding_units = 4 -- not an exact multiple of the divisor
+    tribe.food = 10**9
     random_module.seed(12345)
 
     trials = 20000
+    total_laid = 0
     for _ in range(trials):
-        sim._advance_flock_eggs(tribe)
+        tribe.eggs_incubating = 0  # isolate the lay roll from any hatch/spoil noise
+        sim._advance_flock_daily(tribe)
+        total_laid += tribe.eggs_laid_today
+        tribe.flock = 7  # pin the flock size -- isolate the lay roll itself
 
-    expected = trials * tribe.flock / config.EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR
-    assert abs(tribe.eggs_laid_total - expected) / expected < 0.02  # within 2%
+    breeding_units = (7 + 1) // 2
+    expected = trials * breeding_units / config.EGGS_LAID_PER_BREEDING_UNIT_PER_DAY_DIVISOR
+    assert abs(total_laid - expected) / expected < 0.02  # within 2%
 
 
 def test_advance_livestock_feast_converts_surplus_eggs_to_food():
@@ -13212,6 +13219,65 @@ async def test_resolve_hatch_founding_egg_always_narrates_even_on_cooldown():
     await sim._resolve_hatch(tribe)
 
     assert any("hatches" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_resolve_hatch_batch_grows_the_flock_by_the_whole_count():
+    """2026-09-19 daily rework: _advance_flock_daily resolves a whole day's
+    eligible egg batch at once (Simulation._advance_flock_daily,
+    cheerful-weaving-blanket.md), so pending_hatch can carry a count > 1 --
+    the flock grows by the whole count in one resolution, not one at a time."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.pending_hatch = {"parents": None, "count": 5}
+
+    await sim._resolve_hatch(tribe)
+
+    assert tribe.flock == 5
+    assert len(tribe.flock_lineage) == 5
+    assert all(e["cycle"] == sim.cycle for e in tribe.flock_lineage)
+    assert any("5 eggs hatch" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_resolve_hatch_batch_of_one_uses_the_singular_chronicle_phrasing():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.pending_hatch = {"parents": None, "count": 1}
+
+    await sim._resolve_hatch(tribe)
+
+    assert any("an egg hatches" in entry for entry in tribe.history)
+    assert not any("1 eggs hatch" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_resolve_hatch_batch_only_calls_the_real_llm_once_not_per_egg():
+    """Cost control, explicit in the plan: a big day's hatch must not mean
+    `count` separate Ollama calls -- one representative trait/note covers the
+    whole batch."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.flock = 2
+    parents = [
+        {"trait": "hardy", "parents": [], "cycle": 1, "note": ""},
+        {"trait": "quick to forage", "parents": [], "cycle": 2, "note": ""},
+    ]
+    tribe.pending_hatch = {"parents": parents, "count": 4}
+    call_count = 0
+
+    async def fake_hatch(client, model, parent_a, parent_b, era):
+        nonlocal call_count
+        call_count += 1
+        return {"trait": "hardy forager", "note": "a promising hatchling"}
+
+    with mock.patch("backend.simulation.hatch", fake_hatch):
+        await sim._resolve_hatch(tribe)
+
+    assert call_count == 1
+    assert tribe.flock == 2 + 4
+    assert len(tribe.flock_lineage) == 4
+    assert all(e["trait"] == "hardy forager" for e in tribe.flock_lineage)
 
 
 def test_upkeep_consumes_food_and_water_proportional_to_population():

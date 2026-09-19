@@ -694,12 +694,18 @@ ESTEEM_SCORE_REFERENCE = 100
 # wild fowl near a confirmed water source, not a separate condition.
 GATHER_EGGS_SUCCESS_CHANCE = 0.4
 # A flock isn't just a one-way counter -- it eats, and an established flock can also
-# breed on its own (Simulation._advance_flock), the same "passive consequence, not a
-# discrete action" category as crop growth. Real stakes both ways: undersized on feed
-# and it shrinks, big enough and it can grow without another GATHER_EGGS at all.
+# breed on its own (Simulation._advance_flock_daily), the same "passive consequence,
+# not a discrete action" category as crop growth. Real stakes both ways: undersized on
+# feed and it shrinks, big enough and it can grow without another GATHER_EGGS at all.
 FLOCK_UPKEEP_FOOD_PER_MEMBER = 1
-FLOCK_MIN_SIZE_TO_BREED = 2
-FLOCK_NATURAL_HATCH_CHANCE = 0.15
+# RETIRED 2026-09-19 (see C:\Users\scott\.claude\plans\cheerful-weaving-blanket.md):
+# FLOCK_MIN_SIZE_TO_BREED and FLOCK_NATURAL_HATCH_CHANCE governed the old per-cycle
+# probabilistic natural-hatch roll, which ignored the egg stockpile entirely. The new
+# daily lay/hatch/spoil mechanic (_advance_flock_daily) replaced the size gate with a
+# real formula instead -- breeding_units = (flock + 1) // 2 is never 0 for any living
+# flock (an unpaired fowl is treated as already fertile on its own, per explicit
+# design: "assume the first flock is pregnant"), so there's no minimum-size threshold
+# left to gate on.
 
 # Live report, 2026-09-19: "'hatched' and 'flock' messages overwhelming actions
 # visible... should only be 1 of either and only once in a while when a
@@ -723,7 +729,7 @@ FLOCK_LOSS_CHRONICLE_COOLDOWN_CYCLES = 20
 # after the stock grows... let them use everything more than a dozen each."
 # tribe.eggs is a real, separate stockpile from tribe.flock (a living flock
 # lays eggs passively, distinct from GATHER_EGGS finding a wild nest to hatch
-# into a new flock member) -- see Simulation._advance_flock_eggs. Once either
+# into a new flock member) -- see Simulation._advance_flock_daily. Once either
 # stockpile grows past LIVESTOCK_SURPLUS_THRESHOLD ("a dozen"), the surplus is
 # automatically eaten as food each cycle (Simulation._advance_livestock_feast)
 # instead of piling up forever with no payoff -- the same "don't let it just
@@ -778,7 +784,19 @@ LIBRARY_ENTRY_MEMORY_COUNT = 3
 WELL_WOOD_COST = 20
 WELL_STONE_COST = 20
 
-EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR = 5  # 1 egg per 5 flock members per cycle
+# Explicit request 2026-09-19: "every time this needs to happen. 1. Flock Lays
+# Eggs 2. Eggs collected or laid hatch into new Flock members... It should only
+# be once a day/night cycle... in order to have eggs to lay, the Flock needs to
+# Breed." Replaces the old EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR (a flat per-head
+# rate applied every single cycle, not once a day, and ignoring pairing entirely).
+# Laying now scales off breeding_units = (flock + 1) // 2 (ceiling division --
+# an unpaired fowl still counts as one already-fertile unit, per "assume the
+# first flock is pregnant"), applied once per real day
+# (Simulation._advance_flock_daily). Invented first-pass default, not yet
+# validated against a live run -- watch flock growth over a multi-day run before
+# treating this as tuned (see the plan file's own worked table: with a divisor
+# too low, flock growth compounds exponentially within 2-3 weeks).
+EGGS_LAID_PER_BREEDING_UNIT_PER_DAY_DIVISOR = 2  # 1 egg per 2 breeding units per day
 # Live report: "crazy villagers" eating the whole flock/every egg the moment
 # either crossed a dozen -- this was a flat cap regardless of tribe size, tuned
 # back when population sat around 20-50 (a dozen was a real fraction of that).
@@ -815,11 +833,16 @@ FLOCK_FEAST_FOOD_VALUE = 8  # food per surplus flock member eaten
 # scouted site or another building" pattern as Sawmill/Quarry/Tannery -- gated
 # on tribe.eggs_ever_gathered (a real wild GATHER_EGGS find, see actions.py.
 # _gather_eggs), not flock size alone. A hatchery is where eggs get incubated
-# into new flock faster, so it boosts the natural-hatch chance (Simulation.
-# _advance_flock) rather than the passive laying rate (_advance_flock_eggs).
+# more reliably -- multiplies EGG_HATCH_BASE_SUCCESS_RATE below (Simulation.
+# _advance_flock_daily), capped at 1.0.
 HATCHERY_WOOD_COST = 15
 HATCHERY_STONE_COST = 10
 HATCHERY_HATCH_CHANCE_MULTIPLIER = 2.0
+# The fraction of each day's *eligible* (yesterday-laid) egg batch that
+# successfully hatches -- the complement spoils (Simulation._advance_flock_daily,
+# see cheerful-weaving-blanket.md). Invented first-pass default -- explicitly
+# flagged as the one open tuning question worth confirming against a live run.
+EGG_HATCH_BASE_SUCCESS_RATE = 0.5
 
 # BUILD_COOP (backend/actions.py): explicit follow-up, 2026-09-11 -- "eggs gathered
 # are put into the Hatchery, the Hatchery incubates the eggs to hatch into the Fowl
@@ -828,23 +851,31 @@ HATCHERY_HATCH_CHANCE_MULTIPLIER = 2.0
 # placement (Simulation._resolve_hatch, the instant the first egg ever hatched) into
 # a real, chief-built structure -- same "prove it, then build it for real" pattern
 # every other building here uses. Gated on tribe.flock > 0 (a founding fowl already
-# exists), not eggs_ever_gathered like Hatchery -- gating on eggs_ever_gathered would
-# create a bootstrap deadlock, since the very first flock member has to come from
-# somewhere before any building can reasonably require one. Costs match Hatchery's
-# own (a companion building of the same scale), not tuned against live data yet.
+# exists) -- still works under the 2026-09-19 daily-lay/hatch rework (see
+# cheerful-weaving-blanket.md): a founding GATHER_EGGS find now waits one real day
+# to hatch like everything else instead of resolving instantly, so this gate is
+# simply satisfied a day later than before, no bootstrap deadlock either way.
+# Costs match Hatchery's own (a companion building of the same scale), not tuned
+# against live data yet.
 COOP_WOOD_COST = 15
 COOP_STONE_COST = 10
-# Once BOTH Hatchery and Coop exist, Simulation._advance_flock switches from the
-# probabilistic natural-hatch roll (FLOCK_NATURAL_HATCH_CHANCE, above) to consuming
-# this many real eggs from tribe.eggs for a deterministic hatch each time enough are
-# on hand -- "so the Tribes get to make it work," not a slot machine. Picked to
-# roughly match EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR's own scale (a flock of ~25
-# sustains one hatch/cycle from passive laying alone at steady state) -- an invented
-# first-pass default, watch a live run before treating it as tuned.
-EGGS_PER_HATCH = 5
-# GATHER_EGGS deposits this many eggs into the stockpile per success once a Coop
-# exists, instead of instantly hatching (see actions.py._gather_eggs) -- before a
-# Coop exists, GATHER_EGGS still instantly hatches, unchanged (the founding path).
+# RETIRED 2026-09-19 (see cheerful-weaving-blanket.md): EGGS_PER_HATCH drove the
+# old deterministic "5 eggs = 1 guaranteed hatch" special case once both Hatchery
+# and Coop existed. The new daily mechanic (_advance_flock_daily) applies
+# EGG_HATCH_BASE_SUCCESS_RATE/HATCHERY_HATCH_CHANCE_MULTIPLIER to the whole day's
+# eligible batch instead.
+#
+# Explicit design, 2026-09-19: "the coop is to increase the chance of getting
+# pregnant with eggs... makes this fowl happier." Hatchery boosts the HATCH side
+# (config.HATCHERY_HATCH_CHANCE_MULTIPLIER); Coop boosts the LAY side --
+# multiplies the daily egg-laying rate in _advance_flock_daily, same shape,
+# different end of the pipeline. Invented first-pass default, not yet validated
+# against a live run.
+COOP_LAY_CHANCE_MULTIPLIER = 1.5
+# GATHER_EGGS deposits this many eggs into the stockpile per success, regardless
+# of buildings (see actions.py._gather_eggs) -- the old pre-Coop "instant hatch"
+# branch is gone; every find now waits for the same daily mechanic as passive
+# laying, matching "eggs take a day to hatch" for every source, not just this one.
 GATHER_EGGS_STOCKPILE_AMOUNT = 1
 
 # Fishing (backend/actions.py CATCH_FISH, Simulation._advance_fish_supply): gated the

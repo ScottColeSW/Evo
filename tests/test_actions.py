@@ -3242,16 +3242,27 @@ def test_plant_crop_is_capped_at_max_farm_plots():
     assert tribe.wood == 1000  # and no wood spent trying
 
 
-def test_gather_eggs_sets_pending_hatch_on_a_successful_roll():
+def test_gather_eggs_success_deposits_into_the_stockpile():
+    """2026-09-19 rework (see cheerful-weaving-blanket.md): a find always
+    deposits into tribe.eggs now, regardless of buildings -- the old pre-Coop
+    "instant hatch" founding path (setting tribe.pending_hatch directly here)
+    is gone. Simulation._advance_flock_daily is what actually resolves the
+    stockpile into new flock members, one real day later."""
     from unittest import mock
+
+    from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
 
     with mock.patch("backend.actions.random.random", return_value=0.0):  # below any chance
-        ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
+        result = ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
 
-    assert tribe.pending_hatch == {"parents": None}  # founding egg -- nothing to cross yet
+    assert tribe.eggs == config.GATHER_EGGS_STOCKPILE_AMOUNT
+    assert tribe.eggs_laid_total == config.GATHER_EGGS_STOCKPILE_AMOUNT
+    assert tribe.eggs_ever_gathered is True
+    assert tribe.pending_hatch is None  # this action no longer touches pending_hatch at all
+    assert "ready to hatch tomorrow" in result
 
 
 def test_gather_eggs_does_nothing_on_a_failed_roll():
@@ -3263,44 +3274,31 @@ def test_gather_eggs_does_nothing_on_a_failed_roll():
     with mock.patch("backend.actions.random.random", return_value=0.999):  # above any chance
         ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
 
-    assert tribe.pending_hatch is None
+    assert tribe.eggs == 0
+    assert tribe.eggs_ever_gathered is False
 
 
-def test_gather_eggs_refuses_a_second_egg_while_one_is_already_pending():
+def test_gather_eggs_deposits_the_same_way_regardless_of_buildings():
+    """No more Coop-gated branch -- a find behaves identically with or
+    without a Coop/Hatchery standing."""
     from unittest import mock
+
+    from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.pending_hatch = {"parents": None}
-
-    with mock.patch("backend.actions.random.random", return_value=0.0):
-        result = ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
-
-    assert tribe.pending_hatch == {"parents": None}  # unchanged, not overwritten
-    assert result == "an egg is already being tended -- one thing at a time"
-
-
-def test_gather_eggs_crosses_the_two_most_recent_flock_members_once_available():
-    from unittest import mock
-
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.flock_lineage = [
-        {"trait": "first", "parents": [], "cycle": 1, "note": ""},
-        {"trait": "second", "parents": [], "cycle": 2, "note": ""},
-        {"trait": "third", "parents": [], "cycle": 3, "note": ""},
-    ]
+    tribe.coop_built = True
+    tribe.hatchery_built = True
 
     with mock.patch("backend.actions.random.random", return_value=0.0):
         ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
 
-    assert [p["trait"] for p in tribe.pending_hatch["parents"]] == ["second", "third"]
+    assert tribe.eggs == config.GATHER_EGGS_STOCKPILE_AMOUNT
 
 
 def test_gather_eggs_spends_wood_on_a_successful_attempt():
     """Explicit request, 2026-09-17: "wood cost and stone if any for these
-    should at least cost 5 each." Charged on the pre-Coop founding path,
-    the same as the Coop-stockpile path below."""
+    should at least cost 5 each.\""""
     from unittest import mock
 
     from backend import config
@@ -3312,7 +3310,7 @@ def test_gather_eggs_spends_wood_on_a_successful_attempt():
     with mock.patch("backend.actions.random.random", return_value=0.0):
         ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
 
-    assert tribe.pending_hatch is not None
+    assert tribe.eggs > 0
     assert tribe.wood == 50 - config.GATHER_EGGS_WOOD_COST
 
 
@@ -3329,7 +3327,7 @@ def test_gather_eggs_spends_wood_even_on_a_failed_attempt():
     with mock.patch("backend.actions.random.random", return_value=0.999):
         ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
 
-    assert tribe.pending_hatch is None
+    assert tribe.eggs == 0
     assert tribe.wood == 50 - config.GATHER_EGGS_WOOD_COST
 
 
@@ -3343,47 +3341,8 @@ def test_gather_eggs_does_nothing_without_enough_wood():
     result = ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
 
     assert result is None
-    assert tribe.pending_hatch is None
+    assert tribe.eggs == 0
     assert tribe.wood == config.GATHER_EGGS_WOOD_COST - 1  # untouched, no attempt happened
-
-
-def test_gather_eggs_refusing_a_pending_hatch_costs_no_wood():
-    """The "one thing at a time" no-op is checked before any wood is spent --
-    no real attempt happens there."""
-    from backend import config
-
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.wood = config.GATHER_EGGS_WOOD_COST
-    tribe.pending_hatch = {"parents": None}
-
-    ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
-
-    assert tribe.wood == config.GATHER_EGGS_WOOD_COST
-
-
-def test_gather_eggs_deposits_into_the_stockpile_once_a_coop_exists():
-    """Explicit follow-up, 2026-09-11: "eggs gathered are put into the Hatchery...
-    fowl caught are put into the Coop." Once a Coop exists there's a real home for
-    a caught fowl already, so a find deposits into the stockpile instead of
-    instantly hatching -- Simulation._advance_flock is what actually incubates it
-    from then on, once a Hatchery exists too."""
-    from unittest import mock
-
-    from backend import config
-
-    sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.coop_built = True
-    tribe.pending_hatch = {"parents": None}  # even mid-hatch, gathering isn't blocked
-
-    with mock.patch("backend.actions.random.random", return_value=0.0):
-        result = ACTION_REGISTRY["GATHER_EGGS"](sim, tribe, "river", _NO_TARGET)
-
-    assert tribe.eggs == config.GATHER_EGGS_STOCKPILE_AMOUNT
-    assert tribe.eggs_laid_total == config.GATHER_EGGS_STOCKPILE_AMOUNT
-    assert tribe.pending_hatch == {"parents": None}  # untouched, not overwritten
-    assert "stored for the hatchery" in result
 
 
 def test_catch_fish_catches_food_on_a_successful_roll():

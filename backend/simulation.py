@@ -1695,10 +1695,10 @@ class Tribe:
         # they clearly have that taken care of already." food_security_actions_
         # retired (above) is gated on Kitchen + a proven food source -- an unrelated
         # milestone that GATHER_EGGS specifically becomes redundant well before, once
-        # both a Coop and a Hatchery exist (_advance_flock/_advance_flock_eggs then
-        # lay and hatch eggs passively every cycle, no action needed, at rates
-        # GATHER_EGGS's own manual chance-based fetch can't beat). Same one-way
-        # retirement shape, independent flag -- see _prepare_turn.
+        # both a Coop and a Hatchery exist (_advance_flock_daily then lays and hatches
+        # eggs passively every real day, no action needed, at rates GATHER_EGGS's own
+        # manual chance-based fetch can't beat). Same one-way retirement shape,
+        # independent flag -- see _prepare_turn.
         self.egg_gathering_retired = False
         # Egg-gathering/flock genetics (backend/actions.py GATHER_EGGS, Simulation.
         # _resolve_hatch, backend/genetics.py hatch()) -- same pending_X/resolve shape
@@ -1706,6 +1706,9 @@ class Tribe:
         # population. flock_lineage entries: {"trait", "parents", "cycle", "note"}.
         self.flock = 0
         self.flock_lineage: list[dict] = []
+        # pending_hatch now optionally carries a "count" key (Simulation.
+        # _advance_flock_daily/_resolve_hatch) -- a whole day's eligible batch
+        # resolves as one hatch event, not one pending_hatch per fowl.
         self.pending_hatch: dict | None = None
         # See config.HATCH_CHRONICLE_COOLDOWN_CYCLES/FLOCK_LOSS_CHRONICLE_
         # COOLDOWN_CYCLES's own comment -- the flock itself still grows/shrinks
@@ -1713,11 +1716,25 @@ class Tribe:
         # the chronicle line are cooldown-gated, independently for each event.
         self.hatch_chronicle_cooldown_until_cycle = 0
         self.flock_loss_chronicle_cooldown_until_cycle = 0
-        # See Simulation._advance_flock_eggs/_advance_livestock_feast -- a real,
-        # separate stockpile a living flock lays into passively each cycle,
-        # distinct from GATHER_EGGS finding a wild nest to hatch (which grows
-        # flock directly, never touches this count).
+        # 2026-09-19 daily lay/hatch/spoil rework (see
+        # C:\Users\scott\.claude\plans\cheerful-weaving-blanket.md): tribe.eggs is
+        # today's running stockpile (passive lay + any manual GATHER_EGGS deposit
+        # since the last day boundary) -- NOT yet eligible to hatch. At the next day
+        # boundary it gets snapshotted into eggs_incubating and reset to 0
+        # (Simulation._advance_flock_daily), enforcing "eggs laid today can't hatch
+        # today" for every source, passive or manual, uniformly.
         self.eggs = 0
+        # The batch snapshotted at the PREVIOUS day boundary -- what's actually
+        # eligible to attempt hatching at THIS boundary. Never touched outside
+        # _advance_flock_daily.
+        self.eggs_incubating = 0
+        # Real per-day facts, recomputed (not accumulated) at every day boundary --
+        # sent straight to the frontend via to_dict() (Bucket B pattern, matches
+        # is_camped/is_food_secure) so the sidebar never has to reconstruct "did
+        # something happen today" from flock_lineage timestamps.
+        self.eggs_laid_today = 0
+        self.eggs_hatched_today = 0
+        self.eggs_spoiled_today = 0
         # Explicit request, 2026-09-15: a real "ins and outs" ledger for the
         # Coop/Hatchery pairing once both stand (see farmingPanel's own
         # "Egg Genesis Factory" consolidation in frontend/index.html) --
@@ -1725,20 +1742,22 @@ class Tribe:
         # itself which drains as they hatch), eggs hatched (len(flock_lineage),
         # already durable), flock now (tribe.flock, current headcount).
         # Incremented at every real source that adds to tribe.eggs: the
-        # flock's own passive laying (_advance_flock_eggs) and a wild
-        # GATHER_EGGS find once a Coop exists to bring it home to
-        # (actions.py._gather_eggs) -- display-only for now, sidebar-only per
-        # explicit request, but a real persistent count so a future
-        # mechanical bonus keyed on lifetime egg production has something
-        # real to read instead of needing its own new counter later.
+        # flock's own passive laying and a wild GATHER_EGGS find (actions.py.
+        # _gather_eggs) -- display-only for now, sidebar-only per explicit
+        # request, but a real persistent count so a future mechanical bonus
+        # keyed on lifetime egg production has something real to read instead
+        # of needing its own new counter later.
         self.eggs_laid_total = 0
+        # Cumulative sibling of eggs_laid_total, for the same ledger -- eggs that
+        # failed to hatch (Simulation._advance_flock_daily), never decremented.
+        self.eggs_spoiled_total = 0
         # See actions.py._gather_eggs/_build_hatchery -- a real wild find, the
         # Hatchery's own prerequisite (not flock size alone).
         self.eggs_ever_gathered = False
         self.hatchery_built = False
-        # See actions.py._build_coop -- once this AND hatchery_built are both true,
-        # Simulation._advance_flock switches from a probabilistic natural-hatch roll
-        # to actually consuming stored eggs for a deterministic hatch each cycle.
+        # See actions.py._build_coop -- gated on tribe.flock > 0 (a founding fowl
+        # already exists). No longer a hard mechanical gate on anything past that --
+        # see config.py's own comment on GATHER_EGGS_STOCKPILE_AMOUNT for why.
         self.coop_built = False
         # Set the first time this tribe genuinely settles next to real water (see
         # Simulation._is_settled_near_water) -- the chief names the place via a real
@@ -1995,6 +2014,10 @@ class Tribe:
             "flock": self.flock,
             "eggs": self.eggs,
             "eggs_laid_total": self.eggs_laid_total,
+            "eggs_spoiled_total": self.eggs_spoiled_total,
+            "eggs_laid_today": self.eggs_laid_today,
+            "eggs_hatched_today": self.eggs_hatched_today,
+            "eggs_spoiled_today": self.eggs_spoiled_today,
             "livestock_surplus_threshold": _livestock_surplus_threshold(self),
             "hatchery_built": self.hatchery_built,
             "coop_built": self.coop_built,
@@ -2477,8 +2500,16 @@ class Simulation:
         cooldown-gated. The founding egg (parents is None) is always narrated
         regardless -- it's a one-time event, not something that can recur
         often enough to need throttling, and it costs no LLM call either
-        way."""
+        way.
+
+        2026-09-19 daily-batch rework: pending_hatch now optionally carries a
+        "count" (Simulation._advance_flock_daily resolves a whole day's eligible
+        egg batch at once, not one pending_hatch per fowl -- see cheerful-weaving-
+        blanket.md). One real LLM call still produces one representative trait/note
+        for the whole batch (cost control -- a big day's hatch doesn't mean `count`
+        separate Ollama calls), applied to `count` new flock_lineage entries."""
         parents = tribe.pending_hatch["parents"]
+        count = tribe.pending_hatch.get("count", 1)
         tribe.pending_hatch = None
         chronicle_ready = self.cycle >= tribe.hatch_chronicle_cooldown_until_cycle
 
@@ -2512,15 +2543,16 @@ class Simulation:
         # egg hatched. It's now a real, chief-built Coop (actions.py._build_coop),
         # the same "prove it, then build it for real" pattern every other building
         # in this file uses.
-        tribe.flock += 1
-        tribe.flock_lineage.append({
-            "trait": trait,
-            "parents": [p["trait"] for p in parents] if parents else [],
-            "cycle": self.cycle,
-            "note": note,
-        })
+        tribe.flock += count
+        for _ in range(count):
+            tribe.flock_lineage.append({
+                "trait": trait,
+                "parents": [p["trait"] for p in parents] if parents else [],
+                "cycle": self.cycle,
+                "note": note,
+            })
         if not parents or chronicle_ready:
-            entry = "an egg hatches -- the flock grows"
+            entry = f"{count} eggs hatch -- the flock grows" if count > 1 else "an egg hatches -- the flock grows"
             tribe.history.append(f"{entry} ({note})." if note else f"{entry}.")
             tribe.hatch_chronicle_cooldown_until_cycle = self.cycle + config.HATCH_CHRONICLE_COOLDOWN_CYCLES
         self._award_trophy(tribe, "Flock Keeper")
@@ -3158,8 +3190,7 @@ class Simulation:
             self._advance_deer_pen(tribe)
             self._advance_tannery_yield(tribe)
             self._advance_resource_trails(tribe)
-            self._advance_flock(tribe)
-            self._advance_flock_eggs(tribe)
+            self._advance_flock_daily(tribe)
             self._advance_livestock_feast(tribe)
             self._advance_city_founding(tribe)
             self._check_chief_trophies(tribe)
@@ -4123,13 +4154,12 @@ class Simulation:
         # backwards from the real chain -- confirmed live (phi4-mini,
         # run_20260917_080441): hatchery_built=True, coop_built=False, and
         # GATHER_EGGS stayed offered for 200+ cycles despite a large, healthy
-        # flock (87). _advance_flock's own logic already gives a Hatchery a
-        # real, standalone effect (a boosted natural hatch chance) with no Coop
-        # required, and _advance_flock_eggs already has a living flock laying
-        # eggs passively every cycle regardless of either building -- a Coop
-        # only matters once there's already "a lot of fowl" to justify one, a
-        # later building fed BY the flock, not a co-requirement for the
-        # Hatchery's own basic incubation.
+        # flock (87). _advance_flock_daily's own logic already gives a Hatchery a
+        # real, standalone effect (a boosted daily hatch success rate) with no
+        # Coop required, and a living flock lays eggs passively every real day
+        # regardless of either building -- a Coop only matters once there's
+        # already "a lot of fowl" to justify one, a later building fed BY the
+        # flock, not a co-requirement for the Hatchery's own basic incubation.
         if tribe.hatchery_built:
             if not tribe.egg_gathering_retired:
                 tribe.egg_gathering_retired = True
@@ -5135,14 +5165,18 @@ class Simulation:
         # cycles despite the flock growing to 52 -- the exact "isolated action,
         # nobody picks it" failure this project already hit for BUILD_TANNERY/
         # BUILD_KITCHEN/NAME_WARRIOR, same fix shape as BUILD_TANNERY's own nudge
-        # just above. Without a Coop, GATHER_EGGS/_advance_flock_eggs keeps
-        # depositing into tribe.eggs with nothing ever consuming it -- the Coop is
-        # what switches the flock over to a real, deterministic hatch-from-eggs
-        # loop (see Simulation._advance_flock's own docstring).
+        # just above.
+        #
+        # 2026-09-19: the daily lay/hatch/spoil rework (Simulation.
+        # _advance_flock_daily, cheerful-weaving-blanket.md) retired the old
+        # "deterministic vs. by chance" hatch framing this nudge used to promise
+        # -- explicit design instead: "the coop is to increase the chance of
+        # getting pregnant with eggs." Coop now multiplies the daily lay rate
+        # (config.COOP_LAY_CHANCE_MULTIPLIER), Hatchery multiplies the hatch rate.
         if "BUILD_COOP" in available_actions and not tribe.coop_built and tribe.flock > 0:
             visible_entities.append(
                 "The flock has grown -- a coop built at the settlement would give it a real home, "
-                "letting stored eggs hatch into new fowl reliably instead of by chance."
+                "raising the chance of a successful clutch of eggs."
             )
         # NUDGE (2026-09-11, same finding): BUILD_DEER_PEN has the identical gap --
         # gated on a real hunt-success count (see actions._hunt_deer) plus an
@@ -8392,7 +8426,7 @@ class Simulation:
     def _advance_deer_pen(self, tribe: Tribe) -> None:
         """A captive herd isn't a one-way counter -- it eats, and once established
         can breed on its own, the same feed-or-shrink/natural-breed shape
-        _advance_flock already uses for the tribe's flock. No genetics/lineage
+        _advance_flock_daily already uses for the tribe's flock. No genetics/lineage
         crossover here, unlike hatching -- "breed to recursively have the
         resources automagically" describes population growth, not named
         individuals with inherited traits.
@@ -8525,7 +8559,7 @@ class Simulation:
         person does. Enough on hand and the plot grows and drinks its share; too little
         and the plot withers on the vine (lost outright) instead of quietly stalling --
         a real cost for neglecting a farm during a water crisis, mirroring the flock's
-        own feed-or-shrink stakes in _advance_flock."""
+        own feed-or-shrink stakes in _advance_flock_daily."""
         if tribe.farm_plots <= 0:
             return
         water_needed = config.CROP_WATER_PER_PLOT_PER_CYCLE * tribe.farm_plots
@@ -8583,93 +8617,111 @@ class Simulation:
             if self.cycle - tribe.last_celebration_cycle >= config.CELEBRATION_COOLDOWN_CYCLES:
                 self._celebrate_harvest(tribe)
 
-    def _advance_flock(self, tribe: Tribe) -> None:
-        """A flock isn't a one-way counter -- it eats, and once established it can
-        also breed on its own (the same "passive consequence" category as crop
-        growth), without another GATHER_EGGS action. Real stakes both ways: undersized
-        on feed and it shrinks; big enough and fed, and it can grow by itself.
+    def _advance_flock_daily(self, tribe: Tribe) -> None:
+        """2026-09-19 rework (see C:\\Users\\scott\\.claude\\plans\\cheerful-weaving-
+        blanket.md) -- replaces the old _advance_flock/_advance_flock_eggs, which ran
+        every single cycle with no day concept at all (a flat 15%/cycle natural-hatch
+        chance that ignored the egg stockpile entirely, or once Hatchery+Coop existed,
+        a deterministic "5 eggs = 1 guaranteed hatch" the instant 5 accumulated).
 
-        Explicit follow-up, 2026-09-11: "eggs gathered are put into the Hatchery, the
-        Hatchery incubates the eggs to hatch into the Fowl we have in the Coop... It's
-        the standard Chick and Egg problem except the Tribes get to make it work."
-        Once BOTH a Hatchery and a Coop exist (actions.py._build_coop), this switches
-        from the probabilistic natural-hatch roll below to a real, deterministic
-        production loop: enough stored eggs (config.EGGS_PER_HATCH) genuinely fund a
-        hatch every time, rather than a low-probability dice roll -- the actual payoff
-        that justifies building both, and what makes GATHER_EGGS/_advance_flock_eggs
-        depositing into tribe.eggs (see both, and actions.py._gather_eggs) mean
-        something once the Coop exists. A tribe with a Hatchery but no Coop yet still
-        gets the old boosted-chance roll unchanged below.
+        Explicit design, worked out live with Scott: "1. Flock Lays Eggs 2. Eggs
+        collected or laid hatch into new Flock members... It should only be once a
+        day/night cycle... eggs that were laid that day can not hatch, eggs take a
+        day to hatch... fowl just hatched can not lay eggs... in order to have eggs
+        to lay, the Flock needs to Breed" (resolved with "assume the first flock is
+        pregnant" -- an unpaired fowl is never wasted waiting for a mate).
 
-        Live report, 2026-09-16: a real run showed a tribe's flock starve to 0
-        after its Coop was already built, then stay stuck there for the rest of
-        the game -- the same "gained resource that can strand at zero and never
-        recover" bug class already fixed once for the Deer Pen. Root cause: the
-        Coop+Hatchery incubation check below used to sit AFTER the `flock <= 0`
-        guard, so once flock hit zero it could never run again -- even though
-        tribe.eggs is a genuinely separate stockpile (see actions.py._gather_eggs's
-        own post-Coop branch) that doesn't need a single living flock member to
-        incubate from. Moved above the guard so it runs on the egg stockpile
-        alone, regardless of tribe.flock's current value -- the founding path
-        (actions.py._gather_eggs's pre-Coop branch) already works exactly this
-        way for the same reason."""
-        if tribe.coop_built and tribe.hatchery_built:
-            if tribe.pending_hatch is None and tribe.eggs >= config.EGGS_PER_HATCH:
-                tribe.eggs -= config.EGGS_PER_HATCH
+        Runs once per real day (self.cycle % DAY_LENGTH_CYCLES), same gating idiom
+        _advance_deer_pen_yield/_advance_resource_trails already use, in this exact
+        order -- do not reorder, each step depends on the last one NOT having
+        happened yet this cycle:
+
+        1. Resolve yesterday's batch (tribe.eggs_incubating, snapshotted at the
+           previous boundary) -- hatch/spoil split, sets pending_hatch with a count
+           if any hatched. This only SETS pending_hatch; the real tribe.flock +=
+           count happens later this same cycle, in the existing async
+           `for tribe in ...: if pending_hatch: await self._resolve_hatch(tribe)`
+           loop in step() (which runs strictly after the synchronous per-tribe
+           advance loop this method lives in). That ordering is exactly what makes
+           step 3 below automatically use yesterday's flock count, not today's --
+           inlining the hatch synchronously here would let a same-day hatchling lay,
+           which Scott explicitly ruled out.
+        2. Feed the living flock (upkeep-or-shrink, unchanged from the old per-cycle
+           version, just moved under the day gate).
+        3. Lay today's eggs, pair-driven: breeding_units = (flock + 1) // 2 (ceiling
+           division -- the "already pregnant" rule means this is never 0 for any
+           living flock). Reads tribe.flock as it stands *right now*, i.e. still
+           yesterday's count per the ordering note in step 1. Coop multiplies this
+           rate (config.COOP_LAY_CHANCE_MULTIPLIER) -- Hatchery boosts the hatch
+           side in step 1, Coop boosts the lay side here.
+        4. Snapshot tribe.eggs (today's running total -- today's lay plus any manual
+           GATHER_EGGS deposit made earlier today) into eggs_incubating for tomorrow,
+           and reset tribe.eggs to 0.
+        """
+        if self.cycle % config.DAY_LENGTH_CYCLES != 0:
+            return
+
+        # 1. Resolve yesterday's batch.
+        batch = tribe.eggs_incubating
+        hatched = 0
+        spoiled = 0
+        if batch > 0:
+            hatch_rate = config.EGG_HATCH_BASE_SUCCESS_RATE
+            if tribe.hatchery_built:
+                hatch_rate = min(1.0, hatch_rate * config.HATCHERY_HATCH_CHANCE_MULTIPLIER)
+            exact = batch * hatch_rate
+            hatched = int(exact)
+            if random.random() < (exact - hatched):
+                hatched += 1
+            hatched = min(hatched, batch)
+            spoiled = batch - hatched
+            tribe.eggs_incubating = 0
+            if hatched > 0:
                 parents = tribe.flock_lineage[-2:] if len(tribe.flock_lineage) >= 2 else None
-                tribe.pending_hatch = {"parents": parents}
+                tribe.pending_hatch = {"parents": parents, "count": hatched}
+            if spoiled > 0:
+                tribe.eggs_spoiled_total += spoiled
+        tribe.eggs_hatched_today = hatched
+        tribe.eggs_spoiled_today = spoiled
 
-        if tribe.flock <= 0:
-            return
-        feed_needed = config.FLOCK_UPKEEP_FOOD_PER_MEMBER * tribe.flock
-        if tribe.food < feed_needed:
-            tribe.flock -= 1
-            # See config.FLOCK_LOSS_CHRONICLE_COOLDOWN_CYCLES's own comment --
-            # the flock still shrinks every single cycle it's underfed above;
-            # only narrating it is cooldown-gated, so a sustained famine doesn't
-            # spam an identical loss line every cycle the whole time it lasts.
-            if self.cycle >= tribe.flock_loss_chronicle_cooldown_until_cycle:
-                tribe.history.append("part of the flock is lost for lack of feed")
-                tribe.flock_loss_chronicle_cooldown_until_cycle = self.cycle + config.FLOCK_LOSS_CHRONICLE_COOLDOWN_CYCLES
-            return
-        tribe.food -= feed_needed
-        if tribe.coop_built and tribe.hatchery_built:
-            return  # already handled above, regardless of flock's value at the time
-        hatch_chance = config.FLOCK_NATURAL_HATCH_CHANCE
-        if tribe.hatchery_built:
-            hatch_chance = min(1.0, hatch_chance * config.HATCHERY_HATCH_CHANCE_MULTIPLIER)
-        if (
-            tribe.flock >= config.FLOCK_MIN_SIZE_TO_BREED
-            and tribe.pending_hatch is None
-            and random.random() < hatch_chance
-        ):
-            parents = tribe.flock_lineage[-2:] if len(tribe.flock_lineage) >= 2 else None
-            tribe.pending_hatch = {"parents": parents}
+        # 2. Feed the living flock -- same upkeep-or-shrink check as before, just
+        # gated to once a day now instead of every cycle.
+        if tribe.flock > 0:
+            feed_needed = config.FLOCK_UPKEEP_FOOD_PER_MEMBER * tribe.flock
+            if tribe.food < feed_needed:
+                tribe.flock -= 1
+                # See config.FLOCK_LOSS_CHRONICLE_COOLDOWN_CYCLES's own comment --
+                # the flock still shrinks every real day it's underfed above; only
+                # narrating it is cooldown-gated, so a sustained famine doesn't spam
+                # an identical loss line every day the whole time it lasts.
+                if self.cycle >= tribe.flock_loss_chronicle_cooldown_until_cycle:
+                    tribe.history.append("part of the flock is lost for lack of feed")
+                    tribe.flock_loss_chronicle_cooldown_until_cycle = self.cycle + config.FLOCK_LOSS_CHRONICLE_COOLDOWN_CYCLES
+            else:
+                tribe.food -= feed_needed
 
-    def _advance_flock_eggs(self, tribe: Tribe) -> None:
-        """A living flock lays eggs passively each cycle into tribe.eggs -- see
-        config.EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR's own comment. Entirely
-        separate from GATHER_EGGS/_advance_flock's natural-hatch chance, both of
-        which grow tribe.flock directly and never touch this stockpile.
-
-        Live report, 2026-09-19: "it always says 0 eggs laid even when there is
-        a Flock." Confirmed against three real runs: eggs_laid_total sat at
-        exactly 0 for every tribe whose flock never reached
-        EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR (5) -- plain integer floor
-        division truncates any flock under 5 to zero, forever, not just
-        occasionally. Stochastic rounding keeps the exact same long-run average
-        rate (flock/5 eggs per cycle) but a small flock now has a real, if
-        partial, chance to lay an egg on any given cycle instead of a
-        guaranteed zero every time."""
-        if tribe.flock <= 0:
-            return
-        exact = tribe.flock / config.EGGS_LAID_PER_FLOCK_PER_CYCLE_DIVISOR
-        laid = int(exact)
-        if random.random() < (exact - laid):
-            laid += 1
+        # 3. Lay today's eggs -- pair-driven, reads tribe.flock before today's own
+        # hatch has landed (see docstring's ordering note). Coop boosts this side
+        # of the pipeline (config.COOP_LAY_CHANCE_MULTIPLIER), Hatchery boosts the
+        # hatch side above -- explicit design, 2026-09-19: "the coop is to
+        # increase the chance of getting pregnant with eggs."
+        laid = 0
+        if tribe.flock > 0:
+            breeding_units = (tribe.flock + 1) // 2
+            exact = breeding_units / config.EGGS_LAID_PER_BREEDING_UNIT_PER_DAY_DIVISOR
+            if tribe.coop_built:
+                exact *= config.COOP_LAY_CHANCE_MULTIPLIER
+            laid = int(exact)
+            if random.random() < (exact - laid):
+                laid += 1
         if laid:
             tribe.eggs += laid
             tribe.eggs_laid_total += laid
+        tribe.eggs_laid_today = laid
+
+        # 4. Snapshot for tomorrow.
+        tribe.eggs_incubating = tribe.eggs
+        tribe.eggs = 0
 
     def _advance_livestock_feast(self, tribe: Tribe) -> None:
         """See config.LIVESTOCK_SURPLUS_THRESHOLD's own comment -- once eggs or

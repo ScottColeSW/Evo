@@ -762,7 +762,7 @@ async function fetchGameConfig() {
     MOAT_DEFENSE_BONUS = cfg.moat_defense_bonus;
     BATH_HOUSE_UPKEEP_MULTIPLIER = cfg.bath_house_upkeep_multiplier;
     HATCHERY_HATCH_CHANCE_MULTIPLIER = cfg.hatchery_hatch_chance_multiplier;
-    EGGS_PER_HATCH = cfg.eggs_per_hatch;
+    COOP_LAY_CHANCE_MULTIPLIER = cfg.coop_lay_chance_multiplier;
     DEER_PEN_DAILY_FEED_MIN = cfg.deer_pen_daily_feed_min;
     DEER_PEN_DAILY_FEED_MAX = cfg.deer_pen_daily_feed_max;
     COOKING_FOOD_MULTIPLIER = cfg.cooking_food_multiplier;
@@ -4522,9 +4522,9 @@ let CASTLE_DEFENSE_BONUS = 0.15;
 let MOAT_DEFENSE_BONUS = 0.08;
 let BATH_HOUSE_UPKEEP_MULTIPLIER = 0.85;
 let HATCHERY_HATCH_CHANCE_MULTIPLIER = 2.0;
-// Mirrors backend/config.py's EGGS_PER_HATCH -- Hatchery+Coop's deterministic
-// eggs-per-hatch cost, for the Establishments panel's own Coop line.
-let EGGS_PER_HATCH = 5;
+// Mirrors backend/config.py's COOP_LAY_CHANCE_MULTIPLIER -- Coop boosts the daily
+// egg-laying rate (Hatchery boosts the hatch rate above instead).
+let COOP_LAY_CHANCE_MULTIPLIER = 1.5;
 // Mirrors backend/config.py's DEER_PEN_DAILY_FEED_MIN/_MAX/FUR_PER_DEER_FED --
 // the Deer Pen's own daily feed-into-Tannery range, for its Establishments line.
 let DEER_PEN_DAILY_FEED_MIN = 1;
@@ -4709,77 +4709,61 @@ function farmingPanel(t) {
       `(${t.crop_growth}/100 shared growth → ${farmNextYield} food at harvest)`
     );
   }
-  // Live report, 2026-09-11: "The Flock line is flickering on and off." Confirmed
-  // real, not a rendering glitch -- a small flock genuinely bounces 0/1/0/1 at the
-  // edge of starvation (Simulation._advance_flock's feed-or-shrink), and gating
-  // this whole line on the LIVE count meant it vanished every time that happened.
-  // Same "permanent proof, once true never false" pattern wood_ever_gathered/
-  // hunt_ever_succeeded already use -- flock_lineage records every hatch that's
-  // ever resolved, so its own presence is a durable "this tribe has had a flock"
-  // fact independent of whatever the count happens to be this exact cycle.
+  // 2026-09-19 rework (see C:\Users\scott\.claude\plans\cheerful-weaving-blanket.md):
+  // lay/hatch/spoil now resolves once a real day (Simulation._advance_flock_daily),
+  // with the day's real counts sent straight from the backend
+  // (eggs_laid_today/eggs_hatched_today/eggs_spoiled_today) -- same Bucket B
+  // pattern as is_camped/is_food_secure. Replaces the old flockLineage-timestamp
+  // recency guessing ("did a hatch happen in roughly the last 3 cycles?") this
+  // panel used to do on its own; the backend now just says what happened today.
   const flockLineage = t.flock_lineage || [];
+  const last = flockLineage.length ? flockLineage[flockLineage.length - 1] : null;
+  const todayLine = (t.eggs_laid_today || t.eggs_hatched_today || t.eggs_spoiled_today)
+    ? ` · today: ${t.eggs_laid_today || 0} laid, ${t.eggs_hatched_today || 0} hatched` +
+      (t.eggs_spoiled_today ? `, ${t.eggs_spoiled_today} spoiled` : "")
+    : "";
+  // livestock_surplus_threshold comes straight from the backend (Tribe.
+  // to_dict, backend/simulation.py's _livestock_surplus_threshold) --
+  // population-scaled, not a fixed dozen, so this can never drift from
+  // what _advance_livestock_feast actually did server-side.
+  const surplusThreshold = t.livestock_surplus_threshold ?? 12;
+  // Explicit request, 2026-09-19: "The Flock should be inside the Coop if
+  // they have one... it's the same kind of pattern for the hatchery, eggs go
+  // in there." Each building houses its own resource once it exists -- the
+  // Flock/Eggs lines no longer stand alone the moment their real home is
+  // built; they fold into that building's own line (or, once BOTH buildings
+  // stand, into the fuller Egg Genesis Factory line below).
   if (t.flock > 0 || flockLineage.length > 0) {
-    // Explicit request: "we should see an 'eggs hatching' line in the sidebar
-    // since these follow a similar pattern to the farm." A hatch resolves
-    // entirely within one backend cycle (GATHER_EGGS sets pending_hatch, the same
-    // step() call resolves it), so there's no real "in progress" state to show the
-    // way crop_growth has -- but flock_lineage already records which cycle each
-    // hatch happened on, which is enough to give the hatch MOMENT itself the same
-    // "ready to harvest" visual weight the farm gets, not just a buried stat.
-    const last = flockLineage.length ? flockLineage[flockLineage.length - 1] : null;
-    const secondLast = flockLineage.length > 1 ? flockLineage[flockLineage.length - 2] : null;
-    // Live report, 2026-09-15: "the sidebar 'Flock' line isn't sticking."
-    // Confirmed against a real run: a mature flock hatches every 1-2 cycles
-    // late-game (190/194 real gaps <=3 cycles, most exactly 1, in
-    // run_20260914_155214's Tribe 2) -- justHatched below was true almost
-    // permanently once the Coop/Hatchery got going, so the steady "Flock — N"
-    // line it was meant to fall back to was essentially unreachable; the
-    // line's own text just kept changing hatch to hatch instead of holding
-    // still long enough to read. Now also requires the PRIOR hatch to have
-    // happened outside this same window -- back-to-back automatic hatching
-    // (the routine, mature-flock case) reads as the steady aggregate line
-    // again, and the celebratory "just hatched" treatment is reserved for a
-    // genuinely isolated, noteworthy hatch, the same distinction this
-    // project already draws elsewhere between routine and notable events.
-    const justHatched = last && (latestState.cycle - last.cycle) <= 3
-      && (!secondLast || (last.cycle - secondLast.cycle) > 3);
-    if (justHatched) {
-      // A genuinely isolated hatch is still worth celebrating regardless of
-      // building tier -- kept outside the eggGenesisReady consolidation below.
-      food.push(`🥚 An egg just hatched! — ${escapeHtml(last.trait)} (flock now ${t.flock})`);
+    const flockPart = t.flock > 0
+      ? `${t.flock}${t.coop_built ? " in the flock" : ""}` +
+        `${last ? ` · latest: ${escapeHtml(last.trait)}` : ""}${t.flock > surplusThreshold ? " · surplus feasted on" : ""}`
+      : `flock lost to lack of feed${last ? ` · last was ${escapeHtml(last.trait)}` : ""}`;
+    if (t.coop_built && !eggGenesisReady) {
+      food.push(`🐔 Coop — ${flockPart} · egg-laying chance ×${COOP_LAY_CHANCE_MULTIPLIER}${todayLine}`);
     } else if (!eggGenesisReady) {
-      if (t.flock > 0) {
-        // livestock_surplus_threshold comes straight from the backend (Tribe.
-        // to_dict, backend/simulation.py's _livestock_surplus_threshold) --
-        // population-scaled, not a fixed dozen, so this can never drift from
-        // what _advance_livestock_feast actually did server-side.
-        const surplusThreshold = t.livestock_surplus_threshold ?? 12;
-        const surplusNote = t.flock > surplusThreshold ? " · surplus feasted on" : "";
-        food.push(`🐔 Flock — ${t.flock}${last ? ` · latest: ${escapeHtml(last.trait)}` : ""}${surplusNote}`);
-      } else {
-        food.push(`🐔 Flock — lost to lack of feed${last ? ` · last was ${escapeHtml(last.trait)}` : ""}`);
-      }
+      food.push(`🐔 Flock — ${flockPart}${todayLine}`);
     }
+  } else if (t.coop_built && !eggGenesisReady) {
+    // No flock yet, but the Coop itself still stands -- give it its own line
+    // rather than disappearing entirely until a founding egg hatches.
+    food.push(`🐔 Coop — egg-laying chance ×${COOP_LAY_CHANCE_MULTIPLIER}`);
   }
-  if (t.eggs > 0 && !eggGenesisReady) {
+  if (t.eggs > 0 || t.hatchery_built) {
     // Explicit request: "we aren't showing counts on either [eggs or flock]"
-    // -- a real, separate stockpile from flock (Simulation._advance_flock_eggs),
-    // eaten off automatically past the tribe's own scaled surplus threshold.
-    const eggsSurplusThreshold = t.livestock_surplus_threshold ?? 12;
-    food.push(`🥚 Eggs in store — ${t.eggs}${t.eggs > eggsSurplusThreshold ? " · surplus feasted on" : ""}`);
-  }
-  if (t.hatchery_built && !eggGenesisReady) {
-    // Only reachable here without a Coop yet -- once both stand, the
-    // consolidated Egg Genesis Factory/Industrial Farm block below covers it.
-    food.push(`🐣 Hatchery — flock hatch chance ×${HATCHERY_HATCH_CHANCE_MULTIPLIER}`);
-  }
-  if (t.coop_built && !eggGenesisReady) {
-    food.push("🐔 Coop — home for the flock, build a Hatchery too so stored eggs actually hatch");
+    // -- a real, separate stockpile from flock (today's running total, not yet
+    // eligible to hatch -- see tribe.eggs_incubating), eaten off automatically
+    // past the tribe's own scaled surplus threshold.
+    const eggsPart = t.eggs > 0 ? `${t.eggs}${t.eggs > surplusThreshold ? " · surplus feasted on" : ""}` : "none stored yet";
+    if (t.hatchery_built && !eggGenesisReady) {
+      food.push(`🐣 Hatchery — ${eggsPart} in store · flock hatch chance ×${HATCHERY_HATCH_CHANCE_MULTIPLIER}`);
+    } else if (t.eggs > 0 && !eggGenesisReady) {
+      food.push(`🥚 Eggs in store — ${eggsPart}`);
+    }
   }
   if (eggGenesisReady) {
     const eggsHatchedTotal = flockLineage.length;
     const eggGenesisStats =
-      `${t.eggs_laid_total || 0} eggs laid · ${eggsHatchedTotal} hatched · ${t.flock} in the flock now`;
+      `${t.eggs_laid_total || 0} eggs laid · ${eggsHatchedTotal} hatched · ${t.flock} in the flock now${todayLine}`;
     if (industrialFarmReady) {
       // Explicit request: "If they also have a Farm, they can 'convert' all
       // of the above into an Industrial Farm." Combines the Farm's own
