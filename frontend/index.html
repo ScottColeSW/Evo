@@ -763,6 +763,7 @@ async function fetchGameConfig() {
     COOP_LAY_CHANCE_MULTIPLIER = cfg.coop_lay_chance_multiplier;
     DEER_PEN_DAILY_FEED_MIN = cfg.deer_pen_daily_feed_min;
     DEER_PEN_DAILY_FEED_MAX = cfg.deer_pen_daily_feed_max;
+    FUR_PER_DEER_FED = cfg.fur_per_deer_fed;
     COOKING_FOOD_MULTIPLIER = cfg.cooking_food_multiplier;
     JOINT_CASTLE_WOOD_COST = cfg.joint_castle_wood_cost;
     JOINT_CASTLE_STONE_COST = cfg.joint_castle_stone_cost;
@@ -4512,6 +4513,7 @@ let COOP_LAY_CHANCE_MULTIPLIER = 1.5;
 // the Deer Pen's own daily feed-into-Tannery range, for its Establishments line.
 let DEER_PEN_DAILY_FEED_MIN = 1;
 let DEER_PEN_DAILY_FEED_MAX = 3;
+let FUR_PER_DEER_FED = 2;
 let COOKING_FOOD_MULTIPLIER = 3;
 // Mirrors backend/config.py's JOINT_CASTLE_WOOD_COST/JOINT_CASTLE_STONE_COST
 // -- for drawJointCastle's own progress label.
@@ -4855,8 +4857,19 @@ function farmingPanel(t) {
     industry.push(`💎 Mine — ${MINE_YIELD_PER_CYCLE} ${escapeHtml(t.mine_resource_name)}/day (${amount} stored)`);
   }
   if (t.tannery_built) {
+    // Live report, 2026-09-19: "Tannery -- 4 Fur/day is static and isn't
+    // taking from hunts or pen like intended." Grounded against Simulation.
+    // _advance_tannery_yield's real formula: the base TANNERY_YIELD_PER_CYCLE
+    // really is a flat rate once a hunt or Deer Pen has ever proven deer
+    // activity (a one-time gate, not an ongoing scale -- more hunts don't
+    // raise this number) -- that half was already accurate. What was missing
+    // is the Deer Pen's own real, additive bonus (fed deer -> extra Fur,
+    // same function) -- this line never reflected it at all.
     const amount = (t.unique_resources || {})["Fur"] || 0;
-    industry.push(`🦫 Tannery — ${TANNERY_YIELD_PER_CYCLE} Fur/day (${amount} stored)`);
+    const deerPenBonus = t.deer_pen_built
+      ? ` + up to ${DEER_PEN_DAILY_FEED_MAX * FUR_PER_DEER_FED} more/day from the Deer Pen`
+      : "";
+    industry.push(`🦫 Tannery — ${TANNERY_YIELD_PER_CYCLE} Fur/day flat${deerPenBonus} (${amount} stored)`);
   }
   if (t.deer_pen_built) {
     // Live bug, confirmed 2026-09-14: this said "/cycle" until the backend's
