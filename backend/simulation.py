@@ -4169,6 +4169,18 @@ class Simulation:
                 )
             available_actions = [a for a in available_actions if a != "GATHER_EGGS"]
 
+        # Explicit design, 2026-09-19: "if they don't have eggs they can collect
+        # them, if they already have eggs, they can not collect them." Distinct
+        # from the two permanent, one-way retirements just above -- this is a
+        # live, reversible per-turn check, not a flag: GATHER_EGGS drops out of
+        # the menu whenever tribe.eggs (today's running stockpile -- see
+        # Simulation._advance_flock_daily) is already nonzero, and comes back
+        # the moment that batch sweeps into eggs_incubating at the next day
+        # boundary and tribe.eggs resets to 0. Keeps the chief from stacking
+        # finds into a stockpile that hasn't even started incubating yet.
+        if "GATHER_EGGS" in available_actions and tribe.eggs > 0:
+            available_actions = [a for a in available_actions if a != "GATHER_EGGS"]
+
         # Explicit correction, 2026-09-10: "Declare_Alliance is under
         # suspicion and I'd like to even reduce when they are allow to use
         # it." Confirmed live: _declare_alliance's own already_allied check

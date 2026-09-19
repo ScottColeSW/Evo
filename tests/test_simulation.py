@@ -12262,6 +12262,40 @@ def test_gather_eggs_stays_available_with_only_a_coop_and_no_hatchery():
     assert tribe.egg_gathering_retired is False
 
 
+def test_gather_eggs_hidden_once_the_stockpile_already_has_eggs():
+    """Explicit design, 2026-09-19: "if they don't have eggs they can collect
+    them, if they already have eggs, they can not collect them." A live,
+    reversible per-turn check (not a permanent retirement like the two above)
+    -- gated on tribe.eggs specifically, not tribe.eggs_incubating (see the
+    sibling test below)."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = 999
+    tribe.eggs = 1
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_EGGS" not in ctx["available_actions"]
+
+
+def test_gather_eggs_available_again_once_the_stockpile_is_empty():
+    """The gate is reversible: once tribe.eggs sweeps into eggs_incubating at
+    the next day boundary (Simulation._advance_flock_daily) and resets to 0,
+    GATHER_EGGS comes right back -- a batch still incubating doesn't count as
+    "having eggs" for this check."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    tribe.cycles_since_relocate = 999
+    tribe.eggs = 0
+    tribe.eggs_incubating = 5  # a batch is still off resolving -- must not block
+
+    _, ctx = sim._prepare_turn(tribe)
+
+    assert "GATHER_EGGS" in ctx["available_actions"]
+
+
 def test_catch_fish_stays_reachable_when_food_secure_via_farming_not_fishing():
     """The new food-security retirement above deliberately doesn't touch
     CATCH_FISH -- it already has its own, independent retirement once
