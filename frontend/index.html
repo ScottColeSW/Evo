@@ -4769,7 +4769,14 @@ function farmingPanel(t) {
       food.push(`🏭 Egg Genesis Factory — ${eggGenesisStats}`);
     }
   }
-  if (t.fishing_learned) food.push("🎣 Fishing — mastered, fish now caught for food");
+  // Explicit request, 2026-09-19: "(Learned) — enables X, effect" pattern,
+  // matching Cooking/Fire below -- what it unlocks, then its real ongoing
+  // effect. Only shown before Fishery exists; the Fishery line below takes
+  // over reporting the same real number once that building stands, so the
+  // two never show it twice.
+  if (t.fishing_learned && !t.fishery_built) {
+    food.push(`🎣 Fishing (Learned) — enables Dock, ${t.fish_supply_per_cycle || 0} food/day flows in on its own`);
+  }
   // Explicit request 2026-09-19 (codebase redundancy audit finding #2): this
   // used to re-derive upkeep * FISHING_SUPPLY_MULTIPLIER by hand and silently
   // dropped fishery_bonus/dock_bonus/the cooking multiplier -- understating
@@ -4777,8 +4784,13 @@ function farmingPanel(t) {
   // computed value now (Tribe.to_dict's fish_supply_per_cycle, Simulation.
   // _fish_supply_per_cycle), same Bucket B pattern as is_camped.
   if (t.fishery_built) food.push(`🐟 Fishery — ${t.fish_supply_per_cycle || 0} food/day flows in automatically`);
-  if (t.fire_ever_built) food.push("🔥 Fire — mastered, enables cooking");
-  if (t.cooking_learned && !t.kitchen_built) food.push("🍳 Cooking — mastered, every forage/hunt/catch worth 3x as much food");
+  // Explicit request, 2026-09-19: "(Learned) — enables X, effect" pattern --
+  // what a mastered skill unlocks, then its real ongoing effect, instead of
+  // the vaguer "mastered" label.
+  if (t.fire_ever_built) food.push("🔥 Fire (Learned) — enables Cooking");
+  if (t.cooking_learned && !t.kitchen_built) {
+    food.push(`🍳 Cooking (Learned) — enables Kitchen, forage/hunt/catch/harvest worth ×${COOKING_FOOD_MULTIPLIER} more food`);
+  }
   if (t.kitchen_built) food.push(`🍲 Kitchen — every hunt, forage, or catch yields ${COOKING_FOOD_MULTIPLIER}x as much food`);
 
   if (t.bath_house_built) comfort.push(`🛁 Bath House — daily food and water consumption ${Math.round((1 - BATH_HOUSE_UPKEEP_MULTIPLIER) * 100)}% lower`);
