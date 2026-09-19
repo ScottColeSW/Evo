@@ -12425,6 +12425,36 @@ def test_advance_flock_shrinks_without_enough_feed():
     assert any("lost for lack of feed" in entry for entry in tribe.history)
 
 
+def test_advance_flock_loss_stays_silent_during_cooldown_but_still_shrinks():
+    """Live report, 2026-09-19: "'flock' messages overwhelming actions
+    visible... only once in a while." A sustained famine used to append an
+    identical loss line every single cycle it lasted. The flock still
+    shrinks every cycle below -- only the narration is cooldown-gated."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = 5
+    tribe.food = 0
+    tribe.flock_loss_chronicle_cooldown_until_cycle = sim.cycle + 100
+
+    sim._advance_flock(tribe)
+
+    assert tribe.flock == 4  # the real mechanic is untouched
+    assert not any("lost for lack of feed" in entry for entry in tribe.history)
+
+
+def test_advance_flock_loss_narrates_again_once_the_cooldown_actually_clears():
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = 2
+    tribe.food = 0
+    tribe.flock_loss_chronicle_cooldown_until_cycle = sim.cycle  # already ready
+
+    sim._advance_flock(tribe)
+
+    assert any("lost for lack of feed" in entry for entry in tribe.history)
+    assert tribe.flock_loss_chronicle_cooldown_until_cycle > sim.cycle  # refreshed
+
+
 def test_advance_flock_can_naturally_hatch_once_established_and_fed():
     from backend import config
 
@@ -12941,6 +12971,75 @@ async def test_resolve_hatch_falls_back_gracefully_if_the_llm_call_fails():
 
     assert tribe.flock == 3
     assert tribe.flock_lineage[-1]["trait"] == "unremarkable but hardy"
+
+
+@run_async
+async def test_resolve_hatch_skips_the_real_llm_call_and_chronicle_during_cooldown():
+    """Live report, 2026-09-19: "'hatched' and 'flock' messages overwhelming
+    actions visible... should only be 1 of either and only once in a while."
+    The flock still grows on every resolution -- only the expensive trait
+    call and the chronicle line are cooldown-gated."""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.flock = 2
+    tribe.hatch_chronicle_cooldown_until_cycle = sim.cycle + 100  # still on cooldown
+    parents = [
+        {"trait": "hardy", "parents": [], "cycle": 1, "note": ""},
+        {"trait": "quick to forage", "parents": [], "cycle": 2, "note": ""},
+    ]
+    tribe.pending_hatch = {"parents": parents}
+
+    async def fake_hatch(client, model, parent_a, parent_b, era):
+        raise AssertionError("must not call the real LLM while on cooldown")
+
+    with mock.patch("backend.simulation.hatch", fake_hatch):
+        await sim._resolve_hatch(tribe)
+
+    assert tribe.flock == 3  # the real mechanic is untouched
+    assert tribe.flock_lineage[-1]["trait"] == "unremarkable but hardy"
+    # The trophy check is unconditional (a real, separate one-time award, not
+    # narration spam) and may still append its own line -- what must NOT
+    # appear is a new hatch/flock-grows chronicle entry.
+    assert not any("egg hatches" in entry for entry in tribe.history)
+
+
+@run_async
+async def test_resolve_hatch_narrates_again_once_the_cooldown_actually_clears():
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.flock = 2
+    tribe.hatch_chronicle_cooldown_until_cycle = sim.cycle  # already ready
+    parents = [
+        {"trait": "hardy", "parents": [], "cycle": 1, "note": ""},
+        {"trait": "quick to forage", "parents": [], "cycle": 2, "note": ""},
+    ]
+    tribe.pending_hatch = {"parents": parents}
+
+    async def fake_hatch(client, model, parent_a, parent_b, era):
+        return {"trait": "hardy forager", "note": "a promising hatchling"}
+
+    with mock.patch("backend.simulation.hatch", fake_hatch):
+        await sim._resolve_hatch(tribe)
+
+    assert any("a promising hatchling" in entry for entry in tribe.history)
+    assert tribe.hatch_chronicle_cooldown_until_cycle > sim.cycle  # refreshed
+
+
+@run_async
+async def test_resolve_hatch_founding_egg_always_narrates_even_on_cooldown():
+    """The founding egg is a one-time event, not something that can recur
+    often enough to need throttling -- and it costs no LLM call either way,
+    so there's no reason to suppress it."""
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.hatch_chronicle_cooldown_until_cycle = sim.cycle + 100
+    tribe.pending_hatch = {"parents": None}
+
+    await sim._resolve_hatch(tribe)
+
+    assert any("hatches" in entry for entry in tribe.history)
 
 
 def test_upkeep_consumes_food_and_water_proportional_to_population():

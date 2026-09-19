@@ -33,7 +33,7 @@ class TribeMemory:
     _WORD_RE = re.compile(r"[a-z0-9]+")
     _STOPWORDS = frozenset({
         "a", "an", "the", "at", "in", "on", "of", "to", "is", "are", "was", "were",
-        "and", "or", "near", "toward", "off", "our", "there", "one", "for", "with",
+        "and", "or", "but", "near", "toward", "off", "our", "there", "one", "for", "with",
         "it", "this", "that",
     })
 

@@ -685,6 +685,24 @@ FLOCK_UPKEEP_FOOD_PER_MEMBER = 1
 FLOCK_MIN_SIZE_TO_BREED = 2
 FLOCK_NATURAL_HATCH_CHANCE = 0.15
 
+# Live report, 2026-09-19: "'hatched' and 'flock' messages overwhelming actions
+# visible... should only be 1 of either and only once in a while when a
+# 'significant' one comes up." Confirmed against real run data: one run's Tribe
+# 2 (flock 112) had a stretch where 5 of the visible 6 sidebar history entries
+# (Tribe.to_dict's own "history": self.history[-6:]) were hatch/flock-grow
+# spam, crowding out the chief's real decisions -- a large, actively-breeding
+# flock can hatch every few cycles, and every single one used to both call a
+# real LLM (Simulation._resolve_hatch's genetics.hatch()) AND get chronicled,
+# unthrottled. The flock itself still grows/shrinks every single resolution
+# (the real mechanic is untouched) -- only the expensive trait-generation call
+# and the chronicle line are now cooldown-gated, same "once per real day"
+# shape CELEBRATION_COOLDOWN_CYCLES already uses for the harvest feast. Two
+# separate constants (not one shared with CELEBRATION_COOLDOWN_CYCLES) since a
+# hatch and a starvation loss are independent events that shouldn't share a
+# cooldown clock -- one firing shouldn't silently suppress the other.
+HATCH_CHRONICLE_COOLDOWN_CYCLES = 20
+FLOCK_LOSS_CHRONICLE_COOLDOWN_CYCLES = 20
+
 # Explicit request: "let them feast and use Eggs and Chickens/Flock for food
 # after the stock grows... let them use everything more than a dozen each."
 # tribe.eggs is a real, separate stockpile from tribe.flock (a living flock

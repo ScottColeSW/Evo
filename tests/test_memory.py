@@ -52,6 +52,17 @@ def test_recall_does_not_match_on_shared_connector_words_alone():
     assert memory.recall("mountains at 10,10") == []
 
 
+def test_recall_does_not_match_on_the_connector_word_but_alone():
+    """Explicit request, 2026-09-19, found while checking real reflection text:
+    "but" was the one pure connector missing from _STOPWORDS (every other one --
+    "and", "or" -- was already there), so two reflections sharing nothing but
+    "but" scored a spurious nonzero match."""
+    memory = TribeMemory("tribe_0")
+    memory.remember("The raid was costly, but the tribe endures.", cycle=1, weight=0.5, kind="reflection")
+
+    assert memory.recall("food is scarce, but the harvest continues", kind="reflection") == []
+
+
 def test_recall_still_matches_on_a_shared_real_coordinate():
     """The fix must not throw out genuine signal along with the noise -- an exact
     coordinate match is real, substantive overlap, not grammatical scaffolding."""

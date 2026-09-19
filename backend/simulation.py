@@ -1707,6 +1707,12 @@ class Tribe:
         self.flock = 0
         self.flock_lineage: list[dict] = []
         self.pending_hatch: dict | None = None
+        # See config.HATCH_CHRONICLE_COOLDOWN_CYCLES/FLOCK_LOSS_CHRONICLE_
+        # COOLDOWN_CYCLES's own comment -- the flock itself still grows/shrinks
+        # on every real resolution; only the expensive trait-generation call and
+        # the chronicle line are cooldown-gated, independently for each event.
+        self.hatch_chronicle_cooldown_until_cycle = 0
+        self.flock_loss_chronicle_cooldown_until_cycle = 0
         # See Simulation._advance_flock_eggs/_advance_livestock_feast -- a real,
         # separate stockpile a living flock lays into passively each cycle,
         # distinct from GATHER_EGGS finding a wild nest to hatch (which grows
@@ -2408,11 +2414,27 @@ class Simulation:
         pattern as _resolve_birth, applied to the flock instead of the tribe's own
         population. A founding egg (no existing pair to cross) just hatches with a
         plain trait; once two flock members exist, hatch() crosses their traits with
-        one mutation, the same spirit as genetics.py's dormant breed()."""
+        one mutation, the same spirit as genetics.py's dormant breed().
+
+        Live report, 2026-09-19: "'hatched' and 'flock' messages overwhelming
+        actions visible... should only be 1 of either and only once in a while
+        when a 'significant' one comes up." Confirmed against real run data
+        (see config.HATCH_CHRONICLE_COOLDOWN_CYCLES's own comment): a large,
+        actively-breeding flock hatched often enough to fill 5 of the visible
+        6 sidebar history entries with this exact message. The flock still
+        grows on every single resolution below, unconditionally -- only the
+        real LLM trait-generation call and the chronicle line are now
+        cooldown-gated. The founding egg (parents is None) is always narrated
+        regardless -- it's a one-time event, not something that can recur
+        often enough to need throttling, and it costs no LLM call either
+        way."""
         parents = tribe.pending_hatch["parents"]
         tribe.pending_hatch = None
+        chronicle_ready = self.cycle >= tribe.hatch_chronicle_cooldown_until_cycle
 
-        if parents:
+        if not parents:
+            result = {"trait": "unremarkable but hardy", "note": "the first of the flock hatches"}
+        elif chronicle_ready:
             # Live report, 2026-09-15: "Tribe 2 hatchling names started look
             # 'unencoded'." Confirmed against run_20260914_155214: genetics.hatch's
             # own prompt embedded the raw internal era KEY ("'departure_era' era",
@@ -2427,7 +2449,9 @@ class Simulation:
             era_label = next((e.label for e in ERAS if e.key == tribe.era), tribe.era)
             result = await hatch(self.client, tribe.model, parents[0], parents[1], era_label)
         else:
-            result = {"trait": "unremarkable but hardy", "note": "the first of the flock hatches"}
+            # On cooldown -- nothing narrates this hatch, so there's no reason
+            # to spend a real Ollama call generating a trait/note nobody sees.
+            result = {"trait": "unremarkable but hardy", "note": ""}
         trait = result.get("trait") or "unremarkable but hardy"
         note = result.get("note", "")
 
@@ -2443,8 +2467,10 @@ class Simulation:
             "cycle": self.cycle,
             "note": note,
         })
-        entry = "an egg hatches -- the flock grows"
-        tribe.history.append(f"{entry} ({note})." if note else f"{entry}.")
+        if not parents or chronicle_ready:
+            entry = "an egg hatches -- the flock grows"
+            tribe.history.append(f"{entry} ({note})." if note else f"{entry}.")
+            tribe.hatch_chronicle_cooldown_until_cycle = self.cycle + config.HATCH_CHRONICLE_COOLDOWN_CYCLES
         self._award_trophy(tribe, "Flock Keeper")
 
     async def _resolve_settlement_naming(self, tribe: "Tribe") -> None:
@@ -8530,7 +8556,13 @@ class Simulation:
         feed_needed = config.FLOCK_UPKEEP_FOOD_PER_MEMBER * tribe.flock
         if tribe.food < feed_needed:
             tribe.flock -= 1
-            tribe.history.append("part of the flock is lost for lack of feed")
+            # See config.FLOCK_LOSS_CHRONICLE_COOLDOWN_CYCLES's own comment --
+            # the flock still shrinks every single cycle it's underfed above;
+            # only narrating it is cooldown-gated, so a sustained famine doesn't
+            # spam an identical loss line every cycle the whole time it lasts.
+            if self.cycle >= tribe.flock_loss_chronicle_cooldown_until_cycle:
+                tribe.history.append("part of the flock is lost for lack of feed")
+                tribe.flock_loss_chronicle_cooldown_until_cycle = self.cycle + config.FLOCK_LOSS_CHRONICLE_COOLDOWN_CYCLES
             return
         tribe.food -= feed_needed
         if tribe.coop_built and tribe.hatchery_built:
