@@ -2013,6 +2013,7 @@ class Tribe:
             "last_harvest_cycle": self.last_harvest_cycle,
             "flock": self.flock,
             "eggs": self.eggs,
+            "eggs_incubating": self.eggs_incubating,
             "eggs_laid_total": self.eggs_laid_total,
             "eggs_spoiled_total": self.eggs_spoiled_total,
             "eggs_laid_today": self.eggs_laid_today,
