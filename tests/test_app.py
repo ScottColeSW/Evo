@@ -20,9 +20,14 @@ async def test_game_config_returns_the_real_backend_constants():
 
     assert body["settlement_stability_cycles"] == config.SETTLEMENT_STABILITY_CYCLES
     assert body["wall_ring_section_count"] == config.WALL_RING_SECTION_COUNT
-    assert body["storage_cap_base"] == config.STORAGE_CAP_BASE
-    assert body["warehouse_storage_bonus_per_building"] == config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+    assert body["mine_yield_per_cycle"] == config.MINE_YIELD_PER_CYCLE
     assert body["era_order"] == [e.key for e in ERAS]
+    # storage_cap_base/warehouse_storage_bonus_per_building were retired
+    # 2026-09-19 -- the frontend reads the real computed Tribe.to_dict()
+    # storage_cap field now (see test_to_dict_storage_cap_matches_the_real_
+    # actions_storage_cap_formula) instead of re-deriving the formula from
+    # these raw constants.
+    assert "storage_cap_base" not in body
 
 
 @run_async

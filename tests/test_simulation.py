@@ -11681,6 +11681,21 @@ def test_to_dict_fish_supply_per_cycle_is_zero_before_fishing_is_learned():
     assert tribe.to_dict(is_camped=sim._is_camped(tribe))["fish_supply_per_cycle"] == 0
 
 
+def test_to_dict_storage_cap_matches_the_real_actions_storage_cap_formula():
+    """Codebase redundancy audit, 2026-09-19, finding #3: frontend/index.html
+    used to re-derive STORAGE_CAP_BASE + (warehouses_built + upgrades) *
+    WAREHOUSE_STORAGE_BONUS_PER_BUILDING by hand instead of reading a real
+    computed field -- same Bucket B fix shape as fish_supply_per_cycle
+    above."""
+    from backend.actions import _storage_cap
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.warehouses_built = 3
+    tribe.warehouse_upgrades = 2
+
+    assert tribe.to_dict()["storage_cap"] == _storage_cap(tribe)
+
+
 def test_advance_fish_supply_is_capped_by_storage():
     from backend import config
 

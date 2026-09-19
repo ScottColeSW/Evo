@@ -2015,6 +2015,14 @@ class Tribe:
             "departed": self.departed,
             "warehouses_built": self.warehouses_built,
             "warehouse_upgrades": self.warehouse_upgrades,
+            # Codebase audit, 2026-09-19: frontend/index.html used to re-derive
+            # STORAGE_CAP_BASE + (warehouses_built + upgrades) * WAREHOUSE_
+            # STORAGE_BONUS_PER_BUILDING by hand -- the raw constants couldn't
+            # drift any more (already served via /api/config), but the formula
+            # *shape* was still owned twice. Sends the real value from
+            # actions._storage_cap instead, same Bucket B pattern as
+            # fish_supply_per_cycle.
+            "storage_cap": _storage_cap(self),
             "foraging_retired": self.foraging_retired,
             "watering_retired": self.watering_retired,
             "last_harvest_cycle": self.last_harvest_cycle,

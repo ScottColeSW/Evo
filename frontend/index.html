@@ -754,8 +754,6 @@ async function fetchGameConfig() {
     MINE_YIELD_PER_CYCLE = cfg.mine_yield_per_cycle;
     CROP_HARVEST_YIELD_PER_PLOT = cfg.crop_harvest_yield_per_plot;
     TANNERY_YIELD_PER_CYCLE = cfg.tannery_yield_per_cycle;
-    STORAGE_CAP_BASE = cfg.storage_cap_base;
-    WAREHOUSE_STORAGE_BONUS_PER_BUILDING = cfg.warehouse_storage_bonus_per_building;
     KEEP_DEFENSE_BONUS = cfg.keep_defense_bonus;
     FORTRESS_DEFENSE_BONUS = cfg.fortress_defense_bonus;
     CASTLE_DEFENSE_BONUS = cfg.castle_defense_bonus;
@@ -4495,19 +4493,6 @@ function landmarkCounts(t) {
 let MINE_YIELD_PER_CYCLE = 5;
 let CROP_HARVEST_YIELD_PER_PLOT = 15; // mirrors backend/config.py's CROP_HARVEST_YIELD
 let TANNERY_YIELD_PER_CYCLE = 4;
-// Mirrors backend/config.py's STORAGE_CAP_BASE/WAREHOUSE_STORAGE_BONUS_PER_BUILDING
-// -- explicit request, after a live run showed unbounded hoarding (200+ wood while
-// starved on stone): a real ceiling per resource, raised by each Warehouse built.
-//
-// Found stale 2026-09-10 while chasing "sidebar comments on Buildings are not
-// good": these had drifted out of sync with the backend's own values (150/100
-// here vs. the real 300/400) since whenever those constants were last retuned
-// there -- the exact frontend/backend-drift bug class this project has caught
-// before (see evolution2civ-open-threads-and-risks.md section E), just never
-// re-audited for these two specific numbers. The sidebar's own reported
-// storage capacity has been understating the real number this whole time.
-let STORAGE_CAP_BASE = 300;
-let WAREHOUSE_STORAGE_BONUS_PER_BUILDING = 400;
 // Explicit request, 2026-09-10: "sidebar comments on Buildings are not good;
 // not informative about the bonus provided." Mirrors backend/config.py's own
 // KEEP_DEFENSE_BONUS/FORTRESS_DEFENSE_BONUS/CASTLE_DEFENSE_BONUS/
@@ -4797,7 +4782,11 @@ function farmingPanel(t) {
   // Explicit correction, 2026-09-10: a real Well is now a true, complete water
   // guarantee -- exempt from upkeep entirely (Simulation._apply_upkeep), not
   // just a faster top-up racing the same ongoing drain every other tribe pays.
-  if (t.well_built) comfort.push("🪣 Well — full water security, no more upkeep drain on water at all");
+  // Explicit request, 2026-09-19: same "(status) -- enables X, effect" pattern
+  // as Fire/Fishing/Cooking above -- Well doesn't unlock a further building
+  // (unlike those skills), so this keeps just the real effect, with "(Built)"
+  // instead of "(Learned)" since it's a structure, not a mastered skill.
+  if (t.well_built) comfort.push("🪣 Well (Built) — full water security, no more upkeep drain on water at all");
 
   if (t.library_built) {
     // 4% per research, capped at 50% -- mirrors config.INNOVATION_ERA_DISCOUNT_PER_RESEARCH/_CAP.
@@ -4898,14 +4887,15 @@ function farmingPanel(t) {
   }
   if (t.warehouses_built > 0) {
     // Explicit request, 2026-09-09: BUILD_WAREHOUSE now caps at 5 real builds;
-    // UPGRADE_WAREHOUSE (warehouse_upgrades) raises capacity further past that
-    // -- counted the same way backend/actions.py._storage_cap does, so this
-    // never quietly under-reports once a tribe starts upgrading instead of
-    // building fresh.
+    // UPGRADE_WAREHOUSE (warehouse_upgrades) raises capacity further past that.
+    // Codebase audit, 2026-09-19, finding #3: this used to re-derive the cap
+    // formula by hand -- reads the real backend-computed Tribe.to_dict()
+    // storage_cap field now instead (actions._storage_cap), same Bucket B
+    // pattern as fish_supply_per_cycle, so it can never under-report again.
+    // "(Built)" status marker matches the Fire/Fishing/Cooking/Well pattern.
     const upgrades = t.warehouse_upgrades || 0;
-    const cap = STORAGE_CAP_BASE + (t.warehouses_built + upgrades) * WAREHOUSE_STORAGE_BONUS_PER_BUILDING;
     const upgradeNote = upgrades ? `, ${upgrades} upgrade${upgrades !== 1 ? "s" : ""}` : "";
-    industry.push(`🏬 Warehouse — ${t.warehouses_built} built${upgradeNote}, storage capacity ${cap} per resource`);
+    industry.push(`🏬 Warehouse (Built) — ${t.warehouses_built} built${upgradeNote}, storage capacity ${t.storage_cap} per resource`);
   }
   if (t.dmm_built) {
     const objects = t.created_objects || [];

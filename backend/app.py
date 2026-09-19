@@ -93,8 +93,6 @@ async def game_config(request: web.Request) -> web.Response:
         "moat_defense_bonus": config.MOAT_DEFENSE_BONUS,
         "joint_castle_wood_cost": config.JOINT_CASTLE_WOOD_COST,
         "joint_castle_stone_cost": config.JOINT_CASTLE_STONE_COST,
-        "storage_cap_base": config.STORAGE_CAP_BASE,
-        "warehouse_storage_bonus_per_building": config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING,
         "mine_yield_per_cycle": config.MINE_YIELD_PER_CYCLE,
         "tannery_yield_per_cycle": config.TANNERY_YIELD_PER_CYCLE,
         "deer_pen_daily_feed_min": config.DEER_PEN_DAILY_FEED_MIN,
