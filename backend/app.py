@@ -7,6 +7,7 @@ from aiohttp import WSMsgType, web
 
 from . import config
 from .board_history import record_board_state
+from .eras import ERAS
 from .experiment_log import read_all_experiment_runs, summarize_experiment
 from .ollama_client import OllamaClient
 from .scoreboard import read_all_results, summarize_by_model
@@ -58,6 +59,51 @@ async def models(request: web.Request) -> web.Response:
         except Exception:
             names = []
     return web.json_response({"models": names})
+
+
+@routes.get("/api/config")
+async def game_config(request: web.Request) -> web.Response:
+    """Explicit request, 2026-09-19: "continue making the frontend dynamic to
+    eliminate the grep bs." Static, never-per-tribe, never-per-tick game-
+    balance constants the frontend needs for its own display math (upgrade
+    bonuses, yields, costs, the era order) -- fetched once at page load
+    (see frontend/index.html's fetchGameConfig), not repeated on the live
+    snapshot's own 0.5s tick cadence, since none of these ever change once
+    the server starts. This is the single source of truth for every value
+    below; frontend/index.html no longer hand-copies any of them as a
+    literal. See evolution2civ-2026-09-18-session-shipped-changes memory /
+    DESIGN.md for the fuller frontend/backend duplication audit this closes
+    most of (is_camped/is_food_secure/is_water_secure were the separate,
+    per-tribe-computed half of that same audit -- those ride the live
+    snapshot instead, since they genuinely change turn to turn)."""
+    return web.json_response({
+        "settlement_stability_cycles": config.SETTLEMENT_STABILITY_CYCLES,
+        "upkeep_population_divisor": config.UPKEEP_POPULATION_DIVISOR,
+        "fishing_supply_multiplier": config.FISHING_SUPPLY_MULTIPLIER,
+        "crop_harvest_yield_per_plot": config.CROP_HARVEST_YIELD,
+        "wall_ring_section_count": config.WALL_RING_SECTION_COUNT,
+        "wall_max_layers": config.WALL_MAX_LAYERS,
+        "bath_house_upkeep_multiplier": config.BATH_HOUSE_UPKEEP_MULTIPLIER,
+        "hatchery_hatch_chance_multiplier": config.HATCHERY_HATCH_CHANCE_MULTIPLIER,
+        "eggs_per_hatch": config.EGGS_PER_HATCH,
+        "cooking_food_multiplier": config.COOKING_FOOD_MULTIPLIER,
+        "battalion_capacity_per_barracks": config.BATTALION_CAPACITY_PER_BARRACKS,
+        "barracks_max_count": config.BARRACKS_MAX_COUNT,
+        "keep_defense_bonus": config.KEEP_DEFENSE_BONUS,
+        "fortress_defense_bonus": config.FORTRESS_DEFENSE_BONUS,
+        "castle_defense_bonus": config.CASTLE_DEFENSE_BONUS,
+        "moat_defense_bonus": config.MOAT_DEFENSE_BONUS,
+        "joint_castle_wood_cost": config.JOINT_CASTLE_WOOD_COST,
+        "joint_castle_stone_cost": config.JOINT_CASTLE_STONE_COST,
+        "storage_cap_base": config.STORAGE_CAP_BASE,
+        "warehouse_storage_bonus_per_building": config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING,
+        "mine_yield_per_cycle": config.MINE_YIELD_PER_CYCLE,
+        "tannery_yield_per_cycle": config.TANNERY_YIELD_PER_CYCLE,
+        "deer_pen_daily_feed_min": config.DEER_PEN_DAILY_FEED_MIN,
+        "deer_pen_daily_feed_max": config.DEER_PEN_DAILY_FEED_MAX,
+        "fur_per_deer_fed": config.FUR_PER_DEER_FED,
+        "era_order": [e.key for e in ERAS],
+    })
 
 
 @routes.get("/api/scoreboard")

@@ -733,7 +733,52 @@ function addTribeRow(defaultName, models) {
   document.getElementById("tribe-list").appendChild(row);
 }
 
+// Explicit request, 2026-09-19 ("continue making the frontend dynamic to
+// eliminate the grep bs"): a one-time fetch of every pure game-balance
+// constant the backend already defines (backend/app.py's GET /api/config),
+// so the ~20 mirrored `const`s below (WALL_RING_SECTION_COUNT, defense/
+// storage/yield numbers, ERA_ORDER, etc.) are no longer hand-copied
+// literals that silently drift out of sync with backend/config.py -- the
+// exact bug class that already bit STORAGE_CAP_BASE/WAREHOUSE_STORAGE_
+// BONUS_PER_BUILDING once (see the comment above those, "found stale
+// 2026-09-10") and waterDisplay()'s missing well_built path a second time.
+// Each constant keeps its hardcoded value as a fallback (in case the fetch
+// hasn't resolved yet or fails) and is reassigned here once the real
+// config arrives -- `let`, not `const`, is what makes that reassignment
+// possible without touching every call site individually.
+async function fetchGameConfig() {
+  try {
+    const cfg = await fetch("/api/config").then(r => r.json());
+    WALL_RING_SECTION_COUNT = cfg.wall_ring_section_count;
+    SETTLEMENT_STABILITY_CYCLES = cfg.settlement_stability_cycles;
+    MINE_YIELD_PER_CYCLE = cfg.mine_yield_per_cycle;
+    CROP_HARVEST_YIELD_PER_PLOT = cfg.crop_harvest_yield_per_plot;
+    TANNERY_YIELD_PER_CYCLE = cfg.tannery_yield_per_cycle;
+    STORAGE_CAP_BASE = cfg.storage_cap_base;
+    WAREHOUSE_STORAGE_BONUS_PER_BUILDING = cfg.warehouse_storage_bonus_per_building;
+    KEEP_DEFENSE_BONUS = cfg.keep_defense_bonus;
+    FORTRESS_DEFENSE_BONUS = cfg.fortress_defense_bonus;
+    CASTLE_DEFENSE_BONUS = cfg.castle_defense_bonus;
+    MOAT_DEFENSE_BONUS = cfg.moat_defense_bonus;
+    BATH_HOUSE_UPKEEP_MULTIPLIER = cfg.bath_house_upkeep_multiplier;
+    HATCHERY_HATCH_CHANCE_MULTIPLIER = cfg.hatchery_hatch_chance_multiplier;
+    EGGS_PER_HATCH = cfg.eggs_per_hatch;
+    DEER_PEN_DAILY_FEED_MIN = cfg.deer_pen_daily_feed_min;
+    DEER_PEN_DAILY_FEED_MAX = cfg.deer_pen_daily_feed_max;
+    COOKING_FOOD_MULTIPLIER = cfg.cooking_food_multiplier;
+    JOINT_CASTLE_WOOD_COST = cfg.joint_castle_wood_cost;
+    JOINT_CASTLE_STONE_COST = cfg.joint_castle_stone_cost;
+    BATTALION_CAPACITY_PER_BARRACKS = cfg.battalion_capacity_per_barracks;
+    BARRACKS_MAX_COUNT = cfg.barracks_max_count;
+    UPKEEP_POPULATION_DIVISOR = cfg.upkeep_population_divisor;
+    FISHING_SUPPLY_MULTIPLIER = cfg.fishing_supply_multiplier;
+    WALL_MAX_LAYERS = cfg.wall_max_layers;
+    ERA_ORDER = cfg.era_order;
+  } catch (e) { /* server not reachable yet -- keep the hardcoded fallbacks */ }
+}
+
 async function loadModelsAndInit() {
+  await fetchGameConfig();
   let models = [];
   try {
     const res = await fetch("/api/models");
@@ -3395,7 +3440,7 @@ function drawSettlementMarker(t) {
 // but the array is clamped to just in case.
 const WALL_TIER_COLORS = ["#e7e5e4", "#d4a373", "#fbbf24"];
 const WALL_TIER_WIDTH_STEP = 0.12; // TILE fraction added per reinforcement tier
-const WALL_RING_SECTION_COUNT = 8; // mirrors backend/config.py's WALL_RING_SECTION_COUNT
+let WALL_RING_SECTION_COUNT = 8; // mirrors backend/config.py's WALL_RING_SECTION_COUNT
 
 // Explicit correction, from the user's own PowerPoint mockup: each built
 // section should read as one edge of a real polygon inscribed on the
@@ -4350,7 +4395,7 @@ function chronicleEntryIcon(entry) {
 // cycles without RELOCATE (see Simulation._is_settled) counts as settled. Only the
 // numerator/denominator progress text ("nomadic (n/N)") needs this on the frontend
 // side -- the real camped predicate itself is server-computed, see is_camped below.
-const SETTLEMENT_STABILITY_CYCLES = 5;
+let SETTLEMENT_STABILITY_CYCLES = 5;
 
 // Explicit request, 2026-09-19 ("really get that separation of powers nailed"):
 // this used to independently re-derive Simulation._is_camped's own real formula
@@ -4449,9 +4494,9 @@ function landmarkCounts(t) {
 // Mirrors backend/config.py's MINE_YIELD_PER_CYCLE/TANNERY_YIELD_PER_CYCLE -- the
 // real, passive daily yields _advance_mine_yield/_advance_tannery_yield pay out,
 // same numbers the lines below report rather than a vaguer "mastered" label.
-const MINE_YIELD_PER_CYCLE = 5;
-const CROP_HARVEST_YIELD_PER_PLOT = 15; // mirrors backend/config.py's CROP_HARVEST_YIELD
-const TANNERY_YIELD_PER_CYCLE = 4;
+let MINE_YIELD_PER_CYCLE = 5;
+let CROP_HARVEST_YIELD_PER_PLOT = 15; // mirrors backend/config.py's CROP_HARVEST_YIELD
+let TANNERY_YIELD_PER_CYCLE = 4;
 // Mirrors backend/config.py's STORAGE_CAP_BASE/WAREHOUSE_STORAGE_BONUS_PER_BUILDING
 // -- explicit request, after a live run showed unbounded hoarding (200+ wood while
 // starved on stone): a real ceiling per resource, raised by each Warehouse built.
@@ -4463,32 +4508,32 @@ const TANNERY_YIELD_PER_CYCLE = 4;
 // before (see evolution2civ-open-threads-and-risks.md section E), just never
 // re-audited for these two specific numbers. The sidebar's own reported
 // storage capacity has been understating the real number this whole time.
-const STORAGE_CAP_BASE = 300;
-const WAREHOUSE_STORAGE_BONUS_PER_BUILDING = 400;
+let STORAGE_CAP_BASE = 300;
+let WAREHOUSE_STORAGE_BONUS_PER_BUILDING = 400;
 // Explicit request, 2026-09-10: "sidebar comments on Buildings are not good;
 // not informative about the bonus provided." Mirrors backend/config.py's own
 // KEEP_DEFENSE_BONUS/FORTRESS_DEFENSE_BONUS/CASTLE_DEFENSE_BONUS/
 // MOAT_DEFENSE_BONUS/BATH_HOUSE_UPKEEP_MULTIPLIER/HATCHERY_HATCH_CHANCE_
 // MULTIPLIER -- real numbers for labels that used to just say "a further
 // defense bonus"/"consumption reduced" with nothing quantified.
-const KEEP_DEFENSE_BONUS = 0.10;
-const FORTRESS_DEFENSE_BONUS = 0.20;
-const CASTLE_DEFENSE_BONUS = 0.15;
-const MOAT_DEFENSE_BONUS = 0.08;
-const BATH_HOUSE_UPKEEP_MULTIPLIER = 0.85;
-const HATCHERY_HATCH_CHANCE_MULTIPLIER = 2.0;
+let KEEP_DEFENSE_BONUS = 0.10;
+let FORTRESS_DEFENSE_BONUS = 0.20;
+let CASTLE_DEFENSE_BONUS = 0.15;
+let MOAT_DEFENSE_BONUS = 0.08;
+let BATH_HOUSE_UPKEEP_MULTIPLIER = 0.85;
+let HATCHERY_HATCH_CHANCE_MULTIPLIER = 2.0;
 // Mirrors backend/config.py's EGGS_PER_HATCH -- Hatchery+Coop's deterministic
 // eggs-per-hatch cost, for the Establishments panel's own Coop line.
-const EGGS_PER_HATCH = 5;
+let EGGS_PER_HATCH = 5;
 // Mirrors backend/config.py's DEER_PEN_DAILY_FEED_MIN/_MAX/FUR_PER_DEER_FED --
 // the Deer Pen's own daily feed-into-Tannery range, for its Establishments line.
-const DEER_PEN_DAILY_FEED_MIN = 1;
-const DEER_PEN_DAILY_FEED_MAX = 3;
-const COOKING_FOOD_MULTIPLIER = 3;
+let DEER_PEN_DAILY_FEED_MIN = 1;
+let DEER_PEN_DAILY_FEED_MAX = 3;
+let COOKING_FOOD_MULTIPLIER = 3;
 // Mirrors backend/config.py's JOINT_CASTLE_WOOD_COST/JOINT_CASTLE_STONE_COST
 // -- for drawJointCastle's own progress label.
-const JOINT_CASTLE_WOOD_COST = 80;
-const JOINT_CASTLE_STONE_COST = 100;
+let JOINT_CASTLE_WOOD_COST = 80;
+let JOINT_CASTLE_STONE_COST = 100;
 // Bug report, 2026-09-11: "Barracks and Battalion did not show in the
 // sidebar" -- the Military branch (backend/actions.py's BUILD_BARRACKS/
 // TRAIN_BATTALION) shipped weeks ago but the sidebar was never updated to
@@ -4496,13 +4541,13 @@ const JOINT_CASTLE_STONE_COST = 100;
 // BATTALION_CAPACITY_PER_BARRACKS/BARRACKS_MAX_COUNT so combatPanel can
 // show real capacity numbers, matching _battalion_capacity's own formula
 // (barracks_built + barracks_upgrades) * BATTALION_CAPACITY_PER_BARRACKS.
-const BATTALION_CAPACITY_PER_BARRACKS = 20;
-const BARRACKS_MAX_COUNT = 5;
+let BATTALION_CAPACITY_PER_BARRACKS = 20;
+let BARRACKS_MAX_COUNT = 5;
 // Mirrors backend/config.py's UPKEEP_POPULATION_DIVISOR/FISHING_SUPPLY_MULTIPLIER
 // -- fishing's passive supply scales with population the same way upkeep does
 // (bug report: "we have hit a food and water scaling problem"), not a flat number.
-const UPKEEP_POPULATION_DIVISOR = 10;
-const FISHING_SUPPLY_MULTIPLIER = 1.5;
+let UPKEEP_POPULATION_DIVISOR = 10;
+let FISHING_SUPPLY_MULTIPLIER = 1.5;
 function fishSupplyPerCycle(t) {
   const upkeep = Math.max(1, Math.floor((t.population || 0) / UPKEEP_POPULATION_DIVISOR));
   return Math.round(upkeep * FISHING_SUPPLY_MULTIPLIER);
@@ -4515,7 +4560,7 @@ function fishSupplyPerCycle(t) {
 // buried stat.
 // Mirrors backend/config.py's WALL_MAX_LAYERS -- a section is fully reinforced once
 // its tier reaches this cap (backend/city_layout.py.ring_fully_reinforced).
-const WALL_MAX_LAYERS = 2;
+let WALL_MAX_LAYERS = 2;
 
 // Mirrors backend/eras.py's ERAS order exactly -- CONSTRUCT_WALL
 // only unlocks at "tribal_synapse", but tribe.wall_rings (Simulation._found_territory)
@@ -4524,7 +4569,7 @@ const WALL_MAX_LAYERS = 2;
 // panel was showing real wall progress ("0/7 sections built") for a tribe still in
 // Cognitive Horizon, before it could even choose CONSTRUCT_WALL once -- a state the
 // tribe structurally can't act on yet, not a real "0 done so far."
-const ERA_ORDER = [
+let ERA_ORDER = [
   "primitive_dawn", "cognitive_horizon", "tribal_synapse",
   "monolithic_era", "object_creator_era", "war_and_world_domination_era",
   "departure_era",

@@ -1,9 +1,28 @@
 import json
 from unittest import mock
 
-from backend.app import _tick_session, _unload_stale_models
+from backend import config
+from backend.app import _tick_session, _unload_stale_models, game_config
+from backend.eras import ERAS
 from backend.ollama_client import OllamaClient
 from tests.conftest import run_async
+
+
+@run_async
+async def test_game_config_returns_the_real_backend_constants():
+    """Explicit request, 2026-09-19: "continue making the frontend dynamic to
+    eliminate the grep bs." A handful of spot checks, not every key -- this
+    is the single source of truth every hand-copied frontend literal it
+    replaces used to drift from (most recently: waterDisplay() missing the
+    real well_built security path entirely)."""
+    response = await game_config(None)
+    body = json.loads(response.text)
+
+    assert body["settlement_stability_cycles"] == config.SETTLEMENT_STABILITY_CYCLES
+    assert body["wall_ring_section_count"] == config.WALL_RING_SECTION_COUNT
+    assert body["storage_cap_base"] == config.STORAGE_CAP_BASE
+    assert body["warehouse_storage_bonus_per_building"] == config.WAREHOUSE_STORAGE_BONUS_PER_BUILDING
+    assert body["era_order"] == [e.key for e in ERAS]
 
 
 @run_async
