@@ -356,6 +356,33 @@ def _already_built(sim, tribe, kind):
     return existing is not None and existing["type"] == kind and existing.get("progress", 100) >= 100
 
 
+def _place_building(sim, tribe, key: str, wood_cost: int, stone_cost: int):
+    """Codebase redundancy audit, 2026-09-19, finding #1: the shared tail every
+    simple one-time (or repeatable, like Warehouse/Barracks) building handler
+    below copy-pasted verbatim -- affordability, find a free footprint slot,
+    deduct cost, record the building. Returns the (x, y) slot it was placed at,
+    or None if unaffordable or there's no room (the caller's own early return).
+
+    Deliberately does NOT own the parts that genuinely vary per building --
+    prerequisite gates (some silent, some return an informative "not ready yet"
+    message -- too different in shape to force through one signature), which
+    flag/counter to set, any extra per-building effect (a chosen site, a
+    founding resource amount), the trophy name, or the return message (often
+    computed from tribe state *after* the building lands, e.g. Warehouse's real
+    new storage cap). Each caller still owns that half -- this only collapses
+    the half that was identical every single time."""
+    if tribe.wood < wood_cost or tribe.stone < stone_cost:
+        return None
+    slot = architect.find_free_slot(sim.world, tribe, key)
+    if slot is None:
+        return None
+    tribe.wood -= wood_cost
+    tribe.stone -= stone_cost
+    w, h = config.BUILDING_FOOTPRINTS[key]
+    architect.record_building(tribe, key, slot[0], slot[1], w, h, sim.cycle)
+    return slot
+
+
 def _build_fire(sim, tribe, biome, target):
     # Without this, repeatedly choosing BUILD_FIRE at an already-built tile radiated
     # more ancestral pride every time at zero additional benefit -- a self-reinforcing
@@ -594,15 +621,8 @@ def _build_keep(sim, tribe, biome, target):
         return None
     if (tribe.long_houses_built + tribe.long_house_upgrades) < config.KEEP_LONG_HOUSES_REQUIRED:
         return f"{config.KEEP_LONG_HOUSES_REQUIRED} long houses are needed before a keep is worth building here"
-    if tribe.wood < config.KEEP_WOOD_COST or tribe.stone < config.KEEP_STONE_COST:
+    if _place_building(sim, tribe, "keep", config.KEEP_WOOD_COST, config.KEEP_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "keep")
-    if slot is None:
-        return None
-    tribe.wood -= config.KEEP_WOOD_COST
-    tribe.stone -= config.KEEP_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["keep"]
-    architect.record_building(tribe, "keep", slot[0], slot[1], w, h, sim.cycle)
     tribe.keep_built = True
     sim._award_trophy(tribe, "Keep Warden")
     return "a keep rises -- a further defense bonus for the settlement"
@@ -617,15 +637,8 @@ def _build_fortress(sim, tribe, biome, target):
         return "a keep must be built before a fortress is worth building here"
     if (tribe.long_houses_built + tribe.long_house_upgrades) < config.FORTRESS_LONG_HOUSES_REQUIRED:
         return f"{config.FORTRESS_LONG_HOUSES_REQUIRED} long houses are needed before a fortress is worth building here"
-    if tribe.wood < config.FORTRESS_WOOD_COST or tribe.stone < config.FORTRESS_STONE_COST:
+    if _place_building(sim, tribe, "fortress", config.FORTRESS_WOOD_COST, config.FORTRESS_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "fortress")
-    if slot is None:
-        return None
-    tribe.wood -= config.FORTRESS_WOOD_COST
-    tribe.stone -= config.FORTRESS_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["fortress"]
-    architect.record_building(tribe, "fortress", slot[0], slot[1], w, h, sim.cycle)
     tribe.fortress_built = True
     sim._award_trophy(tribe, "Fortress Warden")
     return "a fortress rises -- a further defense bonus for the settlement"
@@ -642,15 +655,8 @@ def _build_castle(sim, tribe, biome, target):
         return "a fortress must be built before a castle is worth building here"
     if (tribe.long_houses_built + tribe.long_house_upgrades) < config.CASTLE_LONG_HOUSES_REQUIRED:
         return f"{config.CASTLE_LONG_HOUSES_REQUIRED} long houses are needed before a castle is worth building here"
-    if tribe.wood < config.CASTLE_WOOD_COST or tribe.stone < config.CASTLE_STONE_COST:
+    if _place_building(sim, tribe, "castle", config.CASTLE_WOOD_COST, config.CASTLE_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "castle")
-    if slot is None:
-        return None
-    tribe.wood -= config.CASTLE_WOOD_COST
-    tribe.stone -= config.CASTLE_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["castle"]
-    architect.record_building(tribe, "castle", slot[0], slot[1], w, h, sim.cycle)
     tribe.castle_built = True
     sim._award_trophy(tribe, "Castle Builder")
     sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.ERA_ADVANCE_PRIDE_MAGNITUDE, config.ERA_ADVANCE_PRIDE_RADIUS)
@@ -775,15 +781,8 @@ def _build_fishery(sim, tribe, biome, target):
     than replacing it, a real further reason to build both."""
     if tribe.fishery_built or not tribe.dock_built:
         return None
-    if tribe.wood < config.FISHERY_WOOD_COST or tribe.stone < config.FISHERY_STONE_COST:
+    if _place_building(sim, tribe, "fishery", config.FISHERY_WOOD_COST, config.FISHERY_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "fishery")
-    if slot is None:
-        return None
-    tribe.wood -= config.FISHERY_WOOD_COST
-    tribe.stone -= config.FISHERY_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["fishery"]
-    architect.record_building(tribe, "fishery", slot[0], slot[1], w, h, sim.cycle)
     tribe.fishery_built = True
     sim._award_trophy(tribe, "Fishmonger")
     return "a fishery is built alongside the dock -- the daily catch flows in even more steadily now"
@@ -802,15 +801,8 @@ def _build_sawmill(sim, tribe, biome, target):
     required to exist first. One-way, like dock_built."""
     if tribe.sawmill_built or not tribe.wood_ever_gathered:
         return None
-    if tribe.wood < config.SAWMILL_WOOD_COST or tribe.stone < config.SAWMILL_STONE_COST:
+    if _place_building(sim, tribe, "sawmill", config.SAWMILL_WOOD_COST, config.SAWMILL_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "sawmill")
-    if slot is None:
-        return None
-    tribe.wood -= config.SAWMILL_WOOD_COST
-    tribe.stone -= config.SAWMILL_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["sawmill"]
-    architect.record_building(tribe, "sawmill", slot[0], slot[1], w, h, sim.cycle)
     tribe.sawmill_built = True
     if tribe.lumber_sites:
         tribe.lumber_site = tribe.lumber_sites[-1]
@@ -826,15 +818,8 @@ def _build_quarry(sim, tribe, biome, target):
     _advance_resource_trails if one happens to exist."""
     if tribe.quarry_built or not tribe.stone_ever_gathered:
         return None
-    if tribe.wood < config.QUARRY_WOOD_COST or tribe.stone < config.QUARRY_STONE_COST:
+    if _place_building(sim, tribe, "quarry", config.QUARRY_WOOD_COST, config.QUARRY_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "quarry")
-    if slot is None:
-        return None
-    tribe.wood -= config.QUARRY_WOOD_COST
-    tribe.stone -= config.QUARRY_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["quarry"]
-    architect.record_building(tribe, "quarry", slot[0], slot[1], w, h, sim.cycle)
     tribe.quarry_built = True
     if tribe.quarry_sites:
         tribe.quarry_site = tribe.quarry_sites[-1]
@@ -849,15 +834,8 @@ def _build_warehouse(sim, tribe, biome, target):
     storage is infrastructure every tribe can use from the moment it's unlocked,
     not gated behind some other milestone. Same fixed footprint every time
     (config.BUILDING_FOOTPRINTS) regardless of how much it ends up holding."""
-    if tribe.wood < config.WAREHOUSE_WOOD_COST or tribe.stone < config.WAREHOUSE_STONE_COST:
+    if _place_building(sim, tribe, "warehouse", config.WAREHOUSE_WOOD_COST, config.WAREHOUSE_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "warehouse")
-    if slot is None:
-        return None
-    tribe.wood -= config.WAREHOUSE_WOOD_COST
-    tribe.stone -= config.WAREHOUSE_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["warehouse"]
-    architect.record_building(tribe, "warehouse", slot[0], slot[1], w, h, sim.cycle)
     tribe.warehouses_built += 1
     sim._award_trophy(tribe, "Quartermaster")
     return f"a warehouse rises -- storage capacity grows to {_storage_cap(tribe)} per resource"
@@ -934,15 +912,8 @@ def _build_barracks(sim, tribe, biome, target):
     full strength (see its own docstring)."""
     if not tribe.kitchen_built or not tribe.keep_built:
         return None
-    if tribe.wood < config.BARRACKS_WOOD_COST or tribe.stone < config.BARRACKS_STONE_COST:
+    if _place_building(sim, tribe, "barracks", config.BARRACKS_WOOD_COST, config.BARRACKS_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "barracks")
-    if slot is None:
-        return None
-    tribe.wood -= config.BARRACKS_WOOD_COST
-    tribe.stone -= config.BARRACKS_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["barracks"]
-    architect.record_building(tribe, "barracks", slot[0], slot[1], w, h, sim.cycle)
     tribe.barracks_built += 1
     capacity = _battalion_capacity(tribe)
     old_size = tribe.battalion_size
@@ -1051,15 +1022,8 @@ def _build_kitchen(sim, tribe, biome, target):
     it."""
     if tribe.kitchen_built or not (tribe.cooking_learned and tribe.long_houses_built > 0):
         return None
-    if tribe.wood < config.KITCHEN_WOOD_COST or tribe.stone < config.KITCHEN_STONE_COST:
+    if _place_building(sim, tribe, "kitchen", config.KITCHEN_WOOD_COST, config.KITCHEN_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "kitchen")
-    if slot is None:
-        return None
-    tribe.wood -= config.KITCHEN_WOOD_COST
-    tribe.stone -= config.KITCHEN_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["kitchen"]
-    architect.record_building(tribe, "kitchen", slot[0], slot[1], w, h, sim.cycle)
     tribe.kitchen_built = True
     sim._award_trophy(tribe, "Gourmet")
     return "a kitchen is built -- cooked meals now count as excellent food, stretching stores even further"
@@ -1078,15 +1042,8 @@ def _build_mine(sim, tribe, biome, target):
     veins on record still only ever works the one it chose to excavate."""
     if tribe.mine_built or not tribe.mine_sites:
         return None
-    if tribe.wood < config.MINE_WOOD_COST or tribe.stone < config.MINE_STONE_COST:
+    if _place_building(sim, tribe, "mine", config.MINE_WOOD_COST, config.MINE_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "mine")
-    if slot is None:
-        return None
-    tribe.wood -= config.MINE_WOOD_COST
-    tribe.stone -= config.MINE_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["mine"]
-    architect.record_building(tribe, "mine", slot[0], slot[1], w, h, sim.cycle)
     tribe.mine_built = True
     chosen_site = tribe.mine_sites[-1]
     tribe.mine_resource_name = chosen_site["resource"]
@@ -1122,15 +1079,8 @@ def _build_tannery(sim, tribe, biome, target):
     dict mines already use, not a second parallel resource system."""
     if tribe.tannery_built or not tribe.hunt_ever_succeeded:
         return None
-    if tribe.wood < config.TANNERY_WOOD_COST or tribe.stone < config.TANNERY_STONE_COST:
+    if _place_building(sim, tribe, "tannery", config.TANNERY_WOOD_COST, config.TANNERY_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "tannery")
-    if slot is None:
-        return None
-    tribe.wood -= config.TANNERY_WOOD_COST
-    tribe.stone -= config.TANNERY_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["tannery"]
-    architect.record_building(tribe, "tannery", slot[0], slot[1], w, h, sim.cycle)
     tribe.tannery_built = True
     warren_sites = [s for s in tribe.wildlife_sites if s["type"] == "Rabbit Warren"]
     if warren_sites:
@@ -1158,15 +1108,8 @@ def _build_deer_pen(sim, tribe, biome, target):
         return None
     if tribe.hunt_deer_success_count < config.DEER_PEN_HUNT_THRESHOLD:
         return None
-    if tribe.wood < config.DEER_PEN_WOOD_COST or tribe.stone < config.DEER_PEN_STONE_COST:
+    if _place_building(sim, tribe, "deer_pen", config.DEER_PEN_WOOD_COST, config.DEER_PEN_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "deer_pen")
-    if slot is None:
-        return None
-    tribe.wood -= config.DEER_PEN_WOOD_COST
-    tribe.stone -= config.DEER_PEN_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["deer_pen"]
-    architect.record_building(tribe, "deer_pen", slot[0], slot[1], w, h, sim.cycle)
     tribe.deer_pen_built = True
     tribe.deer = config.DEER_PEN_FOUNDING_COUNT
     stand_sites = [s for s in tribe.wildlife_sites if s["type"] == "Deer Stand"]
@@ -1188,15 +1131,8 @@ def _build_hatchery(sim, tribe, biome, target):
     more reliably, not where more eggs get laid."""
     if tribe.hatchery_built or not tribe.eggs_ever_gathered:
         return None
-    if tribe.wood < config.HATCHERY_WOOD_COST or tribe.stone < config.HATCHERY_STONE_COST:
+    if _place_building(sim, tribe, "hatchery", config.HATCHERY_WOOD_COST, config.HATCHERY_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "hatchery")
-    if slot is None:
-        return None
-    tribe.wood -= config.HATCHERY_WOOD_COST
-    tribe.stone -= config.HATCHERY_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["hatchery"]
-    architect.record_building(tribe, "hatchery", slot[0], slot[1], w, h, sim.cycle)
     tribe.hatchery_built = True
     sim._award_trophy(tribe, "Hatchery Keeper")
     return "a hatchery is built -- the flock grows on its own much more reliably from now on"
@@ -1220,15 +1156,8 @@ def _build_coop(sim, tribe, biome, target):
     increase the chance of getting pregnant with eggs.\""""
     if tribe.coop_built or tribe.flock <= 0:
         return None
-    if tribe.wood < config.COOP_WOOD_COST or tribe.stone < config.COOP_STONE_COST:
+    if _place_building(sim, tribe, "coop", config.COOP_WOOD_COST, config.COOP_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "coop")
-    if slot is None:
-        return None
-    tribe.wood -= config.COOP_WOOD_COST
-    tribe.stone -= config.COOP_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["coop"]
-    architect.record_building(tribe, "coop", slot[0], slot[1], w, h, sim.cycle)
     tribe.coop_built = True
     sim._award_trophy(tribe, "Coop Builder")
     return "a coop is built -- the flock finally has a real home, and a proper Hatchery can put it to use"
@@ -1247,15 +1176,8 @@ def _build_bath_house(sim, tribe, biome, target):
     being charged)."""
     if tribe.bath_house_built:
         return None
-    if tribe.wood < config.BATH_HOUSE_WOOD_COST or tribe.stone < config.BATH_HOUSE_STONE_COST:
+    if _place_building(sim, tribe, "bath_house", config.BATH_HOUSE_WOOD_COST, config.BATH_HOUSE_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "bath_house")
-    if slot is None:
-        return None
-    tribe.wood -= config.BATH_HOUSE_WOOD_COST
-    tribe.stone -= config.BATH_HOUSE_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["bath_house"]
-    architect.record_building(tribe, "bath_house", slot[0], slot[1], w, h, sim.cycle)
     tribe.bath_house_built = True
     sim._award_trophy(tribe, "Keeper of Hygiene")
     return "a bath house is built -- the tribe's stores stretch further from now on"
@@ -1270,15 +1192,8 @@ def _build_library(sim, tribe, biome, target):
     only makes sense once people actually live here."""
     if tribe.library_built or tribe.long_houses_built == 0:
         return None
-    if tribe.wood < config.LIBRARY_WOOD_COST or tribe.stone < config.LIBRARY_STONE_COST:
+    if _place_building(sim, tribe, "library", config.LIBRARY_WOOD_COST, config.LIBRARY_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "library")
-    if slot is None:
-        return None
-    tribe.wood -= config.LIBRARY_WOOD_COST
-    tribe.stone -= config.LIBRARY_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["library"]
-    architect.record_building(tribe, "library", slot[0], slot[1], w, h, sim.cycle)
     tribe.library_built = True
     sim._award_trophy(tribe, "Keeper of Records")
     return "a library is built -- the tribe's own memory can now be studied and put to real use"
@@ -1321,15 +1236,8 @@ def _build_well(sim, tribe, biome, target):
     passive supply, not a one-time top-up)."""
     if tribe.well_built:
         return None
-    if tribe.wood < config.WELL_WOOD_COST or tribe.stone < config.WELL_STONE_COST:
+    if _place_building(sim, tribe, "well", config.WELL_WOOD_COST, config.WELL_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "well")
-    if slot is None:
-        return None
-    tribe.wood -= config.WELL_WOOD_COST
-    tribe.stone -= config.WELL_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["well"]
-    architect.record_building(tribe, "well", slot[0], slot[1], w, h, sim.cycle)
     tribe.well_built = True
     sim._award_trophy(tribe, "Water Keeper")
     return "a well is dug -- the settlement's water supply flows in faster from now on"
@@ -1345,15 +1253,8 @@ def _build_forge(sim, tribe, biome, target):
         return None
     if tribe.unique_resources.get(tribe.mine_resource_name, 0) < config.FORGE_ITEM_ORE_COST:
         return "not enough ore has been mined yet to justify a forge"
-    if tribe.wood < config.FORGE_WOOD_COST or tribe.stone < config.FORGE_STONE_COST:
+    if _place_building(sim, tribe, "forge", config.FORGE_WOOD_COST, config.FORGE_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "forge")
-    if slot is None:
-        return None
-    tribe.wood -= config.FORGE_WOOD_COST
-    tribe.stone -= config.FORGE_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["forge"]
-    architect.record_building(tribe, "forge", slot[0], slot[1], w, h, sim.cycle)
     tribe.forge_built = True
     sim._award_trophy(tribe, "Blacksmith")
     return f"a forge is built -- {tribe.mine_resource_name} can now be worked into real tools, weapons, and inventions"
@@ -1484,15 +1385,8 @@ def _build_dmm(sim, tribe, biome, target):
     the building/action names and their display text)."""
     if tribe.dmm_built:
         return None
-    if tribe.wood < config.DMM_WOOD_COST or tribe.stone < config.DMM_STONE_COST:
+    if _place_building(sim, tribe, "dmm", config.DMM_WOOD_COST, config.DMM_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "dmm")
-    if slot is None:
-        return None
-    tribe.wood -= config.DMM_WOOD_COST
-    tribe.stone -= config.DMM_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["dmm"]
-    architect.record_building(tribe, "dmm", slot[0], slot[1], w, h, sim.cycle)
     tribe.dmm_built = True
     sim._award_trophy(tribe, "Visionary")
     return "the Dream Manifestation Machine hums to life -- the tribe can now make the Chief's dreams real"
@@ -1865,15 +1759,8 @@ def _build_vessel(sim, tribe, biome, target):
     amber-drifting-tern.md."""
     if tribe.vessel_built or not tribe.departure_dreamed:
         return None
-    if tribe.wood < config.VESSEL_WOOD_COST or tribe.stone < config.VESSEL_STONE_COST:
+    if _place_building(sim, tribe, "vessel", config.VESSEL_WOOD_COST, config.VESSEL_STONE_COST) is None:
         return None
-    slot = architect.find_free_slot(sim.world, tribe, "vessel")
-    if slot is None:
-        return None
-    tribe.wood -= config.VESSEL_WOOD_COST
-    tribe.stone -= config.VESSEL_STONE_COST
-    w, h = config.BUILDING_FOOTPRINTS["vessel"]
-    architect.record_building(tribe, "vessel", slot[0], slot[1], w, h, sim.cycle)
     tribe.vessel_built = True
     sim._award_trophy(tribe, "Horizon Seeker")
     return "a real vessel takes shape -- built to carry the tribe beyond the horizon, exactly as the Chief dreamed"

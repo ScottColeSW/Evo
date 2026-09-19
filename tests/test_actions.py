@@ -261,6 +261,46 @@ def test_hunt_deer_yield_is_capped_for_an_extreme_population():
     assert tribe.food == round(15 * config.LABOR_MULTIPLIER_CAP)
 
 
+def test_place_building_deducts_cost_and_records_the_building():
+    """Codebase redundancy audit, 2026-09-19, finding #1: _place_building is
+    the shared tail ~20 build handlers used to copy-paste verbatim
+    (affordability + free slot + deduct + record). This is the one direct
+    test of that shared tail itself -- the individual _build_X handlers each
+    keep their own tests for their real per-building variance (gates, extra
+    effects, messages)."""
+    from backend.actions import _place_building
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = 100
+    tribe.stone = 100
+
+    slot = _place_building(sim, tribe, "well", config.WELL_WOOD_COST, config.WELL_STONE_COST)
+
+    assert slot is not None
+    assert tribe.wood == 100 - config.WELL_WOOD_COST
+    assert tribe.stone == 100 - config.WELL_STONE_COST
+    assert any(b["type"] == "well" for b in tribe.buildings)
+
+
+def test_place_building_refuses_when_unaffordable():
+    from backend.actions import _place_building
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = 0
+    tribe.stone = 0
+
+    slot = _place_building(sim, tribe, "well", config.WELL_WOOD_COST, config.WELL_STONE_COST)
+
+    assert slot is None
+    assert not any(b["type"] == "well" for b in tribe.buildings)
+
+
 def test_build_warehouse_is_repeatable_and_raises_the_storage_cap():
     from backend.actions import _storage_cap
     from backend import config
