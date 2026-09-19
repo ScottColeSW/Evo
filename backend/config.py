@@ -840,9 +840,14 @@ HATCHERY_STONE_COST = 10
 HATCHERY_HATCH_CHANCE_MULTIPLIER = 2.0
 # The fraction of each day's *eligible* (yesterday-laid) egg batch that
 # successfully hatches -- the complement spoils (Simulation._advance_flock_daily,
-# see cheerful-weaving-blanket.md). Invented first-pass default -- explicitly
-# flagged as the one open tuning question worth confirming against a live run.
-EGG_HATCH_BASE_SUCCESS_RATE = 0.5
+# see cheerful-weaving-blanket.md). Live-run finding, 2026-09-19
+# (run_20260919_114613): a tribe found 2 founding eggs (no Hatchery built yet,
+# so the un-boosted base rate applied) and both spoiled, leaving the flock
+# stuck at 0 despite two real attempts -- confirmed live, not just a worry.
+# Bumped 0.5 -> 0.6 per explicit request ("bump the egg hatch success rate a
+# little") -- still an invented value, not fully tuned, but less likely to
+# strand a tribe's very first flock member on ordinary bad luck.
+EGG_HATCH_BASE_SUCCESS_RATE = 0.6
 
 # BUILD_COOP (backend/actions.py): explicit follow-up, 2026-09-11 -- "eggs gathered
 # are put into the Hatchery, the Hatchery incubates the eggs to hatch into the Fowl
