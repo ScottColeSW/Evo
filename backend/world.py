@@ -368,14 +368,31 @@ SITE_SEED_TYPES = ("lumber", "wildlife", "quarry", "mine", "landmark")
 # spawn point, r_far once far enough from every spawn that the bias has fully
 # relaxed to background density. Smaller r = denser. Landmark's own much larger
 # pair keeps it the sparsest type, matching the earlier explicit "reduce the
-# number" request. All four invented first-pass defaults (loosely anchored to the
-# old system's real per-type counts -- lumber ~15, wildlife ~12, quarry/mine ~9,
-# landmark ~2 out of 10,000 tiles), not tuned against live data yet.
+# number" request.
+#
+# Live-run finding, 2026-09-20: "add more Mines, Timber, Quarry as they seem to
+# struggle with some needs more than others... scale this based on data."
+# Grounded against 13 tribe-runs' final snapshots (board_history.db, a mix of
+# short and 400+/600+-cycle games): lumber sites were found in 85% of them
+# (avg 1.23 discovered), but quarry only 31% (avg 0.62) and mine only 38%
+# (avg 0.54) -- both were quietly the same sparse (14, 30) pair, well behind
+# lumber's own (10, 22). Mine is the severe case specifically: unlike Quarry/
+# Sawmill/Tannery (all explicitly de-gated from needing a real discovered
+# site a while back -- see actions.py._build_quarry/_build_sawmill's own
+# comments), actions.py._build_mine still hard-requires tribe.mine_sites --
+# zero discoveries means zero Mines, zero Forge, zero crafted items, for the
+# entire game, which is exactly what happened in 8 of the 13 sampled
+# tribe-runs. Mine's spacing is cut the most for that reason (denser than
+# lumber's own, not just closing the gap to it); quarry gets most of the way
+# there; lumber gets a smaller bump too, per the explicit request, even
+# though it wasn't the actual bottleneck in this data. Still invented
+# first-pass numbers past this point -- watch discovery rates in a few fresh
+# runs before treating these three as tuned.
 SITE_DENSITY_BY_TYPE = {
-    "lumber": (10, 22),
+    "lumber": (8, 18),
     "wildlife": (12, 26),
-    "quarry": (14, 30),
-    "mine": (14, 30),
+    "quarry": (9, 20),
+    "mine": (7, 16),
     "landmark": (22, 48),
 }
 # How quickly the spawn bias relaxes to background, in tiles -- roughly "how far
