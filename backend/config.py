@@ -225,7 +225,17 @@ REFLECTION_EMBEDDING_MODEL = "nomic-embed-text"
 # there's no VRAM contention risk left to worry about. Deliberately left an easy,
 # clearly-isolated constant to swap: not committed to phi4-mini specifically, worth
 # trying a few candidates against real game-over data before settling on one.
-ENDGAME_SUMMARY_MODEL = "phi4-mini:latest"
+#
+# Update, 2026-09-20: the "no VRAM contention risk" assumption above held, but
+# didn't account for phi4-mini:latest itself being far too big for this machine's
+# 8GB card regardless of contention -- measured live via `ollama ps`, it alone
+# needed 21GB and ran 71%/29% CPU/GPU, nowhere close to fitting even with nothing
+# else loaded. Swapped to qwen2.5:3b -- already confirmed (same live session) to
+# run 100% GPU at ~2.2GB with the real num_ctx this project's calls actually use,
+# and it's the most capable of the three models now used for tribes/reflection,
+# so this keeps as much narrative quality as reasonably possible without the
+# CPU-fallback slowdown.
+ENDGAME_SUMMARY_MODEL = "qwen2.5:3b"
 
 # Explicit request: "can we have some random breeding in the over-night cycle?" Every
 # existing breeding side-effect (Simulation._celebrate_*) fires off a specific

@@ -14067,7 +14067,12 @@ async def test_step_does_not_run_the_night_cycle_for_a_chiefless_tribe():
 
 @run_async
 async def test_step_triggers_game_over_and_unloads_models_when_all_tribes_die():
-    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    # Tribe B's model deliberately differs from config.ENDGAME_SUMMARY_MODEL (a
+    # real collision once that constant was swapped to qwen2.5:3b, 2026-09-20 --
+    # a tribe using the same model as the endgame narrative would silently mask
+    # whether 2 or 3 real unload calls actually happened, since the set below
+    # would collapse either way).
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "phi4-mini:latest"}])
     # Set directly rather than relying on a starvation tick: IDLE's removal means an
     # unresolved turn now always applies a real fallback action (see
     # Simulation._resolve_action), which could itself add resources back before
@@ -14087,7 +14092,8 @@ async def test_step_triggers_game_over_and_unloads_models_when_all_tribes_die():
     assert sim.game_over_reason == "extinction"
     assert "OVERSEER LOG" in sim.game_over_summary
     from backend import config
-    assert {c.args[0] for c in mock_unload.call_args_list} == {"gemma2:2b", "qwen2.5:3b", config.ENDGAME_SUMMARY_MODEL}
+    assert mock_unload.await_count == 3  # both tribes' models + ENDGAME_SUMMARY_MODEL
+    assert {c.args[0] for c in mock_unload.call_args_list} == {"gemma2:2b", "phi4-mini:latest", config.ENDGAME_SUMMARY_MODEL}
 
 
 @run_async
@@ -14145,13 +14151,17 @@ async def test_shutdown_alone_never_touches_the_endgame_summary_model():
     not pay a wasted load-then-evict round trip for a model it never touched."""
     from backend import config
 
-    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
+    # Tribe B's model deliberately differs from config.ENDGAME_SUMMARY_MODEL (a
+    # real collision once that constant was swapped to qwen2.5:3b, 2026-09-20 --
+    # would make the "never touched" assertion below structurally unsatisfiable
+    # for a reason that has nothing to do with the behavior this test covers).
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "phi4-mini:latest"}])
 
     with mock.patch.object(sim.client, "unload_model", mock.AsyncMock()) as mock_unload:
         await sim.shutdown()
 
     called = {c.args[0] for c in mock_unload.call_args_list}
-    assert called == {"gemma2:2b", "qwen2.5:3b"}
+    assert called == {"gemma2:2b", "phi4-mini:latest"}
     assert config.ENDGAME_SUMMARY_MODEL not in called
 
 
