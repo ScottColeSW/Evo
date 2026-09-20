@@ -11049,17 +11049,64 @@ def test_advance_farming_harvests_food_once_growth_matures_and_resets():
     assert any("harvest festival" in entry for entry in tribe.history)
 
 
-def test_advance_farming_harvest_is_capped_by_storage_and_notes_the_waste():
-    """Live-run correction: a harvest used to add straight to tribe.food with no
-    ceiling at all -- same passive-income gap settled water/fish/mine/tannery had."""
+def test_advance_farming_pauses_growth_once_storage_is_nearly_full():
+    """Live report, 2026-09-20: 32 of 35 harvests wasted for one tribe in one live
+    run -- the plot kept maturing and drawing water on a fixed clock regardless of
+    whether there was anywhere for the yield to go. Explicit direction: "just
+    throttle the harvest when storage is nearly full." Growth (and the water it
+    costs) now pauses entirely once food is already at/above WAREHOUSE_NEED_
+    NEAR_CAP_FRACTION of the cap -- nothing should change at all, not even a
+    partial tick of growth."""
     from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.farm_plots = 2
+    tribe.crop_growth = 40
+    tribe.water = 100
+    tribe.food = round(config.STORAGE_CAP_BASE * config.WAREHOUSE_NEED_NEAR_CAP_FRACTION)  # right at the threshold
+
+    sim._advance_farming(tribe)
+
+    assert tribe.crop_growth == 40  # unchanged, no growth ticked
+    assert tribe.water == 100  # no water spent while paused
+    assert tribe.food == round(config.STORAGE_CAP_BASE * config.WAREHOUSE_NEED_NEAR_CAP_FRACTION)
+    assert not tribe.history
+
+
+def test_advance_farming_resumes_once_storage_drops_back_under_the_threshold():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.farm_plots = 2
+    tribe.crop_growth = 40
+    tribe.water = 100
+    tribe.food = round(config.STORAGE_CAP_BASE * config.WAREHOUSE_NEED_NEAR_CAP_FRACTION) - 1
+
+    sim._advance_farming(tribe)
+
+    assert tribe.crop_growth == 40 + config.CROP_GROWTH_PER_CYCLE
+    assert tribe.water == 100 - config.CROP_WATER_PER_PLOT_PER_CYCLE * 2
+
+
+def test_advance_farming_harvest_still_caps_and_notes_waste_when_a_single_harvest_overflows():
+    """The pre-growth throttle above covers the common case (storage already
+    nearly full when the plot would otherwise mature), but a single harvest can
+    still be large enough to blow past the cap in one shot even starting from
+    just under the threshold -- a big population/Kitchen/Cooking-scaled harvest
+    against a cap that hasn't kept pace. This fallback (the pre-existing cap-and-
+    waste-note behavior) still needs to hold for that case."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.farm_plots = 2
+    tribe.population = 530  # pushes the labor multiplier to its cap (5x)
+    tribe.cooking_learned = True
     tribe.crop_growth = 100 - config.CROP_GROWTH_PER_CYCLE
     tribe.water = 100
-    tribe.food = config.STORAGE_CAP_BASE - 3  # less than the harvest amount, so some is wasted
+    tribe.food = round(config.STORAGE_CAP_BASE * config.WAREHOUSE_NEED_NEAR_CAP_FRACTION) - 1  # just under the throttle
     tribe.last_celebration_cycle = sim.cycle  # skip the celebration cost for a clean read
 
     sim._advance_farming(tribe)

@@ -8651,8 +8651,25 @@ class Simulation:
         person does. Enough on hand and the plot grows and drinks its share; too little
         and the plot withers on the vine (lost outright) instead of quietly stalling --
         a real cost for neglecting a farm during a water crisis, mirroring the flock's
-        own feed-or-shrink stakes in _advance_flock_daily."""
+        own feed-or-shrink stakes in _advance_flock_daily.
+
+        Live report, 2026-09-20: once population/Kitchen/Cooking push the harvest
+        formula to its ceiling, a mature harvest is a large, fixed amount that blew
+        straight past storage headroom almost every time (32 of 35 harvests wasted
+        for one tribe in one live run) -- the plot kept maturing and drawing water on
+        a fixed clock with no regard for whether there was anywhere for the yield to
+        go. Explicit direction: "just throttle the harvest when storage is nearly
+        full" -- growth (and the water it costs) now simply pauses once food is
+        already this close to the cap, the same "nearly full" threshold
+        _warehouse_needed already uses to judge storage pressure, just applied to the
+        farm's own growth clock instead of a nudge. Resumes the moment consumption,
+        trade, or a new warehouse opens real headroom again. The harvest-time
+        overflow check right below stays too, as a fallback for the one case this
+        doesn't fully cover -- a single harvest big enough to blow past the cap in
+        one shot even starting from just under the threshold."""
         if tribe.farm_plots <= 0:
+            return
+        if tribe.food >= _storage_cap(tribe) * config.WAREHOUSE_NEED_NEAR_CAP_FRACTION:
             return
         water_needed = config.CROP_WATER_PER_PLOT_PER_CYCLE * tribe.farm_plots
         if tribe.water < water_needed:
