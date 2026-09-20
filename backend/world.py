@@ -398,7 +398,7 @@ SITE_DENSITY_BY_TYPE = {
 # How quickly the spawn bias relaxes to background, in tiles -- roughly "how far
 # from home the map still feels noticeably richer." Loosely anchored to
 # EXPLORATION_PARTY_PATROL_DISTANCE (45): comfortably reachable in one real trip.
-SPAWN_BIAS_FALLOFF_DISTANCE = 30
+SPAWN_BIAS_FALLOFF_DISTANCE = 60
 # Bridson's algorithm's own "how many tries before giving up on this active point"
 # constant -- higher finds tighter packings but costs more rejected candidates.
 _POISSON_DISC_CANDIDATE_ATTEMPTS = 30
