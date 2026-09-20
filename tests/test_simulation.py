@@ -8882,6 +8882,40 @@ def test_tribal_gathering_says_something_even_with_nothing_new():
     assert tribe.gathering_brief == "a quiet gathering -- nothing new to report"
 
 
+def test_tribal_gathering_reports_yesterdays_flock_hatch():
+    """Live report, 2026-09-20: "it just looks like the flock is not growing at
+    all based on the informational updates." Grounded against a real run --
+    the flock was genuinely hatching (confirmed in board_snapshots and its own
+    standalone chronicle line), but this recurring dawn recap, which already
+    covers population/trophies every single gathering, never mentioned it. This
+    runs BEFORE that same day's _advance_flock_daily (see step()'s ordering),
+    so eggs_hatched_today/eggs_spoiled_today here still hold yesterday's
+    values -- exactly the "since the last gathering" period this message
+    already reports everything else for."""
+    sim = _bare_simulation()
+    sim.cycle = 20
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = 3
+    tribe.eggs_hatched_today = 2
+    tribe.eggs_spoiled_today = 1
+
+    sim._hold_tribal_gathering(tribe)
+
+    assert "2 eggs hatched, 1 spoiled -- 3 now in the flock" in tribe.gathering_brief
+
+
+def test_tribal_gathering_omits_the_flock_note_when_nothing_hatched_or_spoiled():
+    sim = _bare_simulation()
+    sim.cycle = 20
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.flock = 5  # a standing flock, but no hatch/spoil resolved yesterday
+
+    sim._hold_tribal_gathering(tribe)
+
+    assert "flock" not in tribe.gathering_brief
+    assert tribe.gathering_brief == "a quiet gathering -- nothing new to report"
+
+
 def test_evening_recap_reports_todays_trophies_population_change_and_resources():
     """Explicit request: "at the beginning of the night they should sort of recap
     the accomplishments of the day." """
@@ -8901,6 +8935,32 @@ def test_evening_recap_reports_todays_trophies_population_change_and_resources()
     assert "Ashgar earned the 'Water Bringer' honor" in entry
     assert "grew by 3 today" in entry
     assert "40 wood, 20 stone, 30 food, and 50 water on hand" in entry
+
+
+def test_evening_recap_includes_the_flock_in_resources_on_hand():
+    """Same live report as the dawn-gathering test above -- the flock is a real,
+    growing resource same as wood/stone/food/water, it just never made it into
+    this "on hand" list."""
+    sim = _bare_simulation()
+    sim.cycle = 30
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood, tribe.stone, tribe.food, tribe.water = 40, 20, 30, 50
+    tribe.flock = 7
+
+    sim._hold_evening_recap(tribe)
+
+    assert "40 wood, 20 stone, 30 food, and 50 water on hand, 7 in the flock" in tribe.history[-1]
+
+
+def test_evening_recap_omits_the_flock_when_there_is_none():
+    sim = _bare_simulation()
+    sim.cycle = 30
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood, tribe.stone, tribe.food, tribe.water = 40, 20, 30, 50
+
+    sim._hold_evening_recap(tribe)
+
+    assert "in the flock" not in tribe.history[-1]
 
 
 def test_evening_recap_omits_a_trophy_from_before_this_mornings_gathering():

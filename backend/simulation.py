@@ -2698,6 +2698,21 @@ class Simulation:
             parts.append(f"the tribe has grown by {pop_delta} since the last gathering")
         elif pop_delta < 0:
             parts.append(f"the tribe has lost {-pop_delta} since the last gathering")
+        # Live report, 2026-09-20: "it just looks like the flock is not growing
+        # at all based on the informational updates" -- grounded against a real
+        # run, the flock WAS growing (two real hatches, confirmed in board_
+        # snapshots and its own standalone chronicle line), but neither of these
+        # twice-daily recap messages -- the ones that already cover population
+        # and every other resource -- ever mentioned it, unlike wood/stone/food/
+        # water below. tribe.eggs_hatched_today/eggs_spoiled_today still hold
+        # YESTERDAY's values here (this runs before today's _advance_flock_daily,
+        # see step()'s own ordering), which is exactly right for a "since the
+        # last gathering" recap.
+        if tribe.eggs_hatched_today or tribe.eggs_spoiled_today:
+            hatch_note = f"{tribe.eggs_hatched_today} egg{'s' if tribe.eggs_hatched_today != 1 else ''} hatched"
+            if tribe.eggs_spoiled_today:
+                hatch_note += f", {tribe.eggs_spoiled_today} spoiled"
+            parts.append(f"{hatch_note} -- {tribe.flock} now in the flock")
         if tribe.chief_name:
             parts.append(f"Chief {tribe.chief_name}'s guiding philosophy still stands: {tribe.chief_philosophy}")
 
@@ -2730,7 +2745,16 @@ class Simulation:
             parts.append(f"the tribe grew by {pop_delta} today")
         elif pop_delta < 0:
             parts.append(f"the tribe lost {-pop_delta} today")
-        parts.append(f"{tribe.wood} wood, {tribe.stone} stone, {tribe.food} food, and {tribe.water} water on hand")
+        resources_on_hand = f"{tribe.wood} wood, {tribe.stone} stone, {tribe.food} food, and {tribe.water} water on hand"
+        # Same live report as _hold_tribal_gathering's own note above -- the
+        # flock is a real, growing resource same as wood/stone/food/water, it
+        # just never made it into this "on hand" list. Only mentioned once
+        # there's actually a flock to report (a tribe with none yet gets no
+        # noise here, matching how eggs/flock lines already stay silent
+        # elsewhere until they're real).
+        if tribe.flock > 0:
+            resources_on_hand += f", {tribe.flock} in the flock"
+        parts.append(resources_on_hand)
 
         recap = "; ".join(parts)
         tribe.history.append(f"As the sun sets, the tribe takes stock of the day's work: {recap}.")
