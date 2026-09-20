@@ -4720,15 +4720,21 @@ function farmingPanel(t) {
     // rather than disappearing entirely until a founding egg hatches.
     food.push(`🐔 Coop — egg-laying chance ×${COOP_LAY_CHANCE_MULTIPLIER}`);
   }
-  if (t.eggs > 0 || t.hatchery_built) {
-    // Explicit request: "we aren't showing counts on either [eggs or flock]"
-    // -- a real, separate stockpile from flock (today's running total, not yet
-    // eligible to hatch -- see tribe.eggs_incubating), eaten off automatically
-    // past the tribe's own scaled surplus threshold.
-    const eggsPart = t.eggs > 0 ? `${t.eggs}${t.eggs > surplusThreshold ? " · surplus feasted on" : ""}` : "none stored yet";
+  // Live report, 2026-09-20: "Eggs laid are not landing in the Hatchery."
+  // Grounded: this used to show only t.eggs (today's fresh lay), which gets
+  // swept into t.eggs_incubating and reset to 0 at every real day boundary --
+  // so the number shown here almost never reflected what was actually
+  // waiting to hatch. Shows the real combined total now (today's lay + what's
+  // already incubating from yesterday). The old "surplus feasted on" note is
+  // gone too -- see Simulation._advance_livestock_feast's own 2026-09-20
+  // comment: every day's batch fully resolves (hatch or spoil) with nothing
+  // left to accumulate into a real surplus any more.
+  const eggsTotal = (t.eggs || 0) + (t.eggs_incubating || 0);
+  if (eggsTotal > 0 || t.hatchery_built) {
+    const eggsPart = eggsTotal > 0 ? `${eggsTotal}` : "none stored yet";
     if (t.hatchery_built && !eggGenesisReady) {
       food.push(`🐣 Hatchery — ${eggsPart} in store · flock hatch chance ×${HATCHERY_HATCH_CHANCE_MULTIPLIER}`);
-    } else if (t.eggs > 0 && !eggGenesisReady) {
+    } else if (eggsTotal > 0 && !eggGenesisReady) {
       food.push(`🥚 Eggs in store — ${eggsPart}`);
     }
   }

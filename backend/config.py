@@ -824,7 +824,11 @@ LIVESTOCK_SURPLUS_THRESHOLD = 12
 # reach of a real flock/eggs stockpile, while a large tribe still gets a real
 # ceiling above the flat floor, the original point of this scaling.
 LIVESTOCK_SURPLUS_POPULATION_DIVISOR = 100
-EGG_FEAST_FOOD_VALUE = 2  # food per surplus egg eaten
+# RETIRED 2026-09-20 (see Simulation._advance_livestock_feast's own comment):
+# the eggs-surplus-feast branch this fed is gone -- the 2026-09-19 daily lay/
+# hatch/spoil rework repurposed tribe.eggs into a purely transient bucket that
+# always fully resolves the very next day boundary, so there's nothing left
+# to pile up into a real surplus any more.
 FLOCK_FEAST_FOOD_VALUE = 8  # food per surplus flock member eaten
 
 # BUILD_HATCHERY (backend/actions.py): explicit follow-up -- "the Flock and the

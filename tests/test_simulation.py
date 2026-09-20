@@ -13023,10 +13023,15 @@ def test_advance_flock_daily_lay_matches_the_expected_long_run_average():
     assert abs(total_laid - expected) / expected < 0.02  # within 2%
 
 
-def test_advance_livestock_feast_converts_surplus_eggs_to_food():
-    """Explicit request: "let them feast and use Eggs and Chickens/Flock for
-    food after the stock grows... let them use everything more than a dozen
-    each."""
+def test_advance_livestock_feast_no_longer_touches_eggs():
+    """RETIRED 2026-09-20: the eggs half of this feast used to watch tribe.eggs
+    for a surplus ("let them feast and use Eggs and Chickens/Flock for food
+    after the stock grows"). The 2026-09-19 daily lay/hatch/spoil rework
+    repurposed tribe.eggs into a purely transient "today's fresh lay" bucket
+    that always fully resolves (hatch or spoil) the very next day boundary --
+    confirmed live there's structurally nothing left to pile up into a real
+    surplus any more, so this half is gone. Flock's own feast (a real, still-
+    valid concern) is unaffected -- see the sibling test below."""
     from backend import config
 
     sim = _bare_simulation()
@@ -13036,8 +13041,8 @@ def test_advance_livestock_feast_converts_surplus_eggs_to_food():
 
     sim._advance_livestock_feast(tribe)
 
-    assert tribe.eggs == config.LIVESTOCK_SURPLUS_THRESHOLD
-    assert tribe.food == 5 * config.EGG_FEAST_FOOD_VALUE
+    assert tribe.eggs == config.LIVESTOCK_SURPLUS_THRESHOLD + 5  # untouched
+    assert tribe.food == 0
 
 
 def test_advance_livestock_feast_converts_surplus_flock_to_food():
@@ -13059,12 +13064,13 @@ def test_advance_livestock_feast_applies_the_kitchen_multiplier():
     them to add both eggs and fowl to the food supply chain (goes to Kitchen)." The
     population-scaled capacity check already existed (_livestock_surplus_threshold);
     Kitchen's own multiplier -- applied at every other real food-production point --
-    was the piece missing here."""
+    was the piece missing here. Eggs half retired 2026-09-20 -- see
+    test_advance_livestock_feast_no_longer_touches_eggs -- so this now only
+    covers flock."""
     from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.eggs = config.LIVESTOCK_SURPLUS_THRESHOLD + 2
     tribe.flock = config.LIVESTOCK_SURPLUS_THRESHOLD + 1
     tribe.food = 0
     tribe.cooking_learned = True
@@ -13072,8 +13078,7 @@ def test_advance_livestock_feast_applies_the_kitchen_multiplier():
 
     sim._advance_livestock_feast(tribe)
 
-    expected = round(2 * config.EGG_FEAST_FOOD_VALUE * config.COOKING_FOOD_MULTIPLIER * config.KITCHEN_FOOD_MULTIPLIER) \
-        + round(1 * config.FLOCK_FEAST_FOOD_VALUE * config.COOKING_FOOD_MULTIPLIER * config.KITCHEN_FOOD_MULTIPLIER)
+    expected = round(1 * config.FLOCK_FEAST_FOOD_VALUE * config.COOKING_FOOD_MULTIPLIER * config.KITCHEN_FOOD_MULTIPLIER)
     assert tribe.food == expected
 
 
@@ -13082,13 +13087,11 @@ def test_advance_livestock_feast_does_nothing_below_the_surplus_threshold():
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.eggs = config.LIVESTOCK_SURPLUS_THRESHOLD
     tribe.flock = config.LIVESTOCK_SURPLUS_THRESHOLD
     tribe.food = 0
 
     sim._advance_livestock_feast(tribe)
 
-    assert tribe.eggs == config.LIVESTOCK_SURPLUS_THRESHOLD
     assert tribe.flock == config.LIVESTOCK_SURPLUS_THRESHOLD
     assert tribe.food == 0
 
@@ -13112,23 +13115,21 @@ def test_livestock_surplus_threshold_scales_with_population():
 
 def test_advance_livestock_feast_lets_a_large_tribe_keep_a_bigger_flock():
     """A tribe big enough that its scaled threshold clears the old flat dozen
-    keeps its whole flock/eggs below that real threshold instead of being
-    feasted down to 12 regardless of size."""
+    keeps its whole flock below that real threshold instead of being feasted
+    down to 12 regardless of size."""
     from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.population = 6000  # scaled threshold: 60
-    tribe.eggs = 40
     tribe.flock = 40
     tribe.food = 0
 
     sim._advance_livestock_feast(tribe)
 
-    assert tribe.eggs == 40  # below the scaled threshold -- nothing eaten
-    assert tribe.flock == 40
+    assert tribe.flock == 40  # below the scaled threshold -- nothing eaten
     assert tribe.food == 0
-    assert tribe.eggs > config.LIVESTOCK_SURPLUS_THRESHOLD  # genuinely past the old flat dozen
+    assert tribe.flock > config.LIVESTOCK_SURPLUS_THRESHOLD  # genuinely past the old flat dozen
 
 
 def test_to_dict_includes_the_real_livestock_surplus_threshold():

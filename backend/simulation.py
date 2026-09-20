@@ -8792,24 +8792,31 @@ class Simulation:
         tribe.eggs = 0
 
     def _advance_livestock_feast(self, tribe: Tribe) -> None:
-        """See config.LIVESTOCK_SURPLUS_THRESHOLD's own comment -- once eggs or
-        flock grow past the tribe's own scaled threshold (population // 100,
-        floored at LIVESTOCK_SURPLUS_THRESHOLD -- a real, automatic, population-
-        scaled capacity check, not a flat cap), the surplus is automatically eaten
-        as food each cycle rather than piling up forever with no payoff.
+        """See config.LIVESTOCK_SURPLUS_THRESHOLD's own comment -- once flock grows
+        past the tribe's own scaled threshold (population // 100, floored at
+        LIVESTOCK_SURPLUS_THRESHOLD -- a real, automatic, population-scaled
+        capacity check, not a flat cap), the surplus is automatically eaten as
+        food each cycle rather than piling up forever with no payoff.
 
         Explicit follow-up, 2026-09-11: "add an automatic Capacity check that allow
         them to add both eggs and fowl to the food supply chain (goes to Kitchen)."
         The capacity check already existed (this threshold); what was missing was
         Kitchen's own multiplier -- every other real food-production point (GATHER_
         FOOD, HUNT_DEER, CATCH_FISH, crop harvest) already runs through
-        actions._food_multiplier, and this was the one that didn't."""
+        actions._food_multiplier, and this was the one that didn't.
+
+        RETIRED 2026-09-20: the eggs half of this used to watch tribe.eggs for a
+        surplus, same shape as the flock check below. The 2026-09-19 daily lay/
+        hatch/spoil rework repurposed tribe.eggs into a purely transient "today's
+        fresh lay" bucket -- it's swept into tribe.eggs_incubating and reset to 0
+        at every day boundary, and that incubating batch always fully resolves
+        (hatch or spoil, never carries over) the very next boundary. There's
+        structurally nothing left for eggs to pile up into any more, so this half
+        was dead code (confirmed live: it could no longer meaningfully fire) --
+        explicit confirmation this session that there's no real hole to fill here,
+        not just an oversight left in place."""
         threshold = _livestock_surplus_threshold(tribe)
         multiplier = _food_multiplier(tribe)
-        if tribe.eggs > threshold:
-            surplus = tribe.eggs - threshold
-            tribe.eggs = threshold
-            self._capped_add(tribe, "food", round(surplus * config.EGG_FEAST_FOOD_VALUE * multiplier))
         if tribe.flock > threshold:
             surplus = tribe.flock - threshold
             tribe.flock = threshold
