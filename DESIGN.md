@@ -1,7 +1,7 @@
 # Evolution2Civ — System Design
 
 **Status:** As-built design document
-**Scope:** Current implementation as of 2026-09-16; no proposed changes
+**Scope:** Current implementation as of 2026-09-20; no proposed changes
 **Primary purpose:** A local, spectator-mode environment for observing how LLM-driven tribes make survival, settlement, social, and strategic decisions over time.
 
 ## 1. Product definition
@@ -122,7 +122,7 @@ This is the key trust boundary: **model output is a proposal; the simulation rem
 Two distinct systems shape behavior, and only one of them the model can safely ignore:
 
 - **Nudges** — plain facts appended to the prompt (e.g. "the mine has produced ore, a forge would let it be worked into tools") meant to make an unlocked capability legible. These never change `available_actions` or force an outcome. `config.DISABLED_NUDGE_TAGS` is an opt-in, empty-by-default set for experimentally silencing one category at a time to measure whether a given nudge actually changes behavior (the standing project finding across many of these is that a fact alone often does not reliably redirect a small model's choice).
-- **Mechanics** — real menu changes or automatic systems, used whenever a nudge alone proved insufficient. Examples: a survival crisis narrows the action menu to only plausibly-helpful actions; the Forge crafts items automatically once ore and wood are on hand (no manual action exists for this any more); a flock's Coop+Hatchery incubation runs off its egg stockpile regardless of the flock's current size, so it can recover from zero instead of being permanently stuck there.
+- **Mechanics** — real menu changes or automatic systems, used whenever a nudge alone proved insufficient. Examples: a survival crisis narrows the action menu to only plausibly-helpful actions; the Forge crafts items automatically once ore and wood are on hand (no manual action exists for this any more); a flock resolves on a real daily clock, not every cycle — eggs laid today can't hatch until tomorrow, and a fowl hatched today can't lay the same day, both enforced by ordering rather than an explicit check (`Simulation._advance_flock_daily`).
 
 ## 7. Mechanics and feedback loops
 
@@ -187,3 +187,4 @@ A "Developments" page — population, era progression, well-being, civilization-
 - No authentication or multi-tenant isolation — this is a local spectator tool, not a hosted service.
 - The translation-confidence matrix is an empirical proxy for language convergence, not a semantic model; it can plausibly stay at zero for an entire run even with real, sustained contact if the two tribes never happen to phrase the same action identically.
 - Benchmark trial reproducibility covers every gameplay-relevant roll (`random.seed`), but not the LLM's own sampling — multiple trials per (scenario, model) matter more than seeking bit-identical runs.
+- Storage overflow is a hard cap: any resource income past `_storage_cap` (`Simulation._capped_add`) is destroyed outright on the spot, not gradually. A live run showed this landing hard once population/Kitchen/Cooking multipliers push a single farm harvest above the whole cap — most of a harvest can be lost in one shot rather than trickling down. A softer design was scoped (income past the cap survives but decays heavily each time it's touched again, rather than being rejected instantly — "erode the supply, then apply the cap") and deliberately deferred rather than built: it touches every resource-add call site in the codebase (trade, raiding, conquest absorption, gathering, not just farming), a large enough blast radius that it didn't fit inside this project's wrap-up window. Left here as a real, considered next step rather than dropped silently.

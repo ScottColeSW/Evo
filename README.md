@@ -13,6 +13,8 @@ read on each tribe's condition, diplomacy that can genuinely backfire into war, 
 espionage, a genetics/breeding layer, and a headless benchmark harness for reproducible
 model-vs-model comparison, on top of the original survival/exploration/language loop.
 
+![Two tribes mid-game -- territory, discovered landmarks, raider camps, chief reflections, and active expeditions all visible at once](docs/screenshot.png)
+
 ## What's actually happening
 
 The short version: the LLM only ever *proposes* — it picks an allowed action, a target,
