@@ -1852,6 +1852,21 @@ TERRITORY_EXPANSION_STONE_COST = 60
 DOCK_WOOD_COST = 20
 DOCK_FISH_CATCH_BONUS_FRACTION = 0.5
 
+# Live report, 2026-09-20: "landmarks in the river again, blocking the boat" --
+# grounded against run_20260920_113238: not a placement bug (reward landmarks,
+# the ones the water-excluded grid actually governs, were zero for both tribes),
+# but real river-crossing hazard markers piling up (12 for one tribe alone) with
+# no boat ever built to trigger the existing cleanup (Simulation._build_boat
+# clears river/lake hazard_landmarks once boat_built flips true). Confirmed via
+# grep: unlike BUILD_COOP/BUILD_DEER_PEN, BUILD_DOCK has never had a nudge of its
+# own -- same "isolated action, nobody picks it" gap, added below for
+# consistency. Explicit request: "just make sure we can turn it on/off. I really
+# want to see if they need them at all" -- this project's own facts-vs-mechanics
+# finding (a nudge alone hasn't reliably moved behavior for every one of these,
+# e.g. BUILD_LONG_HOUSE) makes this a real, open question worth A/B-ing rather
+# than assuming success -- flip this to False for a baseline comparison run.
+BUILD_DOCK_NUDGE_ENABLED = True
+
 # BUILD_SAWMILL/BUILD_QUARRY (backend/actions.py): explicit request, "I think they
 # should build a saw mill and a quarry after they have farming and fishing down and
 # are building homes. saw mill turns 1 wood into 3 wood. quarried stone is also

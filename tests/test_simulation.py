@@ -6734,6 +6734,68 @@ def test_build_deer_pen_nudge_is_silent_below_the_hunt_threshold():
     assert "deer pen built at the settlement" not in request["prompt"]
 
 
+def test_build_dock_nudge_fires_once_fishing_is_learned():
+    """Live-run finding, 2026-09-20: BUILD_DOCK had never had a nudge of its own,
+    unlike BUILD_COOP/BUILD_DEER_PEN just above -- reachable the moment fishing
+    is learned, but nothing ever told the chief it had become reachable, and it's
+    the one real path to a boat (which clears river-crossing hazard markers off
+    the map for good)."""
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES  # camped, so BUILD_DOCK is even reachable
+    tribe.fishing_learned = True
+    tribe.wood = 20
+
+    request, _ctx = sim._prepare_turn(tribe)
+
+    assert "dock built at the settlement" in request["prompt"]
+
+
+def test_build_dock_nudge_is_silent_without_fishing_or_once_already_built():
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.wood = 20
+
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "dock built at the settlement" not in request["prompt"]
+
+    tribe.fishing_learned = True
+    tribe.dock_built = True
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "dock built at the settlement" not in request["prompt"]
+
+
+def test_build_dock_nudge_respects_its_own_toggle():
+    from unittest import mock
+
+    from backend import config
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.era = "tribal_synapse"
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.fishing_learned = True
+    tribe.wood = 20
+
+    with mock.patch("backend.config.BUILD_DOCK_NUDGE_ENABLED", False):
+        request, _ctx = sim._prepare_turn(tribe)
+
+    assert "dock built at the settlement" not in request["prompt"]
+
+
 def test_water_security_progress_nudge_names_sites_and_the_well_alternative():
     """Explicit live-run report, 2026-09-09: a tribe with a large water
     stockpile (from the ordinary passive top-up, not true security) kept

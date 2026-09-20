@@ -5281,6 +5281,23 @@ class Simulation:
                     "Cooking is known and real shelter stands -- a kitchen would turn cooked meals into "
                     "excellent food, stretching stores even further."
                 )
+        # NUDGE (2026-09-20, live-run finding): BUILD_DOCK had the same "isolated
+        # action, nobody picks it" gap as BUILD_COOP/BUILD_DEER_PEN just above --
+        # reachable the moment fishing is learned, but nothing ever told the chief
+        # it had become reachable. Also the one real path to a boat, which clears
+        # river-crossing hazard markers off the map for good (Simulation.
+        # _build_boat) -- without a dock, those keep piling up forever. Toggleable
+        # (config.BUILD_DOCK_NUDGE_ENABLED) so this can be A/B'd against a baseline
+        # -- this project's own facts-vs-mechanics finding means a nudge alone
+        # isn't guaranteed to move behavior here either.
+        if (
+            config.BUILD_DOCK_NUDGE_ENABLED
+            and "BUILD_DOCK" in available_actions and not tribe.dock_built and tribe.fishing_learned
+        ):
+            visible_entities.append(
+                "Fishing is known -- a dock built at the settlement would make every future catch pay "
+                "out more, and opens the way to a boat that turns river crossings safe for good."
+            )
         # NUDGE (2026-09-13, action-legibility audit): BUILD_LIBRARY's own
         # AFFORDABILITY_CHECKS gate (long_houses_built > 0) is the same single-flag
         # shape as BUILD_KITCHEN's own gate just above, which already earns a
