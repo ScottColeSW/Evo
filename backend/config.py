@@ -2269,7 +2269,7 @@ VESSEL_STONE_COST = 2500
 # not just a nice-to-have. A fight that never breaks either side within
 # DECLARE_CONQUEST_MAX_ROUNDS ends in a costly stalemate -- no merge,
 # both sides keep whatever they have left.
-DECLARE_CONQUEST_MAX_ROUNDS = 6
+DECLARE_CONQUEST_MAX_ROUNDS = 8
 DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION = 0.10
 DECLARE_CONQUEST_ROUND_LOSS_FRACTION_LOSER = 0.30
 DECLARE_CONQUEST_ROUND_LOSS_FRACTION_WINNER = 0.08
@@ -2288,6 +2288,19 @@ DECLARE_CONQUEST_ROUND_LOSS_FRACTION_WINNER = 0.08
 # ends the war meaningfully weaker than the other concedes instead of the
 # battle silently reopening next cycle -- see _declare_conquest's
 # post-round-cap surrender check.
+# Update, 2026-09-20: MAX_ROUNDS raised 6 -> 8 (user's own tuning change). The
+# "can never actually fire" math directly above is now stale at these deeper
+# rounds -- 0.7 ** 7 ~= 0.0824, which DOES cross the 0.10 threshold at round 7.
+# A maximally lopsided war (loser breaks every round) now resolves as an
+# outright win on the very first DECLARE_CONQUEST attempt instead of a
+# stalemate; the surrender-after-2-losses path above is only reachable for a
+# war that's lopsided enough to trigger DECLARE_CONQUEST_SURRENDER_POPULATION_
+# RATIO's stalemate note but NOT so lopsided the round math crosses the defeat
+# threshold outright first. See tests/test_actions.py's DECLARE_CONQUEST suite
+# (test_declare_conquest_lopsided_war_now_resolves_outright_at_current_constants
+# grounds the new outright-win behavior; the stalemate/surrender tests now
+# patch a milder round-loss fraction so they stay meaningful regardless of
+# where MAX_ROUNDS gets tuned to next).
 DECLARE_CONQUEST_SURRENDER_POPULATION_RATIO = 0.5
 
 # Explicit follow-up, 2026-09-11: "surrender isn't allowed unless you lose 2

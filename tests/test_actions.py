@@ -2705,7 +2705,18 @@ def test_declare_conquest_first_lopsided_stalemate_does_not_surrender_yet():
     """Explicit follow-up request, 2026-09-11: "surrender isn't allowed unless
     you lose 2 times already" -- the first time a side ends the war
     decisively weaker, it's still a true stalemate (no merge), just with a
-    history note that one more defeat like this ends it."""
+    history note that one more defeat like this ends it.
+
+    Updated 2026-09-20: DECLARE_CONQUEST_MAX_ROUNDS was raised 6 -> 8 (user's
+    own tuning change), and at production round-loss fractions a maximally
+    lopsided fight now crosses DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION
+    outright at round 7 -- see test_declare_conquest_lopsided_war_now_
+    resolves_outright_at_current_constants below, which grounds that new
+    behavior on purpose. This test's job is specifically the stalemate/
+    surrender-counter mechanic, not the round-count math, so it now patches a
+    much milder loser fraction (same technique as test_declare_conquest_
+    stalemate_when_neither_side_breaks above) so the scenario stays a
+    stalemate regardless of wherever MAX_ROUNDS gets tuned to next."""
     from unittest import mock
 
     from backend import config
@@ -2719,10 +2730,18 @@ def test_declare_conquest_first_lopsided_stalemate_does_not_surrender_yet():
     attacker.stone = config.DECLARE_CONQUEST_STONE_COST
     sim.tribes = {attacker.id: attacker, defender.id: defender}
 
-    with mock.patch("backend.actions.random.random", return_value=0.0):
-        # unpatched round-loss fractions -- attacker wins every round (defender
-        # is the loser every time), which is the worst case for the in-round
-        # defeat threshold and still can't cross it at production values.
+    with mock.patch("backend.actions.random.random", return_value=0.0), \
+            mock.patch("backend.config.DECLARE_CONQUEST_ROUND_LOSS_FRACTION_LOSER", 0.20):
+        # attacker wins every round (defender is the loser every time). 0.20 is
+        # picked to land in the gap between the two thresholds this test cares
+        # about: harsh enough that the defender ends up under half the
+        # attacker's population (DECLARE_CONQUEST_SURRENDER_POPULATION_RATIO,
+        # so the surrender-note path actually engages), mild enough it never
+        # dips under 10% of its own starting population (DECLARE_CONQUEST_
+        # DEFEAT_THRESHOLD_FRACTION, which would end the war outright instead
+        # of a stalemate) -- through DECLARE_CONQUEST_MAX_ROUNDS as tuned now
+        # (8) and with headroom for it to move a bit further before this test
+        # needs revisiting.
         result = ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
 
     assert attacker.id in sim.tribes and defender.id in sim.tribes  # nobody absorbed yet
@@ -2731,19 +2750,24 @@ def test_declare_conquest_first_lopsided_stalemate_does_not_surrender_yet():
 
 
 def test_declare_conquest_lopsided_war_resolves_by_surrender_on_the_second_loss():
-    """Grounded 2026-09-11 against run_20260911_065718: at the real production
-    constants, DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION (0.10) can never
-    actually fire within DECLARE_CONQUEST_MAX_ROUNDS -- even a side that loses
-    every single round only falls to 0.7 ** 6 ~= 0.1176 of its starting
-    population, just above the threshold. 18/18 real attempts in that run
-    ended "costly stalemate" and the war just reopened next cycle, forever
-    (user: "I don't think anyone will ever win"). This test uses the real,
-    unpatched constants (not the loosened ones the older stalemate/win tests
-    patch in) to reproduce that exact lopsided-but-never-crosses-threshold
-    case. Per the follow-up "surrender isn't allowed unless you lose 2 times
+    """Grounded 2026-09-11 against run_20260911_065718: "surrender isn't
+    allowed unless you lose 2 times already" -- a lopsided-but-stalemated war
+    against the same rival should resolve on its second such stalemate, not
+    reopen forever.
+
+    Updated 2026-09-20: this originally relied on the real production
+    constants being unable to cross DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION
+    within DECLARE_CONQUEST_MAX_ROUNDS (then 6) to keep producing a stalemate
+    every time. The user has since raised MAX_ROUNDS to 8, at which the real
+    constants DO cross that threshold outright (see test_declare_conquest_
+    lopsided_war_now_resolves_outright_at_current_constants) -- so this test
+    now patches the same milder loser fraction as the sibling "first loss"
+    test above to isolate the thing it actually means to cover, the surrender-
+    counter mechanic itself, from wherever the round-count/threshold math
+    happens to sit. Per "surrender isn't allowed unless you lose 2 times
     already", the loss counter is pre-seeded at 1 (as the sibling test above
-    confirms a single loss produces) so this call is the deciding second
-    loss and should actually resolve the war."""
+    confirms a single loss produces) so this call is the deciding second loss
+    and should actually resolve the war."""
     from unittest import mock
 
     from backend import config
@@ -2758,7 +2782,8 @@ def test_declare_conquest_lopsided_war_resolves_by_surrender_on_the_second_loss(
     defender.conquest_stalemate_losses[attacker.id] = 1
     sim.tribes = {attacker.id: attacker, defender.id: defender}
 
-    with mock.patch("backend.actions.random.random", return_value=0.0):
+    with mock.patch("backend.actions.random.random", return_value=0.0), \
+            mock.patch("backend.config.DECLARE_CONQUEST_ROUND_LOSS_FRACTION_LOSER", 0.20):
         result = ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
 
     assert defender.id not in sim.tribes  # surrender still absorbs the loser
@@ -2766,6 +2791,44 @@ def test_declare_conquest_lopsided_war_resolves_by_surrender_on_the_second_loss(
     assert "surrender" in result.lower()
     entry = sim.recent_encounters[-1]
     assert entry["battle"]["outcome"] == "defender_surrenders"
+
+
+def test_declare_conquest_lopsided_war_now_resolves_outright_at_current_constants():
+    """Grounds the real behavioral change from the user's 2026-09-20
+    DECLARE_CONQUEST_MAX_ROUNDS tuning (6 -> 8): at real, unpatched production
+    constants, a maximally lopsided fight (loser breaks every round) now
+    crosses DECLARE_CONQUEST_DEFEAT_THRESHOLD_FRACTION outright within the
+    round cap -- 0.7 ** 7 ~= 0.0824, below the 0.10 threshold -- instead of
+    exhausting the round cap into a stalemate the way it used to at
+    MAX_ROUNDS=6 (0.7 ** 6 ~= 0.1176, always just above threshold, the
+    original "I don't think anyone will ever win" bug this whole stalemate/
+    surrender system exists to work around). This is the fix actually taking
+    effect: a decisive war can now resolve on the very first attempt, no
+    surrender grind required. If this ever regresses back to "stalemate",
+    either MAX_ROUNDS was retuned back down or the round-loss fractions
+    changed -- worth a deliberate look, not a silent pass."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Strong Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    defender = Tribe("tribe_1", "Weak Tribe", "gemma2:2b", 51, 50, "#fb923c")
+    attacker.population = 100
+    defender.population = 100
+    attacker.wood = config.DECLARE_CONQUEST_WOOD_COST
+    attacker.stone = config.DECLARE_CONQUEST_STONE_COST
+    sim.tribes = {attacker.id: attacker, defender.id: defender}
+
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        # fully unpatched -- real production constants, attacker wins every round.
+        result = ACTION_REGISTRY["DECLARE_CONQUEST"](sim, attacker, "plains", (51, 50))
+
+    assert defender.id not in sim.tribes  # absorbed outright, no surrender needed
+    assert attacker.conquests_won == 1
+    assert "stalemate" not in result.lower()
+    entry = sim.recent_encounters[-1]
+    assert entry["battle"]["outcome"] == "attacker_wins"
 
 
 def test_declare_conquest_attaches_a_round_by_round_battle_record():
