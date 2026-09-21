@@ -1,5 +1,8 @@
 # Evolution2Civ (aka Project Chronos)
 
+[![License](https://img.shields.io/github/license/ScottColeSW/Evo)](LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/ScottColeSW/Evo)](https://github.com/ScottColeSW/Evo/releases/latest)
+
 A local, spectator-mode sandbox where LLM-driven tribes (via [Ollama](https://ollama.com))
 gather resources, invent their own language, and try to grow from a handful of survivors
 into a founded, warring, or allying civilization — entirely on their own. You pick which
