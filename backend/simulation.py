@@ -3213,6 +3213,22 @@ class Simulation:
         for tid, tribe in self._round_robin_order():
             if tribe.extinct:
                 continue
+            # Live crash report, 2026-09-23: "KeyError: 'tribe_2'" here, right
+            # after the user injected a tribe (ADD_TRIBE) mid-run. Real race, not
+            # a fluke: prompts_by_tid/contexts above are built from a snapshot of
+            # self.tribes taken BEFORE the `await self.scheduler.run_batch(...)`
+            # a few lines up -- real network time, during which app.py's ADD_TRIBE
+            # handler can mutate self.tribes on the same event loop. By the time
+            # _round_robin_order() re-reads self.tribes fresh here, a tribe added
+            # during that window shows up in iteration but was never part of the
+            # snapshot that built prompts_by_tid/contexts. results.get(tid, ...)
+            # just above was already defensively coded for exactly this gap --
+            # this closes the same gap for the two dicts that weren't. A tribe
+            # skipped here simply wasn't asked to decide anything this cycle (it
+            # didn't exist yet when turns were prepared); it resolves normally
+            # starting next cycle, once it's part of that cycle's own snapshot.
+            if tid not in prompts_by_tid:
+                continue
             outcome = results.get(tid, {"intent": {}, "latency_ms": 0.0})
             # Explicit request, 2026-09-09: raw LLM I/O for the live debug view
             # (see Tribe.debug_transcript's own comment) -- captured here, right

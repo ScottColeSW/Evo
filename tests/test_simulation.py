@@ -4618,6 +4618,34 @@ def test_consecutive_unresolved_turns_tracks_a_streak_not_just_one_miss():
 
 
 @run_async
+async def test_step_survives_a_tribe_injected_mid_batch():
+    """Live crash report, 2026-09-23: "KeyError: 'tribe_2'" -- user injected a
+    tribe (ADD_TRIBE) while a run was mid-cycle. Real race: prompts_by_tid/
+    contexts are snapshotted from self.tribes BEFORE the `await self.scheduler.
+    run_batch(...)` real network wait; app.py's ADD_TRIBE handler can mutate
+    self.tribes on the same event loop during that wait. Reproduced here by
+    having the mocked run_batch itself add a second tribe as a side effect,
+    the same shape as a concurrent ADD_TRIBE landing mid-await -- the freshly
+    injected tribe was never part of the snapshot that built prompts_by_tid/
+    contexts, so it must be skippable without crashing, and simply doesn't
+    resolve a turn until the next cycle."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
+
+    async def fake_run_batch(requests):
+        sim.tribes["tribe_2"] = Tribe("tribe_2", "Injected Tribe", "gemma2:2b", 10, 10, "#38bdf8")
+        return {"tribe_0": {"intent": {}, "latency_ms": 1.0, "raw_response": "{}"}}
+
+    with mock.patch.object(sim.scheduler, "run_batch", fake_run_batch):
+        await sim.step()  # must not raise KeyError
+
+    assert tribe.debug_transcript  # tribe_0's own turn still resolved normally
+    assert "tribe_2" in sim.tribes  # the injected tribe survives, just untouched this cycle
+    assert not sim.tribes["tribe_2"].debug_transcript  # never got a turn prepared this cycle
+
+
+@run_async
 async def test_model_failure_streak_swaps_to_an_untried_local_model():
     """The escalation this streak exists to trigger: config.
     MODEL_FAILURE_STREAK_THRESHOLD consecutive unresolved turns swaps the tribe to
