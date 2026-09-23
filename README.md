@@ -137,3 +137,34 @@ maintained list. Longer-running open design threads (world resource placement an
 targeting intelligence, expedition scaling, small-model tiering, inter-chief negotiation)
 live in this project's own memory notes rather than here, since they're proposals, not
 as-built behavior.
+
+## What's next
+
+None of this is scheduled -- v1.0.0 is a real, clean stopping point, not a pause mid-thought.
+Recorded here, with the reasoning, so anyone picking this up (including a later session)
+understands why each one is still just an idea:
+
+- **More than 4 tribes.** `MAX_TRIBES` is 4, and that's not an arbitrary ceiling to just
+  raise -- `SPAWN_POINTS` has exactly 4 entries, the color palette and UI labeling assume
+  that count for readability, and the resource-density/spawn-bias tuning was grounded
+  against 2-tribe runs specifically. A real scaling pass touches spawn fairness and map
+  legibility, not just a constant.
+- **A map-reveal mechanic tied to the departure ending.** The more interesting of the two
+  scaling ideas: `BUILD_VESSEL` ("Beyond the Horizon") currently lets a tribe leave the
+  board outright, one-directional and terminal. Crowding near the map's edge could
+  "bridge" into freshly-revealed territory instead -- one piece of design solving both the
+  tribe-count ceiling and an ending that currently feels like just walking off, rather than
+  two unrelated systems.
+- **Hosted API models (OpenAI/Anthropic/etc.) alongside local Ollama.** Would broaden who
+  can run this to people without strong local hardware, but it's a real tradeoff, not a free
+  win: this project's whole thesis -- and what makes it interesting -- is specifically small
+  local models reasoning under real constraints (the VRAM guard, model-swap-on-failure, the
+  benchmark harness comparing local models against each other). Adding hosted providers is
+  worth doing on purpose, as a mode alongside that story, not by default because it's easy.
+- **Testing rigor for concurrent paths, specifically.** Two real bugs surfaced in one live
+  session (`step()`'s stale-snapshot crash when a tribe was injected mid-cycle, and
+  `add_tribe`'s id collision when two injections raced each other) were the same class of
+  failure: shared state read once and trusted across an `await`, mutated concurrently by
+  something else on the same event loop. If tribe count or model backends ever expand, that's
+  where the real testing gap is -- concurrent/async paths specifically, not more coverage of
+  the deterministic logic the suite already handles well.
