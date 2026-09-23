@@ -33,6 +33,7 @@ def _bare_simulation():
     # already set sim.tribes explicitly afterward; this default just keeps a
     # single-tribe _found_territory call from crashing on a missing attribute.
     sim.tribes = {}
+    sim._next_tribe_index = 0
     return sim
 
 
@@ -15516,6 +15517,35 @@ async def test_add_tribe_appends_with_unique_spawn_and_color():
     assert new_tribe.model == "qwen2.5:3b"
     assert (new_tribe.x, new_tribe.y) != (sim.tribes["tribe_0"].x, sim.tribes["tribe_0"].y)
     assert new_tribe.color != sim.tribes["tribe_0"].color
+
+
+@run_async
+async def test_add_tribe_concurrent_calls_do_not_collide_on_the_same_id():
+    """Live report, 2026-09-23: injecting two tribes back-to-back ("war" then
+    "rage") landed both on tribe_2, same exact position, the second silently
+    overwriting the first -- index used to be `len(self.tribes)`, read at the
+    top but not committed until after two real awaits (VRAM check, chief
+    election), so a second concurrent call's own `len(self.tribes)` read could
+    land in that window before the first call's entry ever lands. Reproduced
+    here with asyncio.gather and a chief-election mock that actually yields
+    control (asyncio.sleep(0)) so the two calls genuinely interleave, the same
+    shape two real back-to-back ADD_TRIBE websocket messages would."""
+    import asyncio
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+
+    async def yielding_elect_chief(*_args, **_kwargs):
+        await asyncio.sleep(0)  # actually yield control, same as a real await would
+        return _FAKE_CHIEF
+
+    with mock.patch("backend.simulation.HardwareVRAMBoundaryGuard") as mock_guard_cls, \
+         mock.patch("backend.simulation.elect_chief", yielding_elect_chief):
+        mock_guard_cls.return_value.verify_vram_safety_margin = mock.AsyncMock(return_value=(True, ""))
+        await asyncio.gather(sim.add_tribe("war", "qwen2.5:3b"), sim.add_tribe("rage", "qwen2.5:3b"))
+
+    assert len(sim.tribes) == 3  # the original tribe plus both injected ones, not one overwriting the other
+    names = {t.name for t in sim.tribes.values()}
+    assert names == {"A", "war", "rage"}
 
 
 @run_async

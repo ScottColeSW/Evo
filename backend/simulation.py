@@ -2340,6 +2340,18 @@ class Simulation:
                 self.tribes[tid].seed_scout_heading_toward_water(self.world, kinds=SPAWN_WATER_TARGET_KINDS[i])
             else:
                 self.tribes[tid].seed_scout_heading_toward_water(self.world)
+        # Live report, 2026-09-23: injecting two tribes (ADD_TRIBE) in quick
+        # succession silently overwrote the first one -- "war" and "rage" both
+        # landed on tribe_2, same exact position, "war" never marked extinct in
+        # between. Root cause: add_tribe used to derive its new tid from
+        # `len(self.tribes)`, read at the top of the function but not committed
+        # (`self.tribes[tid] = tribe`) until after two real awaits (VRAM check,
+        # chief election) -- a second concurrent add_tribe call's own `len(self.
+        # tribes)` read can land in that gap, before the first call ever writes
+        # its entry, computing the identical index and then overwriting it. A
+        # monotonic counter, read-and-incremented in one synchronous step before
+        # any await, closes the gap regardless of how many add_tribe calls race.
+        self._next_tribe_index = len(self.tribes)
         # Neutral, non-AI raid/trade targets (backend/actions.py._raid/_trade) --
         # see config.MINOR_SETTLEMENT_COUNT's own comment for the full design note.
         self.minor_settlements: list[dict] = []
@@ -3016,7 +3028,18 @@ class Simulation:
         if len(self.tribes) >= config.MAX_TRIBES:
             return f"Cannot add tribe: maximum of {config.MAX_TRIBES} tribes reached."
 
-        index = len(self.tribes)
+        # Live report, 2026-09-23: two tribes injected back-to-back collided on
+        # the same tid ("war" then "rage" both landed on tribe_2, the second
+        # silently overwriting the first). index used to be `len(self.tribes)`,
+        # read here but not committed to self.tribes until after two real
+        # awaits below -- a second concurrent call's own `len(self.tribes)` read
+        # could land in that window, before the first call's entry ever lands,
+        # producing the same index for both. Read-and-increment in this one
+        # synchronous step (no await between the two) instead -- asyncio only
+        # yields control at an await, so this is atomic against any other
+        # coroutine no matter how many add_tribe calls race.
+        index = self._next_tribe_index
+        self._next_tribe_index += 1
         tid = f"tribe_{index}"
         if x is None or y is None:
             x, y = SPAWN_POINTS[index % len(SPAWN_POINTS)]
