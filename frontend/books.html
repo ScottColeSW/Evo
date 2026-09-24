@@ -275,6 +275,37 @@
         margin-bottom: 24px;
       }
     }
+    .projects {
+      margin-top: 40px;
+    }
+
+    .section-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .section-sub {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 16px;
+      max-width: 720px;
+      line-height: 1.5;
+    }
+
+    .projects-more {
+      margin-top: 16px;
+      font-size: 13px;
+    }
+
+    .projects-more a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .projects-more a:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
@@ -1255,6 +1286,60 @@
         </footer>
       </article>
 
+    </section>
+
+    <section class="projects">
+      <h2 class="section-title">Projects</h2>
+      <p class="section-sub">
+        Open-source work with local language models, where the ideas in the books get tested
+        against real runs instead of vendor demos.
+      </p>
+      <div class="grid">
+      <article class="book-card">
+        <div class="book-header">
+          <div class="book-tagline">AI Security · Testbed</div>
+          <h2 class="book-title">Aegis Vector</h2>
+          <div class="book-meta"><span class="pill">Latest v0.2.0</span><span class="pill">Python · Ollama</span></div>
+        </div>
+        <div class="book-body">
+          Plants forged policy documents in a local RAG pipeline and measures how often small models believe them, and what each defense costs. Across nine forgeries, only a memory gate held adoption to zero without refusing answers. Includes a Black Hat vs White Hat episode player built from the real runs.
+        </div>
+        <footer class="book-footer">
+          <div class="aff-stack">
+            <a class="aff-link" href="https://github.com/ScottColeSW/Project-Aegis-Vector" target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View on GitHub</span>
+            </a>
+            <a class="aff-link" href="https://github.com/ScottColeSW/Project-Aegis-Vector/releases/tag/v0.2.0" target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>Release notes v0.2.0</span>
+            </a>
+          </div>
+        </footer>
+      </article>
+
+      <article class="book-card">
+        <div class="book-header">
+          <div class="book-tagline">AI Memory · Library</div>
+          <h2 class="book-title">Palimpsest</h2>
+          <div class="book-meta"><span class="pill">Latest v0.3.0</span><span class="pill">Python</span></div>
+        </div>
+        <div class="book-body">
+          Durable, curated memory for AI agents. Every new claim is judged against what the memory already holds (reinforce, collide, or hold for a person's review), so a forged fact can't quietly rewrite it.
+        </div>
+        <footer class="book-footer">
+          <div class="aff-stack">
+            <a class="aff-link" href="https://github.com/ScottColeSW/Palimpsest" target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View on GitHub</span>
+            </a>
+            <a class="aff-link" href="https://github.com/ScottColeSW/Palimpsest/releases/tag/v0.3.0" target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>Release notes v0.3.0</span>
+            </a>
+          </div>
+        </footer>
+      </article>
+      </div>
+      <p class="projects-more">
+        <a href="https://github.com/ScottColeSW" target="_blank" rel="noopener noreferrer">All projects on GitHub &rarr;</a>
+      </p>
     </section>
   </div>
 </body>
