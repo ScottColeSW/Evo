@@ -168,3 +168,12 @@ understands why each one is still just an idea:
   something else on the same event loop. If tribe count or model backends ever expand, that's
   where the real testing gap is -- concurrent/async paths specifically, not more coverage of
   the deterministic logic the suite already handles well.
+
+## About the creator
+
+Built by **Scott A. Cole**, an AI strategy consultant and the author of 31 books on AI strategy, GenAI, and
+decision-making, including the five-book [**Stop Learning AI** series](https://www.amazon.com/dp/B0GPRFYCQF?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl) for executives who need to
+make good AI decisions without becoming technical themselves. The app includes an **About** page and a **Books** page listing every title and edition ([`frontend/about.html`](frontend/about.html), [`frontend/books.html`](frontend/books.html); `/about.html` and `/books.html` with the server running). More projects, including [Aegis Vector](https://github.com/ScottColeSW/Project-Aegis-Vector) and [Palimpsest](https://github.com/ScottColeSW/Palimpsest), are at
+[github.com/ScottColeSW](https://github.com/ScottColeSW).
+
+<sub>As an Amazon Associate I earn from qualifying purchases.</sub>
