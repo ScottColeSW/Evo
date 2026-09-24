@@ -247,6 +247,26 @@
       box-shadow: 0 0 0 1px rgba(165, 180, 252, 0.3);
     }
 
+    /* One card per book: format buttons stacked */
+    .aff-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: stretch;
+    }
+
+    .aff-stack .aff-link {
+      justify-content: center;
+    }
+
+    /* Label on top, buttons full width below, instead of squeezed side by side */
+    .book-footer:has(.aff-stack) {
+      flex-direction: column;
+      align-items: stretch;
+      margin-top: auto;
+      padding-top: 12px;
+    }
+
     @media (max-width: 640px) {
       body {
         padding: 20px 12px 48px;
@@ -271,11 +291,12 @@
       <p class="subtitle">
         A curated list of my books on AI, GenAI, Bitcoin, agency, focus,
         anxiety, passive income, and digital strategy. Each title links
-        directly to Amazon with my associate tag.
+        directly to Amazon with my associate tag. As an Amazon Associate I earn
+        from qualifying purchases.
       </p>
       <div class="meta-row">
-        <div class="meta-pill">Updated July 2026</div>
-        <div class="meta-pill">Kindle · Paperback · Hardcover</div>
+        <div class="meta-pill">Updated September 2026</div>
+        <div class="meta-pill">Kindle · Paperback · Hardcover · Audiobook</div>
         <div class="meta-pill">Strategy, tactics, and implementation</div>
       </div>
     </header>
@@ -288,73 +309,30 @@
           <h2 class="book-title">
             2025 Bitcoin Reality Check: The Skeptic's Guide to Digital Currency and What Wall Street Doesn't Want You to Know: Make Smart Bitcoin Decisions Without the Hype, Fear, or FOMO
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0FCQ1BLQ2</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span><span class="pill">Audiobook</span></div>
         </div>
         <div class="book-body">
           A clear-eyed guide to Bitcoin for skeptics, cutting through FOMO and
           fear so you can make decisions aligned with your own risk profile.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0FCQ1BLQ2?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- 2025 Bitcoin Reality Check (Print) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Bitcoin · Reality Check</div>
-          <h2 class="book-title">
-            2025 Bitcoin Reality Check (Print): The Skeptic's Guide to Digital Currency and What Wall Street Doesn't Want You to Know
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0FCSQYYZ6</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0FCQ1BLQ2?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0FCSQYYZ6?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0G549ZPSW?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Audiobook</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          A print-first edition ideal for workshops and deeper study on digital
-          currency without the hype.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0FCSQYYZ6?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- 2025 Bitcoin Reality Check (Audiobook) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Bitcoin · Reality Check</div>
-          <h2 class="book-title">
-            2025 Bitcoin Reality Check: The Skeptic's Guide to Digital Currency and What Wall Street Doesn't Want You to Know: Make Smart Bitcoin Decisions Without the Hype, Fear, or FOMO (Audiobook)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0G549ZPSW</span>
-            <span class="pill">Format: Audiobook</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The audiobook edition of 2025 Bitcoin Reality Check, for listening on a commute or a walk.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0G549ZPSW?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Audiobook</span>
-          </a>
         </footer>
       </article>
 
@@ -365,47 +343,25 @@
           <h2 class="book-title">
             88 Pages to Prosperity: 88 Pages to Prosperity | Humorous Habit Tracker | Luck &amp; Laughter Journal
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DV9TBYHS</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span></div>
         </div>
         <div class="book-body">
           A playful habit tracker and journal using humor to make consistency
           less intimidating and more sustainable.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DV9TBYHS?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Journal</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- 88 Pages to Prosperity (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Habits · Humor</div>
-          <h2 class="book-title">
-            88 Pages to Prosperity: 88 Pages to Prosperity | Humorous Habit Tracker | Luck &amp; Laughter Journal (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DV9WC8MQ</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DV9TBYHS?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DV9WC8MQ?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of 88 Pages to Prosperity, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DV9WC8MQ?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
         </footer>
       </article>
 
@@ -416,72 +372,30 @@
           <h2 class="book-title">
             A Short Guide to Understanding Bitcoins: From Digital Puzzle to Financial Possibility
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DTJHLY86</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span><span class="pill">Audiobook</span></div>
         </div>
         <div class="book-body">
           A concise, accessible explanation of Bitcoin for skeptical
           professionals who want clarity without jargon.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DTJHLY86?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- A Short Guide to Understanding Bitcoins (Audiobook) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Bitcoin · Fundamentals</div>
-          <h2 class="book-title">
-            A Short Guide to Understanding Bitcoins: From Digital Puzzle to Financial Possibility (Audiobook)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F3BHD2TW</span>
-            <span class="pill">Format: Audiobook</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DTJHLY86?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F9VL8H56?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F3BHD2TW?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Audiobook</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          The audiobook edition of A Short Guide to Understanding Bitcoins, for listening on a commute or a walk.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F3BHD2TW?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Audiobook</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- A Short Guide to Understanding Bitcoins (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Bitcoin · Fundamentals</div>
-          <h2 class="book-title">
-            A Short Guide to Understanding Bitcoins: From Digital Puzzle to Financial Possibility (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F9VL8H56</span>
-            <span class="pill">Format: Paperback</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of A Short Guide to Understanding Bitcoins, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F9VL8H56?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
         </footer>
       </article>
 
@@ -492,97 +406,35 @@
           <h2 class="book-title">
             Agency Unlocked: Strategies for Personal Empowerment in a Data-Driven Era
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F9LQFGZ7</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span><span class="pill">Hardcover</span><span class="pill">Audiobook</span></div>
         </div>
         <div class="book-body">
           A complete guide to digital wellness, breaking free from social media
           addiction, and reclaiming personal power in a single focused day.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F9LQFGZ7?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- Agency Unlocked (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Agency · Digital Wellness</div>
-          <h2 class="book-title">
-            Agency Unlocked: Strategies for Personal Empowerment in a Data-Driven Era (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F9PNTJ66</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F9LQFGZ7?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F9PNTJ66?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F9PVXL8L?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Hardcover</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0FHR7TMHY?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Audiobook</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of Agency Unlocked, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F9PNTJ66?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- Agency Unlocked (Hardcover) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Agency · Digital Wellness</div>
-          <h2 class="book-title">
-            Agency Unlocked: Strategies for Personal Empowerment in a Data-Driven Era (Hardcover)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F9PVXL8L</span>
-            <span class="pill">Format: Hardcover</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The hardcover edition of Agency Unlocked, made to last on a desk or shelf.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F9PVXL8L?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Hardcover</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- Agency Unlocked (Audiobook) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Agency · Digital Wellness</div>
-          <h2 class="book-title">
-            Agency Unlocked: Strategies for Personal Empowerment in a Data-Driven Era (Audiobook)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0FHR7TMHY</span>
-            <span class="pill">Format: Audiobook</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The audiobook edition of Agency Unlocked, for listening on a commute or a walk.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0FHR7TMHY?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Audiobook</span>
-          </a>
         </footer>
       </article>
 
@@ -593,47 +445,25 @@
           <h2 class="book-title">
             AI Income for Complete Beginners: The 15-Minute Method: Recession-Proof Your Future
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F45ZYJL3</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span></div>
         </div>
         <div class="book-body">
           A fast, repeatable method for creating sustainable AI-driven income,
           designed for readers without technical skills.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F45ZYJL3?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- AI Income for Complete Beginners (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">AI · Income</div>
-          <h2 class="book-title">
-            AI Income for Complete Beginners: The 15-Minute Method: Recession-Proof Your Future (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F4DNYR6V</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F45ZYJL3?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F4DNYR6V?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of AI Income for Complete Beginners, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F4DNYR6V?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
         </footer>
       </article>
 
@@ -644,48 +474,25 @@
           <h2 class="book-title">
             AI to ROI (2nd Edition): Agentic Frameworks, Patterns, and Engrams
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0G99W1QTW</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span></div>
         </div>
         <div class="book-body">
           A practical playbook for executives needing measurable outcomes from
           AI investments, focused on agentic patterns and deployment frameworks.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0G99W1QTW?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- AI to ROI (2nd Edition) Paperback -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">AI · Strategy · ROI</div>
-          <h2 class="book-title">
-            AI to ROI (2nd Edition): Agentic Frameworks, Patterns, and Engrams (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0GC6NS3MK</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0G99W1QTW?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0GC6NS3MK?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          A print edition built for leadership teams, workshops, and boardroom
-          discussion on AI-led transformation.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0GC6NS3MK?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
         </footer>
       </article>
 
@@ -696,48 +503,25 @@
           <h2 class="book-title">
             AI to ROI: Start Generating Measurable ROI in 90 Days
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0G32H9SQ8</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span></div>
         </div>
         <div class="book-body">
           A 90-day roadmap to launch, measure, and optimize AI initiatives
           connecting pilots to P&amp;L outcomes.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0G32H9SQ8?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- AI to ROI 90 Days (Print) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">AI · Implementation</div>
-          <h2 class="book-title">
-            AI to ROI: Start Generating Measurable ROI in 90 Days (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0G34FGT81</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0G32H9SQ8?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0G34FGT81?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          A print edition suited for team rollouts and executive workshops
-          focused on near-term AI wins.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0G34FGT81?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
         </footer>
       </article>
 
@@ -748,72 +532,30 @@
           <h2 class="book-title">
             Bitcoin Basics: Your Fun and Easy Guide to Digital Money
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DTGQQH1F</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span><span class="pill">Audiobook</span></div>
         </div>
         <div class="book-body">
           A friendly introduction to digital currency that assumes no technical
           background or prior knowledge.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DTGQQH1F?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- Bitcoin Basics (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Bitcoin · Intro</div>
-          <h2 class="book-title">
-            Bitcoin Basics: Your Fun and Easy Guide to Digital Money (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DTHWV2M2</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DTGQQH1F?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DTHWV2M2?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F8XYJJQ5?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Audiobook</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of Bitcoin Basics, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DTHWV2M2?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- Bitcoin Basics (Audiobook) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Bitcoin · Intro</div>
-          <h2 class="book-title">
-            Bitcoin Basics: Your Fun and Easy Guide to Digital Money (Audiobook)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F8XYJJQ5</span>
-            <span class="pill">Format: Audiobook</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The audiobook edition of Bitcoin Basics, for listening on a commute or a walk.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F8XYJJQ5?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Audiobook</span>
-          </a>
         </footer>
       </article>
 
@@ -824,72 +566,30 @@
           <h2 class="book-title">
             Content Marketing Guide: Going Back to Basics After the Demise of Tiktok
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DTM7MTQL</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span><span class="pill">Audiobook</span></div>
         </div>
         <div class="book-body">
           A blueprint for rebuilding content strategies on durable channels like
           email, search, and owned assets.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DTM7MTQL?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- Content Marketing Guide (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Content · Strategy</div>
-          <h2 class="book-title">
-            Content Marketing Guide: Going Back to Basics After the Demise of Tiktok (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DTPYW6VX</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DTM7MTQL?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DTPYW6VX?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F5QR7R3T?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Audiobook</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of Content Marketing Guide, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DTPYW6VX?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- Content Marketing Guide (Audiobook) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Content · Strategy</div>
-          <h2 class="book-title">
-            Content Marketing Guide: Going Back to Basics After the Demise of Tiktok (Audiobook)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F5QR7R3T</span>
-            <span class="pill">Format: Audiobook</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The audiobook edition of Content Marketing Guide, for listening on a commute or a walk.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F5QR7R3T?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Audiobook</span>
-          </a>
         </footer>
       </article>
 
@@ -900,47 +600,25 @@
           <h2 class="book-title">
             FAZED: 5 Secrets to Turn Every Setback Into Your Next Breakthrough (GenAI Prompts Included)
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F9MV88QN</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span></div>
         </div>
         <div class="book-body">
           A playbook for reframing setbacks into breakthroughs, with prompts to
           translate ideas into personalized action.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F9MV88QN?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- FAZED (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Resilience · GenAI</div>
-          <h2 class="book-title">
-            FAZED: 5 Secrets to Turn Every Setback Into Your Next Breakthrough (GenAI Prompts Included) (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F9PWKGDT</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F9MV88QN?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F9PWKGDT?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of FAZED, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F9PWKGDT?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
         </footer>
       </article>
 
@@ -951,72 +629,30 @@
           <h2 class="book-title">
             How Not to Buy in 2025: Break Free from Social Media Shopping Now
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DZ3RN7XM</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span><span class="pill">Audiobook</span></div>
         </div>
         <div class="book-body">
           A guide to unwinding social-media-driven purchasing habits and
           rebuilding intent-driven buying behavior.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DZ3RN7XM?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- How Not to Buy in 2025 (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Shopping · Behavior</div>
-          <h2 class="book-title">
-            How Not to Buy in 2025: Break Free from Social Media Shopping Now (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DZ6PHLS2</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DZ3RN7XM?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DZ6PHLS2?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F5BWCWNP?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Audiobook</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of How Not to Buy in 2025, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DZ6PHLS2?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- How Not to Buy in 2025 (Audiobook) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Shopping · Behavior</div>
-          <h2 class="book-title">
-            How Not to Buy in 2025: Break Free from Social Media Shopping Now (Audiobook)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F5BWCWNP</span>
-            <span class="pill">Format: Audiobook</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The audiobook edition of How Not to Buy in 2025, for listening on a commute or a walk.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F5BWCWNP?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Audiobook</span>
-          </a>
         </footer>
       </article>
 
@@ -1027,72 +663,30 @@
           <h2 class="book-title">
             Mindful Finances: Balancing Wealth and Well-being
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DTLKW5QM</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span><span class="pill">Audiobook</span></div>
         </div>
         <div class="book-body">
           A short guide to aligning financial decisions with health, values,
           and a more sustainable definition of prosperity.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DTLKW5QM?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- Mindful Finances (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Money · Well-being</div>
-          <h2 class="book-title">
-            Mindful Finances: Balancing Wealth and Well-being (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DTPQ3GFP</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DTLKW5QM?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DTPQ3GFP?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F68PZ6T2?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Audiobook</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of Mindful Finances, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DTPQ3GFP?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- Mindful Finances (Audiobook) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Money · Well-being</div>
-          <h2 class="book-title">
-            Mindful Finances: Balancing Wealth and Well-being (Audiobook)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F68PZ6T2</span>
-            <span class="pill">Format: Audiobook</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The audiobook edition of Mindful Finances, for listening on a commute or a walk.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F68PZ6T2?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Audiobook</span>
-          </a>
         </footer>
       </article>
 
@@ -1103,46 +697,24 @@
           <h2 class="book-title">
             Navigating AI Landscapes: Responsible Executive Blueprints
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0G1QLZ5BL</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span></div>
         </div>
         <div class="book-body">
           An executive blueprint for scaling AI responsibly as systems move from simple automation to goal-directed agents.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0G1QLZ5BL?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- Navigating AI Landscapes (Print) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">AI · Governance</div>
-          <h2 class="book-title">
-            Navigating AI Landscapes: Responsible Executive Blueprints (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0G1SL9SRD</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0G1QLZ5BL?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0G1SL9SRD?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          A print edition for leadership teams working through responsible AI adoption and governance.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0G1SL9SRD?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
         </footer>
       </article>
 
@@ -1153,47 +725,25 @@
           <h2 class="book-title">
             Pancakes &amp; More: 10 Easy American Breakfast Delights (Recipes, Healthy tips, How-to instructions)
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DTJD1X47</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span></div>
         </div>
         <div class="book-body">
           Ten simple American breakfast recipes with practical tips and
           how-to instructions for busy mornings.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DTJD1X47?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- Pancakes &amp; More (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Breakfast · Comfort</div>
-          <h2 class="book-title">
-            Pancakes &amp; More: 10 Easy American Breakfast Delights (Recipes, Healthy tips, How-to instructions) (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DTHWD4WJ</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DTJD1X47?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DTHWD4WJ?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of Pancakes &amp; More, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DTHWD4WJ?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
         </footer>
       </article>
 
@@ -1204,48 +754,25 @@
           <h2 class="book-title">
             Passive Income Made Easy: AI-Driven Content Creation for Beginners
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F498WL1P</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span></div>
         </div>
         <div class="book-body">
           A step-by-step blueprint to automate earnings and master AI content
           tools with no tech skills required.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F498WL1P?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- Passive Income Made Easy (Print) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">AI · Passive Income</div>
-          <h2 class="book-title">
-            Passive Income Made Easy: AI-Driven Content Creation for Beginners (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F4DP8RD3</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F498WL1P?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F4DP8RD3?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          A print edition built for readers who prefer to map out their passive
-          income systems on paper.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F4DP8RD3?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
         </footer>
       </article>
 
@@ -1256,72 +783,30 @@
           <h2 class="book-title">
             Reclaim Your Focus: A Digital Detox Guide for Beginners
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DTJ6PYPK</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span><span class="pill">Audiobook</span></div>
         </div>
         <div class="book-body">
           A starter manual for reclaiming attention from algorithmic feeds and
           building healthier tech habits.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DTJ6PYPK?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- Reclaim Your Focus (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Focus · Digital Detox</div>
-          <h2 class="book-title">
-            Reclaim Your Focus: A Digital Detox Guide for Beginners (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DTKBHKGP</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DTJ6PYPK?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DTKBHKGP?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F3FLVVS3?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Audiobook</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of Reclaim Your Focus, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DTKBHKGP?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- Reclaim Your Focus (Audiobook) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Focus · Digital Detox</div>
-          <h2 class="book-title">
-            Reclaim Your Focus: A Digital Detox Guide for Beginners (Audiobook)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F3FLVVS3</span>
-            <span class="pill">Format: Audiobook</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The audiobook edition of Reclaim Your Focus, for listening on a commute or a walk.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F3FLVVS3?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Audiobook</span>
-          </a>
         </footer>
       </article>
 
@@ -1332,22 +817,20 @@
           <h2 class="book-title">
             Stop Learning AI: How Executives Make Strategic Decisions Without Technical Knowledge
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0GPRVWBWH</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span></div>
         </div>
         <div class="book-body">
           A guide for executives to make effective AI decisions without needing
           deep technical expertise.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0GPRVWBWH?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0GPRVWBWH?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+          </div>
         </footer>
       </article>
 
@@ -1358,21 +841,19 @@
           <h2 class="book-title">
             The Six-Question AI Evaluation Framework: Turn Vendor Meetings Into Clear Go/No-Go Decisions in 60 Minutes (Stop Learning AI Book 2)
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0GPRJRYZW</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span></div>
         </div>
         <div class="book-body">
           Six non-technical questions that turn a vendor meeting into a documented go/no-go decision in sixty minutes, from reference checks to exit terms.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0GPRJRYZW?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0GPRJRYZW?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+          </div>
         </footer>
       </article>
 
@@ -1383,21 +864,19 @@
           <h2 class="book-title">
             Translating AI Claims: From Tech Speak to Business Reality in Three Steps (Stop Learning AI Book 3)
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0GPSX7G87</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span></div>
         </div>
         <div class="book-body">
           A three-step system for turning ambiguous technical AI briefings into clear business decisions about cost, time, and risk.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0GPSX7G87?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0GPSX7G87?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+          </div>
         </footer>
       </article>
 
@@ -1408,21 +887,19 @@
           <h2 class="book-title">
             Managing AI: How to Delegate When You&#39;re Not in the Room (Stop Learning AI Book 4)
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0GPSL778P</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span></div>
         </div>
         <div class="book-body">
           A delegation and governance protocol for running several AI initiatives at once without becoming the bottleneck.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0GPSL778P?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0GPSL778P?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+          </div>
         </footer>
       </article>
 
@@ -1433,21 +910,19 @@
           <h2 class="book-title">
             Setting AI Strategy: Vision and Direction for Non-Technical Leaders (Stop Learning AI Book 5)
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0GPZB7F84</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span></div>
         </div>
         <div class="book-body">
           A framework for building an AI strategy a board can act on, from an inventory of current initiatives to a two-sentence direction and a prioritized portfolio.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0GPZB7F84?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0GPZB7F84?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+          </div>
         </footer>
       </article>
 
@@ -1458,46 +933,24 @@
           <h2 class="book-title">
             Thank You For The Meal: Pancake+ Perfection: 50+ Breakfast Recipes to Satisfy Your Morning Cravings
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DYM1ZGXR</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span></div>
         </div>
         <div class="book-body">
           The follow-up to Pancakes &amp; More: more than fifty tested breakfast recipes, from classic pancakes to quick grab-and-go options.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DYM1ZGXR?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- Thank You For The Meal (Print) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Breakfast · Recipes</div>
-          <h2 class="book-title">
-            Thank You For The Meal: Pancake+ Perfection (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DYVBTHH9</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DYM1ZGXR?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DYVBTHH9?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          A print edition of the breakfast collection, made for the kitchen counter.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DYVBTHH9?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
         </footer>
       </article>
 
@@ -1508,99 +961,35 @@
           <h2 class="book-title">
             The 5-Minute Anxiety Hack: A Skeptic's Guide to Walking It Off
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DX8NHDW3</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span><span class="pill">Hardcover</span><span class="pill">Audiobook</span></div>
         </div>
         <div class="book-body">
           Short, science-backed walks and exercises to crush anxiety and build
           longer-term resilience.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DX8NHDW3?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- 5-Minute Anxiety Hack (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Anxiety · Movement</div>
-          <h2 class="book-title">
-            The 5-Minute Anxiety Hack (Paperback): Science-Backed Walks to Crush Anxiety
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DXC1224T</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DX8NHDW3?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DXC1224T?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0DXC1KY91?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Hardcover</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F5ZH677G?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Audiobook</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          A print version designed for daily use and note-taking over a
-          30-day plan and workbooks.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DXC1224T?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- 5-Minute Anxiety Hack (Hardcover) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Anxiety · Movement</div>
-          <h2 class="book-title">
-            The 5-Minute Anxiety Hack (Hardcover): Science-Backed Walks to Crush Anxiety
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0DXC1KY91</span>
-            <span class="pill">Format: Hardcover</span>
-          </div>
-        </div>
-        <div class="book-body">
-          A hardcover edition meant to live on desks and nightstands as a
-          long-term reference for anxiety relief.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0DXC1KY91?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Hardcover</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- The 5-Minute Anxiety Hack (Audiobook) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Anxiety · Movement</div>
-          <h2 class="book-title">
-            The 5-Minute Anxiety Hack: A Skeptic's Guide to Walking It Off (Audiobook)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F5ZH677G</span>
-            <span class="pill">Format: Audiobook</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The audiobook edition of The 5-Minute Anxiety Hack, for listening on a commute or a walk.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F5ZH677G?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Audiobook</span>
-          </a>
         </footer>
       </article>
 
@@ -1611,124 +1000,59 @@
           <h2 class="book-title">
             The Anatomy of Revolution: From Grassroots to Global Change: How Ideas, Movements, and People Shape the Course of History
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F277GC43</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span></div>
         </div>
         <div class="book-body">
           A leadership-focused exploration of how ideas and movements evolve
           into large-scale change.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F277GC43?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- The Anatomy of Revolution (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">History · Movements</div>
-          <h2 class="book-title">
-            The Anatomy of Revolution: From Grassroots to Global Change: How Ideas, Movements, and People Shape the Course of History (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F27XKWT9</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F277GC43?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F27XKWT9?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of The Anatomy of Revolution, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F27XKWT9?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
         </footer>
       </article>
 
-      <!-- GenAI Playbook (prompts edition Kindle) -->
+      <!-- The GenAI Playbook -->
       <article class="book-card">
         <div class="book-header">
           <div class="book-tagline">GenAI · Strategy</div>
           <h2 class="book-title">
-            The GenAI Playbook (Prompts Edition): Strategies for Sustainable AI Success
+            The GenAI Playbook: Strategies for Sustainable AI Success: How Companies and Individuals Are Using AI to Boost Productivity, Innovation, and Growth
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F2Z2TSPY</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span><span class="pill">Audiobook</span></div>
         </div>
         <div class="book-body">
-          A prompts-heavy edition with tactics and how-to instructions for
-          rapid implementation.
+          A field guide to using generative AI to boost productivity, innovation
+          and growth across teams.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F2Z2TSPY?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- GenAI Playbook (prompts edition print) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">GenAI · Strategy</div>
-          <h2 class="book-title">
-            The GenAI Playbook (Prompts Edition): Strategies for Sustainable AI Success (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F5WJP6HS</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F2Z2TSPY?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F5WJP6HS?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0FKNP54TY?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Audiobook</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          A print edition tailored for workshops and team training on GenAI
-          patterns and prompts.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F5WJP6HS?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- The GenAI Playbook (Audiobook) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">GenAI · Strategy</div>
-          <h2 class="book-title">
-            The GenAI Playbook (Prompts Edition): Strategies for Sustainable AI Success (Audiobook)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0FKNP54TY</span>
-            <span class="pill">Format: Audiobook</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The audiobook edition of The GenAI Playbook, for listening on a commute or a walk.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0FKNP54TY?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Audiobook</span>
-          </a>
         </footer>
       </article>
 
@@ -1739,73 +1063,30 @@
           <h2 class="book-title">
             The GenAI Prompt Playbook: Operational Excellence
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F1YTPR1C</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span><span class="pill">Audiobook</span></div>
         </div>
         <div class="book-body">
           Practical AI commands to optimize efficiency, quality, and resource
           utilization in daily operations.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F1YTPR1C?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- GenAI Prompt Playbook: Operational Excellence (Print) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">GenAI · Operations</div>
-          <h2 class="book-title">
-            The GenAI Prompt Playbook: Operational Excellence (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F43WZXJF</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F1YTPR1C?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F43WZXJF?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0FCVKWX4Q?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Audiobook</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          A print edition for operators who want AI embedded in day-to-day
-          workflow documentation.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F43WZXJF?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- The GenAI Prompt Playbook (Audiobook) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">GenAI · Operations</div>
-          <h2 class="book-title">
-            The GenAI Prompt Playbook: Operational Excellence (Audiobook)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0FCVKWX4Q</span>
-            <span class="pill">Format: Audiobook</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The audiobook edition of The GenAI Prompt Playbook, for listening on a commute or a walk.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0FCVKWX4Q?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Audiobook</span>
-          </a>
         </footer>
       </article>
 
@@ -1816,72 +1097,30 @@
           <h2 class="book-title">
             The GenAI Prompt Playbook: Revenue &amp; Growth
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F1VV8GQZ</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span><span class="pill">Audiobook</span></div>
         </div>
         <div class="book-body">
           Ready-to-use prompts to drive engagement, boost sales, and expand
           market reach with generative AI.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F1VV8GQZ?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- The GenAI Prompt Playbook (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">GenAI · Growth</div>
-          <h2 class="book-title">
-            The GenAI Prompt Playbook: Revenue &amp; Growth (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F43VV3BQ</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F1VV8GQZ?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F43VV3BQ?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F96LF9H3?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Audiobook</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of The GenAI Prompt Playbook, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F43VV3BQ?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- The GenAI Prompt Playbook (Audiobook) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">GenAI · Growth</div>
-          <h2 class="book-title">
-            The GenAI Prompt Playbook: Revenue &amp; Growth (Audiobook)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F96LF9H3</span>
-            <span class="pill">Format: Audiobook</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The audiobook edition of The GenAI Prompt Playbook, for listening on a commute or a walk.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F96LF9H3?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Audiobook</span>
-          </a>
         </footer>
       </article>
 
@@ -1892,73 +1131,30 @@
           <h2 class="book-title">
             THE GENAI PROMPT PLAYBOOK: RISK &amp; COMPLIANCE
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F28B7NYM</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span><span class="pill">Audiobook</span></div>
         </div>
         <div class="book-body">
           Prompts and workflows that strengthen security posture and regulatory
           compliance while scaling AI.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F28B7NYM?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- GenAI Prompt Playbook: Risk & Compliance (Print) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">GenAI · Governance</div>
-          <h2 class="book-title">
-            THE GENAI PROMPT PLAYBOOK: RISK &amp; COMPLIANCE (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F5QCH3M6</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F28B7NYM?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F5QCH3M6?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F8D8SNKM?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Audiobook</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          A print edition suited for compliance teams and governance councils
-          implementing GenAI safely.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F5QCH3M6?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- THE GENAI PROMPT PLAYBOOK (Audiobook) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">GenAI · Governance</div>
-          <h2 class="book-title">
-            THE GENAI PROMPT PLAYBOOK: RISK &amp; COMPLIANCE (Audiobook)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F8D8SNKM</span>
-            <span class="pill">Format: Audiobook</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The audiobook edition of THE GENAI PROMPT PLAYBOOK, for listening on a commute or a walk.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F8D8SNKM?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Audiobook</span>
-          </a>
         </footer>
       </article>
 
@@ -1969,72 +1165,30 @@
           <h2 class="book-title">
             THE GENAI PROMPT PLAYBOOK: STRATEGIC LEADERSHIP
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F286J8CX</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span><span class="pill">Audiobook</span></div>
         </div>
         <div class="book-body">
           Field-tested prompts that enhance executive decision-making and
           leadership effectiveness with GenAI.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F286J8CX?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- THE GENAI PROMPT PLAYBOOK (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">GenAI · Leadership</div>
-          <h2 class="book-title">
-            THE GENAI PROMPT PLAYBOOK: STRATEGIC LEADERSHIP (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F5QHCN8X</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F286J8CX?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F5QHCN8X?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F8PGTHFQ?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Audiobook</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of THE GENAI PROMPT PLAYBOOK, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F5QHCN8X?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- THE GENAI PROMPT PLAYBOOK (Audiobook) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">GenAI · Leadership</div>
-          <h2 class="book-title">
-            THE GENAI PROMPT PLAYBOOK: STRATEGIC LEADERSHIP (Audiobook)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F8PGTHFQ</span>
-            <span class="pill">Format: Audiobook</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The audiobook edition of THE GENAI PROMPT PLAYBOOK, for listening on a commute or a walk.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F8PGTHFQ?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Audiobook</span>
-          </a>
         </footer>
       </article>
 
@@ -2045,47 +1199,25 @@
           <h2 class="book-title">
             The Worst Book Ever: A Tale of Smart Machines, Dumb Mistakes, and the Joke of Intelligence
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0FF7GLPC6</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span></div>
         </div>
         <div class="book-body">
           A satirical look at AI culture, exploring how smart machines coexist
           with very human errors.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0FF7GLPC6?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- The Worst Book Ever (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Story · AI Culture</div>
-          <h2 class="book-title">
-            The Worst Book Ever: A Tale of Smart Machines, Dumb Mistakes, and the Joke of Intelligence (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0FFB7XJ33</span>
-            <span class="pill">Format: Paperback</span>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0FF7GLPC6?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0FFB7XJ33?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
           </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of The Worst Book Ever, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0FFB7XJ33?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
         </footer>
       </article>
 
@@ -2096,74 +1228,33 @@
           <h2 class="book-title">
             They'll Say Yes: Persuasion by Design
           </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F4NSQQR9</span>
-            <span class="pill">Format: Kindle</span>
-          </div>
+          <div class="book-meta"><span class="pill">Kindle</span><span class="pill">Paperback</span><span class="pill">Audiobook</span></div>
         </div>
         <div class="book-body">
           A step-by-step blueprint for crafting irresistible arguments and
           getting results in any conversation.
         </div>
         <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F4NSQQR9?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Kindle</span>
-          </a>
+          <div class="aff-stack">
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F4NSQQR9?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Kindle</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0F6LTMKHQ?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Paperback</span>
+            </a>
+            <a class="aff-link"
+               href="https://www.amazon.com/dp/B0FCTJD8HQ?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
+               target="_blank" rel="noopener noreferrer">
+              <span class="icon">↗</span><span>View Audiobook</span>
+            </a>
+          </div>
         </footer>
       </article>
 
-      <!-- They'll Say Yes (Paperback) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Persuasion · Design</div>
-          <h2 class="book-title">
-            They'll Say Yes: Persuasion by Design (Print)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0F6LTMKHQ</span>
-            <span class="pill">Format: Paperback</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The paperback edition of They'll Say Yes, for readers who prefer print.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0F6LTMKHQ?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Paperback</span>
-          </a>
-        </footer>
-      </article>
-
-      <!-- They'll Say Yes (Audiobook) -->
-      <article class="book-card">
-        <div class="book-header">
-          <div class="book-tagline">Persuasion · Design</div>
-          <h2 class="book-title">
-            They'll Say Yes: Persuasion by Design (Audiobook)
-          </h2>
-          <div class="book-meta">
-            <span class="pill">ASIN: B0FCTJD8HQ</span>
-            <span class="pill">Format: Audiobook</span>
-          </div>
-        </div>
-        <div class="book-body">
-          The audiobook edition of They'll Say Yes, for listening on a commute or a walk.
-        </div>
-        <footer class="book-footer">
-          <div class="roi-label">Amazon link with associate tag</div>
-          <a class="aff-link"
-             href="https://www.amazon.com/dp/B0FCTJD8HQ?&linkCode=ll2&tag=ifio42-20&linkId=b67e3c17a4eb0539b2ec9ec37ef410e4&language=en_US&ref_=as_li_ss_tl"
-             target="_blank" rel="noopener noreferrer">
-            <span class="icon">↗</span><span>View Audiobook</span>
-          </a>
-        </footer>
-      </article>
     </section>
   </div>
 </body>
