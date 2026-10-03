@@ -38,6 +38,21 @@ class RunEventLog:
             f.write(line + "\n")
 
 
+    def record_data(self, tribe_name: str, kind: str, data: dict, message: str = "") -> None:
+        """A structured record for analysis (2026-10-03): the same line shape as record(), including a "message" so anything
+        reading the log by that key keeps working, plus a "kind" and the data. Additive; nothing else writes this."""
+        line = json.dumps({
+            "cycle": self.current_cycle,
+            "tribe": tribe_name,
+            "message": message or f"[{kind}]",
+            "kind": kind,
+            "data": data,
+            "ts": time.time(),
+        })
+        with open(self.path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+
+
 class TribeHistory(list):
     """Drop-in replacement for Tribe.history's plain list -- every append still works
     exactly as before for the live in-browser chronicle (including the [-6:] slice

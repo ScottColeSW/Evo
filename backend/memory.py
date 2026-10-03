@@ -97,6 +97,16 @@ class TribeMemory:
         # top_taboos() can rank by real importance, not just insertion order. Plain
         # strings before 2026-09-13; see that method's own docstring for why.
         self.taboos: list[dict] = []
+        # Phase 0 of docs/PALIMPSEST-REFLECTIONS-DESIGN.md (2026-10-03): a read-only trace of the last reflection decision
+        # (method, whether it reinforced, how similar the nearest held reflection was, and which one), for the run log.
+        # Nothing here changes what remember()/remember_reflection() decide or return.
+        self.last_reflection_trace: dict | None = None
+
+    @staticmethod
+    def _trace(method: str, reinforced: bool, similarity: float | None, nearest: str | None, count: int) -> dict:
+        return {"method": method, "reinforced": reinforced,
+                "similarity": None if similarity is None else round(similarity, 3),
+                "nearest": None if nearest is None else nearest[:200], "reinforced_count": count}
 
     def _tokenize(self, text: str) -> set[str]:
         return set(self._WORD_RE.findall(text.lower())) - self._STOPWORDS
@@ -119,16 +129,21 @@ class TribeMemory:
         # each tied to their own real coordinates and were never meant to merge.
         tokens = self._tokenize(text)
         if kind == "reflection":
+            best = None  # (overlap, text) of the closest held reflection, for the trace only
             for entry in self.entries:
                 if entry.get("kind") != "reflection" or not entry["tokens"] or not tokens:
                     continue
                 overlap = len(tokens & entry["tokens"]) / len(tokens | entry["tokens"])
+                if best is None or overlap > best[0]:
+                    best = (overlap, entry["text"])
                 if overlap >= self.REFLECTION_REINFORCEMENT_OVERLAP_THRESHOLD:
                     entry["reinforced"] = entry.get("reinforced", 0) + 1
                     entry["cycle"] = cycle
                     entry["weight"] = max(entry["weight"], weight)
                     entry["ts"] = time.time()
+                    self.last_reflection_trace = self._trace("token", True, overlap, entry["text"], entry["reinforced"])
                     return entry
+            self.last_reflection_trace = self._trace("token", False, best[0] if best else None, best[1] if best else None, 0)
 
         entry = {
             "text": text,
@@ -170,16 +185,21 @@ class TribeMemory:
         if embedding is None:
             return self.remember(text, cycle, weight, kind="reflection")
 
+        best = None  # (similarity, text) of the closest held reflection, for the trace only
         for entry in self.entries:
             if entry.get("kind") != "reflection" or entry.get("embedding") is None:
                 continue
             similarity = _cosine_similarity(embedding, entry["embedding"])
+            if best is None or similarity > best[0]:
+                best = (similarity, entry["text"])
             if similarity >= self.REFLECTION_EMBEDDING_SIMILARITY_THRESHOLD:
                 entry["reinforced"] = entry.get("reinforced", 0) + 1
                 entry["cycle"] = cycle
                 entry["weight"] = max(entry["weight"], weight)
                 entry["ts"] = time.time()
+                self.last_reflection_trace = self._trace("embedding", True, similarity, entry["text"], entry["reinforced"])
                 return entry
+        self.last_reflection_trace = self._trace("embedding", False, best[0] if best else None, best[1] if best else None, 0)
 
         entry = {
             "text": text,

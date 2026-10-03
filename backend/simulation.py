@@ -2920,6 +2920,17 @@ class Simulation:
             # protection needed here.
             embedding = await self.client.embed(private_thoughts, model=config.REFLECTION_EMBEDDING_MODEL)
             stored_reflection = tribe.memory.remember_reflection(private_thoughts, self.cycle, 0.5, embedding)
+            # Phase 0 (docs/PALIMPSEST-REFLECTIONS-DESIGN.md): record the reinforcement decision so its real frequency can be
+            # measured. Logging only: best-effort, never allowed to affect or interrupt the night cycle.
+            try:
+                trace = tribe.memory.last_reflection_trace
+                if trace is not None:
+                    self.event_log.record_data(
+                        tribe.name, "reflection_memory", {**trace, "text": private_thoughts[:300]},
+                        message=f"[reflection memory] {'reinforced' if trace['reinforced'] else 'stored new'} "
+                                f"({trace['method']}, similarity {trace['similarity']})")
+            except Exception:  # noqa: BLE001
+                pass
             # "I like the flavor but it doesn't help them really does it" --
             # explicit request, 2026-09-18: give a genuinely recurring private
             # thought the same real behavioral pull chief_decree already has

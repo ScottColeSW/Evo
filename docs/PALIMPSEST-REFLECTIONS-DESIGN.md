@@ -94,8 +94,21 @@ per-turn path), so latency is not a concern.
 - Chiefs' real reflections are model-written, longer and messier than the test pairs.
 - Whoever resolves a conflict decides what the tribe believes; here that is the chief model, which can be wrong.
 
-## Decisions needed
+## Decisions
 
-1. Phase 0 (logging) first, as proposed, or go straight to phase 1?
-2. Judge off by default, or on when the extra is installed?
-3. Should an open conflict also nudge the emotional matrix in the first version, or wait?
+1. **Phase 0 (logging) first.** Decided 2026-10-03. Built the same day (see below).
+2. **Judge off by default.** Decided 2026-10-03; applies to phase 1.
+3. Open: should an open conflict also nudge the emotional matrix in the first version, or wait?
+
+## Phase 0, built (2026-10-03)
+
+Logging only; no decision changes. `TribeMemory.last_reflection_trace` records, for each reflection, the method (`token` or
+`embedding`), whether it reinforced, the similarity to the nearest held reflection, and that reflection's text.
+`RunEventLog.record_data` writes it, with the reflection text, as a `reflection_memory` line in `logs/run_*.jsonl` (the line
+keeps the usual `message`, so anything reading the log by that key still works). The night cycle writes it right after the
+decision, best-effort: a logging failure cannot affect or interrupt the cycle. Four new tests (the full suite is 1,544 passing),
+including one that runs the night cycle twice with a reversal and checks the log.
+
+**How to read it after a few runs:** the share of `reflection_memory` lines with `reinforced: true` whose text is a reversal of
+the `nearest` text is the flaw's real frequency; a similarity distribution on `reinforced: false` lines shows how close misses
+come to the threshold. That tells us whether phase 1 is worth its dependency.
