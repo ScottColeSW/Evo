@@ -1234,6 +1234,9 @@ class Tribe:
         # instead of a live distance check that a settled tribe -- home position
         # fixed -- could never re-satisfy once spawned far from its rival).
         self.discovered_rivals: set[str] = set()
+        # Phase 0 of docs/CONFLICT-MODE-DESIGN.md: {"kind", "outcome", "start", "until"} while a conflict logging window is open
+        # (see actions.note_conflict). Logging only; nothing reads it to decide anything.
+        self.conflict_watch: dict | None = None
         # See actions.py._spy -- one entry per rival ever successfully spied on,
         # overwritten (not appended) by a newer mission against the same rival.
         # Feeds Simulation._build_night_inventory so self-review has something real
@@ -4778,6 +4781,21 @@ class Simulation:
         if "CLEAR_TERRITORY" in available_actions:
             available_actions = ["CLEAR_TERRITORY"] + [a for a in available_actions if a != "CLEAR_TERRITORY"]
 
+        # Phase 0 of docs/CONFLICT-MODE-DESIGN.md: while a conflict logging window is open, record what this tribe is offered.
+        try:
+            watch = tribe.conflict_watch
+            if watch is not None and self.cycle <= watch["until"]:
+                from .actions import CONFLICT_ANSWER_ACTIONS
+                answering = [a for a in available_actions if a in CONFLICT_ANSWER_ACTIONS]
+                self.event_log.record_data(
+                    tribe.name, "conflict_turn",
+                    {"event": watch["kind"], "cycles_since": self.cycle - watch["start"], "offered": list(available_actions),
+                     "offered_count": len(available_actions), "answering": answering,
+                     "answering_share": round(len(answering) / max(1, len(available_actions)), 3)},
+                    message=f"[conflict] offered {len(available_actions)} actions, {len(answering)} answer the conflict")
+        except Exception:  # noqa: BLE001
+            pass
+
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         # Explicit request, 2026-09-18: surface a chief's own past private
         # reflection back into its live reasoning, not just the spectator's
@@ -5965,6 +5983,14 @@ class Simulation:
             tribe.cycles_since_relocate += 1
         tribe.last_broadcast = broadcast
         tribe.last_action = action
+        try:
+            watch = tribe.conflict_watch
+            if watch is not None and self.cycle <= watch["until"]:
+                self.event_log.record_data(tribe.name, "conflict_choice",
+                                           {"event": watch["kind"], "cycles_since": self.cycle - watch["start"], "action": action},
+                                           message=f"[conflict] chose {action}")
+        except Exception:  # noqa: BLE001
+            pass
         self._track_action_repetition(tribe, action)
         self.translation.record_broadcast(tribe.id, broadcast, action)
 

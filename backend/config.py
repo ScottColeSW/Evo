@@ -226,6 +226,12 @@ REFLECTION_EMBEDDING_MODEL = "nomic-embed-text"
 # into the belief it contradicts, and an entry with an open conflict cannot be promoted to a standing decree.
 REFLECTION_JUDGE = "off"
 
+# Phase 0 of docs/CONFLICT-MODE-DESIGN.md (2026-10-03). Logging only. After a combat outcome or a declaration of war, the next
+# CONFLICT_LOG_WINDOW_CYCLES cycles of that tribe are logged with the menu it was offered and what it chose, so the owner's
+# observation (too many easy, unrelated choices during conflict) can be measured before any mode is built. A new event does not
+# extend an open window (it is still logged as an event), the same rule the proposed mode would use.
+CONFLICT_LOG_WINDOW_CYCLES = 10
+
 # One-time narrative synthesis at game-over (Simulation._trigger_game_over), distinct
 # from the plain factual _generate_game_over_summary (no model call, just string
 # templating) -- an actual outside voice telling the whole game's story once, when

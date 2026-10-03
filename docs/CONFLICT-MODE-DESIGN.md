@@ -56,3 +56,24 @@ Every one is tied to a state of the world, not only a timer, and survival crises
 The whole idea rests on an observation from watching, not on measured data; phase 0 exists to measure it. A narrower menu is
 itself a strong nudge, so Evo's nudge-free principle needs a decision: this changes what is offered, not what a prompt says,
 the same way the existing locks do.
+
+## Phase 0, built (2026-10-03)
+
+Logging only; no outcome, menu or prompt changes. A conflict event is any combat outcome (every one goes through
+`actions._record_combat`: raids, raid defense, raider-camp strikes, expelling raiders, conquest, alliance backfire, ambush, home
+defense) or a declared war. Each writes a `conflict_event` line to `logs/run_*.jsonl` and opens a **10-cycle window**
+(`config.CONFLICT_LOG_WINDOW_CYCLES`) for that tribe. A further event inside an open window is logged but does not extend it.
+While a window is open:
+- `conflict_turn`: the menu the tribe was offered each cycle (`offered`, `offered_count`), which of those answer the conflict
+  or reach for peace (`answering`, `answering_share`; the list is `actions.CONFLICT_ANSWER_ACTIONS`), and `cycles_since` the event;
+- `conflict_choice`: the action it chose.
+
+Join `conflict_turn` and `conflict_choice` on tribe and cycle. Three new tests; the full suite is 1,560 passing.
+
+**How to read it after a run:** the average `answering_share` is how much of the offered menu was about the conflict; the
+`conflict_choice` actions that are in `CONFLICT_ANSWER_ACTIONS` against those that are not is the owner's observation (too many
+easy, unrelated choices) as a number. How often windows start, and how often a new event lands inside an open one, shows how
+sticky a mode with this window would be.
+
+One slip during the build, caught before it shipped: the first patch skipped the `DECLARE_WAR` hook silently because its anchor
+text appears twice. It now has its own anchor and a test.

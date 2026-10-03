@@ -2800,6 +2800,36 @@ def _record_trade(tribe, resource: str, given: int = 0, received: int = 0) -> No
         tribe.trade_received[resource] = tribe.trade_received.get(resource, 0) + received
 
 
+# The actions that answer a conflict or reach for peace (used only to describe what a logged menu offered; nothing reads it to
+# decide anything). Survival actions are not listed: they are not what the conflict-mode idea is about.
+CONFLICT_ANSWER_ACTIONS = frozenset({
+    "TRAIN_BATTALION", "BUILD_BARRACKS", "UPGRADE_BARRACKS", "CLEAR_TERRITORY", "STRIKE_RAIDER_CAMP",
+    "EXPEL_RAIDERS_FROM_TERRITORY", "RAID", "DECLARE_CONQUEST", "DECLARE_WAR", "DECLARE_ALLIANCE",
+    "SEND_TRADE_EMISSARY", "TRADE", "SPY", "SCOUT",
+})
+
+
+def note_conflict(tribe, kind: str, outcome: str | None = None) -> None:
+    """Phase 0 of docs/CONFLICT-MODE-DESIGN.md: log a conflict event and open a logging window for the tribe's next cycles.
+    Logging only and best-effort: it never changes an outcome and never raises."""
+    try:
+        log = getattr(tribe.history, "event_log", None)
+        cycle = log.current_cycle if log is not None else 0
+        window = getattr(tribe, "conflict_watch", None)
+        starts = window is None or cycle > window["until"]
+        if starts:
+            tribe.conflict_watch = {"kind": kind, "outcome": outcome, "start": cycle,
+                                    "until": cycle + config.CONFLICT_LOG_WINDOW_CYCLES}
+        if log is not None:
+            watch = tribe.conflict_watch
+            log.record_data(tribe.name, "conflict_event",
+                            {"kind": kind, "outcome": outcome, "starts_window": starts,
+                             "window_start": watch["start"], "window_until": watch["until"]},
+                            message=f"[conflict] {kind}" + (f" ({outcome})" if outcome else ""))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _record_combat(tribe, kind: str, outcome: str) -> None:
     """Shared by every real win/lose combat outcome (RAID, raid defense, home
     NPC raid defense, STRIKE_RAIDER_CAMP, expedition raider ambush) --
@@ -2809,6 +2839,7 @@ def _record_combat(tribe, kind: str, outcome: str) -> None:
     does."""
     record = tribe.combat_record.setdefault(kind, {"won": 0, "lost": 0})
     record[outcome] += 1
+    note_conflict(tribe, kind, outcome)
 
 
 def _execute_trade(sim, tribe, partner) -> str:
@@ -3202,6 +3233,8 @@ def _declare_war(sim, tribe, biome, target):
     tribe.stance_toward[rival.id] = "WAR"
     rival.stance_toward[tribe.id] = "WAR"
     sim.trauma.radiate_event_wave(rival.x, rival.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
+    note_conflict(tribe, "War Declared")
+    note_conflict(rival, "War Declared Against")
     return f"{tribe.name} declares war on {rival.name}"
 
 
