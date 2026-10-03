@@ -8032,6 +8032,27 @@ class Simulation:
         if excess <= 0:
             return
         lost = max(1, round(excess * config.POPULATION_PRESSURE_CULL_FRACTION))
+        # Phase 0 of docs/OVERCROWDING-REBELLION-DESIGN.md (2026-10-03): record each cull with each rival's room, so the real
+        # opportunity for migration or conflict can be counted before anything is built. Logging only, best-effort.
+        try:
+            rivals = []
+            for other in self.tribes.values():
+                if other.id == tribe.id or other.extinct:
+                    continue
+                other_target = round(_sustainable_population(other) * config.POPULATION_CARRYING_CAPACITY_TARGET_FRACTION)
+                rivals.append({
+                    "id": other.id, "name": other.name, "discovered": other.id in tribe.discovered_rivals,
+                    "population": other.population, "target": other_target, "room": other_target - other.population,
+                    "stance": tribe.stance_toward.get(other.id),
+                    "distance": round(math.hypot(other.x - tribe.x, other.y - tribe.y), 1),
+                })
+            self.event_log.record_data(
+                tribe.name, "overcrowding",
+                {"population": tribe.population, "target": target, "excess": excess, "lost": lost, "rivals": rivals},
+                message=f"[overcrowding] {tribe.population} over a target of {target}, {lost} lost; "
+                        + ", ".join(f"{r['name']} room {r['room']}" for r in rivals))
+        except Exception:  # noqa: BLE001 -- logging must never interrupt the simulation
+            pass
         tribe.history.append(
             f"the population is culled back to what the land can support -- {lost} lost to overcrowding"
         )

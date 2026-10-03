@@ -61,3 +61,11 @@ like the existing cull.
 - Populations in the last run were in the tens of thousands; a share of at most 52 per cycle is small against that, so effects on
   war may be slow. Phase 0 will show the real size.
 - One run; the numbers above describe it, not Evo in general.
+
+## Phase 0, built (2026-10-03)
+
+Logging only; the cull is unchanged. Each overcrowding cull now also writes an `overcrowding` line to `logs/run_*.jsonl` (with the
+usual `message`): the tribe's population, its target, the excess, the number lost, and for every other living tribe its
+id, whether it has been discovered, its population, its own target and its **room** (target minus population), the stance toward
+it, and the distance. Two new tests; the full suite is 1,557 passing. After a run, the share of `overcrowding` lines where a
+discovered rival has room (positive `room`) is how often a defection would have been possible.
