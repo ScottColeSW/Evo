@@ -52,3 +52,18 @@ what it is for, and it is deliberately last because it depends on steps 1 and 2 
 - Small models often ignore facts in a prompt (the owner's own finding), so Step 2 may change nothing; the journal still has value.
 - The consequence of a choice is rarely immediate or single-cause; deltas over a few cycles are a rough proxy.
 - One run's numbers (above) are suggestive, not a rate.
+
+## Step 1, built (2026-10-03)
+
+A decision journal, recording only. `config.DECISION_JOURNAL` is `"on"` by default (`"off"` records nothing, for a with and without
+comparison); `DECISION_JOURNAL_LENGTH` (60) caps how many entries each tribe keeps. For every chosen action, `_apply_turn` records
+the cycle, the action, what changed (stockpile and population deltas), any structure counter that changed, whether the tribe moved,
+the stock before, and the action's result note. Entries are kept on the tribe (`tribe.decision_journal`, newest last) and written to
+`logs/run_*.jsonl` as `decision` lines. A `conflict_event` line now also lists `followed_decisions`: the cycles and actions within
+the previous 3 cycles (`DECISION_JOURNAL_CONFLICT_LOOKBACK`), so a conflict can be traced back to what the tribe had just chosen.
+Nothing reads the journal into a prompt; that is Step 2, unbuilt, and not turned on by this. Three new tests; the full suite is
+1,563 passing.
+
+**How to read it after a run:** group `decision` lines by action and average the deltas to see what each choice actually produces
+(for example what GATHER_STONE yields in a run where it was chosen hundreds of times, and whether anything was built meanwhile);
+`followed_decisions` on conflict events shows which choices tend to precede a raid or ambush.

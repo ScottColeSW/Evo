@@ -2824,7 +2824,11 @@ def note_conflict(tribe, kind: str, outcome: str | None = None) -> None:
             watch = tribe.conflict_watch
             log.record_data(tribe.name, "conflict_event",
                             {"kind": kind, "outcome": outcome, "starts_window": starts,
-                             "window_start": watch["start"], "window_until": watch["until"]},
+                             "window_start": watch["start"], "window_until": watch["until"],
+                             "followed_decisions": [
+                                 {"cycle": d["cycle"], "action": d["action"]}
+                                 for d in getattr(tribe, "decision_journal", [])
+                                 if cycle - d["cycle"] <= config.DECISION_JOURNAL_CONFLICT_LOOKBACK]},
                             message=f"[conflict] {kind}" + (f" ({outcome})" if outcome else ""))
     except Exception:  # noqa: BLE001
         pass

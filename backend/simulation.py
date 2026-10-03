@@ -1237,6 +1237,9 @@ class Tribe:
         # Phase 0 of docs/CONFLICT-MODE-DESIGN.md: {"kind", "outcome", "start", "until"} while a conflict logging window is open
         # (see actions.note_conflict). Logging only; nothing reads it to decide anything.
         self.conflict_watch: dict | None = None
+        # Step 1 of docs/CHIEF-EVIDENCE-MEMORY-DESIGN.md: the last config.DECISION_JOURNAL_LENGTH entries, newest last; see
+        # Simulation._journal_before/_journal_after. Recorded only, never read into a prompt.
+        self.decision_journal: list[dict] = []
         # See actions.py._spy -- one entry per rival ever successfully spied on,
         # overwritten (not appended) by a newer mission against the same rival.
         # Feeds Simulation._build_night_inventory so self-review has something real
@@ -5851,6 +5854,35 @@ class Simulation:
                 "the Historian insists on a different approach for a while"
             )
 
+    @staticmethod
+    def _journal_snapshot(tribe: Tribe) -> dict:
+        """The numbers a decision can change: the four stockpiles, population, position, and every plain structure counter
+        or flag on the tribe (any int or bool attribute ending in _built, _upgrades or _count)."""
+        built = {name: value for name, value in vars(tribe).items()
+                 if name.endswith(("_built", "_upgrades", "_count")) and isinstance(value, (bool, int))}
+        return {"wood": tribe.wood, "stone": tribe.stone, "food": tribe.food, "water": tribe.water,
+                "population": tribe.population, "pos": (tribe.x, tribe.y), "built": built}
+
+    def _journal_record(self, tribe: Tribe, action: str, before: dict, note: str | None) -> None:
+        """Compare the tribe now with `before` and record what the choice changed. Best-effort: never raises."""
+        try:
+            after = self._journal_snapshot(tribe)
+            delta = {key: after[key] - before[key] for key in ("wood", "stone", "food", "water", "population")}
+            changed = {name: [before["built"].get(name), value] for name, value in after["built"].items()
+                       if before["built"].get(name) != value}
+            entry = {"cycle": self.cycle, "action": action, "delta": {k: v for k, v in delta.items() if v},
+                     "built": changed, "moved": before["pos"] != after["pos"],
+                     "stock_before": {k: before[k] for k in ("wood", "stone", "food", "water")},
+                     "population": after["population"], "note": (note or "")[:160] or None}
+            tribe.decision_journal.append(entry)
+            del tribe.decision_journal[:-config.DECISION_JOURNAL_LENGTH]
+            self.event_log.record_data(
+                tribe.name, "decision", entry,
+                message=f"[journal] {action}: " + (", ".join(f"{k} {v:+d}" for k, v in entry["delta"].items()) or "no change")
+                        + (f"; changed {', '.join(changed)}" if changed else ""))
+        except Exception:  # noqa: BLE001 -- the journal must never interrupt a turn
+            pass
+
     def _apply_turn(self, tribe: Tribe, intent: dict, latency_ms: float, ctx: dict) -> None:
         # Live report, 2026-09-15: Tribe 2 (qwen2.5:3b) dropped "visual_action"
         # from its own JSON on 84 of ~150 turns in one run, from a specific
@@ -5954,7 +5986,10 @@ class Simulation:
             tribe.last_target = None
         pos_before = (tribe.x, tribe.y)
 
+        journal_before = self._journal_snapshot(tribe) if config.DECISION_JOURNAL == "on" else None
         hazard_note = self._apply_action(tribe, action, ctx["biome"], target)
+        if journal_before is not None:
+            self._journal_record(tribe, action, journal_before, hazard_note if isinstance(hazard_note, str) else None)
 
         # Regression: this used to reset cycles_since_relocate to 0 purely because
         # RELOCATE was the *chosen action*, even when the tribe had already arrived

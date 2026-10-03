@@ -232,6 +232,15 @@ REFLECTION_JUDGE = "off"
 # extend an open window (it is still logged as an event), the same rule the proposed mode would use.
 CONFLICT_LOG_WINDOW_CYCLES = 10
 
+# Step 1 of docs/CHIEF-EVIDENCE-MEMORY-DESIGN.md (2026-10-03): a decision journal. For each chosen action, record what changed
+# (resources, population, anything built, any move) and keep the last DECISION_JOURNAL_LENGTH per tribe, also written to the run
+# log. "on" (the default) or "off" (nothing recorded, so a run can be compared with and without it). Nothing reads the journal
+# into a prompt yet: that is Step 2, off by default and not built. This changes no outcome and no menu.
+DECISION_JOURNAL = "on"
+DECISION_JOURNAL_LENGTH = 60
+# How many cycles back a conflict event looks for the decisions it followed (written into the conflict_event log line)
+DECISION_JOURNAL_CONFLICT_LOOKBACK = 3
+
 # One-time narrative synthesis at game-over (Simulation._trigger_game_over), distinct
 # from the plain factual _generate_game_over_summary (no model call, just string
 # templating) -- an actual outside voice telling the whole game's story once, when
