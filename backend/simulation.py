@@ -225,6 +225,23 @@ _EVERGREEN_GATHER_ACTIONS = frozenset({"GATHER_WOOD", "GATHER_STONE", "GATHER_WA
 # are never removed (survival), only demoted.
 
 
+def _material_gather_floor(tribe) -> int:
+    """How much wood or stone a tribe must hold before the material gathers stop being offered while a build is on offer.
+    Correction, 2026-10-03: the first version used config.MATERIAL_SURPLUS_THRESHOLD (50), which a test showed made the 2,500
+    wood and stone VESSEL unreachable: a departure-era tribe holding 1,200 was not offered the gathers (cheap builds are always
+    on its menu), so it could never save up. The floor is now the largest ordinary build cost in the config (computed, so a new
+    cost cannot make it stale), or the vessel's cost while a departure-era tribe has not built its vessel yet."""
+    floor = max(
+        (value for name, value in vars(config).items()
+         if isinstance(value, (int, float)) and not isinstance(value, bool)
+         and (name.endswith("_WOOD_COST") or name.endswith("_STONE_COST")) and not name.startswith("VESSEL_")),
+        default=config.MATERIAL_SURPLUS_THRESHOLD)
+    floor = max(floor, config.MATERIAL_SURPLUS_THRESHOLD)
+    if tribe.era == "departure_era" and not tribe.vessel_built:
+        floor = max(floor, config.VESSEL_WOOD_COST, config.VESSEL_STONE_COST)
+    return int(floor)
+
+
 def _is_construction_action(action: str) -> bool:
     """BUILD_*/UPGRADE_*/CONSTRUCT_WALL -- real structures and their upgrades,
     matching ACTION_REGISTRY's own naming convention exactly (confirmed no
@@ -4764,9 +4781,10 @@ class Simulation:
         if any(_is_construction_action(a) for a in available_actions):
             food_security = [a for a in available_actions if a in _FOOD_SECURITY_INVESTMENT_ACTIONS]
             construction = [a for a in available_actions if _is_construction_action(a)]
+            floor = _material_gather_floor(tribe)
             surplus_gathers = {
                 action for action, stock in (("GATHER_WOOD", tribe.wood), ("GATHER_STONE", tribe.stone))
-                if stock >= config.MATERIAL_SURPLUS_THRESHOLD
+                if stock >= floor
             }
             gathers = [a for a in available_actions if a in _EVERGREEN_GATHER_ACTIONS and a not in surplus_gathers]
             rest = [
