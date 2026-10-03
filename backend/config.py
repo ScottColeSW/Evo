@@ -2439,10 +2439,12 @@ TERRITORY_CLEARING_RADIUS_MARGIN = 5
 # 43) -- same "set above the widest real pairing" reasoning as the first
 # raise above, not a new principle. User's explicit choice over nudging the
 # two coordinates closer together instead.
-# Raised again, 2026-10-03 (65 to 90): a live run's tribes settled, relocated and ended up farther apart than 65, so they never
-# overheard each other and nothing linguistic could converge, even though the default spawns (up to 60 apart) were within
-# range. User's explicit choice over moving the tribes. The map is 100 by 100, so 90 covers nearly every pairing short of
-# opposite corners; the 2026-09-15 concern above (map-wide hearing gives away free information) is why it is not larger.
+# Raised again, 2026-10-03 (65 to 90), at the owner's request ("make the vocal calls have a larger radius", tribes not moved).
+# Correction the same day: the live run that prompted it had its tribes settle 38 tiles apart from cycle 50 (checked in
+# logs/board_history.db), already inside the old 65, so this raise did not change that run, and its language consensus stayed at
+# zero for another reason: each tribe broadcast its own invented tokens and neither copied the other's. The map is 100 by 100,
+# so 90 covers nearly every pairing short of opposite corners; the 2026-09-15 concern above (map-wide hearing gives away free
+# information) is why it is not larger. Revert to 65 if the extra range proves to give nothing.
 BROADCAST_HEARING_RADIUS = 90
 
 # Cross-tribe proximity awareness, independent of whether the other tribe has ever
