@@ -1980,7 +1980,11 @@ WASTE_TRAUMA_RADIUS = 5
 # now covers 4x as much capacity for the same cost, so a mature economy needs
 # far fewer of them to keep pace -- fewer turns spent on repeat construction,
 # not a change to what a single Warehouse costs.
-WAREHOUSE_STORAGE_BONUS_PER_BUILDING = 400
+# Raised 400 -> 450, 2026-10-03, at the owner's request: five Warehouses (WAREHOUSE_MAX_COUNT) now hold 300 + 5 * 450 = 2,550, enough
+# for the 2,500 wood and 2,500 stone the VESSEL costs without needing a Warehouse upgrade first (five at 400 held only 2,300, so the
+# departure ending needed an unnamed extra step). Each upgrade tier adds the same amount, so the curve stays continuous. A test
+# (tests/test_storage_meets_the_vessel.py) fails if the cap and the vessel cost drift apart again.
+WAREHOUSE_STORAGE_BONUS_PER_BUILDING = 450
 WAREHOUSE_WOOD_COST = 25
 WAREHOUSE_STONE_COST = 20
 # Explicit request, 2026-09-08: "we have to limit build_warehouse when they
