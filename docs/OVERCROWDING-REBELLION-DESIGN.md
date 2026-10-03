@@ -20,9 +20,17 @@ Overcrowding is the trigger for unrest, and unrest has consequences the minds di
 1. **Defection (first).** Part of each overcrowding cull becomes migrants instead of losses. Eligible destination: a rival that has
    been discovered and is itself under its own target with some margin (people move where the land supports them). The migrants
    leave one tribe and join the other, and both tribes' chronicles say so. If no rival is eligible, the cull is exactly as today.
-2. **Conflict (second).** If overcrowding persists and a discovered rival has room or surplus, unrest turns into a skirmish at the
-   rival's camp and a WAR stance, using the machinery Evo already has for a backfired alliance (`_alliance_backfire_skirmish`).
-   The chief can still sue for peace the usual way.
+2. **Conflict (second), with the chief keeping the choice.** Peace is the natural impulse, and circumstances can prevent or
+   override it. Evo already works this way for alliances: a starving tribe's overture backfires more often (up to a 60% chance,
+   `ALLIANCE_BACKFIRE_MAX_CHANCE`), tipping into a skirmish and a WAR stance (`_alliance_backfire_skirmish`). The rebellion extends
+   that same family: persistent overcrowding raises the backfire chance of a peace attempt and makes a failed one more likely to
+   end in war, so unrest can undo peace without anyone being forced into a fight. The chief still decides whether to seek peace,
+   trade, or raid. What the chief sees is facts, not instructions: its own chronicle lines ("a crowd of people left for Tribe 2",
+   "Tribe 2 has room"), the way other consequences already reach it.
+
+   An important gap: in the last run **neither tribe ever attempted peace either** (no `DECLARE_ALLIANCE`), so there is no peace
+   impulse yet for circumstances to override. The first thing to watch after defection exists is whether visible consequences
+   (people leaving) make the models reach for diplomacy at all.
 
 No prompt text changes. Evo is nudge-free by design, and its own tests showed specific nudges did not work; these are world rules,
 like the existing cull.
@@ -32,8 +40,8 @@ like the existing cull.
 1. **Order:** defection first, conflict after we see it work? (Recommended: yes.)
 2. **Defection share:** what part of the cull migrates, and how much room must the destination have? (Starting point to test, not a
    conclusion: half the cull; destination below 85% of its own target.)
-3. **Conflict trigger:** how many cycles of persistent overcrowding, and does the folk skirmish happen automatically or only with a
-   chance? Taking the war decision from the chief is a bigger step than defection, which is why it is second.
+3. **Conflict:** how much overcrowding adds to the backfire chance (a cap, by analogy with the existing 0.6), and whether it applies only
+   to a peace attempt or also to trade. No forced skirmish: the chief keeps agency, and circumstances only change the odds.
 4. **Optional link to language:** migrants could carry their tribe's invented vocabulary to the destination (see
    `docs/LANGUAGE-CONVERGENCE-OPTIONS.md`), which would make contact produce shared words without seeding anything.
 
