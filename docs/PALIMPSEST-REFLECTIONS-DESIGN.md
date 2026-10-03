@@ -139,3 +139,13 @@ the real judge on: 0 of 6 reversals and 0 of 6 refinements merged, 5 of 6 restat
 **Not verified:** a real run with the judge on. To try one: install Palimpsest with its NLI extra
 (`pip install -e <path to Palimpsest>[nli]`), set `REFLECTION_JUDGE=nli`, and play as usual; the `reflection_memory` lines in
 `logs/run_*.jsonl` then show what the judge decided.
+
+## Choosing the judge on the home page (2026-10-03)
+
+The picker has a checkbox, "Judge reflections with Palimpsest", off by default and remembered between visits. Begin Simulation sends
+`reflection_judge: "on"` or `"off"` with START (Try Again reuses the choice). The judge is built during spawn, so a missing install
+is known before play: the run shows a banner, **REFLECTION JUDGE ON**, or **REFLECTION JUDGE UNAVAILABLE: using the built-in
+rules**, and writes a `[reflection judge] on|unavailable` line to the run log, so a run that asked for the judge and silently
+did not get it cannot be mistaken for one that did. The setting and environment variable remain as the default when the page does
+not send a choice. Checked in a browser against the real page (default unchecked, the choice stored, START carrying the value,
+all three banner states); not checked with a live run.

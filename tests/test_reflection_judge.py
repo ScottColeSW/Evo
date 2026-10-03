@@ -101,3 +101,22 @@ async def test_the_judge_setting_is_off_by_default_and_builds_nothing(monkeypatc
     assert config.REFLECTION_JUDGE == "off"
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     assert await sim._reflection_judge() is None
+
+
+@run_async
+async def test_the_run_reports_whether_the_judge_is_on_off_or_unavailable():
+    import backend.reflection_judge as rj
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}], reflection_judge="nli")
+    with mock.patch.object(rj, "build_judge", return_value=None):
+        assert await sim._reflection_judge() is None
+    assert sim.snapshot()["reflection_judge"] == "unavailable"     # asked for, but not installed: say so, do not hide it
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}], reflection_judge="nli")
+    with mock.patch.object(rj, "build_judge", return_value=fake_judge):
+        assert await sim._reflection_judge() is fake_judge
+    assert sim.snapshot()["reflection_judge"] == "on"
+
+    sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}], reflection_judge="off")
+    assert await sim._reflection_judge() is None
+    assert sim.snapshot()["reflection_judge"] == "off"

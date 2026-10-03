@@ -2300,7 +2300,7 @@ def _spend_era_resource(tribe: "Tribe", resource: str, amount: int) -> None:
 class Simulation:
     def __init__(
         self, tribe_configs: list[dict], ollama_url: str = config.OLLAMA_URL,
-        immortality_cycles: int = 0,
+        immortality_cycles: int = 0, reflection_judge: str | None = None,
     ):
         if not tribe_configs:
             raise ValueError("Simulation needs at least one tribe")
@@ -2315,6 +2315,11 @@ class Simulation:
         # facing the same real pressure with the stakes quietly held back, not a tribe
         # that's been let off the hook and knows it.
         self.immortality_cycles = immortality_cycles
+        # "nli", "off", or None (None: use the REFLECTION_JUDGE environment variable, then config.REFLECTION_JUDGE). The home
+        # page's checkbox sends "nli" or "off". reflection_judge_status is what the run actually has: "off", "on", or
+        # "unavailable" (asked for, but the optional install is missing), shown to the spectator in the snapshot.
+        self.reflection_judge_mode = reflection_judge
+        self.reflection_judge_status = "off"
         self.client = OllamaClient(ollama_url)
         self.scheduler = ModelBatchScheduler(self.client)
         self.world = Landscape(config.GRID_SIZE)
@@ -2417,7 +2422,7 @@ class Simulation:
     @classmethod
     async def create(
         cls, tribe_configs: list[dict], ollama_url: str = config.OLLAMA_URL,
-        immortality_cycles: int = 0,
+        immortality_cycles: int = 0, reflection_judge: str | None = None,
     ) -> "Simulation":
         """Preferred constructor: runs a one-time VRAM sanity check per model before
         building the simulation, and drops a warning into a tribe's chronicle (rather
@@ -2429,7 +2434,9 @@ class Simulation:
             if not ok:
                 warnings[cfg["name"]] = warning
 
-        sim = cls(tribe_configs, ollama_url, immortality_cycles)
+        sim = cls(tribe_configs, ollama_url, immortality_cycles, reflection_judge)
+        # Build the judge now, during spawn (loading the NLI model takes seconds), so a missing install is known before play
+        await sim._reflection_judge()
         for tribe in sim.tribes.values():
             if tribe.name in warnings:
                 tribe.history.append(f"VRAM WARNING: {warnings[tribe.name]}")
@@ -2842,8 +2849,11 @@ class Simulation:
         if not hasattr(self, "_reflection_judge_cache"):
             import os
             from .reflection_judge import build_judge
-            mode = os.environ.get("REFLECTION_JUDGE", config.REFLECTION_JUDGE)
+            mode = self.reflection_judge_mode or os.environ.get("REFLECTION_JUDGE", config.REFLECTION_JUDGE)
             self._reflection_judge_cache = await asyncio.to_thread(build_judge, mode) if mode == "nli" else None
+            if mode == "nli":
+                self.reflection_judge_status = "on" if self._reflection_judge_cache is not None else "unavailable"
+                self.event_log.record("Run", f"[reflection judge] {self.reflection_judge_status}")
         return self._reflection_judge_cache
 
     async def _run_night_cycle(self, tribe: "Tribe") -> None:
@@ -3122,6 +3132,7 @@ class Simulation:
             "game_over_narrative": self.game_over_narrative,
             "paused": self.paused,
             "immortality_cycles": self.immortality_cycles,
+            "reflection_judge": getattr(self, "reflection_judge_status", "off"),
             "storm_cloud": {"x": self.storm_cloud["x"], "y": self.storm_cloud["y"]} if self.storm_cloud else None,
             "lightning_strike": list(self.lightning_strike) if self.lightning_strike else None,
             "recent_encounters": self.recent_encounters,
