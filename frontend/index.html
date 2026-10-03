@@ -43,6 +43,9 @@
   #judge-banner { padding: 6px 14px; background: #0f766e; color: #ccfbf1; font-weight: bold; border-radius: 4px; font-size: 11px; font-family: monospace; }
   #judge-banner.unavailable { background: #92400e; color: #fef3c7; }
   #judge-banner.hidden { display: none; }
+  #readback-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; color: #c7d2fe; max-width: 760px; }
+  #readback-banner { padding: 6px 14px; background: #1d4ed8; color: #dbeafe; font-weight: bold; border-radius: 4px; font-size: 11px; font-family: monospace; }
+  #readback-banner.hidden { display: none; }
   #day-banner { padding: 6px 14px; background: #1e293b; color: #cbd5e1; font-weight: bold; border-radius: 4px; font-size: 11px; font-family: monospace; }
   #btn-llm-console { background: #1e293b; color: #cbd5e1; padding: 8px 16px; font-size: 12px; margin-left: auto; }
   #btn-pause { background: #4338ca; color: white; padding: 8px 16px; font-size: 12px; }
@@ -368,6 +371,9 @@
   <div id="judge-row">
     <label><input type="checkbox" id="judge-toggle" /> Judge reflections with Palimpsest (a chief's contradicting thought is kept apart instead of merged into the belief it contradicts; needs the optional install, loads a small model on the CPU)</label>
   </div>
+  <div id="readback-row">
+    <label><input type="checkbox" id="readback-toggle" /> Show chiefs what their recent choices produced (a plain-fact line from the decision journal, for example a repeated choice and what it changed; off by default)</label>
+  </div>
   <div id="picker-controls">
     <button id="btn-add">+ Add Tribe</button>
     <button id="btn-start">Begin Simulation</button>
@@ -386,6 +392,7 @@
     <div id="day-banner">Day 1</div>
     <div id="immortal-banner" class="hidden"></div>
     <div id="judge-banner" class="hidden"></div>
+    <div id="readback-banner" class="hidden"></div>
     <button id="btn-icon-key">🗺️ KEY</button>
     <button id="btn-llm-console">🖥️ LLM CONSOLE</button>
     <button id="btn-pause">PAUSE</button>
@@ -818,9 +825,9 @@ document.getElementById("btn-add").addEventListener("click", async () => {
 // on every real start, including from Try Again itself.
 let lastRunConfig = null;
 
-function startSimulation(tribes, immortalCycles, reflectionJudge = false) {
+function startSimulation(tribes, immortalCycles, reflectionJudge = false, journalReadback = false) {
   if (tribes.length === 0) return;
-  lastRunConfig = { tribes, immortalCycles, reflectionJudge };
+  lastRunConfig = { tribes, immortalCycles, reflectionJudge, journalReadback };
 
   document.getElementById("picker").style.display = "none";
   document.getElementById("theater").classList.add("active");
@@ -852,7 +859,7 @@ function startSimulation(tribes, immortalCycles, reflectionJudge = false) {
     try { socket.close(); } catch (e) { /* already closing */ }
   }
   socket = new WebSocket(`ws://${location.host}/ws`);
-  socket.onopen = () => socket.send(JSON.stringify({ command: "START", tribes, immortality_cycles: immortalCycles, reflection_judge: reflectionJudge ? "on" : "off" }));
+  socket.onopen = () => socket.send(JSON.stringify({ command: "START", tribes, immortality_cycles: immortalCycles, reflection_judge: reflectionJudge ? "on" : "off", journal_readback: journalReadback ? "on" : "off" }));
   // Live report: "the map got moved into the lowest z-level, lower than a
   // layer of black" -- screenshots didn't help since nothing on screen had
   // changed, just what was on top. Root cause candidate: hideSpawnSplash()
@@ -939,7 +946,7 @@ document.getElementById("btn-start").addEventListener("click", () => {
   }));
   const immortalOn = document.getElementById("immortal-toggle").checked;
   const immortalCycles = immortalOn ? (parseInt(document.getElementById("immortal-cycles").value, 10) || 0) : 0;
-  startSimulation(tribes, immortalCycles, document.getElementById("judge-toggle").checked);
+  startSimulation(tribes, immortalCycles, document.getElementById("judge-toggle").checked, document.getElementById("readback-toggle").checked);
 });
 
 // The judge choice is remembered between visits (best-effort; storage can be blocked)
@@ -947,6 +954,13 @@ try {
   const judgeToggle = document.getElementById("judge-toggle");
   judgeToggle.checked = localStorage.getItem("evo-reflection-judge") === "on";
   judgeToggle.addEventListener("change", () => localStorage.setItem("evo-reflection-judge", judgeToggle.checked ? "on" : "off"));
+} catch (e) { /* no storage: the box simply starts unchecked */ }
+
+// The read-back choice is remembered too (best-effort)
+try {
+  const readbackToggle = document.getElementById("readback-toggle");
+  readbackToggle.checked = localStorage.getItem("evo-journal-readback") === "on";
+  readbackToggle.addEventListener("change", () => localStorage.setItem("evo-journal-readback", readbackToggle.checked ? "on" : "off"));
 } catch (e) { /* no storage: the box simply starts unchecked */ }
 
 /* ---------- Game-over splash: the end-of-run summary, shown once
@@ -1096,7 +1110,7 @@ document.getElementById("btn-return-to-summary").addEventListener("click", () =>
 
 document.getElementById("btn-try-again").addEventListener("click", () => {
   if (!lastRunConfig) return;
-  startSimulation(lastRunConfig.tribes, lastRunConfig.immortalCycles, lastRunConfig.reflectionJudge);
+  startSimulation(lastRunConfig.tribes, lastRunConfig.immortalCycles, lastRunConfig.reflectionJudge, lastRunConfig.journalReadback);
 });
 
 // The splash's own QUIT is the real exit: close the socket and reload to a clean
@@ -5120,6 +5134,14 @@ function updateSidebar(state) {
     judgeBanner.className = "unavailable";
   } else {
     judgeBanner.className = "hidden";
+  }
+
+  const readbackBanner = document.getElementById("readback-banner");
+  if (state.journal_readback === "on") {
+    readbackBanner.textContent = "JOURNAL READ-BACK ON";
+    readbackBanner.className = "";
+  } else {
+    readbackBanner.className = "hidden";
   }
 
   const immortalBanner = document.getElementById("immortal-banner");

@@ -67,3 +67,31 @@ Nothing reads the journal into a prompt; that is Step 2, unbuilt, and not turned
 **How to read it after a run:** group `decision` lines by action and average the deltas to see what each choice actually produces
 (for example what GATHER_STONE yields in a run where it was chosen hundreds of times, and whether anything was built meanwhile);
 `followed_decisions` on conflict events shows which choices tend to precede a raid or ambush.
+
+## Step 2, built (2026-10-03), off by default
+
+The decision journal can be read back to the Chief as plain facts. Switch: the home page's checkbox ("Show chiefs what their recent
+choices produced"), or `config.CHIEF_JOURNAL_READBACK` / the `JOURNAL_READBACK` environment variable. Off by default; when on, a
+**JOURNAL READ-BACK ON** banner shows, and every read-back is also written to the run log as a `journal_readback` line.
+
+Answers I chose to the open questions (starting points, all in `config.py`, easy to change):
+1. "What followed" is the stockpile and population changes of a choice, plus any structure counter that changed. (Conflict events
+   are linked separately, through `followed_decisions`.)
+2. At most two facts, only when they apply:
+   - a **repeated choice**: the same action picked at least 5 times in the last 10 choices, with what those picks changed in total
+     and whether anything was built. Example: `In your last 10 choices you picked GATHER_STONE 6 times: stone +600; nothing was built.`
+   - the **last high-stakes choice** (RAID, DECLARE_CONQUEST, DECLARE_WAR, STRIKE_RAIDER_CAMP, EXPEL_RAIDERS_FROM_TERRITORY) within
+     30 cycles, and what it changed. Example: `Your last RAID (cycle 25): population -8, food +40.`
+   Numbers only; a test checks the lines contain no "should", "must", "try", "consider" or "instead".
+3. Step 1 ran first (it is in your current run's successor, not that run).
+
+Also fixed in Step 1: the journal had counted `action_streak_count` and `hunt_deer_success_count` as structures, which would have made
+"nothing was built" wrong. It now counts only attributes ending in `_built` or `_upgrades`.
+
+Five new tests (the full suite is 1,568 passing). The home-page checkbox was checked statically (the elements and the request field
+are present and the page script's syntax is valid) but not exercised in a browser, because a second server would have unloaded the
+models of the run that was in progress.
+
+**How to run the comparison:** the same scenario twice, read-back off then on. Measure what is countable in the log: how often one
+action repeats (`decision` lines), and the share of conflict choices that answer the conflict (`conflict_choice`). If those do not
+move, the facts changed nothing, which is a result.

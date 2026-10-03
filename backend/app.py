@@ -158,6 +158,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                     session["sim"] = await Simulation.create(
                         tribe_configs, config.OLLAMA_URL, immortality_cycles,
                         {"on": "nli", "off": "off"}.get(judge_choice),
+                        data.get("journal_readback"),
                     )
                     # Explicit request, 2026-09-09: "a separate page that
                     # shows me... live, what we tell the llm, how it

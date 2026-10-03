@@ -3,7 +3,7 @@ import difflib
 import importlib
 import math
 import random
-from collections import deque
+from collections import Counter, deque
 
 from . import architect, city_layout, config, physics
 from .actions import (
@@ -2313,7 +2313,7 @@ def _spend_era_resource(tribe: "Tribe", resource: str, amount: int) -> None:
 class Simulation:
     def __init__(
         self, tribe_configs: list[dict], ollama_url: str = config.OLLAMA_URL,
-        immortality_cycles: int = 0, reflection_judge: str | None = None,
+        immortality_cycles: int = 0, reflection_judge: str | None = None, journal_readback: str | None = None,
     ):
         if not tribe_configs:
             raise ValueError("Simulation needs at least one tribe")
@@ -2333,6 +2333,10 @@ class Simulation:
         # "unavailable" (asked for, but the optional install is missing), shown to the spectator in the snapshot.
         self.reflection_judge_mode = reflection_judge
         self.reflection_judge_status = "off"
+        # Step 2 of docs/CHIEF-EVIDENCE-MEMORY-DESIGN.md: "on", "off", or None (None: the JOURNAL_READBACK environment variable,
+        # then config.CHIEF_JOURNAL_READBACK). The home page's checkbox sends "on" or "off".
+        import os as _os
+        self.journal_readback = (journal_readback or _os.environ.get("JOURNAL_READBACK", config.CHIEF_JOURNAL_READBACK)) == "on"
         self.client = OllamaClient(ollama_url)
         self.scheduler = ModelBatchScheduler(self.client)
         self.world = Landscape(config.GRID_SIZE)
@@ -2435,7 +2439,7 @@ class Simulation:
     @classmethod
     async def create(
         cls, tribe_configs: list[dict], ollama_url: str = config.OLLAMA_URL,
-        immortality_cycles: int = 0, reflection_judge: str | None = None,
+        immortality_cycles: int = 0, reflection_judge: str | None = None, journal_readback: str | None = None,
     ) -> "Simulation":
         """Preferred constructor: runs a one-time VRAM sanity check per model before
         building the simulation, and drops a warning into a tribe's chronicle (rather
@@ -2447,7 +2451,7 @@ class Simulation:
             if not ok:
                 warnings[cfg["name"]] = warning
 
-        sim = cls(tribe_configs, ollama_url, immortality_cycles, reflection_judge)
+        sim = cls(tribe_configs, ollama_url, immortality_cycles, reflection_judge, journal_readback)
         # Build the judge now, during spawn (loading the NLI model takes seconds), so a missing install is known before play
         await sim._reflection_judge()
         for tribe in sim.tribes.values():
@@ -3146,6 +3150,7 @@ class Simulation:
             "paused": self.paused,
             "immortality_cycles": self.immortality_cycles,
             "reflection_judge": getattr(self, "reflection_judge_status", "off"),
+            "journal_readback": "on" if getattr(self, "journal_readback", False) else "off",
             "storm_cloud": {"x": self.storm_cloud["x"], "y": self.storm_cloud["y"]} if self.storm_cloud else None,
             "lightning_strike": list(self.lightning_strike) if self.lightning_strike else None,
             "recent_encounters": self.recent_encounters,
@@ -4819,6 +4824,14 @@ class Simulation:
                 f"a private thought from cycle {t['cycle']} comes back to you: {t['text']}"
                 for t in recalled_thoughts
             ]
+        if getattr(self, "journal_readback", False):
+            try:
+                readback = self._journal_readback_lines(tribe)
+                visible_entities += readback
+                if readback:
+                    self.event_log.record_data(tribe.name, "journal_readback", {"lines": readback}, message="[journal read-back] " + " ".join(readback))
+            except Exception:  # noqa: BLE001 -- never interrupt a turn
+                pass
         if tribe.wall_commitment_active:
             visible_entities.append(
                 "The wall section already under construction has to be finished before anything else -- "
@@ -5857,11 +5870,46 @@ class Simulation:
     @staticmethod
     def _journal_snapshot(tribe: Tribe) -> dict:
         """The numbers a decision can change: the four stockpiles, population, position, and every plain structure counter
-        or flag on the tribe (any int or bool attribute ending in _built, _upgrades or _count)."""
+        or flag on the tribe (any int or bool attribute ending in _built or _upgrades; counters such as the action
+        streak change every turn and are not structures)."""
         built = {name: value for name, value in vars(tribe).items()
-                 if name.endswith(("_built", "_upgrades", "_count")) and isinstance(value, (bool, int))}
+                 if name.endswith(("_built", "_upgrades")) and isinstance(value, (bool, int))}
         return {"wood": tribe.wood, "stone": tribe.stone, "food": tribe.food, "water": tribe.water,
                 "population": tribe.population, "pos": (tribe.x, tribe.y), "built": built}
+
+    def _journal_readback_lines(self, tribe: Tribe) -> list[str]:
+        """Step 2 of docs/CHIEF-EVIDENCE-MEMORY-DESIGN.md: up to two plain facts from the decision journal, or none. Numbers only;
+        nothing in them tells the Chief what to do."""
+        journal = tribe.decision_journal
+        if not journal:
+            return []
+
+        def readable(name: str) -> str:
+            return name.replace("_", " ")
+
+        def changes(entries: list[dict]) -> str:
+            total: dict[str, int] = {}
+            for entry in entries:
+                for key, value in entry["delta"].items():
+                    total[key] = total.get(key, 0) + value
+            return ", ".join(f"{key} {value:+d}" for key, value in total.items()) or "no change in stockpiles or population"
+
+        lines = []
+        recent = journal[-config.JOURNAL_READBACK_WINDOW:]
+        counts = Counter(entry["action"] for entry in recent)
+        action, picks = counts.most_common(1)[0]
+        if picks >= config.JOURNAL_REPEAT_MIN:
+            made = sorted({readable(name) for entry in recent for name in entry["built"]})
+            lines.append(
+                f"In your last {len(recent)} choices you picked {action} {picks} times: "
+                f"{changes([e for e in recent if e['action'] == action])}; "
+                + (f"changed over those choices: {', '.join(made)}." if made else "nothing was built.")
+            )
+        for entry in reversed(journal):
+            if entry["action"] in config.JOURNAL_HIGH_STAKES_ACTIONS and self.cycle - entry["cycle"] <= config.JOURNAL_HIGH_STAKES_LOOKBACK:
+                lines.append(f"Your last {entry['action']} (cycle {entry['cycle']}): {changes([entry])}.")
+                break
+        return lines
 
     def _journal_record(self, tribe: Tribe, action: str, before: dict, note: str | None) -> None:
         """Compare the tribe now with `before` and record what the choice changed. Best-effort: never raises."""

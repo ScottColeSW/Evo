@@ -241,6 +241,19 @@ DECISION_JOURNAL_LENGTH = 60
 # How many cycles back a conflict event looks for the decisions it followed (written into the conflict_event log line)
 DECISION_JOURNAL_CONFLICT_LOOKBACK = 3
 
+# Step 2 of docs/CHIEF-EVIDENCE-MEMORY-DESIGN.md (2026-10-03): read the journal back to the Chief as plain facts. "off" (the
+# default) or "on"; the home page's checkbox and the JOURNAL_READBACK environment variable override it. When on, at most two
+# facts are added to the Chief's visible facts, only when they apply:
+#   - a repeated choice: the same action picked at least JOURNAL_REPEAT_MIN times in the last JOURNAL_READBACK_WINDOW choices,
+#     with what those picks changed in total and whether anything was built;
+#   - the last high-stakes choice (JOURNAL_HIGH_STAKES_ACTIONS) within JOURNAL_HIGH_STAKES_LOOKBACK cycles, and what it changed.
+# Numbers only. No advice, no "should". Evo's own finding is that specific nudges did not work, so this is for measuring.
+CHIEF_JOURNAL_READBACK = "off"
+JOURNAL_READBACK_WINDOW = 10
+JOURNAL_REPEAT_MIN = 5
+JOURNAL_HIGH_STAKES_LOOKBACK = 30
+JOURNAL_HIGH_STAKES_ACTIONS = frozenset({"RAID", "DECLARE_CONQUEST", "DECLARE_WAR", "STRIKE_RAIDER_CAMP", "EXPEL_RAIDERS_FROM_TERRITORY"})
+
 # One-time narrative synthesis at game-over (Simulation._trigger_game_over), distinct
 # from the plain factual _generate_game_over_summary (no model call, just string
 # templating) -- an actual outside voice telling the whole game's story once, when
