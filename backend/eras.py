@@ -101,7 +101,7 @@ ERAS: tuple[Era, ...] = (
     Era(
         key="cognitive_horizon",
         label="Cognitive Horizon",
-        requires_population=12,
+        requires_population=60,
         # Live-run correction (2026-09-02): "some later game options are coming up
         # too early... they don't even have food under control." No era, at any
         # tier, ever required food -- a tribe could clear every threshold here
@@ -161,7 +161,7 @@ ERAS: tuple[Era, ...] = (
         # tribe size and Well-Being (config.POPULATION_GROWTH_SCALE_DIVISOR/
         # _WELLBEING_FLOOR) instead of a flat +1/cycle -- raised 20 -> 50 without
         # the real-time cost that would have meant under the old flat rate.
-        requires_population=50,
+        requires_population=600,
         # Wood used to be spent on advancing (advancement_cost below) without ever
         # being required beforehand -- a tribe with 0 wood could still advance, it
         # just floored at 0 instead of actually paying the cost. Real requirement now,
@@ -193,7 +193,7 @@ ERAS: tuple[Era, ...] = (
     Era(
         key="monolithic_era",
         label="Monolithic Era",
-        requires_population=200,  # see tribal_synapse's own comment on the 2026-09-07 rescale
+        requires_population=2200,  # see tribal_synapse's own comment on the 2026-09-07 rescale
         # Fur (Tannery/Mine -- actions.py._build_tannery, world.
         # UNIQUE_RESOURCE_BY_BIOME) is the first requires_resources entry that
         # isn't a core Tribe attribute -- see simulation.py._era_resource_amount/
@@ -240,7 +240,7 @@ ERAS: tuple[Era, ...] = (
         # rename that changes nothing observable.
         key="object_creator_era",
         label="Dream Manifestation Era",
-        requires_population=800,  # see tribal_synapse's own comment on the 2026-09-07 rescale
+        requires_population=7500,  # see tribal_synapse's own comment on the 2026-09-07 rescale
         requires_resources={"water": 100, "stone": 100, "wood": 100, "Fur": 50},
         advancement_cost={"wood": 70, "stone": 70, "water": 70, "Fur": 35},
         unlocks_actions=("BUILD_DMM", "CREATE_ITEM", "CREATE_USEFUL_STRUCTURE"),
@@ -249,7 +249,7 @@ ERAS: tuple[Era, ...] = (
     Era(
         key="war_and_world_domination_era",
         label="War and World Domination",
-        requires_population=1500,  # see tribal_synapse's own comment on the 2026-09-07 rescale
+        requires_population=14000,  # see tribal_synapse's own comment on the 2026-09-07 rescale
         requires_resources={"water": 125, "stone": 125, "wood": 125, "Fur": 100},
         advancement_cost={"wood": 90, "stone": 90, "water": 90, "Fur": 70},
         unlocks_actions=("DECLARE_CONQUEST",),
@@ -272,7 +272,7 @@ ERAS: tuple[Era, ...] = (
     Era(
         key="departure_era",
         label="Beyond the Horizon",
-        requires_population=3000,  # untuned first guess -- roughly the same
+        requires_population=20000,  # untuned first guess -- roughly the same
                                     # escalation the 800->1500 jump already used
         requires_resources={"water": 150, "stone": 150, "wood": 150, "Fur": 120},
         advancement_cost={"wood": 110, "stone": 110, "water": 110, "Fur": 85},
@@ -356,3 +356,8 @@ def ordered_actions_through(current_key: str) -> list[str]:
                 seen.add(action)
                 ordered.append(action)
     return ordered
+
+# Population lines widened 2026-10-03 (60, 600, 2,200, 7,500, 14,000, 20,000; were 12, 50, 200, 800, 1,500, 3,000) so the eras last
+# longer: recorded tribes carried 5 to 9 times the required population when they advanced. Replaying 19 recorded tribes under these
+# lines gave median dwells of about 57, 71, 101, 80, 120 and 27 cycles. The top line stays near 20,000 because most tribes level
+# off around 27,000. config.ERA_MIN_CYCLES adds a floor that no jump in population can skip.

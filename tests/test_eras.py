@@ -80,12 +80,12 @@ def test_final_era_sits_at_a_real_concrete_population_threshold():
     # enforced hard cap. departure_era (added 2026-09-14, plan file
     # amber-drifting-tern.md) is now the final rung -- 3000 is an untuned first
     # guess, roughly the same escalation the 800->1500 jump already used.
-    assert ERAS[-1].requires_population == 3000
+    assert ERAS[-1].requires_population == 20000  # widened 2026-10-03 (was 3000); see eras.py's note
     # war_and_world_domination_era's own threshold (raised 80 -> 1500,
     # 2026-09-07, "much bigger populations going to war") stays a real fact
     # worth its own regression check, not just folded into "the final era."
     war_domination = next(e for e in ERAS if e.key == "war_and_world_domination_era")
-    assert war_domination.requires_population == 1500
+    assert war_domination.requires_population == 14000  # widened 2026-10-03 (was 1500); see eras.py's note
 
 
 def test_cognitive_horizon_is_the_agrarian_infrastructure_tier():

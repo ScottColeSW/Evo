@@ -3845,7 +3845,7 @@ def test_era_progress_fact_names_the_specific_shortfalls():
     request, _ctx = sim._prepare_turn(tribe)
 
     assert "To reach Tribal Synapse, still short on:" in request["prompt"]
-    assert "population 15/50" in request["prompt"]
+    assert "population 15/600" in request["prompt"]
     assert "water 10/40" in request["prompt"]
     assert "wood 5/40" in request["prompt"]
     assert "stone" not in request["prompt"].split("To reach Tribal Synapse, still short on:")[1].split(".")[0]
@@ -3854,7 +3854,7 @@ def test_era_progress_fact_names_the_specific_shortfalls():
 def test_era_progress_fact_absent_once_the_next_era_is_fully_met():
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
-    tribe.population = 20
+    tribe.population = 60
     tribe.water = 40
     tribe.stone = 40
     tribe.wood = 40
@@ -4051,12 +4051,12 @@ def test_era_gap_note_reflects_a_real_research_discount_not_the_raw_threshold():
     tribe.era = "cognitive_horizon"
     tribe.population = 15
     tribe.research_completed = 5  # 5 * 0.04 = 0.20 discount
-    discounted_population = round(50 * (1 - 5 * config.INNOVATION_ERA_DISCOUNT_PER_RESEARCH))
+    discounted_population = round(600 * (1 - 5 * config.INNOVATION_ERA_DISCOUNT_PER_RESEARCH))
 
     request, _ctx = sim._prepare_turn(tribe)
 
     assert f"population {tribe.population}/{discounted_population}" in request["prompt"]
-    assert f"population {tribe.population}/50" not in request["prompt"]
+    assert f"population {tribe.population}/600" not in request["prompt"]
 
 
 def test_era_gap_note_mentions_research_once_a_library_stands_and_more_would_help():
@@ -10440,12 +10440,14 @@ def test_era_advances_once_population_and_resources_are_met():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.era = "cognitive_horizon"  # one step below tribal_synapse
-    tribe.population = 50
+    tribe.population = 600
     tribe.water = 40
     tribe.stone = 40
     tribe.wood = 50
     tribe.food = 40
 
+    from backend import config
+    sim.cycle = config.ERA_MIN_CYCLES  # the era floor has passed
     sim._advance_era_if_ready(tribe)
 
     assert tribe.era == "tribal_synapse"
@@ -10459,12 +10461,14 @@ def test_era_advances_one_step_at_a_time_even_if_stats_clear_a_later_era_too():
     era's thresholds too doesn't let a tribe skip the one immediately ahead."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.population = 20
+    tribe.population = 600
     tribe.water = 40
     tribe.stone = 40
     tribe.wood = 50
     tribe.food = 40
 
+    from backend import config
+    sim.cycle = config.ERA_MIN_CYCLES  # the era floor has passed
     sim._advance_era_if_ready(tribe)
 
     assert tribe.era == "cognitive_horizon"
@@ -10485,9 +10489,11 @@ def test_completed_research_discounts_the_next_eras_threshold_and_cost():
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.era = "cognitive_horizon"
     tribe.research_completed = 5  # 20% discount
-    tribe.population = 40  # below the undiscounted 50, meets the discounted 40
+    tribe.population = 480  # below the undiscounted 600, meets the discounted 480
     tribe.water = tribe.stone = tribe.wood = tribe.food = 32  # below undiscounted 40, meets discounted 32
 
+    from backend import config
+    sim.cycle = config.ERA_MIN_CYCLES  # the era floor has passed
     sim._advance_era_if_ready(tribe)
 
     assert tribe.era == "tribal_synapse"
@@ -10509,9 +10515,11 @@ def test_research_discount_never_makes_advancement_free():
 
     assert config.INNOVATION_ERA_DISCOUNT_CAP < 1.0
     floor = 1 - config.INNOVATION_ERA_DISCOUNT_CAP
-    tribe.population = round(50 * floor)
+    tribe.population = round(600 * floor)
     tribe.water = tribe.stone = tribe.wood = tribe.food = round(40 * floor)
 
+    from backend import config
+    sim.cycle = config.ERA_MIN_CYCLES  # the era floor has passed
     sim._advance_era_if_ready(tribe)
 
     assert tribe.era == "tribal_synapse"  # the capped discount is still enough here
@@ -15458,12 +15466,14 @@ def test_reaching_monolithic_era_marks_city_founding_eligible_but_not_yet_founde
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     tribe.era = "tribal_synapse"
-    tribe.population = 200
+    tribe.population = 2200
     tribe.water = 65
     tribe.stone = 65
     tribe.wood = 65
     tribe.unique_resources["Fur"] = 20
 
+    from backend import config
+    sim.cycle = config.ERA_MIN_CYCLES  # the era floor has passed
     sim._advance_era_if_ready(tribe)
 
     assert tribe.era == "monolithic_era"

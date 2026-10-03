@@ -1251,6 +1251,9 @@ class Tribe:
         # instead of a live distance check that a settled tribe -- home position
         # fixed -- could never re-satisfy once spawned far from its rival).
         self.discovered_rivals: set[str] = set()
+        # The cycle this tribe entered its current era; config.ERA_MIN_CYCLES must pass before it can advance. 0 for a tribe present
+        # at the start; set to the current cycle when the era changes or a tribe is added later.
+        self.era_entered_cycle: int = 0
         # Phase 0 of docs/CONFLICT-MODE-DESIGN.md: {"kind", "outcome", "start", "until"} while a conflict logging window is open
         # (see actions.note_conflict). Logging only; nothing reads it to decide anything.
         self.conflict_watch: dict | None = None
@@ -8189,6 +8192,8 @@ class Simulation:
         nxt = next_era(tribe.era)
         if nxt is None:
             return
+        if self.cycle - tribe.era_entered_cycle < config.ERA_MIN_CYCLES:
+            return
         # RESEARCH's real payoff (actions.py._research/config.
         # INNOVATION_ERA_DISCOUNT_PER_RESEARCH): every completed research permanently
         # shaves a little off the next era's own thresholds and cost, capped so
@@ -8209,6 +8214,7 @@ class Simulation:
             discounted = round(amount * (1 - discount))
             _spend_era_resource(tribe, resource, discounted)
         tribe.era = nxt.key
+        tribe.era_entered_cycle = self.cycle
         tribe.history.append(nxt.announcement.format(tribe=tribe.name))
         if nxt.founds_city:
             # Live bug report: a tribe reached Monolithic Era and grew a full,
@@ -9493,6 +9499,7 @@ class Simulation:
         attacker.max_population = max(attacker.max_population, attacker.population)
         if era_index(defender.era) > era_index(attacker.era):
             attacker.era = defender.era
+            attacker.era_entered_cycle = self.cycle
         attacker.chief_name = ""
         attacker.chief_philosophy = ""
         attacker.chief_decree = ""

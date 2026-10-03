@@ -389,7 +389,7 @@ SITE_SEED_TYPES = ("lumber", "wildlife", "quarry", "mine", "landmark")
 # first-pass numbers past this point -- watch discovery rates in a few fresh
 # runs before treating these three as tuned.
 SITE_DENSITY_BY_TYPE = {
-    "lumber": (8, 18),
+    "lumber": (7, 15),   # was (8, 18): a few more Timber Groves for the wood gate, 2026-10-03 (about 40% more sites)
     "wildlife": (12, 26),
     "quarry": (9, 20),
     "mine": (7, 16),

@@ -237,6 +237,12 @@ CONFLICT_LOG_WINDOW_CYCLES = 10
 # log. "on" (the default) or "off" (nothing recorded, so a run can be compared with and without it). Nothing reads the journal
 # into a prompt yet: that is Step 2, off by default and not built. This changes no outcome and no menu.
 DECISION_JOURNAL = "on"
+
+# A tribe must live at least this many cycles in an era before the next one can open (2026-10-03, the owner's guide: "no less
+# than 50 cycles in any era"). Recorded runs showed the late eras flying by (median dwell 21, 20, then 10 cycles, the war era a
+# one-cycle pass-through in the war-ready scenario): population grows by sudden jumps and was 5 to 9 times past each threshold,
+# so thresholds alone cannot guarantee a dwell. Applies to ordinary advancement only; the research discount does not shorten it.
+ERA_MIN_CYCLES = 50
 DECISION_JOURNAL_LENGTH = 60
 # How many cycles back a conflict event looks for the decisions it followed (written into the conflict_event log line)
 DECISION_JOURNAL_CONFLICT_LOOKBACK = 3
