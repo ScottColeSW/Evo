@@ -149,3 +149,33 @@ rules**, and writes a `[reflection judge] on|unavailable` line to the run log, s
 did not get it cannot be mistaken for one that did. The setting and environment variable remain as the default when the page does
 not send a choice. Checked in a browser against the real page (default unchecked, the choice stored, START carrying the value,
 all three banner states); not checked with a live run.
+
+## First real run with the judge on (2026-10-03): what it showed
+
+One run, 2 tribes, 706 cycles, judge on, no errors or fallbacks. 45 reflections were judged: 20 new, 20 compatible
+("coexists"), 4 conflicts, 1 restatement reinforced. No decree was promoted.
+
+I then replayed the same 45 reflections through Evo's old rules (the embedding path the game uses by default):
+
+| | Merged into an earlier reflection | Reached the promotion threshold |
+|---|---|---|
+| Old token rule | 0 | no tribe |
+| Old embedding rule (cosine 0.75) | 5 | Tribe 1 (so one decree would have been promoted) |
+| Judge | 1 | none |
+
+Reading the actual texts: of the 5 old merges, 2 were fair restatements ("be cautious about expansion" said twice), 2 were loose
+(a flock and resources against a need for scouts; a lost counselor against being adrift), and 1 merged a worry about slow
+growth into "growth seems promising, but be cautious", a mild reversal. The judge's one merge was a fair restatement. Of its 4
+conflicts, 1 was a genuine shift ("expansion is a slow burn" then "expanding feels more urgent now") and 3 were contrasts of
+mood (a loss and "the future is brighter" ; a celebration and "the tribe is adrift") that are not contradictions: the same
+NLI over-reading of opposite tone that showed up in Aegis.
+
+What this does and does not show:
+- **The flaw is real but rare in this run:** the old embedding rule made 5 questionable-to-fair merges in 45, and one decree
+  would have rested on a merge that included a mild reversal. Reflections almost never recur, so reinforcement itself is rare.
+- **The judge is more conservative than the embedding rule** (1 merge against 5) and withheld the one decree. Its conflict flags
+  are mostly noise, but a conflict's only effect is to block promotion, so the cost is small.
+- **Real chief reflections are moods and plans, not propositional beliefs,** which is a poor fit for a contradiction judge.
+- One run, two tribes, 45 reflections, one judge reading by one reader: this is a description of one run, not a rate. The
+  design's stated question (is the flaw common enough to justify the dependency) has a first answer of "rare, not demonstrated
+  to matter for play".
