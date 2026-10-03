@@ -69,3 +69,23 @@ usual `message`): the tribe's population, its target, the excess, the number los
 id, whether it has been discovered, its population, its own target and its **room** (target minus population), the stance toward
 it, and the distance. Two new tests; the full suite is 1,557 passing. After a run, the share of `overcrowding` lines where a
 discovered rival has room (positive `room`) is how often a defection would have been possible.
+
+## What the second real run showed (2026-10-03): the trigger mostly does not fire
+
+A 526-cycle run, journal and logging in place, stopped by the owner because "population control isn't happening". Both tribes were in
+the war era from cycle 521 only (5 cycles of play there). The overcrowding log shows:
+
+- **6 culls in the whole run**, each losing 1 to 3 people. At cycle 498 Tribe 2 had a population of 38,280 against a target of
+  38,270 (excess 10); Tribe 1 had 34,725 against 34,710. The previous run had 181 culls from cycle 506; this one barely culled.
+- **Population is not being controlled by culling; it is pinned at the carrying capacity.** Growth tapers to zero as a tribe
+  approaches its sustainable population (`_grow_population`), so a tribe settles on the line. The cull is only a backstop for
+  jumps, such as a conquest absorbing a rival's people (its own docstring says so).
+- **Both tribes were at capacity, so there was nowhere to go.** At the first cull, the rival's room was +39 for one tribe and -65
+  for the other, out of populations near 35,000 to 40,000. A defection stream would move almost nobody.
+
+What this changes: **a persistent excess is not what overcrowding looks like in Evo; being full is.** The phase 0 logging captures
+only culls, so it sees almost none of the real condition. If overcrowding is to trigger rebellion, the trigger has to be "at or near
+capacity for a sustained stretch" (a ratio of population to target, held for N cycles), not "culled". That needs the ratio logged
+every cycle (it is cheap: population, target, and each rival's room), and it makes the defection idea weaker than it looked, since
+two full tribes have no room for migrants. The conflict path (full tribes with nowhere to expand and no one to absorb) is the part
+the data supports; the defection path needs one tribe well under its line, which this run did not have.
