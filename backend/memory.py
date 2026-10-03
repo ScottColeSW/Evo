@@ -101,6 +101,9 @@ class TribeMemory:
         # (method, whether it reinforced, how similar the nearest held reflection was, and which one), for the run log.
         # Nothing here changes what remember()/remember_reflection() decide or return.
         self.last_reflection_trace: dict | None = None
+        # Phase 1 (2026-10-03): an optional judge, (new_text, held) -> {"relation", "related_id", "reason"}, set by the Simulation
+        # only when config.REFLECTION_JUDGE is on. None (the default) leaves every method below exactly as it was.
+        self.judge = None
 
     @staticmethod
     def _trace(method: str, reinforced: bool, similarity: float | None, nearest: str | None, count: int) -> dict:
@@ -182,6 +185,11 @@ class TribeMemory:
         past reflection into a live turn -- stays on token overlap; only
         reinforcement detection is upgraded here, not the per-turn hot path,
         see config.REFLECTION_EMBEDDING_MODEL's own comment)."""
+        if self.judge is not None:
+            try:
+                return self._remember_reflection_judged(text, cycle, weight, embedding)
+            except Exception:  # noqa: BLE001 -- a failing judge degrades to the rules below, never leaves a reflection unstored
+                pass
         if embedding is None:
             return self.remember(text, cycle, weight, kind="reflection")
 
@@ -215,6 +223,61 @@ class TribeMemory:
         if len(self.entries) > self.max_episodes * 2:
             self.consolidate()
         return entry
+
+    @staticmethod
+    def _ensure_id(entry: dict) -> str:
+        if "id" not in entry:
+            entry["id"] = f"r{id(entry):x}{int(entry['ts'] * 1000) % 100000}"
+            entry.setdefault("conflicts_with", [])
+        return entry["id"]
+
+    def _judged_neighbors(self, text: str, embedding: list[float] | None, limit: int = 6) -> list[dict]:
+        held = [e for e in self.entries if e.get("kind") == "reflection"]
+        tokens = self._tokenize(text)
+
+        def closeness(e):
+            if embedding is not None and e.get("embedding") is not None:
+                return _cosine_similarity(embedding, e["embedding"])
+            return len(tokens & e["tokens"]) / len(tokens | e["tokens"]) if tokens and e["tokens"] else 0.0
+        return sorted(held, key=closeness, reverse=True)[:limit]
+
+    def _remember_reflection_judged(self, text: str, cycle: int, weight: float, embedding: list[float] | None) -> dict:
+        """Phase 1: Palimpsest's judge decides what a new reflection is to the held ones. A restatement reinforces as before; a
+        contradiction is stored on its own and linked to the belief it contradicts (neither is reinforced); anything else is
+        stored on its own. Nothing is resolved here: the memory only keeps both visible."""
+        neighbors = self._judged_neighbors(text, embedding)
+        related = None
+        verdict = {"relation": "new", "related_id": None, "reason": "no reflection held yet"}
+        if neighbors:
+            held = [{"id": self._ensure_id(e), "text": e["text"]} for e in neighbors]
+            verdict = self.judge(text, held)
+            related = next((e for e in neighbors if e.get("id") == verdict.get("related_id")), None)
+        relation = verdict.get("relation")
+        trace = {"method": "judge", "relation": relation, "reason": str(verdict.get("reason"))[:200], "similarity": None,
+                 "nearest": None if related is None else related["text"][:200]}
+        if relation == "reinforces" and related is not None:
+            related["reinforced"] = related.get("reinforced", 0) + 1
+            related["cycle"] = cycle
+            related["weight"] = max(related["weight"], weight)
+            related["ts"] = time.time()
+            self.last_reflection_trace = {**trace, "reinforced": True, "reinforced_count": related["reinforced"]}
+            return related
+        entry = {"text": text, "tokens": self._tokenize(text), "cycle": cycle, "weight": weight, "ts": time.time(),
+                 "kind": "reflection", "reinforced": 0, "embedding": embedding, "conflicts_with": []}
+        self._ensure_id(entry)
+        if relation == "collides" and related is not None:
+            entry["conflicts_with"].append(related["id"])
+            related.setdefault("conflicts_with", []).append(entry["id"])
+        self.entries.append(entry)
+        self.last_reflection_trace = {**trace, "reinforced": False, "reinforced_count": 0}
+        if len(self.entries) > self.max_episodes * 2:
+            self.consolidate()
+        return entry
+
+    def open_conflicts(self, entry: dict) -> list[dict]:
+        """Held entries that this one is in open disagreement with (empty when no judge has run, so promotion is unchanged)."""
+        ids = set(entry.get("conflicts_with") or [])
+        return [e for e in self.entries if e.get("id") in ids]
 
     def recall(self, query: str, top_k: int = 2, kind: str | None = None) -> list[dict]:
         """Returns up to `top_k` past entries that actually share vocabulary with

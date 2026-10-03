@@ -218,6 +218,13 @@ REFLECTION_STABILIZED_REINFORCEMENT_COUNT = 2
 # rather than here -- memory.py stays deliberately free of any config.py
 # import, same as every constant it already owns.
 REFLECTION_EMBEDDING_MODEL = "nomic-embed-text"
+# Phase 1 of docs/PALIMPSEST-REFLECTIONS-DESIGN.md (2026-10-03). "off" (the default: reflections reinforce exactly as before) or
+# "nli": Palimpsest's judge decides whether a new reflection restates, contradicts, or is separate from a held one. Needs the
+# optional install (pip install -e <path to Palimpsest>[nli]); the REFLECTION_JUDGE environment variable overrides this value.
+# If the judge is unavailable or errors, reflections fall back to today's behavior. It adds no prompt text and touches no
+# emotional or other state: the only effects are that a contradicting reflection is stored on its own instead of being merged
+# into the belief it contradicts, and an entry with an open conflict cannot be promoted to a standing decree.
+REFLECTION_JUDGE = "off"
 
 # One-time narrative synthesis at game-over (Simulation._trigger_game_over), distinct
 # from the plain factual _generate_game_over_summary (no model call, just string

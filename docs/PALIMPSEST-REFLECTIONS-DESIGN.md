@@ -98,7 +98,11 @@ per-turn path), so latency is not a concern.
 
 1. **Phase 0 (logging) first.** Decided 2026-10-03. Built the same day (see below).
 2. **Judge off by default.** Decided 2026-10-03; applies to phase 1.
-3. Open: should an open conflict also nudge the emotional matrix in the first version, or wait?
+3. **No coupling to the emotional matrix, and no new prompt text.** Decided 2026-10-03. Evo is deliberately nudge-free and its own
+   tests showed specific nudges did not work. The emotional matrix is driven by physical events at map locations (fires, raids,
+   celebrations, era changes), never by a chief's thoughts, so there is no natural link, and wiring one would be an invented
+   nudge. The judge's only effects are that a contradicting reflection is stored on its own instead of being merged, and that
+   a belief in open conflict is not promoted to a standing decree.
 
 ## Phase 0, built (2026-10-03)
 
@@ -112,3 +116,26 @@ including one that runs the night cycle twice with a reversal and checks the log
 **How to read it after a few runs:** the share of `reflection_memory` lines with `reinforced: true` whose text is a reversal of
 the `nearest` text is the flaw's real frequency; a similarity distribution on `reinforced: false` lines shows how close misses
 come to the threshold. That tells us whether phase 1 is worth its dependency.
+
+## Phase 1, built (2026-10-03), off by default
+
+`config.REFLECTION_JUDGE = "off"` (the `REFLECTION_JUDGE` environment variable overrides it; `"nli"` turns it on). With it off,
+nothing changes: the full suite passes unchanged. With `"nli"`, `backend/reflection_judge.py` builds Palimpsest's hybrid judge
+(an NLI model plus the embedding model Evo already uses, CPU only, no language model) once per simulation, off the event loop.
+`TribeMemory.remember_reflection` then asks it what the new reflection is to the held ones:
+
+- **restatement:** reinforce, as today.
+- **contradiction:** stored as its own entry, linked both ways in `conflicts_with`, neither reinforced.
+- **anything else:** stored as its own entry.
+
+The night cycle promotes a reinforced belief to a standing decree only if it has no open conflict. If the judge is missing or
+errors, reflections use the built-in rules. There is no resolution step: a conflicted belief stays blocked until the other entry
+is pruned by ordinary consolidation (a limitation: a chief who truly changes their mind and holds the new view must wait for the
+old entry to age out). The judge's decision, relation and reason are written to the run log (the phase 0 line).
+
+**Verified:** seven new tests (a fake judge, so they check Evo's wiring only: storage, conflicts, promotion, fallback, off by
+default), the full suite at 1,551 passing, and the 24 pairs from `bench/integration/` run through Evo's real `TribeMemory` with
+the real judge on: 0 of 6 reversals and 0 of 6 refinements merged, 5 of 6 restatements reinforced, 0 of 6 unrelated.
+**Not verified:** a real run with the judge on. To try one: install Palimpsest with its NLI extra
+(`pip install -e <path to Palimpsest>[nli]`), set `REFLECTION_JUDGE=nli`, and play as usual; the `reflection_memory` lines in
+`logs/run_*.jsonl` then show what the judge decided.

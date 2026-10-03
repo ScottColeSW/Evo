@@ -2836,6 +2836,16 @@ class Simulation:
             )
         return " ".join(lines)
 
+    async def _reflection_judge(self):
+        """The Palimpsest reflection judge, or None (the default). Built once per simulation, off the event loop (loading the NLI
+        model takes seconds), and only when config.REFLECTION_JUDGE (or the REFLECTION_JUDGE environment variable) is "nli"."""
+        if not hasattr(self, "_reflection_judge_cache"):
+            import os
+            from .reflection_judge import build_judge
+            mode = os.environ.get("REFLECTION_JUDGE", config.REFLECTION_JUDGE)
+            self._reflection_judge_cache = await asyncio.to_thread(build_judge, mode) if mode == "nli" else None
+        return self._reflection_judge_cache
+
     async def _run_night_cycle(self, tribe: "Tribe") -> None:
         """The "night cycle" (backend/reflection.py): the tribe reviews its own recent
         history and decides for itself whether its guiding philosophy should change.
@@ -2919,7 +2929,13 @@ class Simulation:
             # token-overlap path, exactly today's behavior -- no extra
             # protection needed here.
             embedding = await self.client.embed(private_thoughts, model=config.REFLECTION_EMBEDDING_MODEL)
-            stored_reflection = tribe.memory.remember_reflection(private_thoughts, self.cycle, 0.5, embedding)
+            judge = await self._reflection_judge()
+            tribe.memory.judge = judge
+            if judge is not None:
+                # The NLI judge is synchronous CPU work (about 0.4 s); keep it off the event loop
+                stored_reflection = await asyncio.to_thread(tribe.memory.remember_reflection, private_thoughts, self.cycle, 0.5, embedding)
+            else:
+                stored_reflection = tribe.memory.remember_reflection(private_thoughts, self.cycle, 0.5, embedding)
             # Phase 0 (docs/PALIMPSEST-REFLECTIONS-DESIGN.md): record the reinforcement decision so its real frequency can be
             # measured. Logging only: best-effort, never allowed to affect or interrupt the night cycle.
             try:
@@ -2942,6 +2958,7 @@ class Simulation:
             if (
                 stored_reflection["reinforced"] >= config.REFLECTION_STABILIZED_REINFORCEMENT_COUNT
                 and not tribe.chief_decree
+                and not tribe.memory.open_conflicts(stored_reflection)   # a belief in open disagreement is not promoted
             ):
                 tribe.chief_decree = stored_reflection["text"][:200]
                 tribe.history.append(
