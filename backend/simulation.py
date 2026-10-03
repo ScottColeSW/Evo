@@ -216,6 +216,13 @@ SURVIVAL_CRISIS_ACTIONS = {
 # BUILD_LONG_HOUSE's own cost -- and spent 78 straight cycles alternating
 # these four instead, never building anything past its starting Town Hall.
 _EVERGREEN_GATHER_ACTIONS = frozenset({"GATHER_WOOD", "GATHER_STONE", "GATHER_WATER", "GATHER_FOOD"})
+# Correction, 2026-10-03: the 2026-09-17 request above was "when they have enough and qualify for a build, it should be the
+# overriding choice, pushing gathering actions down", but the implementation only demoted the gathers to the back of the menu,
+# where a small model still picked them (a live run spent about 28% of its actions on GATHER_STONE, 114 to 153 a time, with
+# builds on offer). The intent was to stop offering them. So while a build is on offer, GATHER_WOOD and GATHER_STONE are removed
+# for any resource already at config.MATERIAL_SURPLUS_THRESHOLD ("more than any real use"). Below that they stay, demoted as
+# before: a young tribe with a cheap BUILD_FIRE or BUILD_ROAD available must still be able to gather. Food and water gathers
+# are never removed (survival), only demoted.
 
 
 def _is_construction_action(action: str) -> bool:
@@ -4746,10 +4753,14 @@ class Simulation:
         if any(_is_construction_action(a) for a in available_actions):
             food_security = [a for a in available_actions if a in _FOOD_SECURITY_INVESTMENT_ACTIONS]
             construction = [a for a in available_actions if _is_construction_action(a)]
-            gathers = [a for a in available_actions if a in _EVERGREEN_GATHER_ACTIONS]
+            surplus_gathers = {
+                action for action, stock in (("GATHER_WOOD", tribe.wood), ("GATHER_STONE", tribe.stone))
+                if stock >= config.MATERIAL_SURPLUS_THRESHOLD
+            }
+            gathers = [a for a in available_actions if a in _EVERGREEN_GATHER_ACTIONS and a not in surplus_gathers]
             rest = [
                 a for a in available_actions
-                if a not in food_security and a not in construction and a not in gathers
+                if a not in food_security and a not in construction and a not in _EVERGREEN_GATHER_ACTIONS
             ]
             available_actions = food_security + construction + rest + gathers
 

@@ -1744,6 +1744,7 @@ def test_settled_tribe_on_farmable_ground_can_gather_wood_and_stone():
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.has_ever_settled = True  # isolate this test from the pre-settlement gate
 
+    tribe.wood = tribe.stone = 0  # below config.MATERIAL_SURPLUS_THRESHOLD: the gathers stay on the menu (see test_a_surplus_material_gather_is_removed_while_a_build_is_on_offer)
     _request, ctx = sim._prepare_turn(tribe)
 
     assert "GATHER_WOOD" in ctx["available_actions"]
@@ -2368,6 +2369,7 @@ def test_action_repetition_throttle_expires_and_filters_available_actions():
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
 
     tribe.throttled_actions = {"GATHER_STONE": sim.cycle + 3}
+    tribe.wood = tribe.stone = 0  # below config.MATERIAL_SURPLUS_THRESHOLD: the gathers stay on the menu (see test_a_surplus_material_gather_is_removed_while_a_build_is_on_offer)
     request, ctx = sim._prepare_turn(tribe)
     assert "GATHER_STONE" not in ctx["available_actions"]
     assert "GATHER_STONE" in request["prompt"]  # the Historian's fact reaches the live prompt
@@ -2426,6 +2428,7 @@ def test_food_secure_tribe_never_enters_a_food_crisis_regardless_of_the_raw_numb
     tribe.kitchen_built = True
     tribe.fishing_learned = True
 
+    tribe.wood = tribe.stone = 0  # below config.MATERIAL_SURPLUS_THRESHOLD: the gathers stay on the menu (see test_a_surplus_material_gather_is_removed_while_a_build_is_on_offer)
     _, ctx = sim._prepare_turn(tribe)
 
     assert tribe.food_crisis_active is False
@@ -2770,8 +2773,9 @@ def test_wall_commitment_narrows_the_menu_to_wall_and_survival_actions():
     request, ctx = sim._prepare_turn(tribe)
 
     assert "CONSTRUCT_WALL" in ctx["available_actions"]
-    assert "GATHER_WOOD" in ctx["available_actions"]
-    assert "GATHER_STONE" in ctx["available_actions"]
+    # 1000 of each is far past config.MATERIAL_SURPLUS_THRESHOLD, so "only gathering what it needs" means no gathers at all
+    assert "GATHER_WOOD" not in ctx["available_actions"]
+    assert "GATHER_STONE" not in ctx["available_actions"]
     # Explicit correction, 2026-09-09: "I'm very tempted to remove the Wall
     # restriction on it" -- BUILD_LONG_HOUSE stays permanently available
     # during a wall commitment now, no longer tied to a banked credit (the
@@ -3031,10 +3035,11 @@ def test_settlement_moment_no_longer_dumps_every_building_at_once():
     assert "BUILD_BATH_HOUSE" not in ctx_fresh["available_actions"]
     assert "BUILD_WELL" not in ctx_fresh["available_actions"]
     assert "CONSTRUCT_WALL" not in ctx_fresh["available_actions"]
-    # The gather/hunt/explore tier stays fully available -- this only narrows
-    # the "what can I build" half of the menu, not survival/provisioning.
-    assert "GATHER_WOOD" in ctx_fresh["available_actions"]
-    assert "GATHER_STONE" in ctx_fresh["available_actions"]
+    # The hunt/explore tier stays fully available -- this only narrows the "what can I build" half of the menu, not
+    # survival/provisioning. (With 1000 of each banked, past config.MATERIAL_SURPLUS_THRESHOLD, GATHER_WOOD/STONE are
+    # deliberately not offered; see test_a_surplus_material_gather_is_removed_while_a_build_is_on_offer.)
+    assert "GATHER_WOOD" not in ctx_fresh["available_actions"]
+    assert "GATHER_STONE" not in ctx_fresh["available_actions"]
     assert "HUNT_DEER" in ctx_fresh["available_actions"]
 
     tribe.wood_ever_gathered = tribe.stone_ever_gathered = True
@@ -3436,8 +3441,10 @@ def test_evergreen_gathering_gets_pushed_behind_an_affordable_build():
     # GATHER_WATER isn't asserted here -- this tribe spawned on a river tile,
     # so watering_retired (a separate, unrelated one-way rule) already
     # removed it from the menu entirely by this point.
-    for gather in ("GATHER_WOOD", "GATHER_STONE", "GATHER_FOOD"):
-        assert actions.index(gather) > last_construction_index
+    # Updated 2026-10-03: 1000 of each is far past config.MATERIAL_SURPLUS_THRESHOLD, so the two material gathers are not
+    # offered at all (they used to be only pushed back); the food gather is still demoted behind the builds.
+    assert "GATHER_WOOD" not in actions and "GATHER_STONE" not in actions
+    assert actions.index("GATHER_FOOD") > last_construction_index
 
 
 def test_food_security_investment_ranks_ahead_of_construction_which_ranks_ahead_of_the_rest():
@@ -3473,8 +3480,9 @@ def test_food_security_investment_ranks_ahead_of_construction_which_ranks_ahead_
     first_construction_index = min(i for i, a in enumerate(actions) if _is_construction_action(a))
     last_construction_index = max(i for i, a in enumerate(actions) if _is_construction_action(a))
     assert last_food_security_index < first_construction_index
-    for gather in ("GATHER_WOOD", "GATHER_STONE", "GATHER_FOOD"):
-        assert actions.index(gather) > last_construction_index
+    # Updated 2026-10-03: past config.MATERIAL_SURPLUS_THRESHOLD the two material gathers are not offered; food is demoted
+    assert "GATHER_WOOD" not in actions and "GATHER_STONE" not in actions
+    assert actions.index("GATHER_FOOD") > last_construction_index
 
 
 def test_clear_territory_pops_to_the_very_front_of_the_menu():
@@ -3722,6 +3730,7 @@ def test_settled_but_not_near_water_can_still_relocate():
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.has_ever_settled = True  # isolate this test from the pre-settlement gate
 
+    tribe.wood = tribe.stone = 0  # below config.MATERIAL_SURPLUS_THRESHOLD: the gathers stay on the menu (see test_a_surplus_material_gather_is_removed_while_a_build_is_on_offer)
     request, ctx = sim._prepare_turn(tribe)
 
     assert "RELOCATE" in ctx["available_actions"]
@@ -7874,7 +7883,7 @@ def test_top_era_menu_stays_normal_with_no_living_rival():
 
     request, ctx = sim._prepare_turn(tribe)
 
-    assert "GATHER_WOOD" in ctx["available_actions"]
+    assert "GATHER_FOOD" in ctx["available_actions"]  # the menu is not narrowed (GATHER_WOOD/STONE are not offered past the material surplus)
     assert "settling things with the known rival tribe" not in request["prompt"]
 
 
@@ -7898,7 +7907,7 @@ def test_top_era_menu_stays_normal_when_the_only_rival_is_extinct():
 
     request, ctx = sim._prepare_turn(tribe)
 
-    assert "GATHER_WOOD" in ctx["available_actions"]
+    assert "GATHER_FOOD" in ctx["available_actions"]  # the menu is not narrowed (GATHER_WOOD/STONE are not offered past the material surplus)
     assert "settling things with the known rival tribe" not in request["prompt"]
 
 
@@ -7964,7 +7973,7 @@ def test_mutual_alliance_reopens_the_full_menu_instead_of_the_endgame_lock():
     request, ctx = sim._prepare_turn(tribe)
 
     assert "BUILD_JOINT_CASTLE" in ctx["available_actions"]
-    assert "GATHER_WOOD" in ctx["available_actions"]  # full menu, not endgame-narrowed
+    assert "GATHER_FOOD" in ctx["available_actions"]  # full menu, not endgame-narrowed
     assert "BUILD_LONG_HOUSE" in ctx["available_actions"]
     assert "genuine, mutual alliance" in request["prompt"]
 
@@ -8259,7 +8268,7 @@ def test_top_era_narrowing_does_not_apply_before_the_final_era():
 
     request, ctx = sim._prepare_turn(tribe)
 
-    assert "GATHER_WOOD" in ctx["available_actions"]
+    assert "GATHER_FOOD" in ctx["available_actions"]  # the menu is not narrowed (GATHER_WOOD/STONE are not offered past the material surplus)
     assert "settling things with the known rival tribe" not in request["prompt"]
 
 
