@@ -6,8 +6,8 @@ this table, not simulation logic. This is also what would let a themed reskin (e
 cyberspace variant: compute/bandwidth/power instead of wood/stone/water) swap
 vocabulary without touching the advancement logic itself.
 
-Advancement is automatic once a tribe's population and stockpiles clear an era's
-requirements -- it is deliberately NOT gated behind the model choosing a special
+Advancement is automatic once a tribe's population clears an era's line and the tribe has
+built or mastered what the era needs (requires_ready, see READINESS_LABELS) -- it is deliberately NOT gated behind the model choosing a special
 "advance" action. Relying on a small quantized model to correctly reason its way to a
 meta-progression action would make the payoff moment unreliable; the tribes' own
 actions (what they gather, hunt, and build) still fully determine *when* they cross
@@ -44,11 +44,33 @@ class Era:
     key: str
     label: str
     requires_population: int
-    requires_resources: dict[str, int]  # resource attr name -> minimum stockpile
+    requires_ready: tuple[str, ...]  # what the tribe must have built or mastered before this era opens (see READINESS_LABELS)
     advancement_cost: dict[str, int]  # resource attr name -> amount spent on advancing
     unlocks_actions: tuple[str, ...]
     announcement: str  # "{tribe}" is substituted with the tribe's name
     founds_city: bool = False
+
+
+# What each readiness name means in the world (2026-10-04, replacing the old wood/stone/water/food/Fur stock lines). An era opens when the
+# tribe has done what the era before it was for: built its signature structures, or reached the mastery states the game already tracks
+# (food, water and wood "secure"). The names are Tribe attributes, except the three *_secure names, which Simulation resolves with
+# _is_food_secure, _is_water_secure and _is_wood_secure. Stock lines were dropped because they bound nobody: in a recorded run water,
+# stone and wood already held on entry to the era, and Fur alone held a tribe 190 cycles after it had built everything.
+READINESS_LABELS: dict[str, str] = {
+    "has_ever_settled": "a settled home",
+    "long_houses_built": "a long house",
+    "food_secure": "food mastered (a kitchen and a proven food source)",
+    "water_secure": "water mastered (a well or several confirmed sources)",
+    "wood_secure": "wood mastered (a sawmill and a timber grove)",
+    "barracks_built": "a barracks",
+    "keep_built": "a keep",
+    "library_built": "a library",
+    "forge_built": "a forge",
+    "mine_built": "a mine",
+    "fortress_built": "a fortress",
+    "dmm_built": "a Dream Manifestation Machine",
+    "castle_built": "a castle",
+}
 
 
 ERAS: tuple[Era, ...] = (
@@ -56,7 +78,7 @@ ERAS: tuple[Era, ...] = (
         key="primitive_dawn",
         label="Primitive Dawn",
         requires_population=0,
-        requires_resources={},
+        requires_ready=(),
         advancement_cost={},
         unlocks_actions=(
             # Explicit request: a tribe always has something worth doing, and a
@@ -102,15 +124,7 @@ ERAS: tuple[Era, ...] = (
         key="cognitive_horizon",
         label="Cognitive Horizon",
         requires_population=60,
-        # Live-run correction (2026-09-02): "some later game options are coming up
-        # too early... they don't even have food under control." No era, at any
-        # tier, ever required food -- a tribe could clear every threshold here
-        # while genuinely food-fragile. Food gets water's own buffer ratio (2x
-        # required vs. spent), not wood/stone's looser 1.33x -- food actually
-        # drains on its own via upkeep between now and whenever it's spent, the
-        # same real risk water carries, unlike wood/stone which only move when a
-        # tribe chooses to spend them.
-        requires_resources={"water": 20, "stone": 20, "wood": 20, "food": 20},
+        requires_ready=('has_ever_settled',),
         advancement_cost={"wood": 15, "stone": 15, "water": 10, "food": 10},
         # Redesigned 2026-09-08 (explicit request: "Cognitive Horizon needs to be
         # an agrarian society kind of evolution... take about half of the action
@@ -162,15 +176,7 @@ ERAS: tuple[Era, ...] = (
         # _WELLBEING_FLOOR) instead of a flat +1/cycle -- raised 20 -> 50 without
         # the real-time cost that would have meant under the old flat rate.
         requires_population=600,
-        # Wood used to be spent on advancing (advancement_cost below) without ever
-        # being required beforehand -- a tribe with 0 wood could still advance, it
-        # just floored at 0 instead of actually paying the cost. Real requirement now,
-        # with the same buffer-above-cost pattern stone/water already use (40
-        # required vs. 30 spent -- advancing doesn't zero the tribe out).
-        # Food added for the same reason as Cognitive Horizon above -- water's 2x
-        # buffer ratio, not wood/stone's 1.33x, since food keeps draining via
-        # upkeep on its own.
-        requires_resources={"water": 40, "stone": 40, "wood": 40, "food": 40},
+        requires_ready=('long_houses_built', 'food_secure', 'water_secure'),
         advancement_cost={"wood": 30, "stone": 30, "water": 20, "food": 20},
         # Redesigned 2026-09-08 alongside Cognitive Horizon above -- the 12
         # agrarian-infrastructure actions that used to unlock here (BUILD_LONG_
@@ -194,21 +200,7 @@ ERAS: tuple[Era, ...] = (
         key="monolithic_era",
         label="Monolithic Era",
         requires_population=2200,  # see tribal_synapse's own comment on the 2026-09-07 rescale
-        # Fur (Tannery/Mine -- actions.py._build_tannery, world.
-        # UNIQUE_RESOURCE_BY_BIOME) is the first requires_resources entry that
-        # isn't a core Tribe attribute -- see simulation.py._era_resource_amount/
-        # _spend_era_resource, added the same pass specifically so this works
-        # (getattr/setattr alone would have silently always read/spent 0 against
-        # tribe.unique_resources). Historical note, no longer accurate: this was
-        # originally sized against a flat TANNERY_YIELD_PER_CYCLE (4) Fur/cycle
-        # trickle that fired regardless of real activity ("so 20 is a handful of
-        # cycles, not a bottleneck"). The 2026-09-19 rework made Fur fully
-        # activity-driven (hunts + a fed Deer Pen only -- see Simulation.
-        # _advance_tannery_yield), so this 20-Fur threshold's real pacing now
-        # depends on how much a tribe actually hunts/farms deer -- worth
-        # rechecking against a live run before assuming it's still not a
-        # bottleneck.
-        requires_resources={"water": 65, "stone": 65, "wood": 65, "Fur": 20},
+        requires_ready=('barracks_built', 'keep_built', 'library_built', 'wood_secure'),
         advancement_cost={"wood": 45, "stone": 45, "water": 45, "Fur": 15},
         unlocks_actions=(
             "BUILD_FORTRESS", "BUILD_CASTLE", "BUILD_ROAD", "BUILD_MINE",
@@ -241,7 +233,7 @@ ERAS: tuple[Era, ...] = (
         key="object_creator_era",
         label="Dream Manifestation Era",
         requires_population=7500,  # see tribal_synapse's own comment on the 2026-09-07 rescale
-        requires_resources={"water": 100, "stone": 100, "wood": 100, "Fur": 50},
+        requires_ready=('forge_built', 'mine_built', 'fortress_built'),
         advancement_cost={"wood": 70, "stone": 70, "water": 70, "Fur": 35},
         unlocks_actions=("BUILD_DMM", "CREATE_ITEM", "CREATE_USEFUL_STRUCTURE"),
         announcement="{tribe} enters the Dream Manifestation Era -- the Chief's dreams can now be made real!",
@@ -250,7 +242,7 @@ ERAS: tuple[Era, ...] = (
         key="war_and_world_domination_era",
         label="War and World Domination",
         requires_population=14000,  # see tribal_synapse's own comment on the 2026-09-07 rescale
-        requires_resources={"water": 125, "stone": 125, "wood": 125, "Fur": 100},
+        requires_ready=('dmm_built',),
         advancement_cost={"wood": 90, "stone": 90, "water": 90, "Fur": 70},
         unlocks_actions=("DECLARE_CONQUEST",),
         announcement="{tribe} enters the age of War and World Domination!",
@@ -274,7 +266,7 @@ ERAS: tuple[Era, ...] = (
         label="Beyond the Horizon",
         requires_population=20000,  # untuned first guess -- roughly the same
                                     # escalation the 800->1500 jump already used
-        requires_resources={"water": 150, "stone": 150, "wood": 150, "Fur": 120},
+        requires_ready=('castle_built',),
         advancement_cost={"wood": 110, "stone": 110, "water": 110, "Fur": 85},
         unlocks_actions=("BUILD_VESSEL", "DEPART"),
         announcement="{tribe} looks to the horizon -- there may be a world beyond this island.",

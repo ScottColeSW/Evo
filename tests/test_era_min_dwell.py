@@ -1,8 +1,9 @@
 """2026-10-03: a tribe must live config.ERA_MIN_CYCLES cycles in an era before the next opens (the owner's guide: no less than 50
-cycles in any era). Population jumps and surplus resources cannot skip it."""
+cycles in any era). Population jumps and a fully ready tribe cannot skip it."""
 from backend import config
 from backend.eras import ERAS
 from backend.simulation import Simulation
+from tests.era_helpers import make_ready_for_every_era
 
 
 def _rich_tribe(era="cognitive_horizon"):
@@ -12,6 +13,7 @@ def _rich_tribe(era="cognitive_horizon"):
     tribe.population = 10_000_000
     tribe.water = tribe.stone = tribe.wood = tribe.food = 10_000
     tribe.unique_resources["Fur"] = 10_000
+    make_ready_for_every_era(tribe)
     return sim, tribe
 
 

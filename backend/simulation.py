@@ -21,7 +21,7 @@ from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
 from .genetics import breed, hatch
 from .reflection import AWARD_CATEGORIES, generate_endgame_narrative, reflect_on_history
-from .eras import ERAS, era_index, next_era, ordered_actions_through, reached_era_or_later, unlocked_actions_through
+from .eras import ERAS, READINESS_LABELS, era_index, next_era, ordered_actions_through, reached_era_or_later, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
 from .instincts import survival_bias_string
@@ -729,7 +729,7 @@ AFFORDABILITY_CHECKS = {
     # the Library has not already filed (actions.research_candidates). This replaces the earlier choice to leave it reachable with
     # nothing to study; a run showed the repeats were being used to collect the era discount.
     "RESEARCH": lambda t, w: (t.library_built and t.wood >= config.RESEARCH_WOOD_COST
-                              and t.research_this_era < config.INNOVATION_RESEARCH_COUNTED_PER_ERA and bool(research_candidates(t))),
+                              and bool(research_candidates(t))),
     # GATHER_ORE has no wood/stone cost of its own -- the real prerequisite is
     # a mine existing at all (see actions.py._gather_ore's own guard clause).
     "GATHER_ORE": lambda t, w: t.mine_built,
@@ -1505,10 +1505,7 @@ class Tribe:
         # See actions.py._build_library/_research -- explicit request: a Library
         # summarizes the tribe's own TribeMemory (backend/memory.py) into permanent,
         # readable entries (own Library tab, not just a building icon), and unlocks
-        # RESEARCH: a real, repeatable "boost growth and innovation" -- each
-        # completed research discounts the next era's threshold (see
-        # config.INNOVATION_ERA_DISCOUNT_PER_RESEARCH, Simulation._advance_era_if_ready),
-        # a genuine payoff a spectator can watch compound, not a flat stat nudge.
+        # RESEARCH (it no longer discounts era thresholds; era gates are readiness now, see eras.Era.requires_ready).
         # library_entries: {"summary", "cycle"} dicts, oldest first.
         self.library_built = False
         self.library_entries: list[dict] = []
@@ -1517,9 +1514,6 @@ class Tribe:
         self.library_shadow_pending: list[dict] = []
         self.library_shadow_shelf: list[dict] = []
         self.research_completed = 0
-        # RESEARCH done in the current era; at most config.INNOVATION_RESEARCH_COUNTED_PER_ERA count toward the era discount and are offered.
-        # Reset when the era changes (see _advance_era_if_ready and the conquest merge).
-        self.research_this_era = 0
         # See actions.py._build_well/Simulation._advance_water_supply -- explicit
         # request: water's passive income had no equivalent of Fishery/Dock's
         # stacking bonus. No prerequisite beyond being settled and affordable, same
@@ -2011,7 +2005,7 @@ class Tribe:
             next_era_info = {
                 "label": nxt.label,
                 "requires_population": nxt.requires_population,
-                "requires_resources": nxt.requires_resources,
+                "requires_ready": [{"name": n, "label": READINESS_LABELS[n], "done": _era_ready(self, n)} for n in nxt.requires_ready],
             }
         return {
             "name": self.name,
@@ -2346,6 +2340,23 @@ def _scaled_population_loss(tribe: "Tribe") -> int:
     exactly 1 for a small tribe (unchanged from the old flat constant), a real
     deterrent for a large one."""
     return max(1, tribe.population // config.POPULATION_LOSS_DIVISOR)
+
+
+def _era_ready(tribe: "Tribe", name: str) -> bool:
+    """One requires_ready name (eras.READINESS_LABELS) read off a tribe: the three *_secure names are the game's own mastery
+    definitions, anything else is a Tribe attribute (a flag or a count) that must be set or above zero."""
+    if name == "food_secure":
+        return bool(_is_food_secure(tribe))
+    if name == "water_secure":
+        return bool(_is_water_secure(tribe))
+    if name == "wood_secure":
+        return bool(_is_wood_secure(tribe))
+    return bool(getattr(tribe, name, False))
+
+
+def _era_readiness_gaps(tribe: "Tribe", era) -> list[str]:
+    """Labels of what a tribe still lacks before `era` opens (empty when it is ready), in the era's own order."""
+    return [READINESS_LABELS[name] for name in era.requires_ready if not _era_ready(tribe, name)]
 
 
 def _era_resource_amount(tribe: "Tribe", resource: str) -> int:
@@ -2902,10 +2913,7 @@ class Simulation:
             gaps = []
             if tribe.population < nxt.requires_population:
                 gaps.append(f"population {tribe.population}/{nxt.requires_population}")
-            for resource, minimum in nxt.requires_resources.items():
-                have = _era_resource_amount(tribe, resource)
-                if have < minimum:
-                    gaps.append(f"{resource} {have}/{minimum}")
+            gaps.extend(_era_readiness_gaps(tribe, nxt))
             if gaps:
                 lines.append(f"To reach {nxt.label}, still short on: {', '.join(gaps)}.")
         # actions.py._spy's payoff: real, current-at-the-time facts about a rival to
@@ -3967,34 +3975,14 @@ class Simulation:
         era_gap_note = ""
         nxt = next_era(tribe.era)
         if nxt is not None:
-            # Explicit fix, 2026-09-13 (action-legibility audit): this used to show
-            # the raw, undiscounted era thresholds even for a tribe that had already
-            # earned a real RESEARCH discount (see _advance_era_if_ready, the actual
-            # gate this fact is describing) -- a falsely pessimistic gap that made
-            # research's real, already-banked benefit invisible. Same discount
-            # formula, applied here too, so the numbers shown are the numbers that
-            # actually gate advancement, not a stale ceiling.
-            discount = min(
-                config.INNOVATION_ERA_DISCOUNT_CAP,
-                tribe.research_completed * config.INNOVATION_ERA_DISCOUNT_PER_RESEARCH,
-            )
-            population_threshold = round(nxt.requires_population * (1 - discount))
+            # What stands between the tribe and the next era, stated as facts: the population line and what it has not yet built or
+            # mastered (eras.Era.requires_ready). The numbers shown are the numbers that gate advancement (_advance_era_if_ready).
             gaps = []
-            if tribe.population < population_threshold:
-                gaps.append(f"population {tribe.population}/{population_threshold}")
-            for resource, minimum in nxt.requires_resources.items():
-                have = _era_resource_amount(tribe, resource)
-                threshold = round(minimum * (1 - discount))
-                if have < threshold:
-                    gaps.append(f"{resource} {have}/{threshold}")
+            if tribe.population < nxt.requires_population:
+                gaps.append(f"population {tribe.population}/{nxt.requires_population}")
+            gaps.extend(_era_readiness_gaps(tribe, nxt))
             if gaps:
                 era_gap_note = f"To reach {nxt.label}, still short on: {', '.join(gaps)}."
-                # RESEARCH's real payoff (actions.py._research) is invisible unless
-                # it's tied to the exact gap it shrinks -- a model staring at a
-                # stated shortfall has no signal that a building it may not have
-                # prioritized directly reduces the number it's staring at.
-                if tribe.library_built and discount < config.INNOVATION_ERA_DISCOUNT_CAP:
-                    era_gap_note += " Research at the library would shrink these thresholds further."
 
         if not visible_entities:
             visible_entities = ["none"]
@@ -6675,7 +6663,7 @@ class Simulation:
                              "research_wood_short": tribe.wood < config.RESEARCH_WOOD_COST,
                              "research_belief": sum(1 for c in picks if c["source"] == "belief"),
                              "research_evidence": sum(1 for c in picks if c["source"] == "evidence"),
-                             "research_completed": tribe.research_completed, "research_this_era": tribe.research_this_era})
+                             "research_completed": tribe.research_completed})
             self.event_log.record_data(
                 tribe.name, "night_watch", data,
                 message=f"[night watch] population {tribe.population} of {target}, era {tribe.era}"
@@ -8486,28 +8474,17 @@ class Simulation:
             return
         if self.cycle - tribe.era_entered_cycle < config.ERA_MIN_CYCLES:
             return
-        # RESEARCH's real payoff (actions.py._research/config.
-        # INNOVATION_ERA_DISCOUNT_PER_RESEARCH): every completed research permanently
-        # shaves a little off the next era's own thresholds and cost, capped so
-        # advancement is never free. Recomputed fresh against next_era() each check --
-        # not baked into eras.py's own numbers -- so it always reflects research done
-        # since the tribe's last advancement, not just at the moment of this one.
-        discount = min(
-            config.INNOVATION_ERA_DISCOUNT_CAP,
-            tribe.research_completed * config.INNOVATION_ERA_DISCOUNT_PER_RESEARCH,
-        )
-        if tribe.population < round(nxt.requires_population * (1 - discount)):
+        # 2026-10-04: an era opens on population plus readiness (eras.Era.requires_ready), not on stockpiles, and RESEARCH no
+        # longer discounts any of it. The advancement cost is still paid, floored at zero, so it can never strand a tribe.
+        if tribe.population < nxt.requires_population:
             return
-        for resource, minimum in nxt.requires_resources.items():
-            if _era_resource_amount(tribe, resource) < round(minimum * (1 - discount)):
-                return
+        if _era_readiness_gaps(tribe, nxt):
+            return
 
         for resource, amount in nxt.advancement_cost.items():
-            discounted = round(amount * (1 - discount))
-            _spend_era_resource(tribe, resource, discounted)
+            _spend_era_resource(tribe, resource, amount)
         tribe.era = nxt.key
         tribe.era_entered_cycle = self.cycle
-        tribe.research_this_era = 0
         tribe.history.append(nxt.announcement.format(tribe=tribe.name))
         if nxt.founds_city:
             # Live bug report: a tribe reached Monolithic Era and grew a full,
@@ -9804,7 +9781,6 @@ class Simulation:
         if era_index(defender.era) > era_index(attacker.era):
             attacker.era = defender.era
             attacker.era_entered_cycle = self.cycle
-            attacker.research_this_era = 0
         attacker.chief_name = ""
         attacker.chief_philosophy = ""
         attacker.chief_decree = ""

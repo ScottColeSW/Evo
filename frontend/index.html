@@ -1507,23 +1507,8 @@ function renderEraLadder(state) {
   ladder.innerHTML = rows.map(t => {
     const popDone = t.population >= t.next_era.requires_population;
     const popLine = `Pop ${t.population}/${t.next_era.requires_population}${popDone ? " ✓" : ""}`;
-    // Same core-attribute-vs-unique_resources split as backend/simulation.py's
-    // _era_resource_amount -- wood/stone/water/food are real top-level fields,
-    // but a named resource like "Fur" only ever lives in t.unique_resources, so
-    // t[res] alone would silently always read 0 for those.
-    const resourceLines = Object.entries(t.next_era.requires_resources).map(([res, need]) => {
-      const have = (res in t) ? t[res] : (t.unique_resources || {})[res] ?? 0;
-      const done = have >= need;
-      // Explicit live-run report: "the inventory line was incomplete and still
-      // lists a resource's name in the list" -- this used to fall back to the
-      // raw resource key (`|| res`) for anything RESOURCE_ICON doesn't know
-      // about, so a Fur requirement printed as the literal text "Fur 0/20"
-      // instead of an icon like every other resource here. commerceIcon
-      // already solves this exact fallback (Fur, a Mine's own per-biome ore
-      // name, item types) for the Commerce panel -- reused here instead of
-      // inventing a second, incomplete fallback.
-      return `${commerceIcon(res)} ${have}/${need}${done ? " ✓" : ""}`;
-    });
+    // Readiness (2026-10-04, replacing the old stockpile lines): what the tribe has built or mastered, as sent by the backend.
+    const resourceLines = (t.next_era.requires_ready || []).map(r => `${escapeHtml(r.label)}${r.done ? " ✓" : ""}`);
     return `
       <div class="consensus-row" style="border-left:3px solid ${t.color};">
         <strong>${t.name}</strong> → ${t.next_era.label}<br>

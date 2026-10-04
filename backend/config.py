@@ -813,18 +813,8 @@ BATH_HOUSE_UPKEEP_MULTIPLIER = 0.85
 LIBRARY_WOOD_COST = 30
 LIBRARY_STONE_COST = 25
 RESEARCH_WOOD_COST = 10
-# Each completed RESEARCH permanently discounts the *next* era's population/
-# resource thresholds and its advancement cost by this fraction, capped so
-# advancement can never become free -- a tribe that invests in research
-# genuinely reaches the next era sooner, the concrete "boosts growth" this was
-# built for. Applied fresh against next_era() each check (Simulation.
-# _advance_era_if_ready), not baked into eras.py's own numbers.
-INNOVATION_ERA_DISCOUNT_PER_RESEARCH = 0.04
-INNOVATION_ERA_DISCOUNT_CAP = 0.5
-# 2026-10-04 (the owner's rule: an action that adds nothing is not on the list): the last two runs filled the whole 50% discount with 13 researches in
-# about 130 cycles, in bursts, because every new building is "new evidence". A tribe's RESEARCH now counts toward the discount, and is offered, at
-# most this many times per era; the count resets when the era changes. At 4% each, reaching the 50% cap now takes about four eras instead of one.
-INNOVATION_RESEARCH_COUNTED_PER_ERA = 3
+# RESEARCH used to discount the next era's thresholds (INNOVATION_ERA_DISCOUNT_*, with a per-era cap on how many counted). Retired 2026-10-04 when era
+# gates became readiness (eras.Era.requires_ready): there is nothing left to discount. RESEARCH now only files a Library entry.
 # How many of the tribe's own highest-weight memories get folded into one Library
 # entry -- a real distillation (see TribeMemory.consolidate's own top-3 taboo
 # ranking, which this deliberately mirrors), not the full raw log dumped in.

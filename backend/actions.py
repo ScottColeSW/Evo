@@ -1337,14 +1337,11 @@ def _research(sim, tribe, biome, target):
     """The Library's real payoff: distills the tribe's highest-weight remembered
     episodes (TribeMemory.entries/taboos -- the same ranking TribeMemory.
     consolidate already uses for its own taboo cut) into one permanent Library
-    entry, and permanently discounts the next era's threshold a little further
-    (Simulation._advance_era_if_ready) -- a real, compounding "boosts growth and
-    innovation," not a flat one-time stat bump. No-ops with nothing to study yet
-    if the tribe hasn't actually remembered anything real yet."""
+    entry. (It used to also discount the next era's thresholds; retired 2026-10-04
+    when era gates became readiness.) No-ops with nothing to study yet if the
+    tribe hasn't actually remembered anything real yet."""
     if not tribe.library_built:
         return None
-    if tribe.research_this_era >= config.INNOVATION_RESEARCH_COUNTED_PER_ERA:
-        return "the library has yielded all it can toward this era's progress; further study waits for the next era"
     picks = research_candidates_with_source(tribe)
     top = [c["text"] for c in picks]
     if not top:
@@ -1362,8 +1359,7 @@ def _research(sim, tribe, biome, target):
     tribe.library_entries.append({"summary": summary, "cycle": sim.cycle, "texts": list(top), "sources": [c["source"] for c in picks],
                                   "keys": {c["key"]: c["count"] for c in picks if c.get("key")}})
     tribe.research_completed += 1
-    tribe.research_this_era += 1
-    return f"the library records a new insight: \"{summary}\" -- the path to the next era grows a little shorter"
+    return f"the library records a new insight: \"{summary}\""
 
 
 def _build_well(sim, tribe, biome, target):
