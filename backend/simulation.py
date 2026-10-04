@@ -1628,6 +1628,9 @@ class Tribe:
         # the frontend (Bucket B pattern, matches eggs_laid_today).
         self.tannery_fur_pending_from_hunts = 0
         self.tannery_fur_today = 0
+        # 2026-10-03: the last few days' Fur, newest last, so the sidebar can show a trend. The daily figure above only changes once
+        # a day (about every 20 cycles) and sits in a narrow band, which read as static.
+        self.tannery_fur_history: list[int] = []
         self.tannery_meat_today = 0
         # See actions.py._build_deer_pen -- a live, breeding captive herd (same
         # feed-or-shrink/natural-breed shape as tribe.flock, see Simulation.
@@ -2046,6 +2049,8 @@ class Tribe:
             "kitchen_built": self.kitchen_built,
             "tannery_built": self.tannery_built,
             "tannery_fur_today": self.tannery_fur_today,
+            "tannery_fur_pending": self.tannery_fur_pending_from_hunts,
+            "tannery_fur_history": self.tannery_fur_history[-6:],
             "tannery_meat_today": self.tannery_meat_today,
             "deer_pen_built": self.deer_pen_built,
             "deer": self.deer,
@@ -8878,6 +8883,8 @@ class Simulation:
             self._capped_add(tribe, "food", round(meat * _food_multiplier(tribe)))
         tribe.tannery_fur_today = n
         tribe.tannery_meat_today = meat
+        tribe.tannery_fur_history.append(n)
+        del tribe.tannery_fur_history[:-12]
 
     def _advance_resource_trails(self, tribe: Tribe) -> None:
         """Explicit request: "if they have found a Quarry, Mine, Stand of Trees
