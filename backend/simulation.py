@@ -6640,7 +6640,7 @@ class Simulation:
         try:
             state = tribe.peace_gate
             culled = any(e["kind"] == "cull" and e["cycle"] == self.cycle for e in state["cost_events"])
-            peace_gate.note_night(state, culled)
+            peace_gate.note_night(state, culled, peace_gate.contacts(tribe))
             snapshot = peace_gate.evaluate(tribe, self.cycle)
             if snapshot["would_open"] and state["would_open"] is None:
                 state["would_open_cycle"] = self.cycle
@@ -6686,7 +6686,7 @@ class Simulation:
         if not heard:
             return
         tribe.heard_by_parties.extend(heard)
-        tribe.peace_gate["heard_total"] += len(heard)
+        tribe.peace_gate["heard_reports"] += 1
         del tribe.heard_by_parties[:-12]
         words = "; ".join(f"'{h['token']}' from {h['from']} while {h['action']}" for h in heard[:3])
         tribe.history.append(f"Returning travelers repeated words they overheard: {words}.")

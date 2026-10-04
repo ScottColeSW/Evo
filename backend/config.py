@@ -2511,8 +2511,9 @@ PEACE_GATE_SCAR_WINDOW_NIGHTS = 10
 # The well-managed way in: this many cycles with no cull habit. About three times the median chief tenure measured in recent runs
 # (32 to 64 cycles, chiefs die only of losses), so one chief's whole time without a hard lesson is not enough, three are.
 PEACE_GATE_STABILITY_CYCLES = 150
-# The other way in: this many outside-contact events (rivals found, spy missions run, words brought home by a party).
-PEACE_GATE_CONTACT_EVENTS = 5
+# The other way in: outside contact (a rival found, a spy sent, words brought home by a party) on this many separate nights. Counted
+# by night, not by event: the first run's parties brought home about 25 words each, which made a raw count meaningless.
+PEACE_GATE_CONTACT_NIGHTS = 3
 
 # Cross-tribe proximity awareness, independent of whether the other tribe has ever
 # broadcast anything -- real data this session showed every single run (25/25 tribe-

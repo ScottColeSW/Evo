@@ -55,15 +55,28 @@ def test_a_cull_habit_closes_the_stability_and_contact_paths():
     peace_gate.note_night(tribe.peace_gate, culled=True)
     assert peace_gate.evaluate(tribe, config.PEACE_GATE_STABILITY_CYCLES)["would_open"] is None
     tribe.discovered_rivals.update({"x", "y"})
-    tribe.spy_missions_run = config.PEACE_GATE_CONTACT_EVENTS
+    for k in range(config.PEACE_GATE_CONTACT_NIGHTS):
+        tribe.spy_missions_run += 1
+        peace_gate.note_night(tribe.peace_gate, culled=True, raw_contacts=peace_gate.contacts(tribe))  # still culling
     assert peace_gate.evaluate(tribe, 20)["would_open"] is None
 
 
 def test_outside_contacts_open_the_tier_for_a_clean_tribe():
     sim, tribe = _sim()
     assert peace_gate.evaluate(tribe, 20)["would_open"] is None
-    tribe.spy_missions_run = config.PEACE_GATE_CONTACT_EVENTS
+    for k in range(config.PEACE_GATE_CONTACT_NIGHTS):
+        tribe.spy_missions_run += 1
+        peace_gate.note_night(tribe.peace_gate, culled=False, raw_contacts=peace_gate.contacts(tribe))
     assert peace_gate.evaluate(tribe, 20)["would_open"] == "contact"
+
+
+def test_a_burst_of_words_in_one_night_is_one_contact_night():
+    sim, tribe = _sim()
+    tribe.peace_gate["heard_reports"] += 40  # many reports before one night passes
+    peace_gate.note_night(tribe.peace_gate, culled=False, raw_contacts=peace_gate.contacts(tribe))
+    assert len(tribe.peace_gate["contact_nights"]) == 1
+    peace_gate.note_night(tribe.peace_gate, culled=False, raw_contacts=peace_gate.contacts(tribe))  # nothing new
+    assert len(tribe.peace_gate["contact_nights"]) == 1
 
 
 def test_the_night_logs_the_state_and_changes_nothing_in_the_world():
