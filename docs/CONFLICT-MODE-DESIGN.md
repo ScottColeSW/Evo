@@ -77,3 +77,7 @@ sticky a mode with this window would be.
 
 One slip during the build, caught before it shipped: the first patch skipped the `DECLARE_WAR` hook silently because its anchor
 text appears twice. It now has its own anchor and a test.
+
+## Status, 2026-10-03: shelved pending data
+
+The era changes (longer eras, wider population lines, a 50-cycle floor) produced the first real wars without a new mechanic. The night cull and the trade gate (docs/TRADE-GATE-DESIGN.md) address the too-many-easy-choices problem through world rules. Recommendation: do not build the mode. Keep the phase 0 logs, and revisit only if a run shows that conflict-time choices are still mostly unrelated to the conflict.

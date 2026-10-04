@@ -2149,6 +2149,11 @@ DEER_BREED_LITTER_WEIGHTS = (50, 30, 15, 5)
 DEER_PEN_DAILY_FEED_MIN = 1
 DEER_PEN_DAILY_FEED_MAX = 3
 FUR_PER_DEER_FED = 2
+# 2026-10-03 (the owner: the Tannery is too stingy; a large herd, over 30, should produce a lot): the daily feed above was a flat
+# 1 to 3 deer, so a herd of 60 gave the same at most 6 Fur a day as a herd of 5. The Tannery now also takes this fraction of the herd
+# above the minimum each day, whichever is larger. 0.2 takes 6 deer from a herd of 33 (12 Fur) and 12 from a herd of 63 (24 Fur).
+# The herd regrows by breeding, so this thins it rather than emptying it (the minimum herd is always kept).
+DEER_PEN_DAILY_HARVEST_FRACTION = 0.2
 # RETIRED 2026-09-19 (see cheerful-weaving-blanket.md's sibling design):
 # meat used to be computed per-deer-fed, separate from hunting's own flat
 # TANNERY_MEAT_BONUS_PER_HUNT -- two independently-tuned rates for

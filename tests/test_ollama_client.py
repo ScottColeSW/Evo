@@ -275,3 +275,33 @@ async def test_embed_fails_open_on_a_malformed_response():
         result = await client.embed("some reflection text")
 
     assert result is None
+
+
+@run_async
+async def test_generate_json_retries_once_after_a_token_repeat_abort():
+    client = OllamaClient()
+    aborted = _FakeResponse({}, status_code=500, text='{"error":"prediction aborted, token repeat limit reached"}')
+    good = _FakeResponse({"response": '{"ok": 1}'})
+    post = mock.AsyncMock(side_effect=[aborted, good])
+
+    with mock.patch.object(httpx.AsyncClient, "post", post):
+        assert await client.generate_json("gemma2:2b", "prompt", temperature=0.7) == {"ok": 1}
+
+    assert post.await_count == 2
+    retry_options = post.await_args_list[1].kwargs["json"]["options"]
+    assert retry_options["repeat_penalty"] == 1.2 and retry_options["temperature"] > 0.7
+
+
+@run_async
+async def test_generate_json_gives_up_after_a_second_token_repeat_abort():
+    client = OllamaClient()
+    aborted = _FakeResponse({}, status_code=500, text='{"error":"token repeat limit reached"}')
+    post = mock.AsyncMock(return_value=aborted)
+
+    with mock.patch.object(httpx.AsyncClient, "post", post):
+        try:
+            await client.generate_json("gemma2:2b", "prompt")
+            assert False, "expected an HTTPStatusError"
+        except httpx.HTTPStatusError:
+            pass
+    assert post.await_count == 2

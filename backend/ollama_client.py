@@ -109,6 +109,12 @@ class OllamaClient:
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             r = await client.post(f"{self.base_url}/api/generate", json=payload)
+            if r.status_code == 500 and "token repeat limit" in r.text:
+                # 2026-10-03: Ollama aborts a JSON generation that loops ("prediction aborted, token repeat limit reached"), seen
+                # with gemma2:2b in the night reflection. One retry with a little more randomness and a repeat penalty usually
+                # gets a clean answer; a second failure raises as before.
+                payload["options"] = {**payload["options"], "temperature": min(1.0, temperature + 0.2), "repeat_penalty": 1.2}
+                r = await client.post(f"{self.base_url}/api/generate", json=payload)
             _raise_with_body(r, model)
             raw = r.json().get("response", "{}")
             try:

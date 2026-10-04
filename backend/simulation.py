@@ -2513,10 +2513,9 @@ class Simulation:
         six places."""
         try:
             return await coro
-        except Exception:
-            import traceback
-            print(f"[_safe_llm_result] {label} failed, degrading to empty result:")
-            traceback.print_exc()
+        except Exception as exc:
+            # 2026-10-03: one line, no traceback dump (the owner: the exception was handled, the dump only cluttered the console).
+            print(f"[_safe_llm_result] {label} failed, degrading to empty result: {str(exc)[:160]}")
             return {}
 
     async def _install_chief(self, tribe: "Tribe") -> None:
@@ -8913,7 +8912,8 @@ class Simulation:
             # config.DEER_PEN_MINIMUM_HERD_SIZE, same floor _advance_deer_pen's
             # own starvation-loss path respects.
             feedable = max(0, tribe.deer - config.DEER_PEN_MINIMUM_HERD_SIZE)
-            fed = min(feedable, random.randint(config.DEER_PEN_DAILY_FEED_MIN, config.DEER_PEN_DAILY_FEED_MAX))
+            fed = min(feedable, max(random.randint(config.DEER_PEN_DAILY_FEED_MIN, config.DEER_PEN_DAILY_FEED_MAX),
+                                    round(feedable * config.DEER_PEN_DAILY_HARVEST_FRACTION)))
             if fed > 0:
                 tribe.deer -= fed
                 pen_fur = fed * config.FUR_PER_DEER_FED
