@@ -1485,6 +1485,10 @@ class Tribe:
         # library_entries: {"summary", "cycle"} dicts, oldest first.
         self.library_built = False
         self.library_entries: list[dict] = []
+        # Phase 0 of docs/LIBRARY-PALIMPSEST-SPEC.md: what RESEARCH filed and has not yet been judged, and the shadow shelf those
+        # judgments are made against ({"id", "text", "cycle"}). Nothing here is read by the game; it only feeds the log.
+        self.library_shadow_pending: list[dict] = []
+        self.library_shadow_shelf: list[dict] = []
         self.research_completed = 0
         # See actions.py._build_well/Simulation._advance_water_supply -- explicit
         # request: water's passive income had no equivalent of Fishery/Dock's
@@ -2922,6 +2926,7 @@ class Simulation:
         # freshest entry in the window the reflection reads below.
         self._advance_population_pressure(tribe, night=True)
         self._peace_gate_night(tribe)
+        await self._library_shadow_night(tribe)
         # Explicit report, 2026-09-14/15: "the chief is getting every hatch not
         # just the latest or greatest (singular)." A flat last-N slice of
         # tribe.history is fine early on, but the Coop/Hatchery's automatic
@@ -6595,6 +6600,40 @@ class Simulation:
                 if exp.get("phase") == "returning":
                     self._party_report_overheard(tribe, exp)
                 tribe.expeditions.remove(exp)
+
+    async def _library_shadow_night(self, tribe: Tribe) -> None:
+        """Phase 0 of docs/LIBRARY-PALIMPSEST-SPEC.md: judge what RESEARCH filed against a shadow shelf and log the relation each
+        candidate would have had (new, reinforces, collides, compatible). Runs only when the judge is on (the home-page checkbox).
+        The real Library is untouched. A repeat (reinforces) is not added to the shadow shelf, as the spec's filing would not."""
+        pending, tribe.library_shadow_pending = tribe.library_shadow_pending, []
+        if not pending:
+            return
+        try:
+            judge = await self._reflection_judge()
+            if judge is None:
+                return
+            for filing in pending:
+                results = []
+                for text in filing["texts"]:
+                    held = [{"id": e["id"], "text": e["text"]} for e in tribe.library_shadow_shelf[-8:]]
+                    if held:
+                        verdict = await asyncio.to_thread(judge, text, held)
+                    else:
+                        verdict = {"relation": "new", "related_id": None, "reason": "empty shelf"}
+                    relation = verdict.get("relation")
+                    if relation != "reinforces":
+                        tribe.library_shadow_shelf.append(
+                            {"id": f"lib{len(tribe.library_shadow_shelf)}_{filing['cycle']}", "text": text, "cycle": filing["cycle"]})
+                        del tribe.library_shadow_shelf[:-40]
+                    results.append({"text": text[:200], "relation": relation, "reason": str(verdict.get("reason"))[:200],
+                                    "counts_as_new": relation != "reinforces"})
+                new = sum(1 for r in results if r["counts_as_new"])
+                self.event_log.record_data(
+                    tribe.name, "library_shadow", {"research_cycle": filing["cycle"], "results": results, "new": new, "repeats": len(results) - new,
+                                                    "shelf": len(tribe.library_shadow_shelf), "research_completed": tribe.research_completed},
+                    message=f"[library shadow] research at cycle {filing['cycle']}: {new} new, {len(results) - new} repeat of {len(results)}")
+        except Exception:  # noqa: BLE001 -- logging must never interrupt the night cycle
+            pass
 
     def _peace_gate_night(self, tribe: Tribe) -> None:
         """Phase 0 of docs/TRADE-GATE-DESIGN.md: once a night, after the cull, update and log the gate's state. Logging only."""

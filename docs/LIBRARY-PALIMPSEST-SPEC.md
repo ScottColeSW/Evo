@@ -110,3 +110,15 @@ choice, the reason and the author. The shelf never resolves anything itself.
   nudges did not work. The read-back is facts about the shelf, not advice, but it can still turn out to do nothing; the log will
   say.
 - **Gaming the discount** by filing many tiny distinct claims. A cap per research (three candidates, as now) bounds it.
+
+## Phase 0, built (2026-10-03)
+
+`RESEARCH` queues what it filed (`tribe.library_shadow_pending`); each night, when the judge is on (the home-page judge checkbox),
+`Simulation._library_shadow_night` judges each candidate against a shadow shelf and writes a `library_shadow` record to
+`logs/run_*.jsonl` (per candidate: relation, reason, whether it would count as new; per research: new and repeat counts). Repeats are
+not added to the shadow shelf. The real Library and the era discount are untouched. Only beliefs (memories) are judged for now; the
+evidence source from section 1 comes with phase 1.
+
+Reading it after a run (the prediction and falsifier above are scored from these records, skipping each tribe's first two filings):
+
+    python -c "import json,sys; r=[json.loads(l) for l in open(sys.argv[1],encoding='utf-8') if '\"library_shadow\"' in l]; print(sum(x['data']['repeats'] for x in r), sum(x['data']['new'] for x in r))" logs/run_XXXX.jsonl

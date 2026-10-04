@@ -1224,6 +1224,10 @@ def _research(sim, tribe, biome, target):
         return None
     tribe.wood -= config.RESEARCH_WOOD_COST
     summary = "; ".join(top[: config.LIBRARY_ENTRY_MEMORY_COUNT])
+    # Phase 0 of docs/LIBRARY-PALIMPSEST-SPEC.md: queue what was filed so the night cycle can judge it against a shadow shelf.
+    # Logging only; the entry below is filed exactly as before.
+    tribe.library_shadow_pending.append({"cycle": sim.cycle, "texts": top[: config.LIBRARY_ENTRY_MEMORY_COUNT]})
+    del tribe.library_shadow_pending[:-20]
     tribe.library_entries.append({"summary": summary, "cycle": sim.cycle})
     tribe.research_completed += 1
     return f"the library records a new insight: \"{summary}\" -- the path to the next era grows a little shorter"
