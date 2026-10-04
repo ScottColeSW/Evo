@@ -39,6 +39,9 @@ def test_research_queues_what_it_filed_and_files_as_before():
 async def test_night_judges_against_the_shadow_shelf_and_logs():
     sim, tribe, logged = _setup()
     actions._research(sim, tribe, None, None)
+    # RESEARCH files only what is not already on the shelf, so a second filing needs new memories
+    tribe.memory.remember("raiders came from the north at dusk and the wall held", 55, weight=0.9)
+    tribe.memory.remember("the storehouse burned during the dry month", 56, weight=0.8)
     actions._research(sim, tribe, None, None)
     sim._reflection_judge = _judge(["reinforces", "new", "reinforces", "reinforces"])
     entries_before = list(tribe.library_entries)

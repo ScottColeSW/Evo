@@ -15,6 +15,7 @@ drift a little every time someone chops wood.
 
 import math
 import random
+import re
 
 from . import architect, city_layout, config, physics
 from .might import compute_might
@@ -1205,6 +1206,32 @@ def _build_library(sim, tribe, biome, target):
     return "a library is built -- the tribe's own memory can now be studied and put to real use"
 
 
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def research_candidates(tribe) -> list[str]:
+    """The memories RESEARCH could file now: highest-weight first, skipping any whose wording is already on the shelf
+    (config.LIBRARY_REPEAT_JACCARD) and the Library's own earlier entries (it once filed "the library records a new insight" back
+    into memory). At most LIBRARY_ENTRY_MEMORY_COUNT. Empty means RESEARCH would add nothing, so it is not offered."""
+    ranked = sorted(tribe.memory.entries, key=lambda e: e["weight"], reverse=True)
+    texts = [e["text"] for e in ranked] + [t["text"] for t in tribe.memory.taboos]
+    filed = [_words(t) for entry in tribe.library_entries for t in entry.get("texts", [entry["summary"]])]
+    out: list[str] = []
+    for text in texts:
+        if "the library records a new insight" in text:
+            continue
+        words = _words(text)
+        if not words or text in out:
+            continue
+        if any(len(words & f) / len(words | f) >= config.LIBRARY_REPEAT_JACCARD for f in filed + [_words(o) for o in out]):
+            continue
+        out.append(text)
+        if len(out) >= config.LIBRARY_ENTRY_MEMORY_COUNT:
+            break
+    return out
+
+
 def _research(sim, tribe, biome, target):
     """The Library's real payoff: distills the tribe's highest-weight remembered
     episodes (TribeMemory.entries/taboos -- the same ranking TribeMemory.
@@ -1215,11 +1242,11 @@ def _research(sim, tribe, biome, target):
     if the tribe hasn't actually remembered anything real yet."""
     if not tribe.library_built:
         return None
-    ranked = sorted(tribe.memory.entries, key=lambda e: e["weight"], reverse=True)
-    top = [e["text"] for e in ranked[: config.LIBRARY_ENTRY_MEMORY_COUNT]]
-    top.extend(t["text"] for t in tribe.memory.taboos if t["text"] not in top)
+    top = research_candidates(tribe)
     if not top:
-        return "the library stands ready, but the tribe hasn't lived through anything worth recording yet"
+        if not tribe.memory.entries and not tribe.memory.taboos:
+            return "the library stands ready, but the tribe hasn't lived through anything worth recording yet"
+        return "the library has nothing new to record: everything the tribe remembers is already on its shelves"
     if tribe.wood < config.RESEARCH_WOOD_COST:
         return None
     tribe.wood -= config.RESEARCH_WOOD_COST
@@ -1228,7 +1255,7 @@ def _research(sim, tribe, biome, target):
     # Logging only; the entry below is filed exactly as before.
     tribe.library_shadow_pending.append({"cycle": sim.cycle, "texts": top[: config.LIBRARY_ENTRY_MEMORY_COUNT]})
     del tribe.library_shadow_pending[:-20]
-    tribe.library_entries.append({"summary": summary, "cycle": sim.cycle})
+    tribe.library_entries.append({"summary": summary, "cycle": sim.cycle, "texts": list(top)})
     tribe.research_completed += 1
     return f"the library records a new insight: \"{summary}\" -- the path to the next era grows a little shorter"
 

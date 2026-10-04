@@ -819,6 +819,10 @@ INNOVATION_ERA_DISCOUNT_CAP = 0.5
 # entry -- a real distillation (see TribeMemory.consolidate's own top-3 taboo
 # ranking, which this deliberately mirrors), not the full raw log dumped in.
 LIBRARY_ENTRY_MEMORY_COUNT = 3
+# 2026-10-03 (the owner: an action that adds nothing should not be on the list): a memory counts as already on the shelf when its word
+# overlap (Jaccard) with something the Library has filed is at least this. RESEARCH is offered only when the tribe holds at least one
+# memory that is not already filed, so repeating it can no longer collect the era discount (a run filed 18 times, mostly the same text).
+LIBRARY_REPEAT_JACCARD = 0.6
 
 # BUILD_WELL (backend/actions.py, Simulation._advance_water_supply/
 # _is_water_secure): explicit request -- water's only passive-income lever was

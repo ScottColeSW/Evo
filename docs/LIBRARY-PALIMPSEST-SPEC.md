@@ -122,3 +122,15 @@ evidence source from section 1 comes with phase 1.
 Reading it after a run (the prediction and falsifier above are scored from these records, skipping each tribe's first two filings):
 
     python -c "import json,sys; r=[json.loads(l) for l in open(sys.argv[1],encoding='utf-8') if '\"library_shadow\"' in l]; print(sum(x['data']['repeats'] for x in r), sum(x['data']['new'] for x in r))" logs/run_XXXX.jsonl
+
+## Phase 0 result and a rule change (2026-10-04)
+
+First run with the shadow on (one tribe researched 18 times in cycles 289 to 388): 40 of 48 filings after the first two were repeats, so
+the prediction holds. The candidates were routine action logs, and the judge called some of them contradictions at 1.00 confidence
+(different actions, same sentence shape), so the judge needs reflections and evidence as its input, not episodes. The same tribe
+reached the 50% era-discount cap at 13 researches.
+
+Rule change, independent of the shelf: `RESEARCH` is offered only when the tribe remembers something the Library has not filed
+(`actions.research_candidates`, word overlap of at least `LIBRARY_REPEAT_JACCARD` = 0.6 counts as filed, and the Library's own
+entries are never refiled), so every research that happens adds something and counts toward the discount. The principle (the owner's):
+an action that adds nothing is not on the list.

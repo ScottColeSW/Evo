@@ -7,7 +7,7 @@ from collections import Counter, deque
 
 from . import architect, city_layout, config, peace_gate, physics
 from .actions import (
-    military_intel_text,
+    military_intel_text, research_candidates,
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _battalion_capacity, _conquest_ready, _created_object_bonus, _dmm_ready, _eligible_breeding_pair,
     _food_multiplier, _forge_item, _plant_crop_cost,
@@ -724,11 +724,10 @@ AFFORDABILITY_CHECKS = {
         and t.wood >= config.WELL_WOOD_COST and t.stone >= config.WELL_STONE_COST
         and _can_place(t, w, "well")
     ),
-    # Deliberately NOT gated on the tribe having any memory yet -- same as
-    # CONSTRUCT_WALL's own "let the action's own message surface instead" case:
-    # a library with nothing worth studying yet is a real, informative state,
-    # not a guaranteed no-op this table exists to hide.
-    "RESEARCH": lambda t, w: t.library_built and t.wood >= config.RESEARCH_WOOD_COST,
+    # 2026-10-03 (the owner: an action that adds nothing should not be on the list): offered only when the tribe remembers something
+    # the Library has not already filed (actions.research_candidates). This replaces the earlier choice to leave it reachable with
+    # nothing to study; a run showed the repeats were being used to collect the era discount.
+    "RESEARCH": lambda t, w: t.library_built and t.wood >= config.RESEARCH_WOOD_COST and bool(research_candidates(t)),
     # GATHER_ORE has no wood/stone cost of its own -- the real prerequisite is
     # a mine existing at all (see actions.py._gather_ore's own guard clause).
     "GATHER_ORE": lambda t, w: t.mine_built,

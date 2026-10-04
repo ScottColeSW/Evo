@@ -3406,6 +3406,7 @@ def test_available_actions_are_era_ordered_not_alphabetized():
     tribe.fire_ever_built = True
     tribe.hunt_ever_succeeded = True
     tribe.library_built = True  # RESEARCH's own real prerequisite
+    tribe.memory.remember("a wolf attacked near the river", cycle=1, weight=0.9)  # RESEARCH is offered only with something new to file
     tribe.wood = config.RESEARCH_WOOD_COST  # affords COOK_FOOD/RESEARCH, not any construction
 
     _, ctx = sim._prepare_turn(tribe)
