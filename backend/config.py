@@ -1335,6 +1335,11 @@ POPULATION_CARRYING_CAPACITY_TARGET_FRACTION = 0.89
 # large overshoot drains down over several cycles instead of vanishing in
 # one tick.
 POPULATION_PRESSURE_CULL_FRACTION = 0.05
+# 2026-10-03, at the owner's request: overcrowding is no longer trimmed a little every cycle (a recorded run had 205 small culls, 226
+# then 215 then 204 people and so on, 17,899 in all) but once, at the start of the night, as a single event the Chief reflects on
+# (Simulation._run_night_cycle). NIGHT_CULL_FRACTION is the share of the excess over the target line lost then: 1.0 brings the tribe
+# back to the line in one blow. The per-cycle POPULATION_PRESSURE_CULL_FRACTION above is kept for the unit that still uses it.
+NIGHT_CULL_FRACTION = 1.0
 DEHYDRATION_TRAUMA_MAGNITUDE = -0.4
 DEHYDRATION_TRAUMA_RADIUS = 5
 

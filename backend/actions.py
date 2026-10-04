@@ -3283,6 +3283,32 @@ def _send_trade_emissary(sim, tribe, biome, target):
     return _execute_trade(sim, tribe, rival)
 
 
+def military_intel(rival) -> dict:
+    """What a spy can report about a rival's battle readiness (2026-10-03, at the owner's request: battalions, barracks, patrols,
+    training, walls and so on): soldiers and battalions, how ready they are, barracks and upgrades, whether a patrol is out, how much
+    of the wall is built and reinforced, and the large defensive buildings. Read off the rival at the moment of the mission."""
+    sections = [sec for ring in rival.wall_rings for sec in ring.get("sections", []) if not sec.get("natural_barrier")]
+    patrol = rival.battalion_patrol
+    return {
+        "soldiers": rival.battalion_size, "battalions": len(rival.battalions), "readiness": round(rival.battalion_readiness, 2),
+        "barracks": rival.barracks_built, "barracks_upgrades": rival.barracks_upgrades,
+        "patrol": None if patrol is None else patrol.get("phase"),
+        "wall_sections_built": sum(1 for sec in sections if sec.get("unlocked")), "wall_sections": len(sections),
+        "wall_sections_reinforced": sum(1 for sec in sections if sec.get("tier", 0) >= config.WALL_MAX_LAYERS),
+        "defenses": [name for name in ("keep", "fortress", "castle", "moat") if getattr(rival, f"{name}_built", False)],
+    }
+
+
+def military_intel_text(m: dict) -> str:
+    """One plain-fact sentence for a military_intel() dict; numbers only."""
+    patrol = {"patrolling": "a patrol is out", "returning": "a patrol is returning"}.get(m.get("patrol"), "no patrol is out")
+    walls = (f"{m['wall_sections_built']} of {m['wall_sections']} wall sections built, {m['wall_sections_reinforced']} reinforced"
+             if m["wall_sections"] else "no wall")
+    defenses = ", ".join(m["defenses"]) if m["defenses"] else "none of keep, fortress, castle or moat"
+    return (f"{m['soldiers']} soldiers in {m['battalions']} battalions at {round(m['readiness'] * 100)}% readiness; "
+            f"{m['barracks']} barracks ({m['barracks_upgrades']} upgrades); {patrol}; {walls}; defenses: {defenses}")
+
+
 def _spy(sim, tribe, biome, target):
     """Send a covert agent to a discovered rival's camp -- what self-review
     (Simulation._run_night_cycle, now the tribe's own model rather than a
@@ -3346,6 +3372,7 @@ def _spy(sim, tribe, biome, target):
         "wood": rival.wood, "stone": rival.stone, "food": rival.food, "water": rival.water,
         "long_houses_built": rival.long_houses_built,
         "wall_ring_count": len(rival.wall_rings),
+        "military": military_intel(rival),
     }
     return f"a spy returns from {rival.name}'s camp with fresh intelligence, undetected"
 

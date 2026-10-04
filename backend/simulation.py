@@ -7,6 +7,7 @@ from collections import Counter, deque
 
 from . import architect, city_layout, config, physics
 from .actions import (
+    military_intel_text,
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _battalion_capacity, _conquest_ready, _created_object_bonus, _dmm_ready, _eligible_breeding_pair,
     _food_multiplier, _forge_item, _plant_crop_cost,
@@ -2877,6 +2878,7 @@ class Simulation:
                 f"population {intel['population']}, era {intel['era']}, "
                 f"{intel['wood']} wood/{intel['stone']} stone/{intel['food']} food/{intel['water']} water, "
                 f"{intel['long_houses_built']} long houses, {intel['wall_ring_count']} wall rings."
+                + (f" Their forces: {military_intel_text(intel['military'])}." if intel.get("military") else "")
             )
         return " ".join(lines)
 
@@ -2907,6 +2909,9 @@ class Simulation:
         that gives a tribe's own accumulated experience a chance to compound into
         wisdom over time, distinct from breed()/breed_individuals' cross-tribe/
         cross-individual crossover."""
+        # 2026-10-03 (owner's request): the one big culling for the Chief to reflect on. It lands first, so its chronicle line is the
+        # freshest entry in the window the reflection reads below.
+        self._advance_population_pressure(tribe, night=True)
         # Explicit report, 2026-09-14/15: "the chief is getting every hatch not
         # just the latest or greatest (singular)." A flat last-N slice of
         # tribe.history is fine early on, but the Coop/Hatchery's automatic
@@ -3370,7 +3375,7 @@ class Simulation:
             self._advance_battalion_readiness_upkeep(tribe)
             self._advance_battalion_celebrations(tribe)
             self._grow_population(tribe)
-            self._advance_population_pressure(tribe)
+            # Overcrowding is culled once, at the start of the night (see _run_night_cycle), not a little every cycle
             self._advance_era_if_ready(tribe)
             if not tribe.settlement_name and not tribe.pending_settlement_naming and self._is_settled_near_water(tribe):
                 self._celebrate_settling(tribe)
@@ -3811,6 +3816,11 @@ class Simulation:
                 visible_entities.append(
                     f"{other.name}'s camp is known to be at ({other.x},{other.y}), about {distance:.0f} tiles away"
                 )
+                spied = tribe.rival_intel.get(other.id)
+                if spied and spied.get("military"):
+                    visible_entities.append(
+                        f"What your spy reported of {other.name}'s forces (cycle {spied['cycle']}): {military_intel_text(spied['military'])}"
+                    )
                 # Explicit request, 2026-09-09: "dig into why tribe-to-tribe
                 # contact never gets acted on." Grounded in a real run: both
                 # tribes discovered each other (one with a 98-cycle window
@@ -8132,7 +8142,7 @@ class Simulation:
                 tribe.food -= min(tribe.food, config.POPULATION_GROWTH_FOOD_COST * growth)
         tribe.max_population = max(tribe.max_population, tribe.population)
 
-    def _advance_population_pressure(self, tribe: Tribe) -> None:
+    def _advance_population_pressure(self, tribe: Tribe, night: bool = False) -> None:
         """Explicit request, 2026-09-09: "Population culling due to food
         shortages are not working effectively. It might need to cull an
         additional 11% less than the supportable population... It should cull
@@ -8159,9 +8169,9 @@ class Simulation:
             return
         target = round(_sustainable_population(tribe) * config.POPULATION_CARRYING_CAPACITY_TARGET_FRACTION)
         excess = tribe.population - target
-        if excess <= 0:
+        if excess <= 0 or not math.isfinite(excess):
             return
-        lost = max(1, round(excess * config.POPULATION_PRESSURE_CULL_FRACTION))
+        lost = max(1, round(excess * (config.NIGHT_CULL_FRACTION if night else config.POPULATION_PRESSURE_CULL_FRACTION)))
         # Phase 0 of docs/OVERCROWDING-REBELLION-DESIGN.md (2026-10-03): record each cull with each rival's room, so the real
         # opportunity for migration or conflict can be counted before anything is built. Logging only, best-effort.
         try:
@@ -8184,7 +8194,8 @@ class Simulation:
         except Exception:  # noqa: BLE001 -- logging must never interrupt the simulation
             pass
         tribe.history.append(
-            f"the population is culled back to what the land can support -- {lost} lost to overcrowding"
+            ("as the night begins, " if night else "")
+            + f"the population is culled back to what the land can support -- {lost} lost to overcrowding"
         )
         self._lose_population(tribe, lost, cause="overcrowding")
 
