@@ -35,3 +35,22 @@ data first, including data that is not yet understood.
    test in Evo, and it is the only place Evo has an adversary. Needs the lexicon or the spy-intel channel to carry claims first.
 4. **Translation guesses as beliefs** (language step D): a guess with counted trade outcomes as evidence and a correction that
    supersedes it with the reason recorded. Depends on 3's channel and on whether the models use a word reliably.
+
+## Decisions taken 2026-10-04 on the three items left open after the last two runs
+
+1. **Research discount: capped per era (built).** `INNOVATION_RESEARCH_COUNTED_PER_ERA = 3`. RESEARCH counts toward the era discount, and is offered,
+   at most three times per era; the count resets at each era change (`Tribe.research_this_era`). The last two runs filled the 50% cap with 13
+   researches in about 130 cycles, because each new building counted as new evidence. Now the cap takes about four eras to fill. Watch:
+   `night_watch.research_this_era`, and whether the Library still grows enough to be worth keeping (three filings of three entries per era).
+2. **Tribe 1's long first era: no change, on purpose.** The first population line stays at 60. The stall (235 cycles) came from food management, not
+   the line: its food sat at 1 to 10 for about 200 cycles with no farm plots and no fishing, and the same tribe left the era within 50 cycles once
+   food was solved. Lowering the line would hide a chief-quality problem and give weak chiefs nothing to learn from; it also would not shorten the
+   era below the 50-cycle floor. What was added: `night_watch` now logs food, water, farm plots and whether fishing is learned, so a stall can be
+   read from the log. **Trigger to revisit:** if, across the next four runs, at least half of all tribes take more than 150 cycles to leave the
+   first era, lower the line to 30.
+3. **Trade gate: parameters set, lock not built.** The contact path was raised from 3 to 5 contact nights (about 150 cycles, equal to the
+   stability path) because 3 opened the tier at cycle 90 for every tribe. Kept: lesson path (a cost, then 3 clean nights), stability 150 cycles,
+   scar window 10 nights, cap 12. The gate would have blocked 0 of 22 trades in the last two runs, because trades started at 164 to 399, so there
+   is nothing to justify a lock yet. **Trigger to build the lock:** after the TRADE fixes, if the median first trade comes before cycle 90 across
+   the next four runs (the old regime traded at cycle 64 to 71), build it with these numbers behind a setting, off by default. If not, drop the
+   lock from this backlog and keep the logging.

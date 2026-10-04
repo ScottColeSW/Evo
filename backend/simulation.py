@@ -728,7 +728,8 @@ AFFORDABILITY_CHECKS = {
     # 2026-10-03 (the owner: an action that adds nothing should not be on the list): offered only when the tribe remembers something
     # the Library has not already filed (actions.research_candidates). This replaces the earlier choice to leave it reachable with
     # nothing to study; a run showed the repeats were being used to collect the era discount.
-    "RESEARCH": lambda t, w: t.library_built and t.wood >= config.RESEARCH_WOOD_COST and bool(research_candidates(t)),
+    "RESEARCH": lambda t, w: (t.library_built and t.wood >= config.RESEARCH_WOOD_COST
+                              and t.research_this_era < config.INNOVATION_RESEARCH_COUNTED_PER_ERA and bool(research_candidates(t))),
     # GATHER_ORE has no wood/stone cost of its own -- the real prerequisite is
     # a mine existing at all (see actions.py._gather_ore's own guard clause).
     "GATHER_ORE": lambda t, w: t.mine_built,
@@ -1516,6 +1517,9 @@ class Tribe:
         self.library_shadow_pending: list[dict] = []
         self.library_shadow_shelf: list[dict] = []
         self.research_completed = 0
+        # RESEARCH done in the current era; at most config.INNOVATION_RESEARCH_COUNTED_PER_ERA count toward the era discount and are offered.
+        # Reset when the era changes (see _advance_era_if_ready and the conquest merge).
+        self.research_this_era = 0
         # See actions.py._build_well/Simulation._advance_water_supply -- explicit
         # request: water's passive income had no equivalent of Fishery/Dock's
         # stacking bonus. No prerequisite beyond being settled and affordable, same
@@ -6661,14 +6665,17 @@ class Simulation:
         try:
             target = round(_sustainable_population(tribe) * config.POPULATION_CARRYING_CAPACITY_TARGET_FRACTION)
             data = {"population": tribe.population, "target": target, "headroom": target - tribe.population,
-                    "era": tribe.era, "cycles_in_era": self.cycle - tribe.era_entered_cycle}
+                    "era": tribe.era, "cycles_in_era": self.cycle - tribe.era_entered_cycle,
+                    # What an early stall looks like from outside (the 235-cycle first era of 2026-10-04): the food buffer, and whether the
+                    # tribe has found any way to make food beyond foraging.
+                    "food": tribe.food, "water": tribe.water, "farm_plots": tribe.farm_plots, "fishing_learned": tribe.fishing_learned}
             if tribe.library_built:
                 picks = research_candidates_with_source(tribe)
                 data.update({"research_offered": bool(picks) and tribe.wood >= config.RESEARCH_WOOD_COST,
                              "research_wood_short": tribe.wood < config.RESEARCH_WOOD_COST,
                              "research_belief": sum(1 for c in picks if c["source"] == "belief"),
                              "research_evidence": sum(1 for c in picks if c["source"] == "evidence"),
-                             "research_completed": tribe.research_completed})
+                             "research_completed": tribe.research_completed, "research_this_era": tribe.research_this_era})
             self.event_log.record_data(
                 tribe.name, "night_watch", data,
                 message=f"[night watch] population {tribe.population} of {target}, era {tribe.era}"
@@ -8500,6 +8507,7 @@ class Simulation:
             _spend_era_resource(tribe, resource, discounted)
         tribe.era = nxt.key
         tribe.era_entered_cycle = self.cycle
+        tribe.research_this_era = 0
         tribe.history.append(nxt.announcement.format(tribe=tribe.name))
         if nxt.founds_city:
             # Live bug report: a tribe reached Monolithic Era and grew a full,
@@ -9796,6 +9804,7 @@ class Simulation:
         if era_index(defender.era) > era_index(attacker.era):
             attacker.era = defender.era
             attacker.era_entered_cycle = self.cycle
+            attacker.research_this_era = 0
         attacker.chief_name = ""
         attacker.chief_philosophy = ""
         attacker.chief_decree = ""

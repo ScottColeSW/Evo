@@ -821,6 +821,10 @@ RESEARCH_WOOD_COST = 10
 # _advance_era_if_ready), not baked into eras.py's own numbers.
 INNOVATION_ERA_DISCOUNT_PER_RESEARCH = 0.04
 INNOVATION_ERA_DISCOUNT_CAP = 0.5
+# 2026-10-04 (the owner's rule: an action that adds nothing is not on the list): the last two runs filled the whole 50% discount with 13 researches in
+# about 130 cycles, in bursts, because every new building is "new evidence". A tribe's RESEARCH now counts toward the discount, and is offered, at
+# most this many times per era; the count resets when the era changes. At 4% each, reaching the 50% cap now takes about four eras instead of one.
+INNOVATION_RESEARCH_COUNTED_PER_ERA = 3
 # How many of the tribe's own highest-weight memories get folded into one Library
 # entry -- a real distillation (see TribeMemory.consolidate's own top-3 taboo
 # ranking, which this deliberately mirrors), not the full raw log dumped in.
@@ -2534,7 +2538,9 @@ PEACE_GATE_SCAR_WINDOW_NIGHTS = 10
 PEACE_GATE_STABILITY_CYCLES = 150
 # The other way in: outside contact (a rival found, a spy sent, words brought home by a party) on this many separate nights. Counted
 # by night, not by event: the first run's parties brought home about 25 words each, which made a raw count meaningless.
-PEACE_GATE_CONTACT_NIGHTS = 3
+PEACE_GATE_CONTACT_NIGHTS = 5
+# 2026-10-04: raised from 3. In the last two runs 3 contact nights opened the tier at cycle 90 for every tribe, before the lesson or stability paths
+# could matter. 5 nights is about 150 cycles, the same as PEACE_GATE_STABILITY_CYCLES, so contact is an equal route rather than the fastest one.
 
 # Cross-tribe proximity awareness, independent of whether the other tribe has ever
 # broadcast anything -- real data this session showed every single run (25/25 tribe-

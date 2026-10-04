@@ -54,3 +54,11 @@ lower (a world rule about reputation, not a prompt).
 Phase 0: log `cost_event`, `clean_nights` and the gate state per tribe (no behavior change). Phase 1: the gate behind a setting,
 off by default, with a banner. Measure: when does trade now begin, how many wars start, and do any tribes end up in the "always
 cull" trap. A pre-registration (prediction and falsifier) is committed before the run.
+
+## Resolution, 2026-10-04
+
+Phase 0 ran twice. Findings: all cost events were war losses (raiders), no culls happened, and the contact path (3 nights) opened the tier at cycle
+90 for every tribe. The gate would have blocked 0 of 22 trades, since trades began at cycle 164 to 399 (after the TRADE fixes described in
+`docs/EVO-BACKLOG.md` this may change). Decisions: `PEACE_GATE_CONTACT_NIGHTS` 3 to 5; other numbers unchanged; the lock is **not** built. Build it
+only if the median first trade is before cycle 90 across the next four runs; otherwise retire it. The cull-habit punishment cannot be judged until a
+run culls at all.

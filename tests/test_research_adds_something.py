@@ -93,3 +93,41 @@ def test_repeats_collapse_into_one_counted_entry():
         tribe.memory.remember(f"Scouts explored toward ({cycle},4) and found plains terrain.", cycle=cycle, weight=0.5)
     (only,) = [c for c in library_candidates(tribe) if c["source"] == "evidence"]
     assert only["count"] == 4 and "recurred 4 times, cycles 1 to 4" in only["text"]
+
+
+DISTINCT = ["the river clan can be trusted in lean years", "granite quarry workers fell ill after the autumn rains",
+            "wolves avoid the burned meadow near the ridge", "the northern marsh holds herons and little else", "salt traders never return by the same road"]
+
+
+def test_research_counts_and_is_offered_only_a_few_times_per_era():
+    from backend import config
+    sim, tribe = _bare_simulation(), _tribe()
+    tribe.wood = 1000
+    cap = config.INNOVATION_RESEARCH_COUNTED_PER_ERA
+    for i in range(cap):
+        tribe.memory.remember(DISTINCT[i], cycle=50 + i, weight=0.9, kind="reflection")
+        assert _offered(tribe), i
+        ACTION_REGISTRY["RESEARCH"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.research_completed == cap and tribe.research_this_era == cap
+    tribe.memory.remember(DISTINCT[3], cycle=90, weight=0.9, kind="reflection")
+    assert not _offered(tribe)
+    wood = tribe.wood
+    result = ACTION_REGISTRY["RESEARCH"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.research_completed == cap and tribe.wood == wood and "waits for the next era" in result
+
+
+def test_the_per_era_count_resets_when_the_era_changes():
+    from backend import config
+    from backend.simulation import Simulation
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.research_this_era = config.INNOVATION_RESEARCH_COUNTED_PER_ERA
+    tribe.has_ever_settled = True
+    tribe.population = 10 ** 6
+    tribe.wood = tribe.stone = tribe.water = tribe.food = 10 ** 6
+    tribe.unique_resources["Fur"] = 10 ** 6
+    sim.cycle = tribe.era_entered_cycle + config.ERA_MIN_CYCLES + 1
+    before = tribe.era
+    sim._advance_era_if_ready(tribe)
+    if tribe.era != before:
+        assert tribe.research_this_era == 0

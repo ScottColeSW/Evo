@@ -1343,6 +1343,8 @@ def _research(sim, tribe, biome, target):
     if the tribe hasn't actually remembered anything real yet."""
     if not tribe.library_built:
         return None
+    if tribe.research_this_era >= config.INNOVATION_RESEARCH_COUNTED_PER_ERA:
+        return "the library has yielded all it can toward this era's progress; further study waits for the next era"
     picks = research_candidates_with_source(tribe)
     top = [c["text"] for c in picks]
     if not top:
@@ -1360,6 +1362,7 @@ def _research(sim, tribe, biome, target):
     tribe.library_entries.append({"summary": summary, "cycle": sim.cycle, "texts": list(top), "sources": [c["source"] for c in picks],
                                   "keys": {c["key"]: c["count"] for c in picks if c.get("key")}})
     tribe.research_completed += 1
+    tribe.research_this_era += 1
     return f"the library records a new insight: \"{summary}\" -- the path to the next era grows a little shorter"
 
 

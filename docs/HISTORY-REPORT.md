@@ -332,3 +332,11 @@ TRADE 65; the rest a handful each). Gathers into full storage: 0 (fixed the same
   merge cycle. A few lives, small effect.
 - The scoreboard records only tribes that ended, so it skews to short lives; the database sections are the better guide for lives of 100 cycles or more.
 - Chronicle counts are lines, not events (a starving tribe writes the same line every cycle).
+
+## Cleanup record and decisions after this report (2026-10-04)
+
+- **Raw data removed.** The owner ran `scripts/cleanup_history_raw.py --yes`: `logs/board_history.db` (5.02 GB) and the 499 chronicle logs older than
+  the evening of 2026-10-03 (62.8 MB) are gone; `logs` is now 9.3 MB. Kept: the four newest run logs, `scoreboard.jsonl`, `experiments.jsonl`,
+  `benchmark_results.db`. The numbers above cannot be recomputed from raw data any more; the scripts remain as the record of method.
+- **Research discount capped per era** (3 per era). **Tribe 1's long first era left as it is,** with a stated trigger to revisit. **Trade-gate contact
+  path raised to 5 nights; lock not built,** with a stated trigger. Details and triggers: `docs/EVO-BACKLOG.md`.
