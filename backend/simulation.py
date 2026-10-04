@@ -5,7 +5,7 @@ import math
 import random
 from collections import Counter, deque
 
-from . import architect, city_layout, config, physics
+from . import architect, city_layout, config, peace_gate, physics
 from .actions import (
     military_intel_text,
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
@@ -1258,6 +1258,8 @@ class Tribe:
         # 2026-10-03: vocabulary a traveling party overheard near a rival's camp and carried home, newest last. Each entry:
         # {"token", "from", "action", "cycle"}. See Simulation._party_listen.
         self.heard_by_parties: list[dict] = []
+        # Phase 0 of docs/TRADE-GATE-DESIGN.md: what the peace tier would need, tracked and logged only. See peace_gate.py.
+        self.peace_gate: dict = peace_gate.new_state()
         # Phase 0 of docs/CONFLICT-MODE-DESIGN.md: {"kind", "outcome", "start", "until"} while a conflict logging window is open
         # (see actions.note_conflict). Logging only; nothing reads it to decide anything.
         self.conflict_watch: dict | None = None
@@ -2919,6 +2921,7 @@ class Simulation:
         # 2026-10-03 (owner's request): the one big culling for the Chief to reflect on. It lands first, so its chronicle line is the
         # freshest entry in the window the reflection reads below.
         self._advance_population_pressure(tribe, night=True)
+        self._peace_gate_night(tribe)
         # Explicit report, 2026-09-14/15: "the chief is getting every hatch not
         # just the latest or greatest (singular)." A flat last-N slice of
         # tribe.history is fine early on, but the Coop/Hatchery's automatic
@@ -6593,6 +6596,35 @@ class Simulation:
                     self._party_report_overheard(tribe, exp)
                 tribe.expeditions.remove(exp)
 
+    def _peace_gate_night(self, tribe: Tribe) -> None:
+        """Phase 0 of docs/TRADE-GATE-DESIGN.md: once a night, after the cull, update and log the gate's state. Logging only."""
+        try:
+            state = tribe.peace_gate
+            culled = any(e["kind"] == "cull" and e["cycle"] == self.cycle for e in state["cost_events"])
+            peace_gate.note_night(state, culled)
+            snapshot = peace_gate.evaluate(tribe, self.cycle)
+            if snapshot["would_open"] and state["would_open"] is None:
+                state["would_open_cycle"] = self.cycle
+            state["would_open"] = snapshot["would_open"]
+            self.event_log.record_data(
+                tribe.name, "peace_gate", {**snapshot, "would_open_cycle": state["would_open_cycle"], "trades": tribe.trades_completed},
+                message=f"[peace gate] night {state['nights']}: felt={snapshot['felt']} clean={snapshot['clean_nights']}/"
+                        f"{snapshot['required_clean_nights']} scar={snapshot['scar']} contacts={snapshot['contacts']} "
+                        f"would_open={snapshot['would_open']}")
+        except Exception:  # noqa: BLE001 -- logging must never interrupt the simulation
+            pass
+
+    def _peace_gate_note_peace(self, tribe: Tribe, kind: str) -> None:
+        """Logs a trade or alliance together with whether the gate would have let it through. This is the number phase 0 exists to get:
+        how many early trades a lock would have blocked."""
+        try:
+            snapshot = peace_gate.evaluate(tribe, self.cycle)
+            self.event_log.record_data(
+                tribe.name, "peace_gate_peace_act", {**snapshot, "act": kind, "blocked": snapshot["would_open"] is None},
+                message=f"[peace gate] {kind} at cycle {self.cycle}; would a gate have blocked it: {snapshot['would_open'] is None}")
+        except Exception:  # noqa: BLE001 -- logging must never interrupt the simulation
+            pass
+
     def _party_listen(self, tribe: Tribe, exp: dict) -> None:
         """A party in the field hears what a rival is broadcasting if it is within BROADCAST_HEARING_RADIUS of that rival's camp,
         the same boundary the camp itself uses (2026-10-03, the owner's note: traveling parties can bring back overheard tokens).
@@ -6615,6 +6647,7 @@ class Simulation:
         if not heard:
             return
         tribe.heard_by_parties.extend(heard)
+        tribe.peace_gate["heard_total"] += len(heard)
         del tribe.heard_by_parties[:-12]
         words = "; ".join(f"'{h['token']}' from {h['from']} while {h['action']}" for h in heard[:3])
         tribe.history.append(f"Returning travelers repeated words they overheard: {words}.")
@@ -8063,6 +8096,14 @@ class Simulation:
             return
         immune = self.cycle <= self.immortality_cycles
         if not immune:
+            try:
+                event = peace_gate.record_cost(tribe.peace_gate, self.cycle, cause, amount, tribe.population)
+                if event:
+                    self.event_log.record_data(
+                        tribe.name, "peace_gate_cost", event,
+                        message=f"[peace gate] cost felt: {event['kind']} ({event['cause']}), {event['amount']} of {event['population']}")
+            except Exception:  # noqa: BLE001 -- logging must never interrupt the simulation
+                pass
             tribe.population = max(0, tribe.population - amount)
             if tribe.population == 0:
                 tribe.extinct = True

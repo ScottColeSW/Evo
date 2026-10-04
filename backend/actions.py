@@ -2907,6 +2907,7 @@ def _execute_trade(sim, tribe, partner) -> str:
 
     tribe.trades_completed += 1
     partner.trades_completed += 1
+    sim._peace_gate_note_peace(tribe, "trade")
     if tribe.trades_completed == 1:
         sim._award_trophy(tribe, "First Contact")
     if partner.trades_completed == 1:
@@ -2949,6 +2950,7 @@ def _trade_with_minor_settlement(sim, tribe, settlement):
     for resource, amount in gained.items():
         _record_trade(tribe, resource, received=amount)  # one-way -- nothing given up
     tribe.trades_completed += 1
+    sim._peace_gate_note_peace(tribe, "trade")
     if tribe.trades_completed == 1:
         sim._award_trophy(tribe, "First Contact")
     sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.TRADE_PRIDE_MAGNITUDE, config.TRADE_PRIDE_RADIUS)
@@ -3048,6 +3050,7 @@ def _declare_alliance(sim, tribe, biome, target):
 
     tribe.stance_toward[rival.id] = "ALLIED"
     rival.stance_toward[tribe.id] = "ALLIED"
+    sim._peace_gate_note_peace(tribe, "alliance")
     sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.NEGOTIATE_PRIDE_MAGNITUDE, config.NEGOTIATE_PRIDE_RADIUS)
     sim.trauma.radiate_event_wave(rival.x, rival.y, config.NEGOTIATE_PRIDE_MAGNITUDE, config.NEGOTIATE_PRIDE_RADIUS)
     if not already_allied:

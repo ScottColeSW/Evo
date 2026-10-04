@@ -2498,6 +2498,22 @@ BROADCAST_HEARING_RADIUS = 90
 # How long a party's overheard word stays among the Chief's visible facts once the party is home (2026-10-03).
 PARTY_HEARD_VISIBLE_CYCLES = 60
 
+# Phase 0 of docs/TRADE-GATE-DESIGN.md (2026-10-03): logging only, nothing is locked. The numbers are first guesses to be read
+# against the logs, not conclusions.
+# A loss counts as a cost event when it is of a counted kind (a cull, a loss in a raid or war, a famine) and at least this share of the
+# population (culls always count).
+PEACE_GATE_MIN_LOSS_FRACTION = 0.02
+# Consecutive clean nights (no cull) after a cost before the lesson is taken; multiplied by the number of recent culls, capped.
+PEACE_GATE_CLEAN_NIGHTS = 3
+PEACE_GATE_MAX_CLEAN_NIGHTS = 12
+# How many recent nights a cull stays on a tribe's record (its cull habit).
+PEACE_GATE_SCAR_WINDOW_NIGHTS = 10
+# The well-managed way in: this many cycles with no cull habit. About three times the median chief tenure measured in recent runs
+# (32 to 64 cycles, chiefs die only of losses), so one chief's whole time without a hard lesson is not enough, three are.
+PEACE_GATE_STABILITY_CYCLES = 150
+# The other way in: this many outside-contact events (rivals found, spy missions run, words brought home by a party).
+PEACE_GATE_CONTACT_EVENTS = 5
+
 # Cross-tribe proximity awareness, independent of whether the other tribe has ever
 # broadcast anything -- real data this session showed every single run (25/25 tribe-
 # reports) ending with zero trades and zero raids. The default two-tribe spawn distance
