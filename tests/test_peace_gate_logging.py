@@ -96,3 +96,23 @@ def test_a_trade_is_logged_with_whether_a_gate_would_have_blocked_it():
     sim._peace_gate_note_peace(tribe, "trade")
     kind, data = seen[-1]
     assert kind == "peace_gate_peace_act" and data["act"] == "trade" and data["blocked"] is True
+
+
+def test_the_night_watch_and_tannery_day_are_logged():
+    sim, tribe = _sim()
+    seen = []
+    sim.event_log.record_data = lambda tribe_name, kind, data, **k: seen.append((kind, data))
+    tribe.library_built = True
+    tribe.wood = 100
+    tribe.memory.remember("a wolf attacked near the river", 5, weight=0.9)
+    sim._night_watch(tribe)
+    data = dict(seen)["night_watch"]
+    assert {"population", "target", "headroom", "era", "cycles_in_era", "research_offered", "research_evidence"} <= set(data)
+    assert data["research_offered"] is True
+    tribe.tannery_built = tribe.deer_pen_built = True
+    tribe.deer = 40
+    sim.cycle = config.DAY_LENGTH_CYCLES
+    sim._is_camped = lambda t: True
+    sim._advance_tannery_yield(tribe)
+    day = dict(seen)["tannery_day"]
+    assert day["herd"] < 40 and day["fur_made"] >= day["from_pen"] > 0

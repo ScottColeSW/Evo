@@ -823,6 +823,8 @@ LIBRARY_ENTRY_MEMORY_COUNT = 3
 # overlap (Jaccard) with something the Library has filed is at least this. RESEARCH is offered only when the tribe holds at least one
 # memory that is not already filed, so repeating it can no longer collect the era discount (a run filed 18 times, mostly the same text).
 LIBRARY_REPEAT_JACCARD = 0.6
+# An evidence pattern already filed is filed again only after it has doubled and happened at least this many more times.
+LIBRARY_RECURRENCE_MIN_GROWTH = 3
 
 # BUILD_WELL (backend/actions.py, Simulation._advance_water_supply/
 # _is_water_secure): explicit request -- water's only passive-income lever was

@@ -7,7 +7,7 @@ from collections import Counter, deque
 
 from . import architect, city_layout, config, peace_gate, physics
 from .actions import (
-    military_intel_text, research_candidates,
+    military_intel_text, research_candidates, research_candidates_with_source,
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _battalion_capacity, _conquest_ready, _created_object_bonus, _dmm_ready, _eligible_breeding_pair,
     _food_multiplier, _forge_item, _plant_crop_cost,
@@ -2926,6 +2926,7 @@ class Simulation:
         self._advance_population_pressure(tribe, night=True)
         self._peace_gate_night(tribe)
         await self._library_shadow_night(tribe)
+        self._night_watch(tribe)
         # Explicit report, 2026-09-14/15: "the chief is getting every hatch not
         # just the latest or greatest (singular)." A flat last-N slice of
         # tribe.history is fine early on, but the Coop/Hatchery's automatic
@@ -6600,6 +6601,27 @@ class Simulation:
                     self._party_report_overheard(tribe, exp)
                 tribe.expeditions.remove(exp)
 
+    def _night_watch(self, tribe: Tribe) -> None:
+        """Once a night, two things the earlier runs could not show: how close the tribe is to the overcrowding line (the cull half of the
+        trade gate has never been exercised), and whether RESEARCH is on the menu and what it would file. Logging only."""
+        try:
+            target = round(_sustainable_population(tribe) * config.POPULATION_CARRYING_CAPACITY_TARGET_FRACTION)
+            data = {"population": tribe.population, "target": target, "headroom": target - tribe.population,
+                    "era": tribe.era, "cycles_in_era": self.cycle - tribe.era_entered_cycle}
+            if tribe.library_built:
+                picks = research_candidates_with_source(tribe)
+                data.update({"research_offered": bool(picks) and tribe.wood >= config.RESEARCH_WOOD_COST,
+                             "research_wood_short": tribe.wood < config.RESEARCH_WOOD_COST,
+                             "research_belief": sum(1 for c in picks if c["source"] == "belief"),
+                             "research_evidence": sum(1 for c in picks if c["source"] == "evidence"),
+                             "research_completed": tribe.research_completed})
+            self.event_log.record_data(
+                tribe.name, "night_watch", data,
+                message=f"[night watch] population {tribe.population} of {target}, era {tribe.era}"
+                        + (f", research offered={data['research_offered']}" if "research_offered" in data else ""))
+        except Exception:  # noqa: BLE001 -- logging must never interrupt the night cycle
+            pass
+
     async def _library_shadow_night(self, tribe: Tribe) -> None:
         """Phase 0 of docs/LIBRARY-PALIMPSEST-SPEC.md: judge what RESEARCH filed against a shadow shelf and log the relation each
         candidate would have had (new, reinforces, collides, compatible). Runs only when the judge is on (the home-page checkbox).
@@ -9007,6 +9029,14 @@ class Simulation:
             self._capped_add(tribe, "food", round(meat * _food_multiplier(tribe)))
         tribe.tannery_fur_today = n
         tribe.tannery_meat_today = meat
+        try:
+            self.event_log.record_data(
+                tribe.name, "tannery_day",
+                {"herd": tribe.deer, "from_pen": pen_fur, "from_hunts": hunt_fur, "fur_made": n, "meat": meat,
+                 "fur_stock": tribe.unique_resources.get("Fur", 0)},
+                message=f"[tannery] herd {tribe.deer}, {n} Fur made ({pen_fur} pen, {hunt_fur} hunts), Fur stock {tribe.unique_resources.get('Fur', 0)}")
+        except Exception:  # noqa: BLE001 -- logging must never interrupt the simulation
+            pass
         tribe.tannery_fur_history.append(n)
         del tribe.tannery_fur_history[:-12]
 

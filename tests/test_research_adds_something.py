@@ -71,3 +71,25 @@ def test_a_routine_journal_entry_is_not_evidence():
     tribe.decision_journal.append({"cycle": 41, "action": "GATHER_WOOD", "delta": {"wood": 20}, "built": {}, "moved": False,
                                    "stock_before": {}, "population": 100, "note": None})
     assert research_candidates(tribe) == []
+
+
+def test_a_counted_pattern_returns_only_after_it_has_clearly_grown():
+    sim, tribe = _bare_simulation(), _tribe()
+    tribe.memory.remember("a wolf attacked the herd near the river ford, 30 deer lost", cycle=1, weight=0.9)
+    ACTION_REGISTRY["RESEARCH"](sim, tribe, "plains", _NO_TARGET)
+    for cycle in range(2, 4):  # two more: count 3, not yet doubled by 3
+        tribe.memory.remember(f"a wolf attacked the herd near the river ford, {cycle * 10} deer lost", cycle=cycle, weight=0.9)
+    assert not _offered(tribe)
+    for cycle in range(4, 6):  # count 5: at least doubled and 4 more than filed
+        tribe.memory.remember(f"a wolf attacked the herd near the river ford, {cycle * 10} deer lost", cycle=cycle, weight=0.9)
+    (pick,) = research_candidates(tribe)
+    assert "recurred 5 times" in pick
+
+
+def test_repeats_collapse_into_one_counted_entry():
+    from backend.actions import library_candidates
+    tribe = _tribe()
+    for cycle in range(1, 5):
+        tribe.memory.remember(f"Scouts explored toward ({cycle},4) and found plains terrain.", cycle=cycle, weight=0.5)
+    (only,) = [c for c in library_candidates(tribe) if c["source"] == "evidence"]
+    assert only["count"] == 4 and "recurred 4 times, cycles 1 to 4" in only["text"]

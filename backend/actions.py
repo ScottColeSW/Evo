@@ -1220,51 +1220,100 @@ def _readable(name: str) -> str:
     return name.replace("_built", "").replace("_", " ")
 
 
+def _signature(text: str) -> str:
+    """The wording with its numbers and coordinates blanked, so "Scouts explored toward (3,45) and found plains terrain." and the same
+    sentence for (2,23) are one pattern, not two events."""
+    return re.sub(r"\d+", "#", text.lower()).strip()
+
+
+def _group(items: list[dict]) -> list[dict]:
+    """Collapses repeated evidence into one counted entry per pattern. Each item is {"key", "text", "cycle", "weight", "amounts"}.
+    One occurrence stays the plain event. Several become "<latest instance> (recurred N times, cycles A to B, <totals>)": the repeat
+    is kept as a count, not dropped, because how often something happened is itself evidence. Rarer patterns weigh more
+    (+0.3/count), so a one-off outranks routine."""
+    groups: dict[str, list[dict]] = {}
+    for item in items:
+        groups.setdefault(item["key"], []).append(item)
+    out = []
+    for key, members in groups.items():
+        members.sort(key=lambda m: m["cycle"])
+        latest, count = members[-1], len(members)
+        text = latest["text"]
+        if count > 1:
+            totals: dict[str, int] = {}
+            for m in members:
+                for name, value in m.get("amounts", {}).items():
+                    totals[name] = totals.get(name, 0) + value
+            summed = (", " + ", ".join(f"{name} {value:+d} in total" for name, value in totals.items())) if totals else ""
+            text += f" (recurred {count} times, cycles {members[0]['cycle']} to {latest['cycle']}{summed})"
+        out.append({"text": text, "source": "evidence", "weight": max(m["weight"] for m in members) + 0.3 / count, "key": key, "count": count})
+    return out
+
+
 def library_candidates(tribe) -> list[dict]:
-    """What RESEARCH could file now, as {"text", "source", "weight"} with source "belief" or "evidence" (docs/LIBRARY-PALIMPSEST-SPEC.md,
-    owner's request 2026-10-04: filter the candidates to reflections and evidence).
+    """What RESEARCH could file now, as {"text", "source", "weight"} (evidence also has "key" and "count"), source "belief" or "evidence"
+    (docs/LIBRARY-PALIMPSEST-SPEC.md, owner's requests 2026-10-04: filter to reflections and evidence; count the unique, do not repeat).
 
     belief:   the chief's own reflections (TribeMemory entries of kind "reflection"), heaviest first.
-    evidence: facts with a cycle and numbers: a structure or upgrade that came up in the decision journal, a high-stakes choice and
-              what it changed, a cost the tribe suffered (peace_gate cost events), and the world facts already remembered as
-              episodes (hazards, discoveries). Routine action logs are neither and are left out.
+    evidence: facts with a cycle and numbers, one counted entry per distinct pattern (see _group): a structure or upgrade that came
+              up in the decision journal, a high-stakes choice and what it changed, a cost the tribe suffered (peace_gate cost
+              events), and the world facts already remembered as episodes (hazards, discoveries). Routine action logs are neither
+              and are left out.
     """
     memory = tribe.memory
     beliefs = [{"text": e["text"], "source": "belief", "weight": e["weight"] + 0.1 * e.get("reinforced", 0)}
                for e in memory.entries if e.get("kind") == "reflection"]
-    evidence = [{"text": e["text"], "source": "evidence", "weight": e["weight"]}
-                for e in memory.entries if e.get("kind", "episode") == "episode" and not _is_action_log(e["text"])]
-    evidence += [{"text": t["text"], "source": "evidence", "weight": t["weight"]}
-                 for t in memory.taboos if not _is_action_log(t["text"])]
+    items = [{"key": "episode:" + _signature(e["text"]), "text": e["text"], "cycle": e["cycle"], "weight": e["weight"]}
+             for e in memory.entries if e.get("kind", "episode") == "episode" and not _is_action_log(e["text"])]
+    items += [{"key": "episode:" + _signature(t["text"]), "text": t["text"], "cycle": t["cycle"], "weight": t["weight"]}
+              for t in memory.taboos if not _is_action_log(t["text"])]
     for entry in tribe.decision_journal:
         built = [_readable(name) for name in entry.get("built", {})]
         if not built and entry["action"] not in config.JOURNAL_HIGH_STAKES_ACTIONS:
             continue
-        changes = ", ".join(f"{k} {v:+d}" for k, v in entry.get("delta", {}).items()) or "no change in stockpiles or population"
+        delta = entry.get("delta", {})
+        changes = ", ".join(f"{k} {v:+d}" for k, v in delta.items()) or "no change in stockpiles or population"
         text = f"At cycle {entry['cycle']}, after choosing {entry['action']}: {changes}" + (f"; changed: {', '.join(built)}" if built else "")
-        evidence.append({"text": text, "source": "evidence", "weight": 0.8 if built else 0.7})
+        items.append({"key": f"choice:{entry['action']}:{','.join(sorted(built))}", "text": text, "cycle": entry["cycle"],
+                      "weight": 0.8 if built else 0.7, "amounts": {k: v for k, v in delta.items() if k == "population"}})
     for cost in tribe.peace_gate["cost_events"]:
         share = cost["amount"] / cost["population"] if cost["population"] else 0
-        evidence.append({"text": f"At cycle {cost['cycle']}, {cost['kind']} ({cost['cause']}) cost {cost['amount']} of {cost['population']} people",
-                         "source": "evidence", "weight": 0.6 + min(0.3, share)})
+        items.append({"key": f"cost:{cost['kind']}:{cost['cause']}", "cycle": cost["cycle"], "weight": 0.6 + min(0.3, share),
+                      "text": f"At cycle {cost['cycle']}, {cost['kind']} ({cost['cause']}) cost {cost['amount']} of {cost['population']} people",
+                      "amounts": {"people lost": cost["amount"]}})
+    evidence = _group(items)
     beliefs.sort(key=lambda c: c["weight"], reverse=True)
     evidence.sort(key=lambda c: c["weight"], reverse=True)
     return beliefs + evidence
 
 
 def research_candidates_with_source(tribe) -> list[dict]:
-    """The candidates RESEARCH will file: from library_candidates, minus anything whose wording is already on the shelf
-    (config.LIBRARY_REPEAT_JACCARD) and the Library's own earlier entries, at most LIBRARY_ENTRY_MEMORY_COUNT: the heaviest belief
-    first, then evidence, then whatever is left. Empty means RESEARCH would add nothing, so it is not offered."""
-    filed = [_words(t) for entry in tribe.library_entries for t in entry.get("texts", [entry["summary"]])]
+    """The candidates RESEARCH will file: from library_candidates, minus what the Library already holds, at most
+    LIBRARY_ENTRY_MEMORY_COUNT: the heaviest belief first, then evidence, then whatever is left. Empty means RESEARCH would add
+    nothing, so it is not offered.
+
+    Held already means: a belief whose wording overlaps a filed text by config.LIBRARY_REPEAT_JACCARD; an evidence pattern already
+    filed, unless it has since recurred at least twice as often as when it was filed and at least LIBRARY_RECURRENCE_MIN_GROWTH more
+    times (a pattern that keeps happening is news, once it has clearly grown). The Library's own earlier entries are never refiled."""
+    filed_words = [_words(t) for entry in tribe.library_entries for t in entry.get("texts", [entry["summary"]])]
+    filed_keys: dict[str, int] = {}
+    for entry in tribe.library_entries:
+        for key, count in entry.get("keys", {}).items():
+            filed_keys[key] = max(filed_keys.get(key, 0), count)
     fresh: list[dict] = []
     seen: list[set[str]] = []
     for cand in library_candidates(tribe):
         text = cand["text"]
         if "the library records a new insight" in text:
             continue
+        key = cand.get("key")
+        if key is not None:
+            if key in filed_keys and not (cand["count"] >= 2 * filed_keys[key] and cand["count"] - filed_keys[key] >= config.LIBRARY_RECURRENCE_MIN_GROWTH):
+                continue
+            fresh.append(cand)
+            continue
         words = _words(text)
-        if not words or any(len(words & f) / len(words | f) >= config.LIBRARY_REPEAT_JACCARD for f in filed + seen):
+        if not words or any(len(words & f) / len(words | f) >= config.LIBRARY_REPEAT_JACCARD for f in filed_words + seen):
             continue
         fresh.append(cand)
         seen.append(words)
@@ -1308,7 +1357,8 @@ def _research(sim, tribe, biome, target):
     # Logging only; the entry below is filed exactly as before.
     tribe.library_shadow_pending.append({"cycle": sim.cycle, "texts": list(top), "sources": [c["source"] for c in picks]})
     del tribe.library_shadow_pending[:-20]
-    tribe.library_entries.append({"summary": summary, "cycle": sim.cycle, "texts": list(top), "sources": [c["source"] for c in picks]})
+    tribe.library_entries.append({"summary": summary, "cycle": sim.cycle, "texts": list(top), "sources": [c["source"] for c in picks],
+                                  "keys": {c["key"]: c["count"] for c in picks if c.get("key")}})
     tribe.research_completed += 1
     return f"the library records a new insight: \"{summary}\" -- the path to the next era grows a little shorter"
 
