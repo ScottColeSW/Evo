@@ -81,3 +81,30 @@ def test_a_turn_records_the_tribes_own_word_use():
     sim.cycle = 12
     payload = lexicon.own_use(a, "ZUR-NEV", "SCOUT", sim.cycle)
     assert a.lexicon["ZUR-NEV"]["counts"] == {"SCOUT": 1} and payload["phrase"] == "ZUR-NEV"
+
+
+def test_a_celebration_within_hearing_range_is_heard_with_its_reason():
+    sim, a, b, seen = _sim()
+    a.x, a.y, b.x, b.y = 40, 40, 60, 40
+    a.last_broadcast = "TIK-TAK"
+    a.last_celebration_cycle = sim.cycle
+    a.history.append("\U0001f389 A celebrates the wall's completion, spending 12 food on a feast")
+    sim._witness_celebration(a)
+    assert b.witnessed_celebrations[-1]["reason"] == "the wall's completion"
+    assert b.heard_lexicon["TIK-TAK"]["contexts"]["celebration: the wall's completion"] == 1
+    assert "witnessed_celebration" in [kind for kind, _ in seen]
+    request, _ctx = sim._prepare_turn(b)
+    assert "A celebrated the wall's completion, shouting 'TIK-TAK'" in request["prompt"]
+    assert a.witnessed_celebrations == []
+
+
+def test_a_celebration_out_of_range_or_silent_is_not_heard():
+    sim, a, b, _ = _sim()
+    a.x, a.y, b.x, b.y = 5, 5, 5 + config.BROADCAST_HEARING_RADIUS + 10, 5
+    a.last_broadcast, a.last_celebration_cycle = "TIK-TAK", sim.cycle
+    sim._witness_celebration(a)
+    assert b.witnessed_celebrations == []
+    b.x = 10
+    a.last_broadcast = ""
+    sim._witness_celebration(a)
+    assert b.witnessed_celebrations == []

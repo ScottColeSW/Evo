@@ -2,6 +2,7 @@ import asyncio
 import difflib
 import importlib
 import math
+import re
 import random
 from collections import Counter, deque
 
@@ -1277,6 +1278,8 @@ class Tribe:
         self.lexicon: dict = {}
         self.heard_lexicon: dict = {}
         self.witnessed_cries: list[dict] = []
+        # Celebrations other tribes held within hearing range, with the shout they made (the glad counterpart of a war cry).
+        self.witnessed_celebrations: list[dict] = []
         self.current_broadcast: str = ""
         # Phase 0 of docs/CONFLICT-MODE-DESIGN.md: {"kind", "outcome", "start", "until"} while a conflict logging window is open
         # (see actions.note_conflict). Logging only; nothing reads it to decide anything.
@@ -3424,6 +3427,7 @@ class Simulation:
             self._advance_city_founding(tribe)
             self._check_chief_trophies(tribe)
             self._check_for_celebration(tribe)
+            self._witness_celebration(tribe)
 
         # History: this used to be gated here (dawn-only once settled, every cycle
         # for a still-searching tribe) to fix "Exploration time is like 6 now, but
@@ -3916,6 +3920,11 @@ class Simulation:
         for cry in tribe.witnessed_cries[-3:]:
             if self.cycle - cry["cycle"] <= config.WITNESSED_CRY_VISIBLE_CYCLES:
                 visible_entities.append(f"{cry['from']} attacked ({cry['kind']}) shouting '{cry['phrase']}' (cycle {cry['cycle']})")
+        for party in tribe.witnessed_celebrations[-2:]:
+            if self.cycle - party["cycle"] <= config.WITNESSED_CRY_VISIBLE_CYCLES:
+                visible_entities.append(
+                    f"{party['from']} celebrated" + (f" {party['reason']}" if party["reason"] else "")
+                    + f", shouting '{party['phrase']}' (cycle {party['cycle']})")
         for heard in tribe.heard_by_parties[-3:]:
             if self.cycle - heard["cycle"] <= config.PARTY_HEARD_VISIBLE_CYCLES:
                 visible_entities.append(
@@ -6724,6 +6733,37 @@ class Simulation:
                 tribe.name, "peace_gate_peace_act", {**snapshot, "act": kind, "blocked": snapshot["would_open"] is None},
                 message=f"[peace gate] {kind} at cycle {self.cycle}; would a gate have blocked it: {snapshot['would_open'] is None}")
         except Exception:  # noqa: BLE001 -- logging must never interrupt the simulation
+            pass
+
+    def _witness_celebration(self, tribe: Tribe) -> None:
+        """A celebration shouts the tribe's own words (_celebration_shout). Until now only the spectator's banner and the tribe's own
+        chronicle carried that shout; no rival heard it (2026-10-04, the owner's recollection that a celebration is heard and seen by
+        the world). A tribe within BROADCAST_HEARING_RADIUS of the celebrating camp now hears the shout in the context "celebration"
+        and what was celebrated: the glad counterpart of a war cry. Recording and one plain fact; nothing about what the word means."""
+        if tribe.last_celebration_cycle != self.cycle or not tribe.last_broadcast:
+            return
+        try:
+            reason = None
+            for entry in reversed(tribe.history[-6:]):
+                match = re.search(r"celebrates (.+?)(?:, spending| -- |$)", entry)
+                if match:
+                    reason = match.group(1).strip()
+                    break
+            for other in self.tribes.values():
+                if other.id == tribe.id or other.extinct:
+                    continue
+                if math.hypot(other.x - tribe.x, other.y - tribe.y) > config.BROADCAST_HEARING_RADIUS:
+                    continue
+                contexts = ["celebration"] + ([f"celebration: {reason}"] if reason else [])
+                payload = lexicon.hear(other, tribe.last_broadcast, contexts, self.cycle, f"celebration:{tribe.name}")
+                record = {"from": tribe.name, "phrase": tribe.last_broadcast, "reason": reason, "cycle": self.cycle}
+                other.witnessed_celebrations.append(record)
+                del other.witnessed_celebrations[:-12]
+                if payload is not None:
+                    self.event_log.record_data(other.name, "witnessed_celebration", {**record, "words": payload["words"]},
+                                               message=f"[witnessed celebration] {tribe.name} shouted '{tribe.last_broadcast}'"
+                                                       + (f" celebrating {reason}" if reason else ""))
+        except Exception:  # noqa: BLE001 -- recording must never interrupt the simulation
             pass
 
     def _party_listen(self, tribe: Tribe, exp: dict) -> None:
