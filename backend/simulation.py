@@ -4271,6 +4271,16 @@ class Simulation:
                 available_actions = without_disabled
         if not camped:
             available_actions = [a for a in available_actions if a not in ("GATHER_WOOD", "GATHER_STONE")]
+        # 2026-10-04 (the owner: an action that adds nothing should not be on the list): a run offered GATHER_STONE while the stone
+        # stores were full ("nothing more fits", 7 times). A gather whose stockpile is at the storage cap cannot add anything, so it is
+        # not offered. Fail-open: if that would leave nothing, the menu stays as it was.
+        cap = _storage_cap(tribe)
+        full = {action for action, stock in (("GATHER_WOOD", tribe.wood), ("GATHER_STONE", tribe.stone),
+                                             ("GATHER_FOOD", tribe.food), ("GATHER_WATER", tribe.water)) if stock >= cap}
+        if full:
+            not_full = [a for a in available_actions if a not in full]
+            if not_full:
+                available_actions = not_full
         # Live report, 2026-09-12: RAID/TRADE/DECLARE_CONQUEST/etc. all need a
         # real rival to mean anything -- see RIVAL_DEPENDENT_ACTIONS's own
         # comment. Checked the same way ENDGAME_RESOLUTION_ACTIONS's own gate

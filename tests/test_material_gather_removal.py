@@ -52,6 +52,7 @@ def test_a_departure_era_tribe_can_always_gather_toward_the_vessel():
     sim, tribe = _camped_tribe(wood=100, stone=100)
     tribe.era = "departure_era"
     tribe.departure_dreamed = True
+    tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT  # a real departure-era tribe can store the vessel; stock above the cap cannot exist
     for held in (100, 1200, config.VESSEL_WOOD_COST - 1):
         tribe.wood = tribe.stone = held
         _, ctx = sim._prepare_turn(tribe)
