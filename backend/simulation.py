@@ -1096,6 +1096,18 @@ def _celebration_cost(tribe: "Tribe") -> int:
     return cost
 
 
+# The resource sites a party can notice near where it overheard a word (world.SITE_DENSITY_BY_TYPE's types), in plain words.
+_OVERHEARD_SITE_LABELS = {"lumber": "a timber grove", "quarry": "a quarry site", "mine": "a mine site", "wildlife": "a game ground"}
+
+
+def _heard_place(heard: dict) -> str:
+    """", near (x,y) on plains terrain beside a timber grove" for a heard-word record, or "" for an older record without a place."""
+    if not heard.get("where"):
+        return ""
+    text = f", near ({heard['where'][0]},{heard['where'][1]}) on {heard.get('terrain', 'unknown')} terrain"
+    return text + (f" beside {' and '.join(heard['near'])}" if heard.get("near") else "")
+
+
 class Tribe:
     def __init__(
         self, tribe_id: str, name: str, model: str, x: int, y: int, color: str,
@@ -3897,8 +3909,8 @@ class Simulation:
         for heard in tribe.heard_by_parties[-3:]:
             if self.cycle - heard["cycle"] <= config.PARTY_HEARD_VISIBLE_CYCLES:
                 visible_entities.append(
-                    f"your travelers overheard {heard['from']} broadcast '{heard['token']}' while performing {heard['action']} "
-                    f"(cycle {heard['cycle']})"
+                    f"your travelers overheard {heard['from']} broadcast '{heard['token']}' while performing {heard['action']}"
+                    f"{_heard_place(heard)} (cycle {heard['cycle']})"
                 )
 
         # Explicit follow-up from the Agentic Evolution spec reconciliation (Age 4's
@@ -6709,7 +6721,22 @@ class Simulation:
             if ((other.x - pos[0]) ** 2 + (other.y - pos[1]) ** 2) ** 0.5 <= config.BROADCAST_HEARING_RADIUS:
                 exp.setdefault("overheard", {})[(other.id, other.last_broadcast)] = {
                     "token": other.last_broadcast, "from": other.name, "action": other.last_action, "cycle": self.cycle,
+                    **self._where_heard(pos),
                 }
+
+    def _where_heard(self, pos) -> dict:
+        """Where a word was overheard, as plain facts the Chief can reason from: the spot, its terrain, and which resource sites lie within
+        SITE_DISCOVERY_RADIUS of it (2026-10-04, the owner's idea: "I overheard a group at [x,y] saying 'Tik'", and the Chief sees a timber
+        grove there). Facts only; what the word means is left to the Chief."""
+        x, y = int(pos[0]), int(pos[1])
+        near = []
+        try:
+            for seed_type, label in _OVERHEARD_SITE_LABELS.items():
+                if find_nearby_site(seed_type, x, y, self.world.grid_size, set()) is not None:
+                    near.append(label)
+        except Exception:  # noqa: BLE001 -- a missing detail must never lose the word itself
+            pass
+        return {"where": [x, y], "terrain": self.world.biome(x, y), "near": near}
 
     def _party_report_overheard(self, tribe: Tribe, exp: dict) -> None:
         """The party is home: what it overheard becomes the tribe's knowledge (a chronicle line, a logged event, and a plain fact in
@@ -6720,7 +6747,7 @@ class Simulation:
         tribe.heard_by_parties.extend(heard)
         tribe.peace_gate["heard_reports"] += 1
         del tribe.heard_by_parties[:-12]
-        words = "; ".join(f"'{h['token']}' from {h['from']} while {h['action']}" for h in heard[:3])
+        words = "; ".join(f"'{h['token']}' from {h['from']} while {h['action']}{_heard_place(h)}" for h in heard[:3])
         tribe.history.append(f"Returning travelers repeated words they overheard: {words}.")
         try:
             self.event_log.record_data(tribe.name, "party_overheard", {"heard": heard}, message=f"[overheard] {words}")

@@ -38,3 +38,18 @@ def test_heard_word_fades_from_view_after_window():
     sim.cycle = config.PARTY_HEARD_VISIBLE_CYCLES + 5
     request, _ctx = sim._prepare_turn(a)
     assert "OLD-WORD" not in request["prompt"]
+
+
+def test_a_heard_word_carries_where_it_was_heard_and_what_lies_near():
+    from backend.world import site_seed_points
+    sim, a, b = _sim()
+    grove = site_seed_points("lumber", sim.world.grid_size)[0]
+    b.x, b.y = grove[0] + 30, grove[1]  # within hearing range of the grove
+    exp = {"pos": (grove[0], grove[1])}
+    sim._party_listen(a, exp)
+    (heard,) = exp["overheard"].values()
+    assert heard["where"] == [grove[0], grove[1]] and "a timber grove" in heard["near"] and heard["terrain"]
+    sim._party_report_overheard(a, exp)
+    assert f"near ({grove[0]},{grove[1]})" in a.history[-1] and "beside a timber grove" in a.history[-1]
+    request, _ctx = sim._prepare_turn(a)
+    assert f"near ({grove[0]},{grove[1]}) on {heard['terrain']} terrain beside" in request["prompt"]
