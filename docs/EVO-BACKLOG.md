@@ -43,8 +43,8 @@ data first, including data that is not yet understood.
    researches in about 130 cycles, because each new building counted as new evidence. Now the cap takes about four eras to fill. Watch:
    `night_watch.research_this_era`, and whether the Library still grows enough to be worth keeping (three filings of three entries per era).
 2. **Tribe 1's long first era: no change, on purpose.** The first population line stays at 60. The stall (235 cycles) came from food management, not
-   the line: its food sat at 1 to 10 for about 200 cycles with no farm plots and no fishing, and the same tribe left the era within 50 cycles once
-   food was solved. Lowering the line would hide a chief-quality problem and give weak chiefs nothing to learn from; it also would not shorten the
+   the line: its food sat at 1 to 10 for about 200 cycles with no farm plots and no fishing, and the tribe left the era at cycle 236, about 15 cycles
+   after its food first reached 154 (cycle 221). One tribe in one run, so a pattern, not a proof. Lowering the line would hide a chief-quality problem and give weak chiefs nothing to learn from; it also would not shorten the
    era below the 50-cycle floor. What was added: `night_watch` now logs food, water, farm plots and whether fishing is learned, so a stall can be
    read from the log. **Trigger to revisit:** if, across the next four runs, at least half of all tribes take more than 150 cycles to leave the
    first era, lower the line to 30.
