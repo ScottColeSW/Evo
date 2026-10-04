@@ -9,8 +9,11 @@ lost raid) alike, in the order they happened.
 """
 
 import json
+import os
 import time
 from pathlib import Path
+
+from . import config
 
 # A plain module attribute (not a default argument) so tests can monkeypatch it via
 # `monkeypatch.setattr(event_log, "DEFAULT_LOG_DIR", tmp_path)` -- every Simulation
@@ -40,7 +43,12 @@ class RunEventLog:
 
     def record_data(self, tribe_name: str, kind: str, data: dict, message: str = "") -> None:
         """A structured record for analysis (2026-10-03): the same line shape as record(), including a "message" so anything
-        reading the log by that key keeps working, plus a "kind" and the data. Additive; nothing else writes this."""
+        reading the log by that key keeps working, plus a "kind" and the data. Additive; nothing else writes this.
+
+        Switchable (2026-10-04): config.RUN_DATA_LOG, or the RUN_DATA_LOG environment variable, "on" (default) or "off". Off writes none of
+        these analysis records; the plain chronicle lines from record() are not affected."""
+        if os.environ.get("RUN_DATA_LOG", config.RUN_DATA_LOG).lower() == "off":
+            return
         line = json.dumps({
             "cycle": self.current_cycle,
             "tribe": tribe_name,

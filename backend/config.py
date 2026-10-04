@@ -226,6 +226,12 @@ REFLECTION_EMBEDDING_MODEL = "nomic-embed-text"
 # into the belief it contradicts, and an entry with an open conflict cannot be promoted to a standing decree.
 REFLECTION_JUDGE = "off"
 
+# The structured analysis records (kind and data: decisions, conflict, journal read-back, overheard words, peace gate, night watch, tannery,
+# library shadow, reflection memory and the rest) written to logs/run_*.jsonl by RunEventLog.record_data. "on" (default) or "off"; the
+# RUN_DATA_LOG environment variable overrides it. Off leaves the plain chronicle lines (RunEventLog.record) untouched, so a run still
+# leaves its history. The records are small but frequent (a 400-cycle run wrote about 1.3 MB).
+RUN_DATA_LOG = "on"
+
 # Phase 0 of docs/CONFLICT-MODE-DESIGN.md (2026-10-03). Logging only. After a combat outcome or a declaration of war, the next
 # CONFLICT_LOG_WINDOW_CYCLES cycles of that tribe are logged with the menu it was offered and what it chose, so the owner's
 # observation (too many easy, unrelated choices during conflict) can be measured before any mode is built. A new event does not
