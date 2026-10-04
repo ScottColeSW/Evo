@@ -811,12 +811,17 @@ AFFORDABILITY_CHECKS = {
     # DECLARE_ALLIANCE also doubles as suing for peace out of a declared
     # war (see its own docstring) -- no soft-lock risk here, since a tribe
     # can only ever have reached WAR in the first place via this same gate.
-    "DECLARE_WAR": lambda t, w: t.barracks_built > 0,
-    "DECLARE_ALLIANCE": lambda t, w: t.barracks_built > 0,
+    # 2026-10-04 (the owner saw TRADE offered in Primitive Dawn, before any rival was met): every action below that needs a rival it
+    # has already found also requires one in tribe.discovered_rivals, so it is not offered before contact. Each of these actions
+    # already refused without contact ("no rival tribe has been encountered nearby yet"); now they are not on the list at all.
+    "DECLARE_WAR": lambda t, w: t.barracks_built > 0 and bool(t.discovered_rivals),
+    "DECLARE_ALLIANCE": lambda t, w: t.barracks_built > 0 and bool(t.discovered_rivals),
+    "TRADE": lambda t, w: bool(t.discovered_rivals),
+    "SEND_TRADE_EMISSARY": lambda t, w: bool(t.discovered_rivals),
     # Same barracks_built gate as ALLIANCE/WAR -- espionage reads as a military/
     # intelligence capability, not a scholarly one, and this needs no new
     # prerequisite plumbing beyond what already exists.
-    "SPY": lambda t, w: t.barracks_built > 0,
+    "SPY": lambda t, w: t.barracks_built > 0 and bool(t.discovered_rivals),
     # long_houses_built + long_house_upgrades, not long_houses_built alone --
     # explicit request, 2026-09-09: "modify long houses to scale like
     # warehouse." Real builds cap at LONG_HOUSE_MAX_COUNT (5); Fortress/

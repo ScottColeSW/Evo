@@ -8171,6 +8171,7 @@ def test_declare_alliance_stays_available_while_at_war_to_sue_for_peace():
     tribe.wood = tribe.stone = 1000
     tribe.barracks_built = 1
     tribe.stance_toward[rival.id] = "WAR"
+    tribe.discovered_rivals.add(rival.id)  # a war implies contact; rival actions are offered only after a rival is found
 
     _, ctx = sim._prepare_turn(tribe)
 
@@ -8190,6 +8191,7 @@ def test_declare_alliance_stays_available_before_any_stance_is_declared():
     tribe.era = "tribal_synapse"
     tribe.wood = tribe.stone = 1000
     tribe.barracks_built = 1
+    tribe.discovered_rivals.add("tribe_1")  # offered only once a rival has been found
 
     _, ctx = sim._prepare_turn(tribe)
 
