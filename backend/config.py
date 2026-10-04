@@ -2490,6 +2490,9 @@ TERRITORY_CLEARING_RADIUS_MARGIN = 5
 # information) is why it is not larger. Revert to 65 if the extra range proves to give nothing.
 BROADCAST_HEARING_RADIUS = 90
 
+# How long a party's overheard word stays among the Chief's visible facts once the party is home (2026-10-03).
+PARTY_HEARD_VISIBLE_CYCLES = 60
+
 # Cross-tribe proximity awareness, independent of whether the other tribe has ever
 # broadcast anything -- real data this session showed every single run (25/25 tribe-
 # reports) ending with zero trades and zero raids. The default two-tribe spawn distance

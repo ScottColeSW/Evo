@@ -21,7 +21,8 @@ def test_the_night_cull_brings_the_tribe_back_to_the_line_in_one_blow():
     sim, tribe, target = _overcrowded(500)
     sim._advance_population_pressure(tribe, night=True)
     assert tribe.population == target
-    assert tribe.history[-1].startswith("as the night begins, the population is culled back to what the land can support -- 500 lost")
+    # The cull may also kill the Chief (a separate line), so look through the history rather than at its last entry.
+    assert any(h.startswith("as the night begins, the population is culled back to what the land can support -- 500 lost") for h in tribe.history)
 
 
 def test_the_cull_lands_in_what_the_chief_reads_at_night():

@@ -1255,6 +1255,9 @@ class Tribe:
         # The cycle this tribe entered its current era; config.ERA_MIN_CYCLES must pass before it can advance. 0 for a tribe present
         # at the start; set to the current cycle when the era changes or a tribe is added later.
         self.era_entered_cycle: int = 0
+        # 2026-10-03: vocabulary a traveling party overheard near a rival's camp and carried home, newest last. Each entry:
+        # {"token", "from", "action", "cycle"}. See Simulation._party_listen.
+        self.heard_by_parties: list[dict] = []
         # Phase 0 of docs/CONFLICT-MODE-DESIGN.md: {"kind", "outcome", "start", "until"} while a conflict logging window is open
         # (see actions.note_conflict). Logging only; nothing reads it to decide anything.
         self.conflict_watch: dict | None = None
@@ -3882,6 +3885,13 @@ class Simulation:
             if distance <= config.BROADCAST_HEARING_RADIUS:
                 visible_entities.append(
                     f"overheard: {other.name} broadcasted '{other.last_broadcast}' while performing {other.last_action}"
+                )
+
+        for heard in tribe.heard_by_parties[-3:]:
+            if self.cycle - heard["cycle"] <= config.PARTY_HEARD_VISIBLE_CYCLES:
+                visible_entities.append(
+                    f"your travelers overheard {heard['from']} broadcast '{heard['token']}' while performing {heard['action']} "
+                    f"(cycle {heard['cycle']})"
                 )
 
         # Explicit follow-up from the Agentic Evolution spec reconciliation (Age 4's
@@ -6577,8 +6587,42 @@ class Simulation:
         actions.expedition_capacity(tribe) out at once. Iterates a snapshot of the list
         since a party can complete (and remove itself) mid-loop."""
         for exp in list(tribe.expeditions):
-            if self._advance_one_expedition(tribe, exp):
+            done = self._advance_one_expedition(tribe, exp)
+            self._party_listen(tribe, exp)
+            if done:
+                if exp.get("phase") == "returning":
+                    self._party_report_overheard(tribe, exp)
                 tribe.expeditions.remove(exp)
+
+    def _party_listen(self, tribe: Tribe, exp: dict) -> None:
+        """A party in the field hears what a rival is broadcasting if it is within BROADCAST_HEARING_RADIUS of that rival's camp,
+        the same boundary the camp itself uses (2026-10-03, the owner's note: traveling parties can bring back overheard tokens).
+        What it hears stays with the party until it gets home."""
+        pos = exp.get("pos")
+        if not pos:
+            return
+        for other in self.tribes.values():
+            if other.id == tribe.id or other.extinct or not other.last_broadcast:
+                continue
+            if ((other.x - pos[0]) ** 2 + (other.y - pos[1]) ** 2) ** 0.5 <= config.BROADCAST_HEARING_RADIUS:
+                exp.setdefault("overheard", {})[(other.id, other.last_broadcast)] = {
+                    "token": other.last_broadcast, "from": other.name, "action": other.last_action, "cycle": self.cycle,
+                }
+
+    def _party_report_overheard(self, tribe: Tribe, exp: dict) -> None:
+        """The party is home: what it overheard becomes the tribe's knowledge (a chronicle line, a logged event, and a plain fact in
+        the Chief's view for PARTY_HEARD_VISIBLE_CYCLES)."""
+        heard = list((exp.get("overheard") or {}).values())
+        if not heard:
+            return
+        tribe.heard_by_parties.extend(heard)
+        del tribe.heard_by_parties[:-12]
+        words = "; ".join(f"'{h['token']}' from {h['from']} while {h['action']}" for h in heard[:3])
+        tribe.history.append(f"Returning travelers repeated words they overheard: {words}.")
+        try:
+            self.event_log.record_data(tribe.name, "party_overheard", {"heard": heard}, message=f"[overheard] {words}")
+        except Exception:  # noqa: BLE001 -- never interrupt a turn
+            pass
 
     def _advance_one_expedition(self, tribe: Tribe, exp: dict) -> bool:
         """Advances an in-progress expedition. Runs every cycle regardless of what
