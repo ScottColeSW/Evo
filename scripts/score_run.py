@@ -31,32 +31,24 @@ def head(title):
 
 
 def library(k):
-    head("Library shadow (docs/LIBRARY-PALIMPSEST-SPEC.md). Prediction: more than half of filings after a tribe's first two are repeats. "
-         "Falsifier: fewer than a quarter.")
+    head("Library shadow (docs/LIBRARY-PALIMPSEST-SPEC.md). The old prediction (repeats above half) is retired: since 2026-10-04 RESEARCH files "
+         "only patterns not already held, so repeats cannot appear. Now: how does the judge treat beliefs, and is evidence kept out of it?")
     rows = k["library_shadow"]
     if not rows:
         print("no library_shadow records (judge off, or no RESEARCH, or no Library built)")
         return
-    by_tribe = collections.defaultdict(list)
-    for r in rows:
-        by_tribe[r["tribe"]].append(r["data"])
-    new = repeat = 0
-    for filings in by_tribe.values():
-        for d in filings[2:]:
-            new += d["new"]
-            repeat += d["repeats"]
-    share = repeat / (new + repeat) if new + repeat else None
-    verdict = "no data" if share is None else ("prediction holds" if share > 0.5 else "falsified" if share < 0.25 else "in between")
-    print(f"filings {len(rows)}; after each tribe's first two: {new} new, {repeat} repeat, repeat share {share if share is None else round(share, 2)}: {verdict}")
     results = [x for r in rows for x in r["data"]["results"]]
+    print(f"filings {len(rows)}, {len(results)} candidates")
     for source in ("belief", "evidence", None):
         part = [x for x in results if x.get("source") == source]
         if part:
             print(f"  source {source}: " + ", ".join(f"{rel} {n}" for rel, n in collections.Counter(x['relation'] for x in part).most_common()))
+    judged_evidence = [x for x in results if x.get("source") == "evidence" and x["relation"] != "keyed"]
+    print(f"  evidence sent to the judge (should be 0): {len(judged_evidence)}")
     collisions = [x for x in results if x["relation"] == "collides"]
-    print(f"  collisions flagged {len(collisions)}; read these by hand, the earlier ones were false (different actions called contradictions):")
-    for x in collisions[:4]:
-        print(f"    {x['text'][:100]}")
+    print(f"  belief collisions flagged {len(collisions)}; read by hand (weak NLI scores of about 0.65 were doubtful, 0.98 plausible):")
+    for x in collisions[:5]:
+        print(f"    {x['text'][:110]} | {x['reason'][:50]}")
 
 
 def research_menu(k):

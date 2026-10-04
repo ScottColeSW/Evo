@@ -3122,6 +3122,13 @@ def _trade(sim, tribe, biome, target):
 
     partner = _find_trade_partner(sim, tribe, tx, ty)
     if partner is None:
+        # 2026-10-04: in two recorded runs 59 of 73 TRADE choices failed here. The Chief had named no target, so the target was its own camp
+        # (36 to 38 tiles from the rival), not a near miss. A TRADE with no rival at the target now goes to the nearest rival the tribe has
+        # already found, the same contact rule and the same first-wall rule SEND_TRADE_EMISSARY uses. Without a finished first wall, or
+        # without a known rival, it fails as before.
+        rival = _nearest_rival(sim, tribe, tx, ty)
+        if rival is not None and tribe.wall_rings and city_layout.ring_fully_built(tribe.wall_rings[0]):
+            return _execute_trade(sim, tribe, rival)
         return "found no rival encampment there to trade with"
     return _execute_trade(sim, tribe, partner)
 
@@ -3657,7 +3664,7 @@ ACTION_DESCRIPTIONS = {
     "STRIKE_RAIDER_CAMP": "Attack a raider camp your scouts have already found -- target_vector must be the exact coordinate from one of your own raider sighting reports, not just somewhere near one. Success destroys it and recovers some food; failure costs a life and leaves the camp standing.",
     "EXPEL_RAIDERS_FROM_TERRITORY": "Turn the whole population out to drive off raiders currently approaching (only possible while raiders are actually inbound). A win seizes real plunder and wins over stragglers, scaled by your own population -- and the raiders are cast off elsewhere, not gone for good. A loss costs people and supplies, but doesn't end the fight: anger fuels an immediate second and third wave in the same breath, each cheaper in reward and costlier in lives than the last.",
     "CLEAR_TERRITORY": "Sweep every raider camp near the territory boundary (a little past the boundary line itself, not just strictly inside it) -- only possible while one is actually camped there. Real construction (walls and every building but a basic fire) is blocked until this is done, so a fresh settlement isn't left building next to a standing threat.",
-    "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. An unaffiliated minor settlement near target_vector can also be traded with -- smaller and one-sided (nothing is given up), but it never depletes the way raiding one does. Does nothing if neither is there.",
+    "TRADE": "Attempt to open trade with a rival tribe if one is near target_vector. Both sides give up a small fraction of everything they hold and receive the same fraction back -- a mutual exchange, no risk of loss. An unaffiliated minor settlement near target_vector can also be traded with -- smaller and one-sided (nothing is given up), but it never depletes the way raiding one does. If no rival is at target_vector, a rival you have already found is used instead once your first wall ring is finished. Does nothing if none of these applies.",
     "DECLARE_ALLIANCE": "Offer a lasting alliance to whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember, not a one-time exchange, and also ends a war you'd previously declared with that same rival if it succeeds. Not a guaranteed peace: a tribe in poor physiological condition (hungry, thirsty) has a real chance the offer backfires into an immediate skirmish and a state of war instead, so a genuinely secure tribe is a far safer bet than a desperate one. Only possible once a Barracks stands. Does nothing if no rival tribe exists.",
     "DECLARE_WAR": "Declare a lasting state of war with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember. Does not attack them directly (see RAID for that); this only sets how the two tribes now stand. Only possible once a Barracks stands. Does nothing if no rival tribe exists, or if already at war with them.",
     "SEND_TRADE_EMISSARY": "Reach out to open trade with whichever rival tribe is nearest target_vector, already in contact (a much longer reach than TRADE's tight radius, but requires the rival to have actually been encountered before -- same requirement as ALLIANCE/DECLARE_WAR). An unaffiliated minor settlement near target_vector can also be traded with, the same as TRADE -- safer than RAIDing it, and it never depletes the way raiding does. Instant: goods exchange immediately if either is found.",

@@ -10,8 +10,8 @@ def _setup():
     tribe = sim.tribes["tribe_0"]
     tribe.library_built = True
     tribe.wood = 1000
-    tribe.memory.remember("the river flooded the lower camp", 50, weight=0.9)
-    tribe.memory.remember("deer return in the cold months", 51, weight=0.8)
+    tribe.memory.remember("the river flooded the lower camp", 50, weight=0.9, kind="reflection")
+    tribe.memory.remember("deer return in the cold months", 51, weight=0.8, kind="reflection")
     logged = []
     sim.event_log.record_data = lambda name, kind, data, **k: logged.append((kind, data))
     return sim, tribe, logged
@@ -40,8 +40,8 @@ async def test_night_judges_against_the_shadow_shelf_and_logs():
     sim, tribe, logged = _setup()
     actions._research(sim, tribe, None, None)
     # RESEARCH files only what is not already on the shelf, so a second filing needs new memories
-    tribe.memory.remember("raiders came from the north at dusk and the wall held", 55, weight=0.9)
-    tribe.memory.remember("the storehouse burned during the dry month", 56, weight=0.8)
+    tribe.memory.remember("raiders came from the north at dusk and the wall held", 55, weight=0.9, kind="reflection")
+    tribe.memory.remember("the storehouse burned during the dry month", 56, weight=0.8, kind="reflection")
     actions._research(sim, tribe, None, None)
     sim._reflection_judge = _judge(["reinforces", "new", "reinforces", "reinforces"])
     entries_before = list(tribe.library_entries)
@@ -66,3 +66,26 @@ async def test_night_does_nothing_without_a_judge():
     await sim._library_shadow_night(tribe)
     assert not [1 for k, _ in logged if k == "library_shadow"]
     assert tribe.library_shadow_shelf == []
+
+
+@run_async
+async def test_evidence_is_never_sent_to_the_judge():
+    sim, tribe, logged = _setup()
+    tribe.library_shadow_pending.append({"cycle": 60, "texts": ["a reflection on the river", "At cycle 50, after choosing BUILD_DOCK: wood -20; changed: dock",
+                                                                  "At cycle 51, after choosing BUILD_FISHERY: wood -25; changed: fishery"],
+                                         "sources": ["belief", "evidence", "evidence"]})
+    judged = []
+
+    async def build():
+        def judge(text, held):
+            judged.append(text)
+            return {"relation": "new", "related_id": None, "reason": "test"}
+        return judge
+    sim._reflection_judge = build
+    tribe.library_shadow_shelf.append({"id": "x", "text": "an earlier reflection", "cycle": 1})
+    await sim._library_shadow_night(tribe)
+    assert judged == ["a reflection on the river"]
+    (record,) = [d for k, d in logged if k == "library_shadow"]
+    assert [r["relation"] for r in record["results"]] == ["new", "keyed", "keyed"]
+    assert record["new"] == 3 and record["repeats"] == 0
+    assert all(e["text"] != "At cycle 50, after choosing BUILD_DOCK: wood -20; changed: dock" for e in tribe.library_shadow_shelf)

@@ -6685,6 +6685,15 @@ class Simulation:
             for filing in pending:
                 results = []
                 for text in filing["texts"]:
+                    sources = filing.get("sources") or []
+                    source = sources[len(results)] if len(results) < len(sources) else None
+                    if source == "evidence":
+                        # 2026-10-04: the NLI judge called 34 of 36 evidence items "collisions" (different buildings in the same
+                        # sentence template read as contradictions). Evidence is already grouped by structured pattern (actions._group), so
+                        # it is not judged; it is logged as keyed and counts as new, because RESEARCH only files patterns not held.
+                        results.append({"text": text[:200], "source": source, "relation": "keyed",
+                                        "reason": "evidence is grouped by structured pattern, not judged", "counts_as_new": True})
+                        continue
                     held = [{"id": e["id"], "text": e["text"]} for e in tribe.library_shadow_shelf[-8:]]
                     if held:
                         verdict = await asyncio.to_thread(judge, text, held)
@@ -6695,8 +6704,7 @@ class Simulation:
                         tribe.library_shadow_shelf.append(
                             {"id": f"lib{len(tribe.library_shadow_shelf)}_{filing['cycle']}", "text": text, "cycle": filing["cycle"]})
                         del tribe.library_shadow_shelf[:-40]
-                    sources = filing.get("sources") or []
-                    results.append({"text": text[:200], "source": sources[len(results)] if len(results) < len(sources) else None, "relation": relation, "reason": str(verdict.get("reason"))[:200],
+                    results.append({"text": text[:200], "source": source, "relation": relation, "reason": str(verdict.get("reason"))[:200],
                                     "counts_as_new": relation != "reinforces"})
                 new = sum(1 for r in results if r["counts_as_new"])
                 self.event_log.record_data(
