@@ -134,3 +134,17 @@ Rule change, independent of the shelf: `RESEARCH` is offered only when the tribe
 (`actions.research_candidates`, word overlap of at least `LIBRARY_REPEAT_JACCARD` = 0.6 counts as filed, and the Library's own
 entries are never refiled), so every research that happens adds something and counts toward the discount. The principle (the owner's):
 an action that adds nothing is not on the list.
+
+## Candidates filtered to reflections and evidence (2026-10-04)
+
+`actions.library_candidates` now builds what RESEARCH can file, each tagged with its source (the tag is also in the `library_shadow` log):
+
+- **belief:** the chief's own reflections (`TribeMemory` entries of kind `reflection`), reinforced ones weighing more.
+- **evidence:** a structure or upgrade that came up in the decision journal, a high-stakes choice with what it changed, a cost the
+  tribe suffered (the trade-gate cost events), and the world facts already kept as episodes (hazards, discoveries).
+- **left out:** routine per-turn action logs ("At (30,64) in lake, chose GATHER_STONE..."), which are neither.
+
+A filing takes the heaviest belief first, then evidence, then whatever is left, at most three, minus anything already on the shelf.
+Replaying the last run's log: Tribe 2 had 77 journal evidence entries, 10 cost events and 13 reflections; Tribe 1 had 34, 13 and 13. So
+RESEARCH should stay on the menu for a long time. Not yet measured: how the judge does on these texts (the false "contradiction" calls
+were on action logs), which the next run with the judge on will show.

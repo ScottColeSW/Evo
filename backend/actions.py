@@ -1210,26 +1210,78 @@ def _words(text: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", text.lower()))
 
 
-def research_candidates(tribe) -> list[str]:
-    """The memories RESEARCH could file now: highest-weight first, skipping any whose wording is already on the shelf
-    (config.LIBRARY_REPEAT_JACCARD) and the Library's own earlier entries (it once filed "the library records a new insight" back
-    into memory). At most LIBRARY_ENTRY_MEMORY_COUNT. Empty means RESEARCH would add nothing, so it is not offered."""
-    ranked = sorted(tribe.memory.entries, key=lambda e: e["weight"], reverse=True)
-    texts = [e["text"] for e in ranked] + [t["text"] for t in tribe.memory.taboos]
+def _is_action_log(text: str) -> bool:
+    """The per-turn memory line ("At (x,y) in lake, chose GATHER_STONE. 30 stone gathered."): a log of routine acts, not a
+    conviction and not a fact about what happened to the tribe."""
+    return text.startswith("At (") and ", chose " in text
+
+
+def _readable(name: str) -> str:
+    return name.replace("_built", "").replace("_", " ")
+
+
+def library_candidates(tribe) -> list[dict]:
+    """What RESEARCH could file now, as {"text", "source", "weight"} with source "belief" or "evidence" (docs/LIBRARY-PALIMPSEST-SPEC.md,
+    owner's request 2026-10-04: filter the candidates to reflections and evidence).
+
+    belief:   the chief's own reflections (TribeMemory entries of kind "reflection"), heaviest first.
+    evidence: facts with a cycle and numbers: a structure or upgrade that came up in the decision journal, a high-stakes choice and
+              what it changed, a cost the tribe suffered (peace_gate cost events), and the world facts already remembered as
+              episodes (hazards, discoveries). Routine action logs are neither and are left out.
+    """
+    memory = tribe.memory
+    beliefs = [{"text": e["text"], "source": "belief", "weight": e["weight"] + 0.1 * e.get("reinforced", 0)}
+               for e in memory.entries if e.get("kind") == "reflection"]
+    evidence = [{"text": e["text"], "source": "evidence", "weight": e["weight"]}
+                for e in memory.entries if e.get("kind", "episode") == "episode" and not _is_action_log(e["text"])]
+    evidence += [{"text": t["text"], "source": "evidence", "weight": t["weight"]}
+                 for t in memory.taboos if not _is_action_log(t["text"])]
+    for entry in tribe.decision_journal:
+        built = [_readable(name) for name in entry.get("built", {})]
+        if not built and entry["action"] not in config.JOURNAL_HIGH_STAKES_ACTIONS:
+            continue
+        changes = ", ".join(f"{k} {v:+d}" for k, v in entry.get("delta", {}).items()) or "no change in stockpiles or population"
+        text = f"At cycle {entry['cycle']}, after choosing {entry['action']}: {changes}" + (f"; changed: {', '.join(built)}" if built else "")
+        evidence.append({"text": text, "source": "evidence", "weight": 0.8 if built else 0.7})
+    for cost in tribe.peace_gate["cost_events"]:
+        share = cost["amount"] / cost["population"] if cost["population"] else 0
+        evidence.append({"text": f"At cycle {cost['cycle']}, {cost['kind']} ({cost['cause']}) cost {cost['amount']} of {cost['population']} people",
+                         "source": "evidence", "weight": 0.6 + min(0.3, share)})
+    beliefs.sort(key=lambda c: c["weight"], reverse=True)
+    evidence.sort(key=lambda c: c["weight"], reverse=True)
+    return beliefs + evidence
+
+
+def research_candidates_with_source(tribe) -> list[dict]:
+    """The candidates RESEARCH will file: from library_candidates, minus anything whose wording is already on the shelf
+    (config.LIBRARY_REPEAT_JACCARD) and the Library's own earlier entries, at most LIBRARY_ENTRY_MEMORY_COUNT: the heaviest belief
+    first, then evidence, then whatever is left. Empty means RESEARCH would add nothing, so it is not offered."""
     filed = [_words(t) for entry in tribe.library_entries for t in entry.get("texts", [entry["summary"]])]
-    out: list[str] = []
-    for text in texts:
+    fresh: list[dict] = []
+    seen: list[set[str]] = []
+    for cand in library_candidates(tribe):
+        text = cand["text"]
         if "the library records a new insight" in text:
             continue
         words = _words(text)
-        if not words or text in out:
+        if not words or any(len(words & f) / len(words | f) >= config.LIBRARY_REPEAT_JACCARD for f in filed + seen):
             continue
-        if any(len(words & f) / len(words | f) >= config.LIBRARY_REPEAT_JACCARD for f in filed + [_words(o) for o in out]):
-            continue
-        out.append(text)
-        if len(out) >= config.LIBRARY_ENTRY_MEMORY_COUNT:
+        fresh.append(cand)
+        seen.append(words)
+    beliefs = [c for c in fresh if c["source"] == "belief"]
+    evidence = [c for c in fresh if c["source"] == "evidence"]
+    picks = beliefs[:1] + evidence[:config.LIBRARY_ENTRY_MEMORY_COUNT - 1]
+    for cand in fresh:
+        if len(picks) >= config.LIBRARY_ENTRY_MEMORY_COUNT:
             break
-    return out
+        if cand not in picks:
+            picks.append(cand)
+    return picks[:config.LIBRARY_ENTRY_MEMORY_COUNT]
+
+
+def research_candidates(tribe) -> list[str]:
+    """The texts of research_candidates_with_source (what the menu check and most callers need)."""
+    return [c["text"] for c in research_candidates_with_source(tribe)]
 
 
 def _research(sim, tribe, biome, target):
@@ -1242,9 +1294,10 @@ def _research(sim, tribe, biome, target):
     if the tribe hasn't actually remembered anything real yet."""
     if not tribe.library_built:
         return None
-    top = research_candidates(tribe)
+    picks = research_candidates_with_source(tribe)
+    top = [c["text"] for c in picks]
     if not top:
-        if not tribe.memory.entries and not tribe.memory.taboos:
+        if not library_candidates(tribe):
             return "the library stands ready, but the tribe hasn't lived through anything worth recording yet"
         return "the library has nothing new to record: everything the tribe remembers is already on its shelves"
     if tribe.wood < config.RESEARCH_WOOD_COST:
@@ -1253,9 +1306,9 @@ def _research(sim, tribe, biome, target):
     summary = "; ".join(top[: config.LIBRARY_ENTRY_MEMORY_COUNT])
     # Phase 0 of docs/LIBRARY-PALIMPSEST-SPEC.md: queue what was filed so the night cycle can judge it against a shadow shelf.
     # Logging only; the entry below is filed exactly as before.
-    tribe.library_shadow_pending.append({"cycle": sim.cycle, "texts": top[: config.LIBRARY_ENTRY_MEMORY_COUNT]})
+    tribe.library_shadow_pending.append({"cycle": sim.cycle, "texts": list(top), "sources": [c["source"] for c in picks]})
     del tribe.library_shadow_pending[:-20]
-    tribe.library_entries.append({"summary": summary, "cycle": sim.cycle, "texts": list(top)})
+    tribe.library_entries.append({"summary": summary, "cycle": sim.cycle, "texts": list(top), "sources": [c["source"] for c in picks]})
     tribe.research_completed += 1
     return f"the library records a new insight: \"{summary}\" -- the path to the next era grows a little shorter"
 

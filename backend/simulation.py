@@ -6624,7 +6624,8 @@ class Simulation:
                         tribe.library_shadow_shelf.append(
                             {"id": f"lib{len(tribe.library_shadow_shelf)}_{filing['cycle']}", "text": text, "cycle": filing["cycle"]})
                         del tribe.library_shadow_shelf[:-40]
-                    results.append({"text": text[:200], "relation": relation, "reason": str(verdict.get("reason"))[:200],
+                    sources = filing.get("sources") or []
+                    results.append({"text": text[:200], "source": sources[len(results)] if len(results) < len(sources) else None, "relation": relation, "reason": str(verdict.get("reason"))[:200],
                                     "counts_as_new": relation != "reinforces"})
                 new = sum(1 for r in results if r["counts_as_new"])
                 self.event_log.record_data(
