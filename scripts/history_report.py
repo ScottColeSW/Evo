@@ -130,6 +130,11 @@ def timing(runs):
             cells.append(f"{statistics.median(firsts):.0f} (n={len(firsts)})" if firsts else "none")
         rows.append((label, *cells))
     out += [md_table(["First occurrence", *[p[0] for p in PERIODS]], rows), ""]
+    out += ["Reading the 'none' cells (checked against the raw lines): 'first raiders sighted' is a wording artifact. The approach-warning "
+            "line ('raiders have been spotted riding in from...') appears only in the first period's logs; raids themselves kept happening "
+            "(the repelled and struck lines continue in every period). 'First extinction' is a real absence in the chronicle logs: all 134 "
+            "'has gone extinct' lines are from before Sep 11, and tribes in later runs ended mostly by being absorbed or stayed alive when "
+            "the run stopped.", ""]
     return "\n".join(out)
 
 
@@ -146,7 +151,8 @@ COUNTS = [
 def counts(runs):
     out = ["## What kills and what threatens (all runs)", "",
            "Chronicle line counts, per 1,000 tribe-cycles so runs of different length compare. Tribe-cycles are approximated as run cycles "
-           "times two (most runs had two tribes).", ""]
+           "times two (most runs had two tribes). These are lines, not distinct events: a tribe in a starvation spiral writes the "
+           "starvation line every cycle, so the starvation and thirst rows measure how long tribes spent starving, not how many died.", ""]
     total_cycles = sum(r["cycles"] for r in runs.values()) * 2
     rows = []
     for label, pattern in COUNTS:

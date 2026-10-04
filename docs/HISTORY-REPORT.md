@@ -10,7 +10,7 @@ Generated 2026-10-04 from the chronicle logs and scoreboard before they were del
 |---|---|---|---|
 | Aug 30 to Sep 10 | 360 | 62.5 | 1724 |
 | Sep 11 to Sep 18 | 113 | 150 | 1733 |
-| Sep 19 to Oct 4 | 24 | 247.0 | 1201 |
+| Sep 19 to Oct 4 | 24 | 248.5 | 1201 |
 
 ## How tribes ended (scoreboard.jsonl)
 
@@ -55,9 +55,11 @@ Cycle of the first matching chronicle line per tribe, so a run with two tribes c
 | crosses into the Cognitive Horizon | 15 (n=144) | 10 (n=98) | 12 (n=35) |
 | first extinction | 40 (n=28) | none | none |
 
+Reading the 'none' cells (checked against the raw lines): 'first raiders sighted' is a wording artifact. The approach-warning line ('raiders have been spotted riding in from...') appears only in the first period's logs; raids themselves kept happening (the repelled and struck lines continue in every period). 'First extinction' is a real absence in the chronicle logs: all 134 'has gone extinct' lines are from before Sep 11, and tribes in later runs ended mostly by being absorbed or stayed alive when the run stopped.
+
 ## What kills and what threatens (all runs)
 
-Chronicle line counts, per 1,000 tribe-cycles so runs of different length compare. Tribe-cycles are approximated as run cycles times two (most runs had two tribes).
+Chronicle line counts, per 1,000 tribe-cycles so runs of different length compare. Tribe-cycles are approximated as run cycles times two (most runs had two tribes). These are lines, not distinct events: a tribe in a starvation spiral writes the starvation line every cycle, so the starvation and thirst rows measure how long tribes spent starving, not how many died.
 
 | Event | Lines | Per 1,000 tribe-cycles |
 |---|---|---|
@@ -65,7 +67,7 @@ Chronicle line counts, per 1,000 tribe-cycles so runs of different length compar
 | thirst deaths | 1447 | 9.6 |
 | river drownings | 621 | 4.1 |
 | volcano deaths | 350 | 2.3 |
-| rip current deaths | 1597 | 10.6 |
+| rip current deaths | 1600 | 10.6 |
 | cliff deaths | 337 | 2.2 |
 | raids repelled | 1119 | 7.4 |
 | raids struck | 627 | 4.2 |
@@ -77,7 +79,7 @@ Raid defense: 1119 repelled against 627 that struck, a 64% repel rate.
 
 ## Repetition and wasted choices
 
-The repetition guard (the 'Historian insists on a different choice' line) fired 6157 times, 40.9 per 1,000 tribe-cycles. By action:
+The repetition guard (the 'Historian insists on a different choice' line) fired 6158 times, 40.9 per 1,000 tribe-cycles. By action:
 
 | Action repeated | Times the guard fired |
 |---|---|
@@ -86,7 +88,7 @@ The repetition guard (the 'Historian insists on a different choice' line) fired 
 | SCOUT | 786 |
 | GATHER_FOOD | 648 |
 | EXPLORATION_PARTY | 642 |
-| GATHER_WOOD | 564 |
+| GATHER_WOOD | 565 |
 | GATHER_EGGS | 388 |
 | TRAIN_BATTALION | 204 |
 
