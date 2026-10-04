@@ -45,7 +45,7 @@ def library(k):
             print(f"  source {source}: " + ", ".join(f"{rel} {n}" for rel, n in collections.Counter(x['relation'] for x in part).most_common()))
     judged_evidence = [x for x in results if x.get("source") == "evidence" and x["relation"] != "keyed"]
     print(f"  evidence sent to the judge (should be 0): {len(judged_evidence)}")
-    collisions = [x for x in results if x["relation"] == "collides"]
+    collisions = [x for x in results if x["relation"] == "collides" and x.get("source") in ("belief", None)]
     print(f"  belief collisions flagged {len(collisions)}; read by hand (weak NLI scores of about 0.65 were doubtful, 0.98 plausible):")
     for x in collisions[:5]:
         print(f"    {x['text'][:110]} | {x['reason'][:50]}")
