@@ -18,16 +18,12 @@ import sys
 from datetime import datetime, timezone
 
 LOGS = "logs"
-PERIODS = [("Aug 30 to Sep 10", "20260830", "20260910"), ("Sep 11 to Sep 18", "20260911", "20260918"),
-           ("Sep 19 to Oct 4", "20260919", "20261004")]
+PERIODS = [("Aug 30 to Sep 10", "run_20260830", "run_20260911"), ("Sep 11 to Sep 18", "run_20260911", "run_20260919"),
+           ("Sep 19 to Oct 3 midday", "run_20260919", "run_20261003_17"), ("Oct 3 evening on (50-cycle floor in place)", "run_20261003_17", "run_20261005")]
 
 
-def period_of(run_name: str) -> str:
-    day = run_name.split("_")[1]
-    for label, lo, hi in PERIODS:
-        if lo <= day <= hi:
-            return label
-    return "other"
+def in_period(run_name, period):
+    return period[1] <= run_name < period[2]
 
 
 def q(values, p):
@@ -66,8 +62,9 @@ def corpus(runs):
                f"{sum(1 for x in lengths if x >= 400)} reached 400, {sum(1 for x in lengths if x < 30)} ended under 30 (mostly test and "
                "start-up runs).")
     rows = []
-    for label, lo, hi in PERIODS:
-        part = [r["cycles"] for n, r in runs.items() if lo <= n.split("_")[1] <= hi]
+    for period in PERIODS:
+        label = period[0]
+        part = [r["cycles"] for n, r in runs.items() if in_period(n, period)]
         rows.append((label, len(part), statistics.median(part) if part else "", max(part) if part else ""))
     out += ["", md_table(["Period", "Runs", "Median cycles", "Longest"], rows), ""]
     return "\n".join(out)
@@ -77,7 +74,9 @@ def scoreboard():
     rows = [json.loads(line) for line in open(os.path.join(LOGS, "scoreboard.jsonl"), encoding="utf-8") if line.strip()]
     real = [r for r in rows if r.get("tribe_name") != "Test Tribe"]
     out = ["## How tribes ended (scoreboard.jsonl)", "",
-           f"{len(real)} tribe results (test tribes excluded). Each is a tribe's whole life summary, recorded at extinction.", ""]
+           f"{len(real)} tribe results (test tribes excluded). Each is a tribe's whole life summary, recorded when it ended. "
+           "Only tribes that ended are recorded, so this skews toward short lives (a tribe still alive when a run stopped is missing). That is why "
+           "most of these never traded, while in the database sections below most tribe lives of 100 cycles or more did.", ""]
     causes = collections.Counter(r["cause_of_death"] for r in real)
     out += [md_table(["Cause of death", "Tribes", "Share"], [(c, n, f"{n / len(real):.0%}") for c, n in causes.most_common()]), ""]
     by_model = collections.defaultdict(list)
@@ -117,10 +116,10 @@ def timing(runs):
     rows = []
     for label, pattern in FIRSTS:
         cells = []
-        for plabel, lo, hi in PERIODS:
+        for period in PERIODS:
             firsts = []
             for n, r in long_runs.items():
-                if not (lo <= n.split("_")[1] <= hi):
+                if not in_period(n, period):
                     continue
                 seen = {}
                 for cycle, tribe, msg in r["msgs"]:
