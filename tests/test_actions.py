@@ -3259,21 +3259,37 @@ def test_build_joint_castle_is_a_no_op_once_both_already_have_a_castle():
 def test_trade_exchanges_unique_resources_too():
     """Explicit request confirms the original "Mine & unique resource" design
     gap: "maybe some hunters want a Tannery and they can trade furs too." Trade
-    used to only ever swap the same four generic resources."""
+    used to only ever swap the same four generic resources. Fur itself was later
+    taken out of the swap (see the next test); other named resources still trade."""
     from backend import config
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     partner = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 60, 60, "#fb923c")
-    tribe.unique_resources = {"Fur": 100}
+    tribe.unique_resources = {"Duneglass": 100}
     partner.unique_resources = {"Orosite Ore": 50}
 
     _execute_trade(sim, tribe, partner)
 
-    assert tribe.unique_resources["Fur"] == 100 - round(100 * config.TRADE_GIFT_FRACTION)
+    assert tribe.unique_resources["Duneglass"] == 100 - round(100 * config.TRADE_GIFT_FRACTION)
     assert tribe.unique_resources["Orosite Ore"] == round(50 * config.TRADE_GIFT_FRACTION)
     assert partner.unique_resources["Orosite Ore"] == 50 - round(50 * config.TRADE_GIFT_FRACTION)
-    assert partner.unique_resources["Fur"] == round(100 * config.TRADE_GIFT_FRACTION)
+    assert partner.unique_resources["Duneglass"] == round(100 * config.TRADE_GIFT_FRACTION)
+
+
+def test_trade_never_moves_fur():
+    """Fur gates the era advances, and a trade-heavy tribe bled it (live run, 2026-10-04: Tribe 1 peaked at 69 Fur against a
+    threshold of 76, fell to 46 across its trades, and sat 203 cycles in one era). Trade leaves both tribes' Fur untouched."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    partner = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 60, 60, "#fb923c")
+    tribe.unique_resources = {"Fur": 100}
+    partner.unique_resources = {"Fur": 10}
+
+    _execute_trade(sim, tribe, partner)
+
+    assert tribe.unique_resources["Fur"] == 100
+    assert partner.unique_resources["Fur"] == 10
 
 
 def test_trade_exchanges_one_crafted_item_each_way_when_either_side_has_any():

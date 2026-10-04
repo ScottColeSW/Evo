@@ -3026,7 +3026,11 @@ def _execute_trade(sim, tribe, partner) -> str:
     #
     # Code-quality pass: same give/receive split and cap fix as the generic
     # resource loop above -- this one was equally uncapped.
-    for resource in set(tribe.unique_resources) | set(partner.unique_resources):
+    #
+    # 2026-10-04: Fur is not swapped. It gates the era advances (eras.py) and a trade-heavy tribe bled it as fast as it earned it:
+    # a run's Tribe 1 peaked at 69 Fur against a discounted war-era threshold of 76, then fell to 46 across its trades and sat in
+    # the object_creator era for 203 cycles. Other named resources (Mine ore and the like) still trade.
+    for resource in sorted((set(tribe.unique_resources) | set(partner.unique_resources)) - {"Fur"}):
         tribe_amount = tribe.unique_resources.get(resource, 0)
         partner_amount = partner.unique_resources.get(resource, 0)
         tribe_gift = round(tribe_amount * config.TRADE_GIFT_FRACTION)
