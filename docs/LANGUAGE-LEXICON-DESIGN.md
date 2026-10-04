@@ -42,6 +42,44 @@ The open question for the owner: does coining need the Chief to choose a word fo
 more load for a 2b model), or is it enough that the simulation records the association the broadcast already makes? The second needs
 no change to the prompt and is the nudge-free choice. I recommend it.
 
+## Language that has a job: contexts that teach (the owner's idea, 2026-10-04)
+
+The point of a language is to communicate. Today it communicates nothing: a war declaration sets both tribes' stance mechanically
+(`actions._declare_war`), and the other Chief is told "Currently war with X" in plain words, so a tribe that shouts something while
+declaring war has not told the other side anything. The idea: let meaning be learned from situations whose meaning is unmistakable,
+and corrected by what happens when a guess is tried.
+
+Two kinds of teaching context, both observations and outcomes, never an instruction:
+
+1. **Witnessed contexts (a war cry).** When a tribe attacks (a raid, a strike, a conquest, a declared war), the words it was
+   broadcasting are part of what the other tribe witnesses: "a rival attacked, shouting 'KRA-ZUL'". The victim's lexicon records the
+   word with the context "attack". Hearing it again, before a raid arrives, is then a real, learned warning. Raiders (the NPCs) could do
+   the same with a fixed cry, so a tribe learns what that cry means from being raided. The plain "Currently war with X" fact stays, so
+   no tribe is ever blind to a war; the cry is added beside it, which is what teaches the pairing.
+2. **Tested guesses (a trade probe).** A tribe that believes a word means something can try it: offer a trade naming a good by the
+   word, and see what comes back. If the partner hands over wood for 'Tik', the guess (wood) gains evidence; if it hands over
+   something else, the guess is contradicted, and the tribe now holds a corrected term. This needs trades to carry the proposer's word for
+   the good (a small change to `TRADE`'s result and to what the partner sees) and a rule for how a partner interprets a word it holds a
+   guess for. It is the largest piece and comes last.
+
+**Where Palimpsest fits.** A translation guess is exactly a belief with evidence: "'Tik' means wood" (belief, with its reason), the
+trade outcomes (evidence, counted), and a correction that supersedes the earlier term with the reason recorded. That is Palimpsest's
+own flow (a claim superseded or released stays in history with its reason; a disagreement stays visible until resolved), applied per
+tribe to its dictionary of other tribes' words. It is also a use of the Library shelf in `docs/LIBRARY-PALIMPSEST-SPEC.md`.
+
+**Order, cheapest and most informative first:**
+
+| Step | What | Risk |
+|---|---|---|
+| A | The lexicon above (record word to action, per tribe), logged | none; no behavior change |
+| B | Witnessed war cries: add the broadcast to the attack/raid facts the victim sees | low; adds a fact, removes none |
+| C | Show the Chief its lexicon, including heard words with their contexts | a nudge risk if worded as advice; facts only |
+| D | Trade probes and corrections, with Palimpsest holding the dictionary | largest: changes trade, and small models may not use a word reliably |
+
+**Honest limits.** The small models mostly echo three seed words, so before step D the contexts in B will teach a tribe that one of
+its three words was shouted at it during attacks, which is a start but a thin vocabulary. Whether a model uses a shown word to mean
+something is what the measurement in the next section is for; if it does not, D has nothing to build on.
+
 ## Where it plugs in
 
 | Piece | Where |

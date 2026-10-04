@@ -2505,7 +2505,10 @@ TERRITORY_CLEARING_RADIUS_MARGIN = 5
 # zero for another reason: each tribe broadcast its own invented tokens and neither copied the other's. The map is 100 by 100,
 # so 90 covers nearly every pairing short of opposite corners; the 2026-09-15 concern above (map-wide hearing gives away free
 # information) is why it is not larger. Revert to 65 if the extra range proves to give nothing.
-BROADCAST_HEARING_RADIUS = 90
+# Back to 65, 2026-10-04, at the owner's request ("the overheard boundary got quite large"): the 90 changed nothing in the run that
+# prompted it, as the note above says, and with traveling parties now hearing within the same radius of a rival's camp it was too wide.
+# 65 still sits above the widest default spawn pairing (60), so every default pairing can still hear each other once settled.
+BROADCAST_HEARING_RADIUS = 65
 
 # How long a party's overheard word stays among the Chief's visible facts once the party is home (2026-10-03).
 PARTY_HEARD_VISIBLE_CYCLES = 60
