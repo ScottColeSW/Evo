@@ -2513,6 +2513,12 @@ BROADCAST_HEARING_RADIUS = 65
 # How long a party's overheard word stays among the Chief's visible facts once the party is home (2026-10-03).
 PARTY_HEARD_VISIBLE_CYCLES = 60
 
+# Step B of docs/LANGUAGE-LEXICON-DESIGN.md (2026-10-04, the owner's idea): an attack carries a war cry the victim hears. A tribe's cry is
+# whatever it was broadcasting on the turn it attacked. The NPC raiders have one fixed cry (the owner: "a weird war cry"), so a tribe that
+# has been raided can learn what that word accompanies. How long a witnessed cry stays among the Chief's visible facts:
+RAIDER_WAR_CRY = "GRAH-OOK"
+WITNESSED_CRY_VISIBLE_CYCLES = 60
+
 # Phase 0 of docs/TRADE-GATE-DESIGN.md (2026-10-03): logging only, nothing is locked. The numbers are first guesses to be read
 # against the logs, not conclusions.
 # A loss counts as a cost event when it is of a counted kind (a cull, a loss in a raid or war, a famine) and at least this share of the

@@ -5,7 +5,7 @@ import math
 import random
 from collections import Counter, deque
 
-from . import architect, city_layout, config, peace_gate, physics
+from . import architect, city_layout, config, lexicon, peace_gate, physics
 from .actions import (
     military_intel_text, research_candidates, research_candidates_with_source,
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
@@ -1271,6 +1271,13 @@ class Tribe:
         self.heard_by_parties: list[dict] = []
         # Phase 0 of docs/TRADE-GATE-DESIGN.md: what the peace tier would need, tracked and logged only. See peace_gate.py.
         self.peace_gate: dict = peace_gate.new_state()
+        # Steps A and B of docs/LANGUAGE-LEXICON-DESIGN.md: the tribe's own words and what they were used with, the words it has heard
+        # and the contexts they came with, the war cries it has witnessed, and the phrase it is broadcasting this turn (set before the
+        # action resolves, so an attack can carry it). See lexicon.py. Recording only.
+        self.lexicon: dict = {}
+        self.heard_lexicon: dict = {}
+        self.witnessed_cries: list[dict] = []
+        self.current_broadcast: str = ""
         # Phase 0 of docs/CONFLICT-MODE-DESIGN.md: {"kind", "outcome", "start", "until"} while a conflict logging window is open
         # (see actions.note_conflict). Logging only; nothing reads it to decide anything.
         self.conflict_watch: dict | None = None
@@ -3906,6 +3913,9 @@ class Simulation:
                     f"overheard: {other.name} broadcasted '{other.last_broadcast}' while performing {other.last_action}"
                 )
 
+        for cry in tribe.witnessed_cries[-3:]:
+            if self.cycle - cry["cycle"] <= config.WITNESSED_CRY_VISIBLE_CYCLES:
+                visible_entities.append(f"{cry['from']} attacked ({cry['kind']}) shouting '{cry['phrase']}' (cycle {cry['cycle']})")
         for heard in tribe.heard_by_parties[-3:]:
             if self.cycle - heard["cycle"] <= config.PARTY_HEARD_VISIBLE_CYCLES:
                 visible_entities.append(
@@ -6110,6 +6120,7 @@ class Simulation:
         pos_before = (tribe.x, tribe.y)
 
         journal_before = self._journal_snapshot(tribe) if config.DECISION_JOURNAL == "on" else None
+        tribe.current_broadcast = broadcast
         hazard_note = self._apply_action(tribe, action, ctx["biome"], target)
         if journal_before is not None:
             self._journal_record(tribe, action, journal_before, hazard_note if isinstance(hazard_note, str) else None)
@@ -6141,6 +6152,13 @@ class Simulation:
             tribe.cycles_since_relocate += 1
         tribe.last_broadcast = broadcast
         tribe.last_action = action
+        try:
+            used = lexicon.own_use(tribe, broadcast, action, self.cycle)
+            if used is not None:
+                self.event_log.record_data(tribe.name, "lexicon_update", used,
+                                           message=f"[lexicon] '{broadcast}' while {action}")
+        except Exception:  # noqa: BLE001 -- recording must never interrupt a turn
+            pass
         try:
             watch = tribe.conflict_watch
             if watch is not None and self.cycle <= watch["until"]:
@@ -6746,6 +6764,18 @@ class Simulation:
             return
         tribe.heard_by_parties.extend(heard)
         tribe.peace_gate["heard_reports"] += 1
+        try:
+            for h in heard:
+                contexts = [f"speaker doing {h['action']}"]
+                if h.get("terrain"):
+                    contexts.append(f"on {h['terrain']} terrain")
+                contexts += [f"near {label}" for label in h.get("near", [])]
+                payload = lexicon.hear(tribe, h["token"], contexts, self.cycle, f"overheard:{h['from']}")
+                if payload is not None:
+                    self.event_log.record_data(tribe.name, "lexicon_heard", {**payload, "where": h.get("where")},
+                                               message=f"[lexicon] heard '{h['token']}' from {h['from']}")
+        except Exception:  # noqa: BLE001
+            pass
         del tribe.heard_by_parties[:-12]
         words = "; ".join(f"'{h['token']}' from {h['from']} while {h['action']}{_heard_place(h)}" for h in heard[:3])
         tribe.history.append(f"Returning travelers repeated words they overheard: {words}.")
@@ -8074,6 +8104,10 @@ class Simulation:
         already drives whether an attack happens at all: a bigger, wealthier tribe
         draws a genuinely stronger raiding force, which is what makes a wall (and
         water) actually matter rather than population alone being enough."""
+        try:
+            lexicon.witness_cry(tribe, config.RAIDER_WAR_CRY, "Raiders", "raid", self.cycle, self.event_log)
+        except Exception:  # noqa: BLE001 -- recording must never interrupt the simulation
+            pass
         wall_fraction = city_layout.wall_defense_fraction(tribe)
         ring0_reinforced = bool(tribe.wall_rings) and city_layout.ring_fully_reinforced(tribe.wall_rings[0])
         raider_strength = min(1.0, tribe.population / config.RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE)

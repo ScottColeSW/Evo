@@ -31,13 +31,20 @@ def mutual_information(pairs: list[tuple[str, str]]) -> float:
 
 
 def broadcasts(paths: list[str]) -> dict[tuple[str, str, int], tuple[str, str]]:
+    """One (token, action) per tribe per cycle. Prefers `lexicon_update` records (every broadcast a tribe made, 2026-10-04 onward);
+    falls back to the `party_overheard` records of older logs (only the broadcasts a party happened to hear)."""
     seen = {}
     for path in paths:
+        own, heard = {}, {}
         for line in open(path, encoding="utf-8", errors="ignore"):
-            if '"party_overheard"' not in line:
-                continue
-            for h in json.loads(line)["data"]["heard"]:
-                seen[(path, h["from"], h["cycle"])] = (h["token"], h["action"])
+            if '"lexicon_update"' in line:
+                r = json.loads(line)
+                if r.get("kind") == "lexicon_update":
+                    own[(path, r["tribe"], r["cycle"])] = (r["data"]["phrase"], r["data"]["action"])
+            elif '"party_overheard"' in line:
+                for h in json.loads(line)["data"]["heard"]:
+                    heard[(path, h["from"], h["cycle"])] = (h["token"], h["action"])
+        seen.update(own if own else heard)
     return seen
 
 

@@ -17,7 +17,7 @@ import math
 import random
 import re
 
-from . import architect, city_layout, config, physics
+from . import architect, city_layout, config, lexicon, physics
 from .might import compute_might
 from .world import BIOME_LABELS, biome_at, mark_visited_sector, sector_of
 
@@ -1757,6 +1757,7 @@ def _declare_conquest(sim, tribe, biome, target):
         return None
     tribe.wood -= config.DECLARE_CONQUEST_WOOD_COST
     tribe.stone -= config.DECLARE_CONQUEST_STONE_COST
+    _war_cry(sim, tribe, defender, "conquest")
     # Set on BOTH sides the moment the campaign is actually launched, before
     # any round resolves -- see config.DECLARE_CONQUEST_COOLDOWN_DAYS's own
     # comment for why this needs to cover the defender too, not just whoever
@@ -2631,6 +2632,7 @@ def _raid(sim, tribe, biome, target):
 
     if defender is None:
         return "found no rival encampment there to raid"
+    _war_cry(sim, tribe, defender, "raid")
 
     # DMM era's combat_boost effect applies here too, not just
     # DECLARE_CONQUEST -- see _created_object_bonus.
@@ -2941,6 +2943,16 @@ CONFLICT_ANSWER_ACTIONS = frozenset({
     "EXPEL_RAIDERS_FROM_TERRITORY", "RAID", "DECLARE_CONQUEST", "DECLARE_WAR", "DECLARE_ALLIANCE",
     "SEND_TRADE_EMISSARY", "TRADE", "SPY", "SCOUT",
 })
+
+
+def _war_cry(sim, tribe, victim, kind: str) -> None:
+    """Step B of docs/LANGUAGE-LEXICON-DESIGN.md: the victim hears the words the attacker was broadcasting when it struck. Recording only;
+    best-effort, never changes an outcome and never raises."""
+    try:
+        lexicon.witness_cry(victim, getattr(tribe, "current_broadcast", ""), tribe.name, kind, sim.cycle,
+                            getattr(victim.history, "event_log", None))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def note_conflict(tribe, kind: str, outcome: str | None = None) -> None:
@@ -3376,6 +3388,7 @@ def _declare_war(sim, tribe, biome, target):
     sim.trauma.radiate_event_wave(rival.x, rival.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
     note_conflict(tribe, "War Declared")
     note_conflict(rival, "War Declared Against")
+    _war_cry(sim, tribe, rival, "war declaration")
     return f"{tribe.name} declares war on {rival.name}"
 
 
