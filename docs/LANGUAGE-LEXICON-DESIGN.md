@@ -9,8 +9,11 @@ grove there and may conclude 'Tik' means wood. Even a wrong conclusion would be 
   2026-10-03 run the most-heard words were exactly those: Tribe 2 `ZUR-NEV`, `DOL-KASH`, `TIB-RAN`; Tribe 1 `KRA-ZUL`, `MEE-LO`,
   `VASH-TA`, recombined. The `prompts.py` header already records finding this once and rotating the pools.
 - **Words do not track actions.** Mutual information between token and the action performed, against 200 shuffles of the same data
-  (`scripts/token_signal.py`): Tribe 1 2.49 bits against a shuffled 95th percentile of 2.45; Tribe 2 2.91 against 2.87. With few
-  samples and many distinct tokens the figure is inflated by sparsity, so the honest reading is "indistinguishable from chance".
+  (`scripts/token_signal.py`): Tribe 1 2.49 bits against a shuffled 95th percentile of about 2.44; Tribe 2 2.91 against about 2.86.
+  Both are technically above the shuffled line, by only about 0.05 bits out of roughly 2.5. With few samples and many distinct tokens
+  the raw figure is inflated by sparsity. The honest reading: a faint trace at most (some words do favor an action, such as `ZUR-NEV`
+  with SCOUT 15 times), nothing a Chief could rely on. (I first described this as "indistinguishable from chance", which overstated
+  it: the real figure is above the 95th percentile, just barely.)
 - So a Chief interpreting a heard word today would be reading noise. Step 1 (done, 2026-10-04) makes the report grounded anyway: where
   it was heard, the terrain, and the resource sites within `SITE_DISCOVERY_RADIUS`. That is the observation; it is only worth
   something once the speakers' words mean something.
@@ -53,7 +56,7 @@ no change to the prompt and is the nudge-free choice. I recommend it.
 Recording an association does not change what anyone says, so the phases are:
 
 - **Phase 0 (no behavior change):** log `lexicon_update` (word, action, uses, mismatches) per broadcast, and run
-  `scripts/token_signal.py` on the log. This is the baseline. Expected, from the 2026-10-03 run: indistinguishable from chance.
+  `scripts/token_signal.py` on the log. This is the baseline. Expected, from the 2026-10-03 run: a faint trace (about 0.05 bits above the shuffled line).
 - **Phase 1 (behavior change, behind a setting, off by default):** show a Chief its own tribe's lexicon as plain facts ("your people
   have used ZUR-NEV 18 times, 15 of them while SCOUT"), so a word can be reused on purpose. Nothing says what a word should mean.
   - **Prediction:** with the lexicon shown, mutual information between token and action rises above the shuffled 95th percentile for

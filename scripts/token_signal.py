@@ -2,10 +2,12 @@
 
 Reads the `party_overheard` records of one or more run logs, keeps one (token, action) per tribe per broadcast cycle, and compares the
 mutual information between token and action with the same figure after shuffling the actions (200 shuffles). A tribe whose real figure
-is not clearly above the shuffled 95th percentile has words that tell you nothing about its actions.
+is not above the shuffled 95th percentile has words that tell you nothing about its actions; one barely above it (under 0.25 bits)
+tells you almost nothing.
 
 Caveat: with many distinct tokens and few samples the raw figure is inflated by sparsity, which is why the comparison is against
-shuffles of the same data and not against zero. The first run (2026-10-03): Tribe 1 2.49 bits against 2.45 shuffled, Tribe 2 2.91 against 2.87.
+shuffles of the same data and not against zero. The first run (2026-10-03): Tribe 1 2.49 bits against about 2.44 shuffled, Tribe 2 2.91
+against about 2.86: above the line, by roughly 0.05 bits.
 
 Usage: python scripts/token_signal.py logs/run_XXXX.jsonl [more logs]
 """
@@ -14,6 +16,10 @@ import json
 import math
 import random
 import sys
+
+
+# An excess over the shuffled 95th percentile smaller than this is statistically above chance but practically negligible.
+WEAK_BITS = 0.25
 
 
 def mutual_information(pairs: list[tuple[str, str]]) -> float:
@@ -50,7 +56,10 @@ def main(paths: list[str]) -> None:
             shuffled.append(mutual_information(list(zip(tokens, actions))))
         shuffled.sort()
         p95 = shuffled[190]
-        verdict = "signal above chance" if real > p95 else "indistinguishable from chance"
+        excess = real - p95
+        verdict = ("no signal: not above the shuffled 95th percentile" if excess <= 0
+                   else f"above the shuffled 95th percentile by {excess:.2f} bits, "
+                        + ("a tiny effect (under 0.25 bits)" if excess < WEAK_BITS else "a real effect"))
         print(f"{tribe}: {len(pairs)} broadcasts, {len(set(tokens))} distinct tokens, {len(set(actions))} actions, "
               f"MI {real:.2f} bits, shuffled 95th percentile {p95:.2f}: {verdict}")
 
