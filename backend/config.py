@@ -2215,13 +2215,25 @@ ITEM_STORAGE_CAP_PER_WAREHOUSE = 1
 # USE_ITEM redeems a crafted item for its value, split across wood/stone -- the
 # straightforward cash-out for a value that otherwise just sits on the tribe.
 USE_ITEM_STONE_SHARE = 0.5
-# 2026-10-04: crafted items used to do nothing but be redeemed or traded, except weapons (battalion strength, might.py). Tools now count toward
-# the same gather boost a DMM creation gives (actions._created_object_bonus, which feeds the food multiplier), and innovations toward
-# expedition speed (actions._expedition_speed_bonus), each a small fraction of what one DMM creation gives (CREATED_OBJECT_MAGNITUDE 0.2,
-# CREATED_OBJECT_EXPEDITION_SPEED_BONUS 2). Redeeming an item with USE_ITEM gives its bonus up. Untuned first guesses; at the item cap
-# (5 plus 1 per warehouse) all tools would be +10% to +20% gathering.
-ITEM_TOOL_GATHER_BONUS = 0.02
-ITEM_INNOVATION_EXPEDITION_SPEED_BONUS = 0.25
+# 2026-10-04: crafted items used to do nothing but be redeemed or traded, except weapons (battalion strength, might.py). Each forged item now does
+# the thing its name says (ITEM_EFFECT_BY_NAME), through the existing code that already computes that yield or speed, and the forge says so when
+# it makes one (ITEM_EFFECT_TEXT). Every item on hand adds ITEM_EFFECT_MAGNITUDE (5%) to its effect; the expedition-speed one adds
+# ITEM_EXPEDITION_SPEED_PER_ITEM tiles a cycle. Weapons also keep counting toward the battalion's armed fraction (might.py). Redeeming an item with
+# USE_ITEM gives its effect up. The "food" effect rides the same multiplier a DMM gather boost does; "game" is the hunting yield on top of that.
+# Untuned first guesses: at the item cap (5 plus 1 per warehouse), four plows and hoes would be +20% food.
+ITEM_EFFECT_MAGNITUDE = 0.05
+ITEM_EXPEDITION_SPEED_PER_ITEM = 0.25
+ITEM_EFFECT_BY_NAME = {
+    "Iron Plow": "food", "Forged Hoe": "food", "Whetstone": "stone", "Tempered Chisel": "stone",
+    "Iron Spearhead": "game", "Reinforced Bow": "game", "Bronze Axe": "wood",
+    "Geared Wheel": "expedition_speed", "Pressure Valve": "water", "Tempered Spring": "wall_speed", "Balanced Hinge": "training",
+}
+ITEM_EFFECT_TEXT = {
+    "food": "more food from every forage, hunt and catch", "stone": "more stone from every load gathered",
+    "game": "more game from every hunt", "wood": "more wood from every load gathered", "water": "more water from every draw",
+    "expedition_speed": "parties and relocations travel faster", "wall_speed": "wall sections rise faster",
+    "training": "the battalion drills faster",
+}
 
 # Dream Manifestation Machine (DMM) era, renamed 2026-09-13 from "Object
 # Creator" (replaces the old empty mechanization_era/silicon_era reserved

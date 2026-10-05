@@ -146,7 +146,8 @@ def _harvest(sim, tribe, resource_key, base_yield, biome):
     biome_factor = BIOME_YIELD_MULTIPLIER.get(resource_key, {}).get(biome, 1.0)
     scarcity = sim.world.scarcity(resource_key, tribe.x, tribe.y)
     labor_factor = _labor_multiplier(tribe.population)
-    yield_amount = round(base_yield * biome_factor * labor_factor * (1 - scarcity))
+    item_factor = 1 + _item_effect_bonus(tribe, resource_key)  # a crafted item named for this resource (wood, stone, water, game)
+    yield_amount = round(base_yield * biome_factor * labor_factor * item_factor * (1 - scarcity))
     sim.world.deplete(resource_key, tribe.x, tribe.y, config.DEPLETION_PER_HARVEST, config.MAX_SCARCITY)
     return yield_amount
 
@@ -492,7 +493,8 @@ def _construct_wall(sim, tribe, biome, target):
     # the available_actions narrowing this drives.
     tribe.wall_commitment_active = True
 
-    added = min(100 - section["progress"], round(config.WALL_PROGRESS_PER_ACTION_BASE * _labor_multiplier(tribe.population)))
+    added = min(100 - section["progress"], round(
+        config.WALL_PROGRESS_PER_ACTION_BASE * _labor_multiplier(tribe.population) * (1 + _item_effect_bonus(tribe, "wall_speed"))))
     wood_cost = round(config.WALL_WOOD_COST_TOTAL * added / 100)
     stone_cost = round(config.WALL_STONE_COST_TOTAL * added / 100)
     if tribe.wood < wood_cost or tribe.stone < stone_cost:
@@ -995,7 +997,7 @@ def _train_battalion(sim, tribe, biome, target):
     if tribe.battalion_size < capacity:
         added = min(
             capacity - tribe.battalion_size,
-            round(config.BATTALION_TRAINING_PER_ACTION_BASE * _labor_multiplier(tribe.population)),
+            round(config.BATTALION_TRAINING_PER_ACTION_BASE * _labor_multiplier(tribe.population) * (1 + _item_effect_bonus(tribe, "training"))),
         )
         food_cost = round(config.BATTALION_TRAINING_FOOD_COST_PER_SOLDIER * added)
         if tribe.food < food_cost:
@@ -1433,7 +1435,9 @@ def _forge_item(sim, tribe, biome, target):
     tribe.items.append(item)
     if len(tribe.items) == 1:
         sim._award_trophy(tribe, "Artisan")
-    return f"the forge produces a {item_name} ({item_type}) -- {tribe.mine_resource_name} well spent"
+    effect = config.ITEM_EFFECT_TEXT.get(config.ITEM_EFFECT_BY_NAME.get(item_name, ""), "")
+    effect_note = f"; {effect}" if effect else ""
+    return f"the forge produces a {item_name} ({item_type}) -- {tribe.mine_resource_name} well spent{effect_note}"
 
 
 def _use_item(sim, tribe, biome, target):
@@ -1466,16 +1470,25 @@ def _created_object_bonus(tribe, category: str) -> float:
     _advance_one_expedition's expedition_boost hook."""
     total = sum(config.CREATED_OBJECT_MAGNITUDE for obj in tribe.created_objects if obj["category"] == category)
     if category == "gather_boost":
-        total += config.ITEM_TOOL_GATHER_BONUS * sum(1 for item in tribe.items if item["type"] == "tool")
+        total += _item_effect_bonus(tribe, "food")
     return total
 
 
+def _item_effect_count(tribe, effect: str) -> int:
+    """How many crafted items on hand have this named effect (config.ITEM_EFFECT_BY_NAME)."""
+    return sum(1 for item in tribe.items if config.ITEM_EFFECT_BY_NAME.get(item["name"]) == effect)
+
+
+def _item_effect_bonus(tribe, effect: str) -> float:
+    """The fractional bonus the tribe's crafted items give to one effect: config.ITEM_EFFECT_MAGNITUDE for each item on hand that names it."""
+    return config.ITEM_EFFECT_MAGNITUDE * _item_effect_count(tribe, effect)
+
+
 def _expedition_speed_bonus(tribe) -> float:
-    """Flat extra tiles/cycle for every expedition and RELOCATE: each DMM expedition_boost creation, plus each crafted innovation on hand
-    (config.ITEM_INNOVATION_EXPEDITION_SPEED_BONUS). Both call sites in Simulation read this one function."""
+    """Flat extra tiles/cycle for every expedition and RELOCATE: each DMM expedition_boost creation, plus each crafted item with the
+    expedition_speed effect (config.ITEM_EXPEDITION_SPEED_PER_ITEM). Both call sites in Simulation read this one function."""
     created = sum(1 for obj in tribe.created_objects if obj["category"] == "expedition_boost")
-    innovations = sum(1 for item in tribe.items if item["type"] == "innovation")
-    return created * config.CREATED_OBJECT_EXPEDITION_SPEED_BONUS + innovations * config.ITEM_INNOVATION_EXPEDITION_SPEED_BONUS
+    return created * config.CREATED_OBJECT_EXPEDITION_SPEED_BONUS + _item_effect_count(tribe, "expedition_speed") * config.ITEM_EXPEDITION_SPEED_PER_ITEM
 
 
 def _armed_count(tribe) -> int:
@@ -3672,7 +3685,7 @@ ACTION_DESCRIPTIONS = {
     "TRAIN_BATTALION": "Train soldiers for your Battalion -- only possible once a Barracks stands. Costs food, not wood/stone. Built up over several turns like a wall section, not finished in one -- more people trains faster. Repeatable up to your Barracks' own capacity. A Warrior to lead it is named automatically the moment anyone earns a trophy -- no separate action needed.",
     "BUILD_FORGE": "Build a forge using stored wood and stone -- only possible once a mine stands and at least one unit of its ore is already in stock. A one-time, permanent structure: from then on, ore can be worked into real tools, weapons, and inventions.",
     "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. No durability to track: each item just carries a flat value, usable later or given away in a trade.",
-    "USE_ITEM": "Redeem your oldest crafted item for its stored value, converted into wood and stone. The item's own bonus (tools help gathering, innovations speed expeditions, weapons arm the battalion) is lost. Does nothing if you have no items.",
+    "USE_ITEM": "Redeem your oldest crafted item for its stored value, converted into wood and stone. The item's own effect (a plow or hoe brings in more food, a whetstone or chisel more stone, a bow or spearhead more game, an axe more wood, a wheel faster travel, and so on; any weapon also arms the battalion) is lost. Does nothing if you have no items.",
     "BUILD_DMM": "Build the Dream Manifestation Machine (DMM) using stored wood and stone -- a one-time, permanent factory that lets the tribe start making the Chief's dreams real.",
     "CREATE_ITEM": "Design and craft a genuinely new item at the DMM -- a real, permanent effect (a bonus to gathering, combat, defense, celebrations, exploration speed, or an immediate population grant), shaped by whatever the Chief has lately dreamed of, or picked for you otherwise. Only possible once the DMM stands, and it rests 10 days between uses.",
     "CREATE_USEFUL_STRUCTURE": "Design and build a genuinely new structure at the DMM -- same real, permanent effects as CREATE_ITEM, but a building instead of a portable item. Only possible once the DMM stands, and it rests 10 days between uses.",
