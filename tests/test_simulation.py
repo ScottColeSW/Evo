@@ -7803,7 +7803,7 @@ def test_top_era_narrows_the_menu_to_endgame_resolution_when_a_rival_exists():
         assert real_action in ctx["available_actions"]
     for retired_from_endgame in ("DECLARE_WAR", "TRADE", "RAID", "SEND_TRADE_EMISSARY", "EXPLORATION_PARTY", "SPY"):
         assert retired_from_endgame not in ctx["available_actions"]
-    assert "settling things with the known rival tribe once and for all" in request["prompt"]
+    assert "a vessel to leave the island" in request["prompt"]  # 2026-10-04: the last era also offers the way off the island
 
 
 def test_endgame_lock_keeps_the_real_path_to_barracks_reachable():
@@ -15772,3 +15772,85 @@ async def test_era_ceiling_waits_for_the_final_era_to_be_played():
         sim.cycle = config.ERA_CEILING_GRACE_CYCLES
         await sim.step()
     assert sim.game_over_reason == "era_ceiling"
+
+
+def _final_era_pair(**tribe_overrides):
+    """Two tribes, the first settled in the final era with a known rival and a barracks; returns (sim, tribe)."""
+    from backend import config
+    from backend.eras import ERAS
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}, {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = ERAS[-1].key
+    tribe.wood = tribe.stone = 40
+    tribe.food = tribe.water = 500
+    tribe.discovered_rivals.add("tribe_1")
+    tribe.barracks_built = 1
+    for name, value in tribe_overrides.items():
+        setattr(tribe, name, value)
+    return sim, tribe
+
+
+def test_a_final_era_tribe_with_a_living_rival_can_still_build_the_vessel_and_gather_for_it():
+    """2026-10-04: ENDGAME_RESOLUTION_ACTIONS predates the departure era and left out BUILD_VESSEL and the wood and stone gathers, so in a real
+    two-tribe game a tribe in the last era could never build the vessel (the live trials that departed had no rival)."""
+    sim, tribe = _final_era_pair()
+    tribe.territory_radius = 40  # room for the vessel's footprint
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "BUILD_VESSEL" in ctx["available_actions"]
+    assert "GATHER_WOOD" in ctx["available_actions"] and "GATHER_STONE" in ctx["available_actions"]
+    assert "SCOUT" in ctx["available_actions"]  # the resolution menu itself is still in force (conquest needs more stock than this test gives)
+
+
+def test_once_the_vessel_stands_the_menu_narrows_to_depart_conquest_alliance_and_survival():
+    from backend.simulation import VESSEL_STANDING_ACTIONS
+
+    sim, tribe = _final_era_pair(vessel_built=True)
+    tribe.wood = tribe.stone = 1000
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    actions = ctx["available_actions"]
+    assert "DEPART" in actions and "DECLARE_CONQUEST" in actions
+    assert set(actions) <= VESSEL_STANDING_ACTIONS
+    for dropped in ("BUILD_VESSEL", "UPGRADE_BARRACKS", "TRAIN_BATTALION", "BUILD_KEEP", "CONSTRUCT_WALL", "RESEARCH"):
+        assert dropped not in actions
+
+
+def test_a_lone_tribe_with_a_vessel_gets_depart_and_the_survival_basics():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    from backend import config
+    from backend.eras import ERAS
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.era = ERAS[-1].key
+    tribe.vessel_built = True
+    tribe.food = tribe.water = 500
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "DEPART" in ctx["available_actions"]
+    assert "BUILD_VESSEL" not in ctx["available_actions"] and "CONSTRUCT_WALL" not in ctx["available_actions"]
+
+
+def test_the_both_battle_ready_lock_keeps_depart_when_a_vessel_stands():
+    from backend import config
+
+    sim, tribe = _final_era_pair(vessel_built=True, battalion_size=100, barracks_built=config.BARRACKS_MAX_COUNT)
+    rival = sim.tribes["tribe_1"]
+    rival.battalion_size = 100
+    rival.barracks_built = config.BARRACKS_MAX_COUNT
+    tribe.wood = tribe.stone = 1000
+    tribe.discovered_rivals.add("tribe_1")
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert "DEPART" in ctx["available_actions"]
+    assert set(ctx["available_actions"]) <= {"DECLARE_CONQUEST", "DEPART"}

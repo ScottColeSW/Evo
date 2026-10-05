@@ -334,7 +334,17 @@ ENDGAME_RESOLUTION_ACTIONS = {
     "DECLARE_ALLIANCE", "DECLARE_CONQUEST",
     "TRAIN_BATTALION", "BUILD_BARRACKS", "UPGRADE_BARRACKS", "SCOUT",
     "BUILD_LONG_HOUSE", "BUILD_KITCHEN", "BUILD_KEEP",
+    # 2026-10-04: the last era is departure_era now, not the war era this lock was written for, and the set left out the way off the island. A
+    # tribe in the last era with a living rival could not build the vessel, gather the wood and stone it needs, or depart (found when a live
+    # trial departed only because it had no rival). The gathers are filtered back out by the usual rule once a build can be paid.
+    "BUILD_VESSEL", "DEPART", "GATHER_WOOD", "GATHER_STONE",
 } | SURVIVAL_CRISIS_ACTIONS
+
+# 2026-10-04 (the owner: at this point food, water and shelter are secure and the land is mostly spent; they need to expand, which leads to
+# DEPART, or conquer, or, much weaker, ally and build the joint castle): once the vessel stands, the menu narrows to those and the survival
+# basics. A nudge was not enough: in two live trials a tribe took about 150 cycles to choose DEPART with the "vessel stands ready" line on, and never
+# chose it in 100 cycles with it off. See docs/NUDGE-AUDIT.md and the facts-vs-mechanics notes.
+VESSEL_STANDING_ACTIONS = {"DEPART", "DECLARE_CONQUEST", "DECLARE_ALLIANCE", "BUILD_JOINT_CASTLE"} | SURVIVAL_CRISIS_ACTIONS
 
 # Live report, 2026-09-12: "After one Tribe was eliminated, the actions
 # offered still included Conquest, and others that were not relevant any
@@ -4836,13 +4846,19 @@ class Simulation:
             ]
             rival = min(nearby_rivals, key=lambda o: math.hypot(o.x - tribe.x, o.y - tribe.y)) if nearby_rivals else None
             if rival is not None and _is_battle_ready(rival):
-                battle_ready_only = [a for a in available_actions if a == "DECLARE_CONQUEST"]
+                battle_ready_only = [a for a in available_actions if a in ("DECLARE_CONQUEST", "DEPART")]  # DEPART once a vessel stands
                 # Fail-open guard, same shape as every other menu-lock above --
                 # never cut the menu down to nothing (e.g. DECLARE_CONQUEST
                 # itself is momentarily unaffordable this exact cycle).
                 if battle_ready_only:
                     available_actions = battle_ready_only
                     battle_ready_locked = True
+
+        # Once the vessel stands the menu narrows (VESSEL_STANDING_ACTIONS). Fail-open: only when DEPART is actually on offer.
+        vessel_locked = False
+        if tribe.vessel_built and not tribe.departed and "DEPART" in available_actions:
+            available_actions = [a for a in available_actions if a in VESSEL_STANDING_ACTIONS]
+            vessel_locked = True
 
         # Explicit request, 2026-09-17: "gather wood is always available and
         # viable... but when they have enough and qualify for a build, it
@@ -4975,8 +4991,8 @@ class Simulation:
         elif endgame_locked:
             visible_entities.append(
                 "There is nowhere further to grow -- every stage of development has been reached. What "
-                "remains is settling things with the known rival tribe once and for all: war, alliance, "
-                "or the training to prepare for either."
+                "remains is the known rival tribe (war or alliance, and the training for either) and a vessel "
+                "to leave the island."
             )
         elif joint_castle_active:
             visible_entities.append(
