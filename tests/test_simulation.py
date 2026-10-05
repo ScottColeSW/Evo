@@ -14336,6 +14336,8 @@ async def test_step_does_not_mistake_two_independent_solo_castles_for_golden_age
     tribe_b.stance_toward[tribe_a.id] = "ALLIED"
     tribe_a.castle_built = True
     tribe_b.castle_built = True  # both built their own, no joint_castle exists
+    from backend import config
+    sim.cycle = config.ERA_CEILING_GRACE_CYCLES  # the final era has been played for its grace window
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
          mock.patch("backend.simulation.generate_endgame_narrative", mock.AsyncMock(return_value="")), \
@@ -14458,6 +14460,8 @@ async def test_step_triggers_game_over_when_every_living_tribe_hits_the_era_ceil
     for tribe in sim.tribes.values():
         tribe.era = ERAS[-1].key
         tribe.chief_name = "Ashgar"  # avoid a real elect_chief() network call in step()
+    from backend import config
+    sim.cycle = config.ERA_CEILING_GRACE_CYCLES  # the final era has been played for its grace window
 
     with mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})), \
          mock.patch("backend.simulation.generate_endgame_narrative", mock.AsyncMock(return_value="")), \
@@ -15730,3 +15734,27 @@ async def test_install_chief_skips_water_fact_when_already_on_a_lake():
         await sim._install_chief(tribe)
 
     assert captured["water_needed"] is False
+
+
+@run_async
+async def test_era_ceiling_waits_for_the_final_era_to_be_played():
+    """2026-10-04: every living tribe reaching departure_era used to end the run on the next step, before anyone could build the vessel and
+    depart. The ending now waits ERA_CEILING_GRACE_CYCLES after the last tribe entered the top era, and a departure still ends the run at once."""
+    from backend import config
+    from backend.eras import ERAS
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = next(iter(sim.tribes.values()))
+    tribe.era = ERAS[-1].key
+    tribe.era_entered_cycle = 0
+    tribe.chief_name = "Ashgar"
+    patches = (mock.patch.object(sim.scheduler, "run_batch", mock.AsyncMock(return_value={})),
+               mock.patch("backend.simulation.generate_endgame_narrative", mock.AsyncMock(return_value="")),
+               mock.patch.object(sim.client, "unload_model", mock.AsyncMock()))
+    with patches[0], patches[1], patches[2]:
+        sim.cycle = config.ERA_CEILING_GRACE_CYCLES - 5
+        await sim.step()
+        assert sim.game_over is False
+        sim.cycle = config.ERA_CEILING_GRACE_CYCLES
+        await sim.step()
+    assert sim.game_over_reason == "era_ceiling"

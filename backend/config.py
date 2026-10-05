@@ -249,6 +249,9 @@ DECISION_JOURNAL = "on"
 # one-cycle pass-through in the war-ready scenario): population grows by sudden jumps and was 5 to 9 times past each threshold,
 # so thresholds alone cannot guarantee a dwell. Applies to ordinary advancement only; the research discount does not shorten it.
 ERA_MIN_CYCLES = 50
+# 2026-10-04: how long every living tribe must have been in the top era (departure_era) before the era_ceiling ending may fire. Without it the
+# run ended on the step after the last tribe arrived, so nobody could build the vessel (about 130 cycles of wood, measured) and depart.
+ERA_CEILING_GRACE_CYCLES = 300
 DECISION_JOURNAL_LENGTH = 60
 # How many cycles back a conflict event looks for the decisions it followed (written into the conflict_event log line)
 DECISION_JOURNAL_CONFLICT_LOOKBACK = 3

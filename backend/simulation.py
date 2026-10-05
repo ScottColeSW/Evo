@@ -3604,8 +3604,14 @@ class Simulation:
         # deferred ending needs the fallback held off too" care world_
         # domination's own deferral above already needs, just for the
         # peaceful path instead of the war one.
+        #
+        # 2026-10-04: not before the final era has been played. departure_era is the top rung, so this used to fire on the very next step after
+        # every living tribe reached it, before anyone had a turn to build the vessel and depart (a live trial from a departure-era fixture ended
+        # after one cycle with reason era_ceiling). The ending now waits config.ERA_CEILING_GRACE_CYCLES after the last tribe entered the top era;
+        # a departure (checked above) still ends the run at once.
         elif (
             living_tribes and all(next_era(t.era) is None for t in living_tribes)
+            and all(self.cycle - t.era_entered_cycle >= config.ERA_CEILING_GRACE_CYCLES for t in living_tribes)
             and not self._has_active_alliance_at_top_era()
         ):
             await self._trigger_game_over("era_ceiling")
