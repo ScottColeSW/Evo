@@ -2157,9 +2157,10 @@ DEER_BREED_LITTER_WEIGHTS = (50, 30, 15, 5)
 # the other -- TANNERY_FUR_BONUS_PER_HUNT above).
 DEER_PEN_DAILY_FEED_MIN = 1
 DEER_PEN_DAILY_FEED_MAX = 3
-# 2026-10-04: 2 -> 3. A run's Fur grew about 0.4 a cycle and the war era asks for 100 less the research discount, so a tribe
-# with few researches never got there. Meat is a fraction of the day's Fur, so food rises with it.
-FUR_PER_DEER_FED = 3
+# 2026-10-04: 2 -> 3 -> 5 (the owner set 5: "I want more Fur"). A run's Fur grew about 0.4 a cycle, and a tannery made 4 to 9 a day at 3. Era gates
+# no longer read Fur (they are readiness now), so this is about production: Fur pays era advancement costs and the Long House discount.
+# Meat is a fraction of the day's Fur, so food rises with it.
+FUR_PER_DEER_FED = 5
 # 2026-10-03 (the owner: the Tannery is too stingy; a large herd, over 30, should produce a lot): the daily feed above was a flat
 # 1 to 3 deer, so a herd of 60 gave the same at most 6 Fur a day as a herd of 5. The Tannery now also takes this fraction of the herd
 # above the minimum each day, whichever is larger. 0.2 takes 6 deer from a herd of 33 (12 Fur) and 12 from a herd of 63 (24 Fur).
