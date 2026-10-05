@@ -87,6 +87,29 @@ Splitting these means rewriting them as the fact alone, which changes the wordin
   tribal synapse could never meet the monolithic gate. `apply_tribe_fixture` now restores both. The mid-game batch needs repeating.
 - Next: more early-game seeds (each run is about 15 minutes), then repair the fixtures and repeat the mid-game batch.
 
+## A/B result, menu size (2026-10-05)
+
+Does a smaller action menu give better choices? `scripts/ab_test_nudges_off.py --knob menu_cap`, two `qwen2.5:3b` tribes, fresh start, 250 cycles, 3 seeds per
+arm (6 tribe-runs each), full menu against a menu capped at 8 (the four basic gathers kept, the highest-ranked of the rest filling the remainder). Raw results are
+local (gitignored): `scripts/ab_test_menu_cap_results.json`.
+
+| | Full menu | Capped at 8 |
+|---|---|---|
+| Extinct | 0 | 0 |
+| Final population, median (range) | 9,130 (1,356 to 15,987) | 11,279 (2,767 to 19,634) |
+| Structures built, median | 14.5 | 16.5 |
+| Trades, median | 4 | 11 |
+| Share of decisions that changed nothing | 16% | 16% |
+| First Cognitive Horizon, median cycle | 96 | 69 |
+| Tribal synapse, median cycle | 166 | 149 |
+| Mean menu size (max seen) | 7.5 (19) | 6.4 (8) |
+
+No evidence that a smaller menu is worse, and a hint that it is not worse and may be a little better, but the data cannot carry that: (1) the cap barely
+binds in the first 250 cycles (the mean full menu is only 7.5, so the cap only trimmed the peaks); (2) the largest gap is in the first era, where the menu is the
+pre-settlement set of 6 actions and the cap cannot change anything, so a gap of that size (69 against 96) is the noise level between runs of the same setup;
+(3) 6 tribe-runs per arm. The question is only live in the late eras, where menus run 15 to 18. Next: the mid-game batch from the repaired fixtures
+(`--mode mid`), where the cap does bind. The cap stays off (`MENU_CAP=0`) for play.
+
 ## How to back them out
 
 1. Run the A/B with `NUDGES=off` against `on` on the benchmark scenarios and one live run; read survival, era pace and action mix.
