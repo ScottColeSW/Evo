@@ -156,6 +156,50 @@
   #game-over-splash .go-card .go-trophies b { color: #fbbf24; }
   #game-over-splash .go-card .go-build-icons { margin-top: 8px; font-size: 15px; line-height: 1.8; letter-spacing: 3px; }
   #game-over-splash .go-card .go-combat { margin-top: 8px; font-size: 10px; color: #93c5fd; }
+
+  /* ---- End-of-run report (backend/endgame_report.py): the scene, the headline, the charts, the findings ---- */
+  #game-over-splash .go-stage { position: relative; width: 100%; min-height: 330px; border-radius: 16px; overflow: hidden; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-end; padding: 0 20px 22px; box-sizing: border-box; border: 1px solid #2a2a3a; background: linear-gradient(#18205a, #2a3a82 55%, #2b5d8f); }
+  #game-over-splash .go-stage.scene-grave { background: linear-gradient(#0b0d12, #151922 60%, #1b2029); }
+  #game-over-splash .go-stage.scene-conquest { background: linear-gradient(#1c0f1f, #3a1d2a 60%, #5a2d2a); }
+  #game-over-splash .go-stage.scene-peace { background: linear-gradient(#14304d, #2f5f8a 60%, #4f86a6); }
+  #game-over-splash .go-stage.scene-summit { background: linear-gradient(#18205a, #34407e 60%, #4d5e96); }
+  #game-over-splash .go-stage.scene-grave { min-height: 410px; }
+  #game-over-splash .go-stage.scene-grave .go-scene { top: 0; bottom: auto; height: 64%; }
+  #game-over-splash .go-stage.scene-conquest, #game-over-splash .go-stage.scene-peace, #game-over-splash .go-stage.scene-summit { min-height: 380px; }
+  #game-over-splash .go-stage.scene-conquest .go-scene, #game-over-splash .go-stage.scene-peace .go-scene, #game-over-splash .go-stage.scene-summit .go-scene { top: 0; bottom: auto; height: 64%; }
+  #game-over-splash .go-stage.scene-quiet { min-height: 150px; background: linear-gradient(#12121a, #1a1a26); }
+  #game-over-splash .go-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; background: transparent !important; border: 0 !important; }
+  #game-over-splash .go-scene { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; pointer-events: none; }
+  #game-over-splash .go-scene svg { width: 100%; height: 100%; }
+  #game-over-splash .go-headline { position: relative; z-index: 2; text-align: center; max-width: 720px; text-shadow: 0 2px 14px rgba(0,0,0,0.75); }
+  #game-over-splash .go-headline .go-h-title { font-size: 34px; font-weight: 800; letter-spacing: 1px; color: #fde68a; }
+  #game-over-splash .go-stage.scene-grave .go-h-title { color: #9aa3b5; }
+  #game-over-splash .go-headline .go-h-text { font-size: 15px; color: #e8e8f0; margin-top: 6px; line-height: 1.5; }
+  #game-over-splash .go-headline .go-h-shows { font-size: 11px; color: #a9b4d6; margin-top: 10px; letter-spacing: 0.3px; }
+  #game-over-splash .go-section { width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.03); border: 1px solid #2a2a3a; border-radius: 14px; padding: 14px 16px 12px; }
+  #game-over-splash .go-section h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase; color: #a5b4fc; display: flex; justify-content: space-between; align-items: center; }
+  #game-over-splash .go-section h3 button { background: #23233a; color: #c7d2fe; border: 1px solid #3a3a55; border-radius: 10px; padding: 2px 10px; font-size: 10px; cursor: pointer; }
+  #game-over-splash .go-chart svg { width: 100%; height: auto; display: block; }
+  #game-over-splash .go-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 11px; color: #c7c7d1; margin-top: 4px; }
+  #game-over-splash .go-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+  #game-over-splash .go-eras-row { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 10px; margin: 6px 0; font-size: 11px; color: #c7c7d1; }
+  #game-over-splash .go-eras-bar { display: flex; height: 24px; border-radius: 6px; overflow: hidden; background: #1a1a26; }
+  #game-over-splash .go-eras-bar div { display: flex; align-items: center; justify-content: center; font-size: 9px; color: #0b0b12; font-weight: 700; overflow: hidden; white-space: nowrap; border-right: 1px solid rgba(0,0,0,0.35); }
+  #game-over-splash .go-findings { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  #game-over-splash .go-find { background: rgba(255,255,255,0.04); border: 1px solid #2a2a3a; border-radius: 12px; padding: 12px 14px; }
+  #game-over-splash .go-find .t { font-size: 13px; font-weight: 700; color: #fde68a; }
+  #game-over-splash .go-find .x { font-size: 12px; color: #d4d4de; margin-top: 5px; line-height: 1.5; }
+  #game-over-splash .go-mix-row { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: start; margin: 8px 0; font-size: 11px; color: #c7c7d1; }
+  #game-over-splash .go-mix-bars div { display: grid; grid-template-columns: 150px 1fr 38px; gap: 8px; align-items: center; margin: 2px 0; }
+  #game-over-splash .go-mix-bars span.bar { display: block; height: 8px; border-radius: 4px; }
+  #game-over-splash .hidden { display: none; }
+  @keyframes goSail { from { transform: translateX(-30%); } to { transform: translateX(130%); } }
+  @keyframes goBob { 0%,100% { transform: translateY(0) rotate(-1.5deg); } 50% { transform: translateY(-5px) rotate(1.5deg); } }
+  @keyframes goFlicker { 0%,100% { opacity: 1; transform: scaleY(1); } 50% { opacity: 0.78; transform: scaleY(0.88); } }
+  @keyframes goWave { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  @keyframes goFloat { from { transform: translateY(0); opacity: 0; } 15% { opacity: 1; } to { transform: translateY(-260px); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { #game-over-splash .go-scene * { animation: none !important; } }
   #game-over-splash details.go-log { width: 100%; box-sizing: border-box; color: #93a0c7; font-size: 11px; }
   #game-over-splash details.go-log summary { cursor: pointer; letter-spacing: 0.5px; text-transform: uppercase; padding: 4px 0; }
   #game-over-splash details.go-log summary:hover { color: #c7d2fe; }
@@ -417,6 +461,24 @@
           <div class="game-over-title" id="game-over-title">SIMULATION COMPLETE</div>
           <div class="go-subtitle" id="game-over-subtitle"></div>
           <div class="go-verdict" id="game-over-verdict"></div>
+
+          <div class="go-stage scene-quiet hidden" id="go-stage">
+            <canvas id="go-fx"></canvas>
+            <div class="go-scene" id="go-scene"></div>
+            <div class="go-headline">
+              <div class="go-h-title" id="go-h-title"></div>
+              <div class="go-h-text" id="go-h-text"></div>
+              <div class="go-h-shows" id="go-h-shows"></div>
+            </div>
+          </div>
+          <div class="go-section hidden" id="go-sec-chart">
+            <h3><span>The story of the run</span><button id="go-chart-toggle" type="button">log scale</button></h3>
+            <div class="go-chart" id="go-chart"></div>
+            <div class="go-legend" id="go-chart-legend"></div>
+          </div>
+          <div class="go-section hidden" id="go-sec-eras"><h3><span>How long each age lasted</span></h3><div id="go-eras"></div></div>
+          <div class="go-findings hidden" id="go-findings"></div>
+          <div class="go-section hidden" id="go-sec-mix"><h3><span>What the days were spent on</span></h3><div id="go-mix"></div></div>
           <div class="go-cards" id="game-over-cards"></div>
           <!-- A separate, one-time LLM narrative synthesis of the whole game
                (Simulation._trigger_game_over/generate_endgame_narrative), distinct
@@ -1040,6 +1102,202 @@ function goVerdictText(state) {
 
 const GAME_OVER_VERDICT_ICONS = { extinction: "💀", world_domination: "👑", golden_age: "🕊️", era_ceiling: "🏛️", manual_quit: "⏸️", departure: "🌅" };
 
+
+/* ---------- End-of-run report: scene, charts and findings (backend/endgame_report.py builds the data; nothing here changes the game) ---------- */
+const GO_ERA_NAMES = ["Primitive Dawn", "Cognitive Horizon", "Tribal Synapse", "Monolithic Era", "Dream Manifestation Era", "War and World Domination", "Beyond the Horizon"];
+const GO_ERA_COLORS = ["#94a3b8", "#4ade80", "#22d3ee", "#a78bfa", "#fbbf24", "#f87171", "#fde68a"];
+let goChartLog = true;
+let goFx = null;
+
+function stopSplashFx() {
+  if (goFx) { cancelAnimationFrame(goFx.raf); clearInterval(goFx.timer); goFx = null; }
+  const c = document.getElementById("go-fx");
+  if (c && c.getContext) c.getContext("2d").clearRect(0, 0, c.width, c.height);
+}
+
+function goSceneSvg(scene) {
+  const stars = Array.from({ length: 26 }, (_, i) => `<circle cx="${(i * 137) % 1000}" cy="${(i * 61) % 170}" r="${i % 3 ? 1 : 1.6}" fill="#fff" opacity="${0.35 + (i % 4) * 0.15}"/>`).join("");
+  if (scene === "departure") return `<svg viewBox="0 0 1000 330" preserveAspectRatio="xMidYMax slice">${stars}
+      <circle cx="840" cy="70" r="26" fill="#fff7d6" opacity="0.9"/>
+      <rect x="0" y="238" width="1000" height="92" fill="#1d4d7a"/>
+      <g style="animation: goSail 16s linear infinite;"><g style="animation: goBob 3s ease-in-out infinite; transform-origin: 80px 238px;">
+        <path d="M20 232 L150 232 L128 258 L42 258 Z" fill="#7c4a22"/><rect x="82" y="150" width="4" height="84" fill="#5b3418"/>
+        <path d="M86 156 L86 226 L142 226 Z" fill="#fff3d1"/><path d="M82 164 L82 226 L40 226 Z" fill="#fde68a"/><path d="M86 150 L108 156 L86 162 Z" fill="#f87171"/></g></g>
+      <g opacity="0.55" style="animation: goWave 7s linear infinite;"><path d="M0 250 q25 -12 50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0" stroke="#9bd0ff" stroke-width="3" fill="none"/></g></svg>`;
+  if (scene === "conquest") return `<svg viewBox="0 0 1000 330" preserveAspectRatio="xMidYMid meet">
+      <g transform="translate(500 120)"><path d="M-70 40 L-70 -10 L-40 20 L0 -40 L40 20 L70 -10 L70 40 Z" fill="#fbbf24" stroke="#f59e0b" stroke-width="4"/>
+        <circle cx="-70" cy="-12" r="8" fill="#ef4444"/><circle cx="0" cy="-42" r="9" fill="#60a5fa"/><circle cx="70" cy="-12" r="8" fill="#34d399"/></g>
+      <g style="animation: goFlicker 2.4s ease-in-out infinite; transform-origin: 220px 330px;"><rect x="216" y="130" width="4" height="200" fill="#5b3418"/><path d="M220 134 L330 150 L220 175 Z" fill="#ef4444"/></g>
+      <g style="animation: goFlicker 2.9s ease-in-out infinite; transform-origin: 780px 330px;"><rect x="776" y="130" width="4" height="200" fill="#5b3418"/><path d="M780 134 L670 150 L780 175 Z" fill="#ef4444"/></g></svg>`;
+  if (scene === "peace") return `<svg viewBox="0 0 1000 330" preserveAspectRatio="xMidYMid meet">${stars}
+      <g fill="#0f1f33"><rect x="400" y="190" width="200" height="140"/><rect x="380" y="160" width="40" height="170"/><rect x="580" y="160" width="40" height="170"/>
+        <path d="M380 160 l20 -28 l20 28 Z M580 160 l20 -28 l20 28 Z"/><rect x="470" y="230" width="60" height="100" fill="#f6c453" opacity="0.75"/></g>
+      <path d="M400 132 L400 100 L440 112 L400 124" fill="#60a5fa"/><path d="M600 132 L600 100 L560 112 L600 124" fill="#f472b6"/></svg>`;
+  if (scene === "grave") return `<svg viewBox="0 0 1000 330" preserveAspectRatio="xMidYMid meet">
+      <ellipse cx="500" cy="318" rx="420" ry="26" fill="#10131a"/>
+      <g transform="translate(500 0)"><path d="M-70 318 L-70 150 Q-70 96 0 96 Q70 96 70 150 L70 318 Z" fill="#59606f" stroke="#7b8394" stroke-width="3"/>
+        <rect x="-4" y="122" width="8" height="46" fill="#2b303b"/><rect x="-18" y="134" width="36" height="8" fill="#2b303b"/>
+        <text x="0" y="206" text-anchor="middle" font-size="26" font-weight="700" fill="#2b303b" font-family="Georgia, serif">R.I.P.</text></g>
+      <g style="animation: goFlicker 1.6s ease-in-out infinite; transform-origin: 610px 318px;"><rect x="604" y="292" width="12" height="26" fill="#d9d2c0"/><path d="M610 270 q-9 14 0 24 q9 -10 0 -24" fill="#fbbf24"/></g>
+      <g opacity="0.25"><ellipse cx="300" cy="300" rx="180" ry="20" fill="#9aa3b5"/><ellipse cx="760" cy="296" rx="200" ry="18" fill="#9aa3b5"/></g></svg>`;
+  if (scene === "summit") return `<svg viewBox="0 0 1000 330" preserveAspectRatio="xMidYMid meet">${stars}
+      <path d="M200 330 L500 70 L800 330 Z" fill="#202850"/><path d="M430 128 L500 70 L570 128 L540 120 L510 140 L480 118 Z" fill="#e5e9ff"/>
+      <rect x="498" y="30" width="3" height="48" fill="#cbd5e1"/><path d="M501 32 L540 44 L501 56 Z" fill="#fbbf24"/></svg>`;
+  return "";
+}
+
+function startSplashFx(scene) {
+  stopSplashFx();
+  const canvas = document.getElementById("go-fx");
+  const stage = document.getElementById("go-stage");
+  if (!canvas || !canvas.getContext || !stage || stage.classList.contains("hidden")) return;
+  if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const ctx = canvas.getContext("2d");
+  // The stage is measured every frame, not once: it can still be laying out when the effects start (it measured 40px wide the first time).
+  let W = 1, H = 1;
+  const fit = () => { if (canvas.width !== stage.clientWidth || canvas.height !== stage.clientHeight) { canvas.width = stage.clientWidth; canvas.height = stage.clientHeight; } W = canvas.width; H = canvas.height; };
+  fit();
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+  const palette = { departure: ["#fde68a", "#f87171", "#60a5fa", "#34d399", "#f472b6", "#ffffff"], conquest: ["#fbbf24", "#f59e0b", "#fde68a", "#ef4444"],
+                    peace: ["#bfdbfe", "#fbcfe8", "#fef3c7", "#d1fae5"], summit: ["#a5b4fc", "#fde68a", "#ffffff"] }[scene] || ["#ffffff"];
+  const parts = [];
+  function burst() {
+    const x = rand(W * 0.12, W * 0.88), y = rand(H * 0.08, H * 0.45), color = pick(palette);
+    for (let i = 0; i < 64; i++) { const a = (i / 64) * Math.PI * 2, v = rand(1.2, 3.6); parts.push({ k: "spark", x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1, color, size: rand(1.4, 2.6) }); }
+  }
+  function confetti(n) { for (let i = 0; i < n; i++) parts.push({ k: "conf", x: rand(0, W), y: rand(-20, -4), vx: rand(-0.6, 0.6), vy: rand(1.2, 2.6), rot: rand(0, 6), vr: rand(-0.15, 0.15), life: 1, color: pick(palette), size: rand(4, 8) }); }
+  function rain(n) { for (let i = 0; i < n; i++) parts.push({ k: "rain", x: rand(0, W), y: rand(-30, 0), vy: rand(6, 9), life: 1 }); }
+  function ember() { parts.push({ k: "ember", x: rand(W * 0.46, W * 0.66), y: H - 24, vx: rand(-0.2, 0.2), vy: rand(-0.7, -0.3), life: 1, color: "#fbbf24", size: rand(1, 2) }); }
+  function lantern() { parts.push({ k: "lantern", x: rand(W * 0.05, W * 0.95), y: H + 10, vy: rand(-0.6, -0.3), life: 1, color: pick(palette), sway: rand(0, 6) }); }
+  let tick = 0;
+  function frame() {
+    tick++;
+    fit();
+    ctx.clearRect(0, 0, W, H);
+    if (scene === "departure") { if (tick % 52 === 1 && tick < 520) burst(); else if (tick % 110 === 1) burst(); if (tick % 4 === 0 && tick < 300) confetti(1); }
+    if (scene === "conquest") { if (tick % 3 === 0) confetti(1); if (tick % 130 === 1) burst(); }
+    if (scene === "peace") { if (tick % 14 === 0) lantern(); if (tick % 190 === 1) burst(); }
+    if (scene === "summit") { if (tick % 10 === 0) confetti(1); }
+    if (scene === "grave") { rain(2); if (tick % 12 === 0) ember(); }
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      if (p.k === "spark") { p.x += p.vx; p.y += p.vy; p.vy += 0.045; p.vx *= 0.992; p.life -= 0.011; ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, 6.3); ctx.fill(); }
+      else if (p.k === "conf") { p.x += p.vx + Math.sin(tick / 18 + p.rot) * 0.5; p.y += p.vy; p.rot += p.vr; if (p.y > H + 10) p.life = 0; ctx.globalAlpha = 0.9; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.color; ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2); ctx.restore(); }
+      else if (p.k === "rain") { p.y += p.vy; p.x -= 1.2; if (p.y > H) p.life = 0; ctx.globalAlpha = 0.35; ctx.strokeStyle = "#9db4d6"; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - 2, p.y + 9); ctx.stroke(); }
+      else if (p.k === "ember") { p.x += p.vx; p.y += p.vy; p.life -= 0.01; ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, 6.3); ctx.fill(); }
+      else if (p.k === "lantern") { p.y += p.vy; p.x += Math.sin(tick / 40 + p.sway) * 0.4; if (p.y < -20) p.life = 0; ctx.globalAlpha = 0.85; ctx.fillStyle = p.color; ctx.fillRect(p.x - 5, p.y - 7, 10, 14); ctx.globalAlpha = 0.25; ctx.beginPath(); ctx.arc(p.x, p.y, 16, 0, 6.3); ctx.fill(); }
+      if (p.life <= 0) parts.splice(i, 1);
+    }
+    ctx.globalAlpha = 1;
+    goFx.raf = requestAnimationFrame(frame);
+  }
+  goFx = { raf: 0, timer: 0 };
+  goFx.raf = requestAnimationFrame(frame);
+}
+
+function goFmt(n) { return Number(n).toLocaleString(); }
+
+function renderRunChart(report) {
+  const tribes = Object.entries((report.timeline || {}).tribes || {}).filter(([, s]) => s.cycles && s.cycles.length > 1);
+  if (!tribes.length) return false;
+  const W = 860, H = 290, L = 54, R = 16, T = 14, B = 32;
+  const minC = Math.min(...tribes.map(([, s]) => s.cycles[0])), maxC = Math.max(...tribes.map(([, s]) => s.cycles[s.cycles.length - 1]));
+  const maxP = Math.max(20, ...tribes.flatMap(([, s]) => s.pop));
+  const yv = p => goChartLog ? Math.log10(Math.max(1, p)) / Math.log10(maxP) : p / maxP;
+  const X = c => L + (maxC === minC ? 0 : (c - minC) / (maxC - minC)) * (W - L - R);
+  const Y = p => T + (1 - yv(p)) * (H - T - B);
+  const ticks = goChartLog ? [10, 100, 1000, 10000, 100000].filter(v => v <= maxP * 1.01) : [0.25, 0.5, 0.75, 1].map(f => Math.round(maxP * f));
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Population of each tribe over the run">`;
+  svg += ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="#2a2a3a"/><text x="${L - 6}" y="${Y(v) + 3}" text-anchor="end" font-size="10" fill="#8a8aa0">${v >= 1000 ? (v / 1000) + "k" : v}</text>`).join("");
+  const xt = 5;
+  for (let i = 0; i <= xt; i++) { const c = Math.round(minC + (maxC - minC) * i / xt); svg += `<text x="${X(c)}" y="${H - 10}" text-anchor="middle" font-size="10" fill="#8a8aa0">${c}</text>`; }
+  svg += `<text x="${(L + W - R) / 2}" y="${H - 0}" text-anchor="middle" font-size="9" fill="#6b6b80">cycle</text>`;
+  const popAt = (s, c) => { let best = 0; for (let i = 0; i < s.cycles.length; i++) { if (s.cycles[i] <= c) best = i; else break; } return s.pop[best]; };
+  for (const [tid, s] of tribes) {
+    const d = s.cycles.map((c, i) => `${i ? "L" : "M"}${X(c).toFixed(1)} ${Y(s.pop[i]).toFixed(1)}`).join(" ");
+    svg += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.4" stroke-linejoin="round"/>`;
+  }
+  const events = (report.timeline.events || []);
+  for (const e of events) {
+    const entry = tribes.find(([tid]) => tid === e.tribe); if (!entry) continue;
+    const s = entry[1], x = X(e.cycle), y = Y(popAt(s, e.cycle));
+    const tip = `<title>${escapeHtml(e.name)}, cycle ${e.cycle}: ${escapeHtml(e.label)}</title>`;
+    if (e.kind === "era") svg += `<circle cx="${x}" cy="${y}" r="4.6" fill="${s.color}" stroke="#fff" stroke-width="1.4">${tip}</circle>`;
+    else if (e.kind === "drop") svg += `<path d="M${x - 4} ${y - 8} L${x + 4} ${y - 8} L${x} ${y - 1} Z" fill="#f87171">${tip}</path>`;
+    else if (["conquest", "departed", "vessel", "trade", "extinct", "absorbed"].includes(e.kind)) {
+      const icon = { conquest: "⚔", departed: "⛵", vessel: "🚢", trade: "🤝", extinct: "☠", absorbed: "✖" }[e.kind];
+      svg += `<text x="${x}" y="${Math.max(T + 10, y - 9)}" text-anchor="middle" font-size="12">${icon}${tip}</text>`;
+    }
+  }
+  svg += "</svg>";
+  document.getElementById("go-chart").innerHTML = svg;
+  document.getElementById("go-chart-legend").innerHTML = tribes.map(([, s]) => `<span><i style="background:${s.color}"></i>${escapeHtml(s.name)}</span>`).join("")
+    + `<span style="color:#8a8aa0">● an age begins &nbsp; ▼ a heavy loss &nbsp; hover any mark</span>`;
+  document.getElementById("go-chart-toggle").textContent = goChartLog ? "log scale" : "linear scale";
+  return true;
+}
+
+function renderRunEras(report) {
+  const tl = report.timeline || {}, tribes = Object.entries(tl.tribes || {});
+  const last = tl.last_cycle || 0;
+  if (!tribes.length) return false;
+  const rows = tribes.map(([tid, s]) => {
+    const start = s.cycles[0];
+    const marks = [{ c: start, era: "Primitive Dawn" }].concat((tl.events || []).filter(e => e.tribe === tid && e.kind === "era").map(e => ({ c: e.cycle, era: e.label.replace("entered the ", "") })));
+    const total = Math.max(1, last - start);
+    const segs = marks.map((m, i) => {
+      const end = i + 1 < marks.length ? marks[i + 1].c : last, days = end - m.c, idx = Math.max(0, GO_ERA_NAMES.indexOf(m.era));
+      return `<div style="width:${(100 * days / total).toFixed(2)}%;background:${GO_ERA_COLORS[idx]}" title="${escapeHtml(m.era)}: cycle ${m.c} to ${end} (${days} cycles)">${days / total > 0.07 ? days : ""}</div>`;
+    }).join("");
+    return `<div class="go-eras-row"><span style="color:${s.color};font-weight:700">${escapeHtml(s.name)}</span><div class="go-eras-bar">${segs}</div></div>`;
+  }).join("");
+  const key = GO_ERA_NAMES.map((n, i) => `<span><i style="background:${GO_ERA_COLORS[i]}"></i>${n}</span>`).join("");
+  document.getElementById("go-eras").innerHTML = rows + `<div class="go-legend">${key}</div>`;
+  return true;
+}
+
+function renderRunMix(report) {
+  const tl = report.timeline || {}, actions = tl.actions || {};
+  const rows = Object.entries(actions).filter(([tid, a]) => tl.tribes[tid] && Object.keys(a).length).map(([tid, a]) => {
+    const total = Object.values(a).reduce((x, y) => x + y, 0), top = Object.entries(a).slice(0, 6), color = tl.tribes[tid].color, peak = top.length ? top[0][1] : 1;
+    return `<div class="go-mix-row"><span style="color:${color};font-weight:700">${escapeHtml(tl.tribes[tid].name)}<br><small style="color:#7c7c94;font-weight:400">${goFmt(total)} turns</small></span><div class="go-mix-bars">${
+      top.map(([name, n]) => `<div><span>${escapeHtml(name.toLowerCase().replace(/_/g, " "))}</span><span class="bar" style="width:${Math.max(3, 100 * n / peak)}%;background:${color}"></span><span>${Math.round(100 * n / total)}%</span></div>`).join("")}</div></div>`;
+  });
+  if (!rows.length) return false;
+  document.getElementById("go-mix").innerHTML = rows.join("");
+  return true;
+}
+
+function renderSplashReport(state) {
+  const report = state.game_over_report;
+  const stage = document.getElementById("go-stage");
+  const show = (id, on) => document.getElementById(id).classList.toggle("hidden", !on);
+  stopSplashFx();
+  if (!report || !report.headline) {  // an older save or a failed report: the splash is what it was before
+    stage.classList.add("hidden"); ["go-sec-chart", "go-sec-eras", "go-findings", "go-sec-mix"].forEach(id => show(id, false));
+    return;
+  }
+  const h = report.headline;
+  stage.className = `go-stage scene-${h.scene}`;
+  document.getElementById("go-scene").innerHTML = goSceneSvg(h.scene);
+  document.getElementById("go-h-title").textContent = h.title;
+  document.getElementById("go-h-text").textContent = h.text;
+  document.getElementById("go-h-shows").textContent = h.shows || "";
+  show("go-sec-chart", renderRunChart(report));
+  show("go-sec-eras", renderRunEras(report));
+  const findings = report.findings || [];
+  document.getElementById("go-findings").innerHTML = findings.map(f => `<div class="go-find"><div class="t">${f.icon} ${escapeHtml(f.title)}</div><div class="x">${escapeHtml(f.text)}</div></div>`).join("");
+  show("go-findings", findings.length > 0);
+  show("go-sec-mix", renderRunMix(report));
+  startSplashFx(h.scene);
+}
+
+document.getElementById("go-chart-toggle").addEventListener("click", () => {
+  goChartLog = !goChartLog;
+  if (latestState && latestState.game_over_report) renderRunChart(latestState.game_over_report);
+});
+
 function showGameOverSplash(state) {
   const reason = state.game_over_reason;
   document.getElementById("game-over-title").textContent = GAME_OVER_TITLES[reason] || "SIMULATION COMPLETE";
@@ -1087,9 +1345,11 @@ function showGameOverSplash(state) {
   }).join("");
 
   document.getElementById("game-over-splash").classList.remove("hidden");
+  try { renderSplashReport(state); } catch (e) { console.error("end-of-run report failed", e); }
 }
 
 function hideGameOverSplash() {
+  stopSplashFx();
   document.getElementById("game-over-splash").classList.add("hidden");
 }
 

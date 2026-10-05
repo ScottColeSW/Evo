@@ -21,6 +21,7 @@ from .ancestral_matrix import AncestralTraumaMatrix
 from .breeding import breed_individuals
 from .genetics import breed, hatch
 from .reflection import AWARD_CATEGORIES, generate_endgame_narrative, reflect_on_history
+from .endgame_report import Timeline, build_report, timeline_row
 from .eras import ERAS, READINESS_LABELS, era_index, next_era, ordered_actions_through, reached_era_or_later, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
@@ -2499,6 +2500,10 @@ class Simulation:
         # time this runs -- no VRAM contention risk left, unlike a model resident
         # during live play (see config.py's own comment on this reversal).
         self.game_over_narrative: str = ""
+        # What the end-of-run splash shows beyond the summary text (backend/endgame_report.py): a per-cycle timeline sampled by step(), and the
+        # report built from it when the run ends. Reading only; nothing in the game depends on either.
+        self.timeline = Timeline()
+        self.game_over_report: dict | None = None
         # A wandering storm cloud (see Simulation._advance_weather) -- world weather,
         # independent of any tribe. None when no storm is active; otherwise
         # {"x", "y", "heading", "cycles_left"}. lightning_strike is only ever set for
@@ -3222,6 +3227,7 @@ class Simulation:
         self.game_over_reason = None
         self.game_over_summary = ""
         self.game_over_narrative = ""
+        self.game_over_report = None
         if self.status == "GAME OVER":
             self.status = "OPERATIONAL"
         return None
@@ -3251,6 +3257,7 @@ class Simulation:
             "game_over_reason": self.game_over_reason,
             "game_over_summary": self.game_over_summary,
             "game_over_narrative": self.game_over_narrative,
+            "game_over_report": getattr(self, "game_over_report", None),
             "paused": self.paused,
             "immortality_cycles": self.immortality_cycles,
             "reflection_judge": getattr(self, "reflection_judge_status", "off"),
@@ -3640,6 +3647,14 @@ class Simulation:
         if self.cycle % config.MEMORY_CONSOLIDATE_EVERY_N_CYCLES == 0:
             for tribe in self.tribes.values():
                 tribe.memory.consolidate()
+        self._sample_timeline()
+
+    def _sample_timeline(self) -> None:
+        """One timeline sample of every tribe now (backend/endgame_report.py). Best-effort: never interrupts a cycle."""
+        try:
+            self.timeline.sample(self.cycle, {t.id: timeline_row(t) for t in self.tribes.values()})
+        except Exception:  # noqa: BLE001
+            pass
 
     def _advance_weather(self) -> None:
         """A wandering storm cloud, entirely independent of any tribe's actions -- the
@@ -6367,6 +6382,12 @@ class Simulation:
         self.game_over = True
         self.game_over_reason = reason
         self.status = "GAME OVER"
+        self._sample_timeline()  # the final state, whichever way the run ended (a manual quit comes between steps)
+        try:
+            self.game_over_report = build_report(self.timeline, self.tribes.values(), reason, self.cycle)
+        except Exception as exc:  # noqa: BLE001 -- the splash falls back to the plain summary
+            print(f"[simulation] game over report failed: {exc!r}")
+            self.game_over_report = None
         self.game_over_summary = self._generate_game_over_summary(reason)
         # Awaited before shutdown() below, while every model is still loaded/
         # loadable -- see generate_endgame_narrative's own docstring for why this
