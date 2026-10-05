@@ -2347,6 +2347,14 @@ def _scaled_population_loss(tribe: "Tribe") -> int:
     return max(1, tribe.population // config.POPULATION_LOSS_DIVISOR)
 
 
+def _nudge(visible_entities: list, tag: str, text: str) -> None:
+    """Appends a nudge (a prompt line whose job is to steer the tribe toward an outcome, not to report what is true) unless nudges are
+    switched off: config.NUDGES (the NUDGES environment variable overrides it) or this tag in config.DISABLED_NUDGE_TAGS. World facts do
+    not go through here; they are appended directly. See docs/NUDGE-AUDIT.md for every site and why it is or is not gated."""
+    if config.nudge_active(tag):
+        visible_entities.append(text)
+
+
 def _era_ready(tribe: "Tribe", name: str) -> bool:
     """One requires_ready name (eras.READINESS_LABELS) read off a tribe: the three *_secure names are the game's own mastery
     definitions, anything else is a Tribe attribute (a flag or a count) that must be set or above zero."""
@@ -3725,7 +3733,7 @@ class Simulation:
         # implicit" shape every other progress nudge in this function follows.
         if not _is_water_secure(tribe):
             sites_needed = config.WATER_SECURITY_SITE_THRESHOLD - len(tribe.confirmed_water_sites)
-            visible_entities.append(
+            _nudge(visible_entities, "water_hint", 
                 f"Water is not yet permanently secure -- {len(tribe.confirmed_water_sites)}/"
                 f"{config.WATER_SECURITY_SITE_THRESHOLD} confirmed water sources found "
                 f"({sites_needed} more would do it), or building a Well would secure it immediately."
@@ -5003,7 +5011,7 @@ class Simulation:
                 )
             else:
                 gap = f"{tribe.wood} of {config.CASTLE_WOOD_COST} wood and {tribe.stone} of {config.CASTLE_STONE_COST} stone banked"
-            visible_entities.append(
+            _nudge(visible_entities, "endgame_hint", 
                 "Every rival has been conquered and absorbed -- the war is already won. The one thing "
                 "left to complete this tribe's legacy is a Castle, the final testament of everything "
                 f"built here: {gap}."
@@ -5017,13 +5025,13 @@ class Simulation:
         # vessel that never gets boarded is the exact failure mode
         # DECLARE_CONQUEST suffered before its own eligibility nudge existed.
         if tribe.era == "departure_era" and not tribe.vessel_built:
-            visible_entities.append(
+            _nudge(visible_entities, "endgame_hint", 
                 "The tribe can build a vessel to leave this island for good. BUILD_VESSEL puts in what the tribe can spare "
                 f"({tribe.vessel_wood_paid}/{config.VESSEL_WOOD_COST} wood and {tribe.vessel_stone_paid}/{config.VESSEL_STONE_COST} "
                 "stone put in so far)."
             )
         elif tribe.vessel_built and not tribe.departed:
-            visible_entities.append(
+            _nudge(visible_entities, "endgame_hint", 
                 "The vessel stands ready -- DEPART would carry the tribe beyond the horizon, for good."
             )
         if tribe.throttled_actions:
@@ -5034,7 +5042,7 @@ class Simulation:
             # the user proposed.
             names = ", ".join(sorted(tribe.throttled_actions))
             plural = "s" if len(tribe.throttled_actions) > 1 else ""
-            visible_entities.append(
+            _nudge(visible_entities, "repetition", 
                 f"The Historian has counseled against repeating {names} for now, after it was chosen too "
                 f"many cycles in a row -- that action{plural} will return to consideration again soon. "
                 "Choose something genuinely different in the meantime."
@@ -5120,7 +5128,7 @@ class Simulation:
         # can't actually reach this cycle (no wood, no free plot, no territory yet).
         food_pressure = tribe.food_crisis_active or tribe.food <= upkeep * config.HUNGER_WARNING_CYCLES_LEFT
         if "PLANT_CROP" in available_actions and tribe.farm_plots == 0 and food_pressure:
-            visible_entities.append(
+            _nudge(visible_entities, "farm_hint", 
                 "Food gathered from this same ground keeps yielding less the more it's foraged -- "
                 "planting a farm plot (PLANT_CROP) grows food here without that same wear-down, and "
                 "pays out automatically, again and again, once it matures. Up to a few plots can be "
@@ -5135,7 +5143,7 @@ class Simulation:
         # forage/hunt/catch. Named directly, the same "don't leave a real payoff
         # implicit" treatment PLANT_CROP's own nudge above already proved out.
         if "BUILD_KITCHEN" in available_actions:
-            visible_entities.append(
+            _nudge(visible_entities, "build_hint", 
                 "A Kitchen would stack with cooking for nine times as much food from every future "
                 "forage, hunt, or catch, instead of only three -- affordable right now."
             )
@@ -5174,7 +5182,7 @@ class Simulation:
                     "choosing RELOCATE again is what finishes settling."
                 )
             else:
-                visible_entities.append(
+                _nudge(visible_entities, "settle_hint", 
                     f"Water has already been found at ({wx},{wy}) -- no further scouting is needed to "
                     "search for it. RELOCATE there to finally settle and begin farming and raising a flock."
                 )
@@ -5201,7 +5209,7 @@ class Simulation:
                     "there, not just a blind chance."
                 )
             else:
-                visible_entities.append(
+                _nudge(visible_entities, "hunt_hint", 
                     f"A {site_type.lower()} was confirmed at ({gx},{gy}) -- a hunting party sent "
                     "there would likely fare better than hunting blind."
                 )
@@ -5219,7 +5227,7 @@ class Simulation:
             # description this session already found elsewhere. Matches
             # COOKING_FOOD_MULTIPLIER now, the same real number COOK_FOOD's own
             # action description already states.
-            visible_entities.append(
+            _nudge(visible_entities, "build_hint", 
                 "The tribe has both hunted successfully and built a fire before -- learning to cook "
                 "would make every future forage, hunt, or catch worth three times as much food from "
                 "then on."
@@ -5251,7 +5259,7 @@ class Simulation:
                 # out specifically. Sawmill/Quarry/Kitchen/Keep/Moat all build on
                 # a wall existing first, so this is the one foundational nudge
                 # missing relative to every other eligibility nudge here.
-                visible_entities.append(
+                _nudge(visible_entities, "build_hint", 
                     "No wall has been started here yet -- CONSTRUCT_WALL is available now, and a long "
                     "house, sawmill, quarry, kitchen, and further defenses all build on the first wall "
                     "ring existing first."
@@ -5335,7 +5343,7 @@ class Simulation:
                     )
             elif not ring0_reinforced:
                 if tribe.long_houses_built == 0:
-                    visible_entities.append(
+                    _nudge(visible_entities, "build_hint", 
                         "The first wall ring is complete -- a long house is now worth building for real, "
                         "lasting shelter."
                     )
@@ -5346,7 +5354,7 @@ class Simulation:
                     )
 
         if "BUILD_MOAT" in available_actions and not tribe.moat_built and ring0_reinforced:
-            visible_entities.append(
+            _nudge(visible_entities, "build_hint", 
                 "The first wall ring has been fully reinforced -- a moat is now available, a cheaper "
                 "alternative defense investment."
             )
@@ -5365,7 +5373,7 @@ class Simulation:
         # sit downstream of it) and, unlike Kitchen/Tannery/Coop/Deer Pen, never had
         # its own "you can do this now" nudge at all.
         if "BUILD_LONG_HOUSE" in available_actions and tribe.long_houses_built == 0:
-            visible_entities.append(
+            _nudge(visible_entities, "build_hint", 
                 "No long house stands yet -- real shelter for the tribe, and the first step toward "
                 "a kitchen, a keep, and everything built on top of them later."
             )
@@ -5376,17 +5384,17 @@ class Simulation:
         long_house_tier = tribe.long_houses_built + tribe.long_house_upgrades
         if tribe.long_houses_built > 0:
             if not tribe.keep_built and long_house_tier >= config.KEEP_LONG_HOUSES_REQUIRED:
-                visible_entities.append(
+                _nudge(visible_entities, "build_hint", 
                     f"{long_house_tier} long houses' worth of shelter stand -- a keep is now worth "
                     "building for a further defense bonus."
                 )
             elif tribe.keep_built and not tribe.fortress_built and long_house_tier >= config.FORTRESS_LONG_HOUSES_REQUIRED:
-                visible_entities.append(
+                _nudge(visible_entities, "build_hint", 
                     f"{long_house_tier} long houses' worth of shelter stand and the keep is complete -- "
                     "a fortress is now worth building for a further defense bonus."
                 )
             elif tribe.fortress_built and not tribe.castle_built and long_house_tier >= config.CASTLE_LONG_HOUSES_REQUIRED:
-                visible_entities.append(
+                _nudge(visible_entities, "build_hint", 
                     f"{long_house_tier} long houses' worth of shelter stand and the fortress is complete "
                     "-- a castle is now worth building for a further defense bonus."
                 )
@@ -5441,13 +5449,13 @@ class Simulation:
             if tribe.wood_ever_gathered:
                 if tribe.lumber_sites:
                     lx, ly = tribe.lumber_sites[-1]
-                    visible_entities.append(
+                    _nudge(visible_entities, "build_hint", 
                         f"A stand of trees is known at ({lx},{ly}) -- and wood has been gathered here "
                         "before, so a sawmill built at the settlement would triple every future load "
                         "of gathered wood."
                     )
                 else:
-                    visible_entities.append(
+                    _nudge(visible_entities, "build_hint", 
                         "Wood has been gathered here before -- a sawmill built at the settlement would "
                         "triple every future load of gathered wood."
                     )
@@ -5456,12 +5464,12 @@ class Simulation:
                 warren_sites = [s for s in tribe.wildlife_sites if s["type"] == "Rabbit Warren"]
                 if warren_sites:
                     wx, wy = warren_sites[-1]["x"], warren_sites[-1]["y"]
-                    visible_entities.append(
+                    _nudge(visible_entities, "build_hint", 
                         f"A rabbit warren is known at ({wx},{wy}) -- and a hunt has already succeeded, "
                         "so a tannery built at the settlement would bring in a steady supply of Fur."
                     )
                 else:
-                    visible_entities.append(
+                    _nudge(visible_entities, "build_hint", 
                         "A hunt has already succeeded -- a tannery built at the settlement would bring "
                         "in a steady supply of Fur, and extra meat from every future hunt."
                     )
@@ -5479,7 +5487,7 @@ class Simulation:
         # getting pregnant with eggs." Coop now multiplies the daily lay rate
         # (config.COOP_LAY_CHANCE_MULTIPLIER), Hatchery multiplies the hatch rate.
         if "BUILD_COOP" in available_actions and not tribe.coop_built and tribe.flock > 0:
-            visible_entities.append(
+            _nudge(visible_entities, "build_hint", 
                 "The flock has grown -- a coop built at the settlement would give it a real home, "
                 "raising the chance of a successful clutch of eggs."
             )
@@ -5490,13 +5498,13 @@ class Simulation:
             "BUILD_DEER_PEN" in available_actions and not tribe.deer_pen_built
             and tribe.tannery_built and tribe.hunt_deer_success_count >= config.DEER_PEN_HUNT_THRESHOLD
         ):
-            visible_entities.append(
+            _nudge(visible_entities, "build_hint", 
                 "Enough hunts have succeeded -- a deer pen built at the settlement would start a real "
                 "herd, feeding the tannery extra Fur every cycle on top of what it already produces."
             )
         if "BUILD_KITCHEN" in available_actions and not tribe.kitchen_built:
             if tribe.cooking_learned and tribe.long_houses_built > 0:
-                visible_entities.append(
+                _nudge(visible_entities, "build_hint", 
                     "Cooking is known and real shelter stands -- a kitchen would turn cooked meals into "
                     "excellent food, stretching stores even further."
                 )
@@ -5513,7 +5521,7 @@ class Simulation:
             config.BUILD_DOCK_NUDGE_ENABLED
             and "BUILD_DOCK" in available_actions and not tribe.dock_built and tribe.fishing_learned
         ):
-            visible_entities.append(
+            _nudge(visible_entities, "build_hint", 
                 "Fishing is known -- a dock built at the settlement would make every future catch pay "
                 "out more, and opens the way to a boat that turns river crossings safe for good."
             )
@@ -5525,7 +5533,7 @@ class Simulation:
         # separately, tied directly to era_gap_note above, once the library exists.
         if "BUILD_LIBRARY" in available_actions and not tribe.library_built:
             if tribe.long_houses_built > 0:
-                visible_entities.append(
+                _nudge(visible_entities, "build_hint", 
                     "Real shelter stands -- a library would let the tribe research its own hard-won "
                     "experience, permanently easing the path to the next era."
                 )
@@ -5539,7 +5547,7 @@ class Simulation:
         # building just opened the entire diplomacy/war tree.
         if "BUILD_BARRACKS" in available_actions and not tribe.barracks_built:
             if tribe.kitchen_built and tribe.keep_built:
-                visible_entities.append(
+                _nudge(visible_entities, "build_hint", 
                     "A kitchen feeds the tribe and a keep stands watch -- a barracks built now would open "
                     "up training a real battalion, and formal diplomacy or espionage toward any known rival."
                 )
@@ -5547,13 +5555,13 @@ class Simulation:
             if tribe.stone_ever_gathered:
                 if tribe.quarry_sites:
                     qx, qy = tribe.quarry_sites[-1]
-                    visible_entities.append(
+                    _nudge(visible_entities, "build_hint", 
                         f"A stone-rich site is known at ({qx},{qy}) -- and stone has been gathered here "
                         "before, so a quarry built at the settlement would triple the value of every "
                         "future load of harvested stone."
                     )
                 else:
-                    visible_entities.append(
+                    _nudge(visible_entities, "build_hint", 
                         "Stone has been gathered here before -- a quarry built at the settlement would "
                         "triple the value of every future load of harvested stone."
                     )
@@ -5564,7 +5572,7 @@ class Simulation:
         # branch is unreachable and was removed rather than left dangling.
         if "BUILD_MINE" in available_actions and not tribe.mine_built:
             site = tribe.mine_sites[-1]
-            visible_entities.append(
+            _nudge(visible_entities, "build_hint", 
                 f"A vein of {site['resource']} is known at ({site['x']},{site['y']}) -- excavating a "
                 "mine would bring in a steady supply of it, a resource no other tribe's own land "
                 "necessarily shares."
@@ -5576,14 +5584,14 @@ class Simulation:
         # for BUILD_TANNERY/BUILD_COOP/BUILD_DEER_PEN's own first-use milestones,
         # just never extended to the mine's own fetch step.
         if "GATHER_ORE" in available_actions and tribe.mine_built and not tribe.ore_ever_gathered:
-            visible_entities.append(
+            _nudge(visible_entities, "build_hint", 
                 f"The mine stands ready -- gathering ore here would bring in the first real supply of "
                 f"{tribe.mine_resource_name}."
             )
         if "BUILD_FORGE" in available_actions and not tribe.forge_built and tribe.mine_built:
             ore_in_stock = tribe.unique_resources.get(tribe.mine_resource_name, 0)
             if ore_in_stock >= config.FORGE_ITEM_ORE_COST:
-                visible_entities.append(
+                _nudge(visible_entities, "build_hint", 
                     f"The mine has produced {tribe.mine_resource_name} -- a forge would let it be worked "
                     "into real tools, weapons, and inventions instead of just sitting in storage."
                 )
@@ -5599,7 +5607,7 @@ class Simulation:
         # instant it's reachable at all, same shape BUILD_WELL's own
         # always-available nudge would use if it had one.
         if "BUILD_DMM" in available_actions and not tribe.dmm_built:
-            visible_entities.append(
+            _nudge(visible_entities, "build_hint", 
                 "The tribe has grown large enough to support genuine invention -- a Dream Manifestation "
                 "Machine built now would let it make the Chief's own dreams real, not just what's "
                 "already known."
@@ -5628,7 +5636,7 @@ class Simulation:
                     f' The Chief has lately dreamed of "{tribe.chief_dream}" -- the DMM will draw on that.'
                     if tribe.chief_dream else ""
                 )
-                visible_entities.append(
+                _nudge(visible_entities, "build_hint", 
                     "The Dream Manifestation Machine stands ready -- creating an item now "
                     "would give the tribe a genuinely new invention with a real, permanent effect on "
                     f"gathering, combat, defense, celebrations, expeditions, or population.{dream_note}"
@@ -5693,7 +5701,7 @@ class Simulation:
                         "cycle(s) left before DECLARE_CONQUEST can be attempted again."
                     )
                 elif tribe_might > rival_might * config.DECLARE_CONQUEST_NUDGE_MIGHT_RATIO:
-                    visible_entities.append(
+                    _nudge(visible_entities, "war_hint", 
                         f"{rival.name}'s Battalion is meaningfully weaker (Might {rival_might} vs. this "
                         f"tribe's {tribe_might}) -- DECLARE_CONQUEST at ({rival.x},{rival.y}) is a real, "
                         "favorable bet now, not just a blind gamble."
@@ -5714,16 +5722,16 @@ class Simulation:
                 # instincts.py. These are still ordinary entries in available_actions
                 # the model chooses or ignores; this doesn't force any of them.
                 if tribe.farm_plots == 0:
-                    visible_entities.append(
+                    _nudge(visible_entities, "farm_hint", 
                         "The tribe has settled here -- this ground could support a farm plot."
                     )
                 if tribe.flock == 0:
-                    visible_entities.append(
+                    _nudge(visible_entities, "farm_hint", 
                         "No flock has been started yet -- wild fowl nest near settlements like this, so "
                         "gathering their eggs here could begin one."
                     )
                 if not tribe.fishing_learned:
-                    visible_entities.append(
+                    _nudge(visible_entities, "farm_hint", 
                         "No one has fished here yet -- a single successful catch would make fishing a "
                         "permanent, daily source of food from then on."
                     )
@@ -5738,7 +5746,7 @@ class Simulation:
                     # ever put the two side by side -- small models don't
                     # reliably synthesize a comparison across two separate
                     # glossary entries on their own.
-                    visible_entities.append(
+                    _nudge(visible_entities, "farm_hint", 
                         "Fishing here pays out food immediately with no travel time, once caught -- a "
                         "hunting party takes several days round trip and isn't guaranteed to find anything."
                     )
@@ -5802,7 +5810,7 @@ class Simulation:
             if tribe.stone >= config.MATERIAL_SURPLUS_THRESHOLD:
                 surplus.append(f"{tribe.stone} stone")
             if surplus:
-                visible_entities.append(
+                _nudge(visible_entities, "inventory_advice", 
                     f"Already stockpiled well beyond any near-term building need: {', '.join(surplus)}."
                 )
 
@@ -5816,7 +5824,7 @@ class Simulation:
             (("wood", tribe.wood), ("stone", tribe.stone), ("food", tribe.food), ("water", tribe.water)),
             key=lambda pair: pair[1],
         )
-        visible_entities.append(
+        _nudge(visible_entities, "inventory_advice", 
             "Resource priority, lowest to highest: "
             + ", ".join(f"{name} ({amount})" for name, amount in stockpile_order)
             + " -- resupplying the lowest one first is usually the most efficient use of this turn."

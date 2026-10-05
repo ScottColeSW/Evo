@@ -1,3 +1,5 @@
+from . import config
+
 # Live finding, 2026-09-16: real logs across many runs, several different model
 # pairings, showed BOTH tribes' invented languages leaning heavily on "KRA-ZUL",
 # "MEE-LO", and "VASH-TA" specifically -- not two tribes independently landing on
@@ -144,6 +146,8 @@ Answer only in the JSON format given to you each cycle -- no other text.{leaders
 def _growth_pressure_text(era_gap_note: str, survival_critical: bool) -> str:
     if not era_gap_note:
         return "[GROWTH STATE: NO ADVANCEMENT PENDING // FURTHEST ERA REACHED OR ALL THRESHOLDS MET]"
+    if not config.nudge_active("growth_pressure"):
+        return era_gap_note  # the fact alone: what the next era still needs, without the framing below
     if survival_critical:
         return f"Survival still comes first, but not forgotten: {era_gap_note}"
     # Explicit request: fold in real gratitude and real urgency here, not a fabricated

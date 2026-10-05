@@ -147,6 +147,6 @@ def survival_bias_string(
     # narrowing is computed from these same raw numbers independently of this
     # string, not from whether this text fired -- disabling the tag isolates
     # "does the fact itself help" from every mechanical consequence.
-    if "survival_warning" in config.DISABLED_NUDGE_TAGS:
+    if not config.nudge_active("survival_warning"):
         return "", critical
     return "[SURVIVAL INSTINCT]: " + " ".join(urgent), critical

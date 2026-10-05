@@ -2865,3 +2865,13 @@ MODEL_FAILURE_STREAK_THRESHOLD = 10
 # text), tested against the "survival" benchmark scenario since that's the one
 # whose whole premise is "don't starve" -- see run_benchmark.py.
 DISABLED_NUDGE_TAGS: set[str] = set()
+# 2026-10-04: the master switch (the owner: "nudges should be turned off with a variable overall in the whole project"). "on" (default, today's
+# behavior) or "off"; the NUDGES environment variable overrides it, read at each call like RUN_DATA_LOG. Off silences every site that goes through
+# nudge_active, whatever DISABLED_NUDGE_TAGS holds; the tag set still silences one category at a time with the switch on. Only prompt text is
+# affected: menus, gates and mechanics never read this. Sites are listed, with what is and is not covered yet, in docs/NUDGE-AUDIT.md.
+NUDGES = "on"
+
+
+def nudge_active(tag: str) -> bool:
+    import os
+    return os.environ.get("NUDGES", NUDGES).strip().lower() != "off" and tag not in DISABLED_NUDGE_TAGS
