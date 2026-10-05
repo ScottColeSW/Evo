@@ -1,0 +1,1691 @@
+{
+ "_source": "run_20261004_130133 cycle 281 tribe_1 (qwen2.5:3b) -- population 17090, era tribal_synapse",
+ "run_id": "run_20261004_130133",
+ "cycle": 281,
+ "tribe": {
+  "name": "Tribe 2",
+  "model": "qwen2.5:3b",
+  "x": 30,
+  "y": 64,
+  "color": "#fb923c",
+  "wood": 51,
+  "stone": 624,
+  "food": 1894,
+  "water": 3000,
+  "population": 17090,
+  "era": "tribal_synapse",
+  "era_label": "Tribal Synapse",
+  "last_broadcast": "TIB-RAN",
+  "last_action": "EXPEL_RAIDERS_FROM_TERRITORY",
+  "throttled_actions": [],
+  "food_crisis_active": false,
+  "water_crisis_active": false,
+  "last_decision_target": [
+   30,
+   64
+  ],
+  "history": [
+   "an egg hatches -- the flock grows (The hatchling inherits the adaptable trait but is slightly more flexible and quick to respond to changes).",
+   "Chief Swiftwind has died. Tribe 2 is left without a leader.",
+   "[4133ms] EXPEL_RAIDERS_FROM_TERRITORY: To immediately address the immediate threat posed by the raiders inside the territory. | the tribe rises as one and drives the raiders from the territory boundary after 2 furious waves of resistance -- 1607 food seized and 324 routed raiders join the tribe",
+   "Tribe 2's Battalion returns from patrol to train again",
+   "\ud83c\udf89 Tribe 2 celebrates Eira's Echo, newly risen to lead a Battalion!",
+   "Swiftwind's Visions has become chief (Swiftwind's Visions astutely won the contest by eloquently reiterating and amplifying Swiftwind's scouting philosophy, inspiring the tribe to embrace the spirit of exploration and caution with proactive expansion.)."
+  ],
+  "cycles_since_relocate": 272,
+  "last_reflection": "I need to see if the current scouting strategy is working. The raiders are causing friction and the scouting parties are too short-sighted. I need to explore the surrounding areas with a larger, longer-term approach.",
+  "last_reflection_cycle": 270,
+  "reflections_run": 9,
+  "reflections_changed_philosophy": 9,
+  "last_celebration_cycle": 281,
+  "scout_successes": 4,
+  "hunt_successes": 0,
+  "founded_city": false,
+  "farm_plots": 4,
+  "crop_growth": 80.0,
+  "fishing_learned": true,
+  "fish_supply_per_cycle": 51911,
+  "cooking_learned": true,
+  "hunt_ever_succeeded": true,
+  "foraged_ever_succeeded": true,
+  "wood_ever_gathered": true,
+  "stone_ever_gathered": true,
+  "ore_ever_gathered": false,
+  "fire_ever_built": true,
+  "moat_built": false,
+  "long_houses_built": 5,
+  "long_house_upgrades": 9,
+  "housing_capacity": 150,
+  "keep_built": true,
+  "fortress_built": false,
+  "castle_built": false,
+  "barracks_built": 5,
+  "barracks_upgrades": 2,
+  "battalion_size": 140,
+  "battalion_readiness": 0.0,
+  "might": 261,
+  "battalion_patrol": null,
+  "road_built": false,
+  "toll_roads_completed": 0,
+  "dock_built": true,
+  "sawmill_built": true,
+  "quarry_built": true,
+  "mine_sites": [
+   {
+    "x": 78,
+    "y": 77,
+    "biome": "desert",
+    "resource": "Duneglass"
+   },
+   {
+    "x": 78,
+    "y": 87,
+    "biome": "desert",
+    "resource": "Duneglass"
+   }
+  ],
+  "mine_built": false,
+  "mine_resource_name": null,
+  "unique_resources": {
+   "Fur": 30
+  },
+  "visited_sectors": [
+   [
+    3,
+    4
+   ],
+   [
+    4,
+    3
+   ],
+   [
+    3,
+    7
+   ],
+   [
+    5,
+    4
+   ],
+   [
+    4,
+    6
+   ],
+   [
+    5,
+    1
+   ],
+   [
+    5,
+    7
+   ],
+   [
+    8,
+    0
+   ],
+   [
+    8,
+    3
+   ],
+   [
+    8,
+    9
+   ],
+   [
+    8,
+    6
+   ],
+   [
+    2,
+    2
+   ],
+   [
+    0,
+    8
+   ],
+   [
+    2,
+    5
+   ],
+   [
+    1,
+    3
+   ],
+   [
+    2,
+    8
+   ],
+   [
+    7,
+    4
+   ],
+   [
+    6,
+    2
+   ],
+   [
+    7,
+    1
+   ],
+   [
+    7,
+    7
+   ],
+   [
+    6,
+    5
+   ],
+   [
+    6,
+    8
+   ],
+   [
+    4,
+    2
+   ],
+   [
+    4,
+    5
+   ],
+   [
+    3,
+    3
+   ],
+   [
+    5,
+    0
+   ],
+   [
+    5,
+    6
+   ],
+   [
+    4,
+    8
+   ],
+   [
+    3,
+    6
+   ],
+   [
+    5,
+    3
+   ],
+   [
+    8,
+    2
+   ],
+   [
+    3,
+    9
+   ],
+   [
+    9,
+    1
+   ],
+   [
+    9,
+    7
+   ],
+   [
+    8,
+    5
+   ],
+   [
+    8,
+    8
+   ],
+   [
+    2,
+    4
+   ],
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    7
+   ],
+   [
+    6,
+    1
+   ],
+   [
+    1,
+    8
+   ],
+   [
+    6,
+    4
+   ],
+   [
+    7,
+    3
+   ],
+   [
+    7,
+    9
+   ],
+   [
+    6,
+    7
+   ],
+   [
+    7,
+    6
+   ],
+   [
+    3,
+    2
+   ],
+   [
+    4,
+    1
+   ],
+   [
+    4,
+    7
+   ],
+   [
+    3,
+    5
+   ],
+   [
+    4,
+    4
+   ],
+   [
+    9,
+    0
+   ],
+   [
+    5,
+    5
+   ],
+   [
+    8,
+    4
+   ],
+   [
+    3,
+    8
+   ],
+   [
+    9,
+    3
+   ],
+   [
+    5,
+    8
+   ],
+   [
+    8,
+    7
+   ],
+   [
+    8,
+    1
+   ],
+   [
+    1,
+    1
+   ],
+   [
+    1,
+    4
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    2,
+    9
+   ],
+   [
+    7,
+    2
+   ],
+   [
+    6,
+    0
+   ],
+   [
+    6,
+    6
+   ],
+   [
+    7,
+    5
+   ],
+   [
+    6,
+    3
+   ],
+   [
+    6,
+    9
+   ],
+   [
+    7,
+    8
+   ]
+  ],
+  "discovered_rivals": [
+   "tribe_0"
+  ],
+  "scout_rotation_index": 32,
+  "landmarks": [],
+  "hazard_landmarks": [
+   {
+    "x": 15,
+    "y": 13,
+    "name": "Cursed Hollow",
+    "hazard_label": "a volcano"
+   },
+   {
+    "x": 10,
+    "y": 12,
+    "name": "Widow's Reach",
+    "hazard_label": "a volcano"
+   },
+   {
+    "x": 14,
+    "y": 16,
+    "name": "Skull Hollow",
+    "hazard_label": "a volcano"
+   },
+   {
+    "x": 52,
+    "y": 7,
+    "name": "Widow's Reach",
+    "hazard_label": "loose cliffside rock"
+   },
+   {
+    "x": 90,
+    "y": 9,
+    "name": "Ashen Scar",
+    "hazard_label": "a rip current off the shoals"
+   },
+   {
+    "x": 92,
+    "y": 9,
+    "name": "Widow's Reach",
+    "hazard_label": "a rip current off the shoals"
+   },
+   {
+    "x": 65,
+    "y": 9,
+    "name": "Skull Hollow",
+    "hazard_label": "a rip current off the shoals"
+   },
+   {
+    "x": 90,
+    "y": 12,
+    "name": "Widow's Reach",
+    "hazard_label": "a rip current off the shoals"
+   },
+   {
+    "x": 91,
+    "y": 33,
+    "name": "Widow's Reach",
+    "hazard_label": "loose cliffside rock"
+   },
+   {
+    "x": 87,
+    "y": 39,
+    "name": "The Last Warning",
+    "hazard_label": "a rip current off the shoals"
+   },
+   {
+    "x": 86,
+    "y": 51,
+    "name": "Widow's Reach",
+    "hazard_label": "loose cliffside rock"
+   },
+   {
+    "x": 66,
+    "y": 91,
+    "name": "The Bleeding Ground",
+    "hazard_label": "a rip current off the shoals"
+   },
+   {
+    "x": 76,
+    "y": 91,
+    "name": "The Bleeding Ground",
+    "hazard_label": "loose cliffside rock"
+   },
+   {
+    "x": 69,
+    "y": 90,
+    "name": "The Gnawed Bones",
+    "hazard_label": "a rip current off the shoals"
+   },
+   {
+    "x": 39,
+    "y": 93,
+    "name": "The Bleeding Ground",
+    "hazard_label": "loose cliffside rock"
+   },
+   {
+    "x": 86,
+    "y": 91,
+    "name": "Ashen Scar",
+    "hazard_label": "loose cliffside rock"
+   },
+   {
+    "x": 32,
+    "y": 93,
+    "name": "Ashen Scar",
+    "hazard_label": "loose cliffside rock"
+   },
+   {
+    "x": 90,
+    "y": 77,
+    "name": "Deadfall Ridge",
+    "hazard_label": "loose cliffside rock"
+   },
+   {
+    "x": 24,
+    "y": 93,
+    "name": "Cursed Hollow",
+    "hazard_label": "a rip current off the shoals"
+   },
+   {
+    "x": 8,
+    "y": 80,
+    "name": "Deadfall Ridge",
+    "hazard_label": "a rip current off the shoals"
+   }
+  ],
+  "kitchen_built": true,
+  "tannery_built": true,
+  "tannery_fur_today": 8,
+  "tannery_fur_pending": 0,
+  "tannery_fur_history": [
+   0,
+   4,
+   4,
+   6,
+   8,
+   8
+  ],
+  "tannery_meat_today": 6,
+  "deer_pen_built": true,
+  "deer": 21,
+  "forge_built": false,
+  "items": [],
+  "dmm_built": false,
+  "created_objects": [],
+  "conquests_won": 0,
+  "trades_completed": 8,
+  "spy_missions_run": 0,
+  "spy_missions_caught": 0,
+  "rival_intel": {},
+  "conquered_tribe_names": [],
+  "departure_dreamed": false,
+  "departure_dream": null,
+  "vessel_built": false,
+  "departed": false,
+  "warehouses_built": 5,
+  "warehouse_upgrades": 1,
+  "storage_cap": 3000,
+  "foraging_retired": true,
+  "watering_retired": true,
+  "last_harvest_cycle": 140,
+  "flock": 7,
+  "eggs": 0,
+  "eggs_incubating": 3,
+  "eggs_laid_total": 11,
+  "eggs_spoiled_total": 1,
+  "eggs_laid_today": 3,
+  "eggs_hatched_today": 1,
+  "eggs_spoiled_today": 0,
+  "livestock_surplus_threshold": 170,
+  "hatchery_built": true,
+  "coop_built": true,
+  "boat_built": true,
+  "bath_house_built": true,
+  "library_built": true,
+  "library_entries": [
+   {
+    "summary": "The Bleeding Ground and the need for scouting.  I think about a new honor, like the 'Hunter's Eye', and a new decree.  The tribe needs to start thinking about their own future.; Raiders ambushed our party near (33,83) -- real danger there.; The cliffs near (39,93) are dangerous underfoot -- real risk lingering there.",
+    "cycle": 236,
+    "texts": [
+     "The Bleeding Ground and the need for scouting.  I think about a new honor, like the 'Hunter's Eye', and a new decree.  The tribe needs to start thinking about their own future.",
+     "Raiders ambushed our party near (33,83) -- real danger there.",
+     "The cliffs near (39,93) are dangerous underfoot -- real risk lingering there."
+    ],
+    "sources": [
+     "belief",
+     "evidence",
+     "evidence"
+    ],
+    "keys": {
+     "episode:raiders ambushed our party near (#,#) -- real danger there.": 1,
+     "episode:the cliffs near (#,#) are dangerous underfoot -- real risk lingering there.": 1
+    }
+   },
+   {
+    "summary": "The loss of Chief Eira casts a long shadow, but her echo will guide us.  How to ensure our future without her?; At cycle 191, after choosing BUILD_QUARRY: wood -15, stone -30; changed: quarry; At cycle 217, after choosing UPGRADE_WAREHOUSE: wood -40, stone -35; changed: warehouse upgrades",
+    "cycle": 243,
+    "texts": [
+     "The loss of Chief Eira casts a long shadow, but her echo will guide us.  How to ensure our future without her?",
+     "At cycle 191, after choosing BUILD_QUARRY: wood -15, stone -30; changed: quarry",
+     "At cycle 217, after choosing UPGRADE_WAREHOUSE: wood -40, stone -35; changed: warehouse upgrades"
+    ],
+    "sources": [
+     "belief",
+     "evidence",
+     "evidence"
+    ],
+    "keys": {
+     "choice:BUILD_QUARRY:quarry": 1,
+     "choice:UPGRADE_WAREHOUSE:warehouse upgrades": 1
+    }
+   },
+   {
+    "summary": "The danger of the Raiders, combined with the strategic expansion, makes this a pivotal point in our history.; At cycle 220, after choosing BUILD_SAWMILL: wood -30, stone -15; changed: sawmill; At cycle 226, after choosing BUILD_FISHERY: wood -25, stone -15; changed: fishery",
+    "cycle": 245,
+    "texts": [
+     "The danger of the Raiders, combined with the strategic expansion, makes this a pivotal point in our history.",
+     "At cycle 220, after choosing BUILD_SAWMILL: wood -30, stone -15; changed: sawmill",
+     "At cycle 226, after choosing BUILD_FISHERY: wood -25, stone -15; changed: fishery"
+    ],
+    "sources": [
+     "belief",
+     "evidence",
+     "evidence"
+    ],
+    "keys": {
+     "choice:BUILD_SAWMILL:sawmill": 1,
+     "choice:BUILD_FISHERY:fishery": 1
+    }
+   }
+  ],
+  "research_completed": 3,
+  "well_built": true,
+  "flock_lineage": [
+   {
+    "trait": "unremarkable but hardy",
+    "parents": [],
+    "cycle": 160,
+    "note": "the first of the flock hatches"
+   },
+   {
+    "trait": "unremarkable but hardy",
+    "parents": [],
+    "cycle": 200,
+    "note": "the first of the flock hatches"
+   },
+   {
+    "trait": "robust and resilient",
+    "parents": [
+     "unremarkable but hardy",
+     "unremarkable but hardy"
+    ],
+    "cycle": 220,
+    "note": "This hatchling inherits the hardiness of both parents, with an added trait of maintaining its hardiness even in challenging conditions."
+   },
+   {
+    "trait": "Robust and Resilient Hatchling",
+    "parents": [
+     "unremarkable but hardy",
+     "robust and resilient"
+    ],
+    "cycle": 240,
+    "note": "The hatchling inherits the robust and resilient trait from Parent B while adding a small mutation of 'unremarkable but hardy' to make it more unique in the era."
+   },
+   {
+    "trait": "Adaptable",
+    "parents": [
+     "robust and resilient",
+     "Robust and Resilient Hatchling"
+    ],
+    "cycle": 260,
+    "note": "The hatchling inherits the robust and resilient traits but with an added ability to adapt to the environment's sudden changes in the Tribal Synapse era."
+   },
+   {
+    "trait": "Adaptable",
+    "parents": [
+     "robust and resilient",
+     "Robust and Resilient Hatchling"
+    ],
+    "cycle": 260,
+    "note": "The hatchling inherits the robust and resilient traits but with an added ability to adapt to the environment's sudden changes in the Tribal Synapse era."
+   },
+   {
+    "trait": "Swiftly Adapted",
+    "parents": [
+     "Adaptable",
+     "Adaptable"
+    ],
+    "cycle": 280,
+    "note": "The hatchling inherits the adaptable trait but is slightly more flexible and quick to respond to changes"
+   }
+  ],
+  "settlement_name": "Alokuro",
+  "has_ever_settled": true,
+  "territory_center": [
+   30,
+   61
+  ],
+  "territory_radius": 12,
+  "wall_rings": [
+   {
+    "radius": 12,
+    "sections": [
+     {
+      "index": 0,
+      "direction": "N",
+      "x": 28,
+      "y": 49,
+      "w": 5,
+      "h": 1,
+      "orientation": "horizontal",
+      "natural_barrier": false,
+      "unlocked": true,
+      "progress": 100,
+      "tier": 2
+     },
+     {
+      "index": 1,
+      "direction": "NE",
+      "x": 36,
+      "y": 53,
+      "w": 5,
+      "h": 1,
+      "orientation": "horizontal",
+      "natural_barrier": false,
+      "unlocked": true,
+      "progress": 100,
+      "tier": 2
+     },
+     {
+      "index": 2,
+      "direction": "E",
+      "x": 42,
+      "y": 59,
+      "w": 1,
+      "h": 5,
+      "orientation": "vertical",
+      "natural_barrier": false,
+      "unlocked": false,
+      "progress": 0,
+      "tier": 0
+     },
+     {
+      "index": 3,
+      "direction": "SE",
+      "x": 36,
+      "y": 69,
+      "w": 5,
+      "h": 1,
+      "orientation": "horizontal",
+      "natural_barrier": false,
+      "unlocked": false,
+      "progress": 0,
+      "tier": 0
+     },
+     {
+      "index": 4,
+      "direction": "S",
+      "x": 28,
+      "y": 73,
+      "w": 5,
+      "h": 1,
+      "orientation": "horizontal",
+      "natural_barrier": false,
+      "unlocked": false,
+      "progress": 0,
+      "tier": 0
+     },
+     {
+      "index": 5,
+      "direction": "SW",
+      "x": 20,
+      "y": 69,
+      "w": 5,
+      "h": 1,
+      "orientation": "horizontal",
+      "natural_barrier": true,
+      "unlocked": true,
+      "progress": 0,
+      "tier": 0
+     },
+     {
+      "index": 6,
+      "direction": "W",
+      "x": 18,
+      "y": 59,
+      "w": 1,
+      "h": 5,
+      "orientation": "vertical",
+      "natural_barrier": false,
+      "unlocked": false,
+      "progress": 0,
+      "tier": 0
+     },
+     {
+      "index": 7,
+      "direction": "NW",
+      "x": 22,
+      "y": 51,
+      "w": 1,
+      "h": 5,
+      "orientation": "vertical",
+      "natural_barrier": false,
+      "unlocked": false,
+      "progress": 0,
+      "tier": 0
+     }
+    ]
+   }
+  ],
+  "wall_commitment_active": false,
+  "buildings": [
+   {
+    "type": "town_hall",
+    "x": 28,
+    "y": 59,
+    "w": 5,
+    "h": 5,
+    "cycle_built": 15
+   },
+   {
+    "type": "farm_plot",
+    "x": 34,
+    "y": 55,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 25
+   },
+   {
+    "type": "farm_plot",
+    "x": 34,
+    "y": 59,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 36
+   },
+   {
+    "type": "farm_plot",
+    "x": 34,
+    "y": 63,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 58
+   },
+   {
+    "type": "warehouse",
+    "x": 27,
+    "y": 55,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 96
+   },
+   {
+    "type": "bath_house",
+    "x": 31,
+    "y": 56,
+    "w": 2,
+    "h": 2,
+    "cycle_built": 130
+   },
+   {
+    "type": "well",
+    "x": 23,
+    "y": 58,
+    "w": 2,
+    "h": 2,
+    "cycle_built": 143
+   },
+   {
+    "type": "long_house",
+    "x": 32,
+    "y": 67,
+    "w": 3,
+    "h": 2,
+    "cycle_built": 150
+   },
+   {
+    "type": "kitchen",
+    "x": 31,
+    "y": 53,
+    "w": 2,
+    "h": 2,
+    "cycle_built": 158
+   },
+   {
+    "type": "hatchery",
+    "x": 29,
+    "y": 68,
+    "w": 2,
+    "h": 2,
+    "cycle_built": 161
+   },
+   {
+    "type": "coop",
+    "x": 27,
+    "y": 52,
+    "w": 2,
+    "h": 2,
+    "cycle_built": 164
+   },
+   {
+    "type": "tannery",
+    "x": 38,
+    "y": 55,
+    "w": 2,
+    "h": 2,
+    "cycle_built": 168
+   },
+   {
+    "type": "warehouse",
+    "x": 38,
+    "y": 58,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 171
+   },
+   {
+    "type": "long_house",
+    "x": 38,
+    "y": 62,
+    "w": 3,
+    "h": 2,
+    "cycle_built": 174
+   },
+   {
+    "type": "deer_pen",
+    "x": 38,
+    "y": 65,
+    "w": 2,
+    "h": 2,
+    "cycle_built": 178
+   },
+   {
+    "type": "dock",
+    "x": 20,
+    "y": 61,
+    "w": 2,
+    "h": 2,
+    "cycle_built": 181
+   },
+   {
+    "type": "boat",
+    "x": 20,
+    "y": 57,
+    "w": 2,
+    "h": 3,
+    "cycle_built": 181
+   },
+   {
+    "type": "warehouse",
+    "x": 40,
+    "y": 49,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 185
+   },
+   {
+    "type": "long_house",
+    "x": 32,
+    "y": 70,
+    "w": 3,
+    "h": 2,
+    "cycle_built": 190
+   },
+   {
+    "type": "quarry",
+    "x": 40,
+    "y": 71,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 191
+   },
+   {
+    "type": "long_house",
+    "x": 34,
+    "y": 50,
+    "w": 3,
+    "h": 2,
+    "cycle_built": 194
+   },
+   {
+    "type": "long_house",
+    "x": 36,
+    "y": 71,
+    "w": 3,
+    "h": 2,
+    "cycle_built": 198
+   },
+   {
+    "type": "warehouse",
+    "x": 18,
+    "y": 53,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 205
+   },
+   {
+    "type": "warehouse",
+    "x": 18,
+    "y": 49,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 209
+   },
+   {
+    "type": "sawmill",
+    "x": 41,
+    "y": 65,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 220
+   },
+   {
+    "type": "fishery",
+    "x": 24,
+    "y": 48,
+    "w": 2,
+    "h": 4,
+    "cycle_built": 226
+   },
+   {
+    "type": "farm_plot",
+    "x": 42,
+    "y": 53,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 227
+   },
+   {
+    "type": "library",
+    "x": 24,
+    "y": 73,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 234
+   },
+   {
+    "type": "keep",
+    "x": 34,
+    "y": 45,
+    "w": 4,
+    "h": 4,
+    "cycle_built": 244
+   },
+   {
+    "type": "barracks",
+    "x": 36,
+    "y": 74,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 256
+   },
+   {
+    "type": "barracks",
+    "x": 44,
+    "y": 45,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 260
+   },
+   {
+    "type": "barracks",
+    "x": 44,
+    "y": 49,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 262
+   },
+   {
+    "type": "barracks",
+    "x": 44,
+    "y": 57,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 266
+   },
+   {
+    "type": "barracks",
+    "x": 44,
+    "y": 61,
+    "w": 3,
+    "h": 3,
+    "cycle_built": 267
+   }
+  ],
+  "fishery_built": true,
+  "survival_warning": "",
+  "is_food_secure": true,
+  "is_water_secure": true,
+  "extinct": false,
+  "chief_name": "Swiftwind's Visions",
+  "chief_philosophy": "Swiftwind's Visions will govern with a philosophy that prioritizes long-term scouting and resource exploration, maintaining caution while embracing a proactive approach to ensure resource security and readiness to navigate potential threats.",
+  "chief_decree": "",
+  "chief_dream": "The tribe's future is bright, and we'll build a strong foundation for prosperity and security, with a watchful eye on the horizon.",
+  "chiefs_elected": 7,
+  "chief_deaths": 6,
+  "chief_victory": "Swiftwind's Visions astutely won the contest by eloquently reiterating and amplifying Swiftwind's scouting philosophy, inspiring the tribe to embrace the spirit of exploration and caution with proactive expansion.",
+  "battalions": [
+   {
+    "leader": "Eira",
+    "size": 60
+   },
+   {
+    "leader": "Noktor",
+    "size": 40
+   },
+   {
+    "leader": "Eira's Echo",
+    "size": 40
+   }
+  ],
+  "trophies": [
+   {
+    "name": "Growing Legacy",
+    "chief": "Noktor",
+    "cycle": 1
+   },
+   {
+    "name": "Water Bringer",
+    "chief": "KaKol",
+    "cycle": 8
+   },
+   {
+    "name": "Harvester",
+    "chief": "Noktor",
+    "cycle": 34
+   },
+   {
+    "name": "Well Fed",
+    "chief": "Noktor",
+    "cycle": 64
+   },
+   {
+    "name": "First Contact",
+    "chief": "Noktor",
+    "cycle": 83
+   },
+   {
+    "name": "Quartermaster",
+    "chief": "Kai",
+    "cycle": 96
+   },
+   {
+    "name": "Master Chef",
+    "chief": "Kai",
+    "cycle": 104
+   },
+   {
+    "name": "Raid Breaker",
+    "chief": "Kai",
+    "cycle": 118
+   },
+   {
+    "name": "Angler",
+    "chief": "Aethon",
+    "cycle": 121
+   },
+   {
+    "name": "Keeper of Hygiene",
+    "chief": "Aethon",
+    "cycle": 130
+   },
+   {
+    "name": "Water Keeper",
+    "chief": "Aethon",
+    "cycle": 143
+   },
+   {
+    "name": "Master Builder",
+    "chief": "Eira",
+    "cycle": 150
+   },
+   {
+    "name": "Gourmet",
+    "chief": "Eira",
+    "cycle": 158
+   },
+   {
+    "name": "Flock Keeper",
+    "chief": "Eira",
+    "cycle": 160
+   },
+   {
+    "name": "Hatchery Keeper",
+    "chief": "Eira",
+    "cycle": 161
+   },
+   {
+    "name": "Coop Builder",
+    "chief": "Eira",
+    "cycle": 164
+   },
+   {
+    "name": "Tanner",
+    "chief": "Eira",
+    "cycle": 168
+   },
+   {
+    "name": "Deer Keeper",
+    "chief": "Eira",
+    "cycle": 178
+   },
+   {
+    "name": "Quarrier",
+    "chief": "Eira",
+    "cycle": 191
+   },
+   {
+    "name": "Sawyer",
+    "chief": "Eira's Echo",
+    "cycle": 220
+   },
+   {
+    "name": "Territory Expander",
+    "chief": "Eira's Echo",
+    "cycle": 223
+   },
+   {
+    "name": "Fishmonger",
+    "chief": "Eira's Echo",
+    "cycle": 226
+   },
+   {
+    "name": "Keeper of Records",
+    "chief": "Eira's Echo",
+    "cycle": 234
+   },
+   {
+    "name": "Keep Warden",
+    "chief": "Eira's Echo",
+    "cycle": 244
+   },
+   {
+    "name": "Drillmaster",
+    "chief": "Eira's Echo",
+    "cycle": 256
+   }
+  ],
+  "fame": 38.0,
+  "lineage": [
+   {
+    "child_name": "Noktorka",
+    "parents": [
+     "Noktor",
+     "KaKol"
+    ],
+    "cycle": 8
+   },
+   {
+    "child_name": "KaiNoktor",
+    "parents": [
+     "Noktor",
+     "KaKol"
+    ],
+    "cycle": 11
+   },
+   {
+    "child_name": "Nokkol",
+    "parents": [
+     "Noktor",
+     "KaKol"
+    ],
+    "cycle": 14
+   },
+   {
+    "child_name": "NoktorKaKol",
+    "parents": [
+     "Noktor",
+     "KaKol"
+    ],
+    "cycle": 34
+   },
+   {
+    "child_name": "NoktorKaKol",
+    "parents": [
+     "Noktor",
+     "KaKol"
+    ],
+    "cycle": 54
+   },
+   {
+    "child_name": "Nyora",
+    "parents": [
+     "Noktor",
+     "KaKol"
+    ],
+    "cycle": 73
+   },
+   {
+    "child_name": "KaiNoktor",
+    "parents": [
+     "Kai",
+     "Noktor"
+    ],
+    "cycle": 93
+   },
+   {
+    "child_name": "Loktor",
+    "parents": [
+     "Kai",
+     "Noktor"
+    ],
+    "cycle": 113
+   },
+   {
+    "child_name": "Eos",
+    "parents": [
+     "Aethon",
+     "Kai"
+    ],
+    "cycle": 121
+   },
+   {
+    "child_name": "Ethanor",
+    "parents": [
+     "Aethon",
+     "Kai"
+    ],
+    "cycle": 141
+   },
+   {
+    "child_name": "Lynos",
+    "parents": [
+     "Eira",
+     "Aethon"
+    ],
+    "cycle": 161
+   },
+   {
+    "child_name": "Luminos",
+    "parents": [
+     "Eira",
+     "Aethon"
+    ],
+    "cycle": 181
+   },
+   {
+    "child_name": "Eathon",
+    "parents": [
+     "Eira",
+     "Aethon"
+    ],
+    "cycle": 201
+   },
+   {
+    "child_name": "Eiraith",
+    "parents": [
+     "Eira's Echo",
+     "Eira"
+    ],
+    "cycle": 221
+   },
+   {
+    "child_name": "Eiraith",
+    "parents": [
+     "Eira's Echo",
+     "Eira"
+    ],
+    "cycle": 241
+   }
+  ],
+  "custom_awards": [
+   {
+    "name": "The Sentinel's Eye",
+    "category": "scouting",
+    "cycle": 60
+   },
+   {
+    "name": "The Pathfinder",
+    "category": "scouting",
+    "cycle": 90
+   },
+   {
+    "name": "The Stormbringer",
+    "category": "raiding",
+    "cycle": 150
+   },
+   {
+    "name": "The Hunter's Eye",
+    "category": "scouting",
+    "cycle": 180
+   },
+   {
+    "name": "The Eira's Echo Award",
+    "category": "scouting",
+    "cycle": 210
+   },
+   {
+    "name": "The Eyes of the Frontier",
+    "category": "scouting",
+    "cycle": 240
+   },
+   {
+    "name": "The Swiftwind's Eye",
+    "category": "scouting",
+    "cycle": 270
+   }
+  ],
+  "confirmed_water_sites": [
+   [
+    30,
+    64
+   ],
+   [
+    25,
+    54
+   ],
+   [
+    28,
+    44
+   ]
+  ],
+  "lumber_sites": [
+   [
+    84,
+    78
+   ],
+   [
+    85,
+    88
+   ]
+  ],
+  "wildlife_sites": [
+   {
+    "x": 83,
+    "y": 72,
+    "type": "Rabbit Warren"
+   }
+  ],
+  "quarry_sites": [
+   [
+    86,
+    76
+   ],
+   [
+    83,
+    88
+   ]
+  ],
+  "raider_sightings": [
+   [
+    28,
+    30
+   ],
+   [
+    74,
+    68
+   ],
+   [
+    26,
+    75
+   ]
+  ],
+  "last_raider_attack_cycle": 279,
+  "raiders_approaching": null,
+  "raiders_repelled_by_wall": false,
+  "stance_toward": {},
+  "trade_given": {
+   "wood": 16,
+   "stone": 105,
+   "food": 405,
+   "water": 954
+  },
+  "trade_received": {
+   "wood": 5,
+   "stone": 161,
+   "food": 234,
+   "water": 494,
+   "Fur": 3
+  },
+  "combat_record": {
+   "Raider Camp Strike": {
+    "won": 6,
+    "lost": 2
+   },
+   "Ambush": {
+    "won": 2,
+    "lost": 6
+   },
+   "Home Defense": {
+    "won": 3,
+    "lost": 1
+   },
+   "Expel Raiders": {
+    "won": 2,
+    "lost": 1
+   }
+  },
+  "wellbeing": {
+   "tiers": {
+    "physiological": 0.18,
+    "safety": 0.72,
+    "belonging": 1.0,
+    "esteem": 0.35,
+    "self_actualization": 0.2,
+    "fame": 0.36
+   },
+   "focus": "physiological",
+   "summary": "[COMMUNITY WELL-BEING]: Most pressing unmet need right now: Physiological. Physiological: strained (~1.4 cycles of food/water buffer at current population). Safety: secure (wall 31% complete, 3 raid(s) repelled). Belonging: connected (8 trade contact(s) made with other tribes). Esteem: 25 trophy/trophies earned. Self-Actualization: Tribal Synapse, no city founded yet. Fame: 36 earned from landmarks and celebrated milestones."
+  },
+  "next_era": {
+   "label": "Monolithic Era",
+   "requires_population": 2200,
+   "requires_resources": {
+    "water": 65,
+    "stone": 65,
+    "wood": 65,
+    "Fur": 20
+   }
+  },
+  "expeditions": [
+   {
+    "kind": "scout",
+    "pos": [
+     80,
+     67
+    ],
+    "day": 8,
+    "max_days": 9,
+    "phase": "returning",
+    "lead_scout": "ShaKa",
+    "food_gathered": 25,
+    "water_gathered": 0,
+    "path": [
+     [
+      42,
+      64
+     ],
+     [
+      52,
+      74
+     ],
+     [
+      62,
+      77
+     ],
+     [
+      67,
+      77
+     ],
+     [
+      72,
+      77
+     ],
+     [
+      77,
+      77
+     ],
+     [
+      82,
+      77
+     ],
+     [
+      87,
+      77
+     ],
+     [
+      90,
+      77
+     ],
+     [
+      80,
+      67
+     ]
+    ]
+   },
+   {
+    "kind": "scout",
+    "pos": [
+     83,
+     85
+    ],
+    "day": 7,
+    "max_days": 9,
+    "phase": "returning",
+    "lead_scout": "KaKol",
+    "food_gathered": 22,
+    "water_gathered": 0,
+    "path": [
+     [
+      39,
+      69
+     ],
+     [
+      49,
+      79
+     ],
+     [
+      59,
+      89
+     ],
+     [
+      64,
+      90
+     ],
+     [
+      69,
+      90
+     ],
+     [
+      79,
+      90
+     ],
+     [
+      84,
+      90
+     ],
+     [
+      88,
+      90
+     ],
+     [
+      83,
+      85
+     ]
+    ]
+   },
+   {
+    "kind": "scout",
+    "pos": [
+     17,
+     87
+    ],
+    "day": 2,
+    "max_days": 10,
+    "phase": "outbound",
+    "lead_scout": "BriTor",
+    "food_gathered": 6,
+    "water_gathered": 0,
+    "path": [
+     [
+      26,
+      72
+     ],
+     [
+      17,
+      82
+     ],
+     [
+      17,
+      87
+     ]
+    ]
+   },
+   {
+    "kind": "scout",
+    "pos": [
+     11,
+     83
+    ],
+    "day": 1,
+    "max_days": 9,
+    "phase": "outbound",
+    "lead_scout": "KaRen",
+    "food_gathered": 3,
+    "water_gathered": 0,
+    "path": [
+     [
+      23,
+      71
+     ],
+     [
+      11,
+      83
+     ]
+    ]
+   },
+   {
+    "kind": "scout",
+    "pos": [
+     10,
+     81
+    ],
+    "day": 1,
+    "max_days": 10,
+    "phase": "outbound",
+    "lead_scout": "VelOra",
+    "food_gathered": 3,
+    "water_gathered": 0,
+    "path": [
+     [
+      22,
+      69
+     ],
+     [
+      10,
+      81
+     ]
+    ]
+   },
+   {
+    "kind": "scout",
+    "pos": [
+     8,
+     80
+    ],
+    "day": 1,
+    "max_days": 11,
+    "phase": "outbound",
+    "lead_scout": "ShaRen",
+    "food_gathered": 3,
+    "water_gathered": 0,
+    "path": [
+     [
+      20,
+      68
+     ],
+     [
+      8,
+      80
+     ]
+    ]
+   }
+  ],
+  "is_camped": true
+ }
+}
