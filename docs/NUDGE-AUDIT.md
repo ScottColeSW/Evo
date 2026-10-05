@@ -71,6 +71,21 @@ Splitting these means rewriting them as the fact alone, which changes the wordin
 - Menu mechanics that steer without text (survival-crisis narrowing, the repetition removal, scout rotation, resource-gather withdrawal): these
   are mechanics by the project's own definition, not nudges, and the switch does not touch them.
 
+## A/B result, first pass (2026-10-05)
+
+`scripts/ab_test_nudges_off.py`, two `qwen2.5:3b` tribes, `NUDGES=on` against `off`, same seeds. Raw results are in `scripts/ab_test_nudges_off_results.json` and the run log beside it; both are gitignored, so they exist only on the machine that ran it.
+
+- **Early game** (fresh start, 250 cycles, 2 seeds per arm, so 4 tribe-runs per arm). No tribe went extinct in either arm. Final population median
+  8,827 with nudges on and 10,723 off (ranges 6,684 to 13,266 and 1,564 to 15,195). Structures built: median 13.5 on, 14.5 off. Trades: 10.5 on,
+  10 off. First entry to the Cognitive Horizon: cycle 91 on, 64 off. Entry to tribal synapse: 180 on, 173 off. Tribes still built long houses, kitchens,
+  tanneries, sawmills, quarries, wells and took up fishing with the build hints off. The spread inside one arm is larger than any gap between arms,
+  so this shows no harm from turning the gated nudges off, not that they do nothing.
+- **Mid game** (from the 15,000-population fixtures, 100 cycles, 3 seeds per arm): **not usable.** In both arms the tribes chose RELOCATE in about
+  60% of decisions (117 of 200 in one run, none with an effect), while the original run over the same cycles never did. Starting from a saved
+  state changes something that makes the model pick RELOCATE; the cause is not found. The fixture also does not copy `lumber_site`, so "wood
+  mastered" is never true and a fixture tribe in tribal synapse can never meet the monolithic gate. Fix both before using the fixtures again.
+- Next: more early-game seeds (each run is about 15 minutes), then repair the fixtures and repeat the mid-game batch.
+
 ## How to back them out
 
 1. Run the A/B with `NUDGES=off` against `on` on the benchmark scenarios and one live run; read survival, era pace and action mix.
