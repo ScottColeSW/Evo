@@ -67,6 +67,18 @@ rejection text").
 are the same run, guaranteed. Pick the run you care about from either
 source's filename/run_id and use it to filter the other.
 
+### What a run now leaves on disk (2026-10-05)
+
+- **`run_config` record** (first line of structured data in the jsonl): the settings the run used (`NUDGES`, `MENU_CAP`, models, judge, read-back,
+  code commit). Read it before comparing two runs; env vars set when the server started are otherwise invisible.
+- **`decision` records carry `menu_size` and `menu`**: the actions actually offered on that turn. This is how to answer menu questions (was DEPART
+  on offer, did a smaller menu change behavior) without replaying snapshots.
+- **`logs/report_<run_id>.json`** and a `game_over_report` record: the whole end-of-run timeline (population, stockpiles, era and structure events,
+  action counts), the findings and the headline. Written at game over, and at a plain stop (closing the tab) as the timeline so far.
+- **`python scripts/score_run.py logs/run_<id>.jsonl`** prints all of the above plus the older prediction checks in one pass; start there.
+- `docs/ACTION-UNLOCKS.md` (regenerate with `python scripts/action_unlocks.py`) lists every action, its era and every gate beyond the era;
+  `docs/NUDGE-AUDIT.md` lists every prompt nudge and the `NUDGES=off` switch.
+
 ### Finding the right run
 
 ```bash

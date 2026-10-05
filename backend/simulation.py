@@ -1,7 +1,9 @@
 import asyncio
 import difflib
 import importlib
+import json
 import math
+import os
 import re
 import random
 from collections import Counter, deque
@@ -3322,6 +3324,9 @@ class Simulation:
     async def step(self) -> None:
         if self.paused or self.game_over:
             return
+        if not getattr(self, "_run_config_logged", False):
+            self._run_config_logged = True
+            self._log_run_config()
         # See the per-tribe unload check near the end of this method -- a tribe can
         # go extinct mid-cycle from several different sources (upkeep starvation, a
         # raider attack, a lost raid...), so this snapshot is how "newly extinct
@@ -3648,6 +3653,40 @@ class Simulation:
             for tribe in self.tribes.values():
                 tribe.memory.consolidate()
         self._sample_timeline()
+
+    def _log_run_config(self) -> None:
+        """One record at the start of a run saying which settings it ran with, so a log can be read without guessing (NUDGES, the menu cap, the
+        models, the code version). Best-effort: never interrupts a cycle."""
+        try:
+            from .benchmark_db import current_git_commit
+            data = {
+                "git_commit": current_git_commit(), "nudges": os.environ.get("NUDGES", config.NUDGES), "disabled_nudge_tags": sorted(config.DISABLED_NUDGE_TAGS),
+                "menu_cap": config.menu_cap(), "disabled_actions": list(config.DISABLED_ACTIONS),
+                "tribes": [{"id": t.id, "name": t.name, "model": t.model} for t in self.tribes.values()],
+                "immortality_cycles": self.immortality_cycles, "reflection_judge": getattr(self, "reflection_judge_status", "off"),
+                "journal_readback": bool(getattr(self, "journal_readback", False)), "reflection_model": config.REFLECTION_MODEL,
+                "era_min_cycles": config.ERA_MIN_CYCLES, "era_ceiling_grace_cycles": config.ERA_CEILING_GRACE_CYCLES,
+                "fur_per_deer_fed": config.FUR_PER_DEER_FED, "vessel_cost": [config.VESSEL_WOOD_COST, config.VESSEL_STONE_COST],
+            }
+            self.event_log.record_data("Run", "run_config", data, message="[run config] " + json.dumps({k: data[k] for k in ("nudges", "menu_cap", "git_commit")}))
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _persist_report(self, reason: str) -> None:
+        """Writes the end-of-run report to logs/report_<run_id>.json (the whole timeline, the findings and the headline) and a short record into the
+        run log, so it survives a closed tab. At game over it is the finished report; on a plain stop it is the timeline so far. Once per run."""
+        if getattr(self, "_report_persisted", False):
+            return
+        self._report_persisted = True
+        try:
+            report = self.game_over_report or {"timeline": self.timeline.payload()}
+            path = self.event_log.path.parent / f"report_{self.run_id}.json"
+            path.write_text(json.dumps({"run_id": self.run_id, "reason": reason, "cycle": self.cycle, "report": report}), encoding="utf-8")
+            summary = {"reason": reason, "file": path.name, "headline": report.get("headline"), "findings": report.get("findings"),
+                       "events": (report.get("timeline") or {}).get("events")}
+            self.event_log.record_data("Run", "game_over_report", summary, message=f"[run end] {reason} at cycle {self.cycle}")
+        except Exception:  # noqa: BLE001
+            pass
 
     def _sample_timeline(self) -> None:
         """One timeline sample of every tribe now (backend/endgame_report.py). Best-effort: never interrupts a cycle."""
@@ -6061,7 +6100,8 @@ class Simulation:
                 break
         return lines
 
-    def _journal_record(self, tribe: Tribe, action: str, before: dict, note: str | None, menu_size: int | None = None) -> None:
+    def _journal_record(self, tribe: Tribe, action: str, before: dict, note: str | None, menu_size: int | None = None,
+                        menu: list | None = None) -> None:
         """Compare the tribe now with `before` and record what the choice changed. Best-effort: never raises."""
         try:
             after = self._journal_snapshot(tribe)
@@ -6076,8 +6116,9 @@ class Simulation:
                 entry["menu_size"] = menu_size
             tribe.decision_journal.append(entry)
             del tribe.decision_journal[:-config.DECISION_JOURNAL_LENGTH]
+            logged = {**entry, "menu": list(menu)} if menu else entry  # the offered menu is in the log only, not in the journal the read-back reads
             self.event_log.record_data(
-                tribe.name, "decision", entry,
+                tribe.name, "decision", logged,
                 message=f"[journal] {action}: " + (", ".join(f"{k} {v:+d}" for k, v in entry["delta"].items()) or "no change")
                         + (f"; changed {', '.join(changed)}" if changed else ""))
         except Exception:  # noqa: BLE001 -- the journal must never interrupt a turn
@@ -6191,7 +6232,7 @@ class Simulation:
         hazard_note = self._apply_action(tribe, action, ctx["biome"], target)
         if journal_before is not None:
             self._journal_record(tribe, action, journal_before, hazard_note if isinstance(hazard_note, str) else None,
-                                 menu_size=len(ctx.get("available_actions") or []) or None)
+                                 menu_size=len(ctx.get("available_actions") or []) or None, menu=ctx.get("available_actions"))
 
         # Regression: this used to reset cycles_since_relocate to 0 purely because
         # RELOCATE was the *chosen action*, even when the tribe had already arrived
@@ -6388,6 +6429,7 @@ class Simulation:
         except Exception as exc:  # noqa: BLE001 -- the splash falls back to the plain summary
             print(f"[simulation] game over report failed: {exc!r}")
             self.game_over_report = None
+        self._persist_report(reason)
         self.game_over_summary = self._generate_game_over_summary(reason)
         # Awaited before shutdown() below, while every model is still loaded/
         # loadable -- see generate_endgame_narrative's own docstring for why this
@@ -6581,6 +6623,8 @@ class Simulation:
         evict it again if it were included unconditionally here -- a real, wasted
         round-trip on every ordinary stop, not a free no-op. _trigger_game_over
         unloads it explicitly instead, right after actually using it."""
+        if not self.game_over:
+            self._persist_report('stopped')  # the timeline so far, so closing the tab does not lose it
         models = {tribe.model for tribe in self.tribes.values()}
         for model in models:
             await self.client.unload_model(model)

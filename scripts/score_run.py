@@ -168,9 +168,77 @@ def dud_actions(k):
     print(f"gathers into full storage (should be 0 after 2026-10-04): {len(full)}")
 
 
+def run_config(k):
+    head("Run settings (run_config): what this log was made with")
+    rows = k["run_config"]
+    if not rows:
+        print("no run_config record (a log from before 2026-10-05)")
+        return
+    d = rows[0]["data"]
+    print(f"code {d.get('git_commit')}; NUDGES={d.get('nudges')}; menu cap {d.get('menu_cap') or 'off'}; judge {d.get('reflection_judge')}; "
+          f"read-back {d.get('journal_readback')}; Fur per deer fed {d.get('fur_per_deer_fed')}; vessel cost {d.get('vessel_cost')}")
+    print("tribes: " + ", ".join(f"{t['name']} ({t['model']})" for t in d.get("tribes", [])))
+
+
+def menus(k):
+    head("Menus offered (decision records with menu_size). Question: do smaller menus give better choices? A choice that changes nothing is the crude measure.")
+    rows = [r for r in k["decision"] if r["data"].get("menu_size")]
+    if not rows:
+        print("no menu_size on the decisions (a log from before 2026-10-05)")
+        return
+    sizes = [r["data"]["menu_size"] for r in rows]
+    print(f"{len(rows)} decisions; menu size mean {statistics.mean(sizes):.1f}, median {statistics.median(sizes)}, max {max(sizes)}")
+    era_at = {}
+    for r in k["night_watch"]:
+        era_at.setdefault(r["tribe"], []).append((r["cycle"], r["data"]["era"]))
+    def era_of(r):
+        best = "?"
+        for cycle, era in era_at.get(r["tribe"], []):
+            if cycle <= r["cycle"] + 29:
+                best = era
+        return best
+    by_era = collections.defaultdict(list)
+    for r in rows:
+        by_era[era_of(r)].append(r["data"]["menu_size"])
+    print("by era: " + "; ".join(f"{era} median {statistics.median(v)} (max {max(v)}, n {len(v)})" for era, v in by_era.items()))
+    def none(d):
+        return not d.get("built") and not any(d.get("delta", {}).values()) and not d.get("moved")
+    for lo, hi, label in ((0, 8, "8 or fewer"), (9, 12, "9 to 12"), (13, 99, "13 or more")):
+        group = [r for r in rows if lo <= r["data"]["menu_size"] <= hi]
+        if group:
+            print(f"  menu {label:10}: {len(group):4} decisions, {round(100 * sum(none(r['data']) for r in group) / len(group))}% changed nothing")
+    withmenu = [r for r in rows if r["data"].get("menu")]
+    for action in ("BUILD_VESSEL", "DEPART"):
+        offered = [r for r in withmenu if action in r["data"]["menu"]]
+        chosen = [r for r in offered if r["data"]["action"] == action]
+        if withmenu:
+            print(f"  {action}: offered on {len(offered)} of {len(withmenu)} decisions, chosen on {len(chosen)}")
+
+
+def ending(k):
+    head("How it ended (game_over_report): the headline, the findings, and the departure events")
+    rows = k["game_over_report"]
+    if not rows:
+        print("no game_over_report record: the run was still going when the log ends, or it is from before 2026-10-05")
+        return
+    d = rows[-1]["data"]
+    h = d.get("headline") or {}
+    print(f"ended: {d.get('reason')} (full report: logs/{d.get('file')})")
+    if h:
+        print(f"  {h.get('title')}: {h.get('text')}")
+        print(f"  {h.get('shows')}")
+    for f in d.get("findings") or []:
+        print(f"  - {f['title']}: {f['text']}")
+    key = [e for e in d.get("events") or [] if e["kind"] in ("vessel", "departed", "conquest", "extinct", "absorbed", "era")]
+    print("  key events: " + "; ".join(f"{e['name']} c{e['cycle']} {e['label']}" for e in key[:24]))
+
+
 def main(path):
     k, last_cycle = load(path)
     print(f"{path}: {last_cycle} cycles, " + ", ".join(f"{kind} {len(v)}" for kind, v in sorted(k.items(), key=lambda kv: -len(kv[1]))[:8]))
+    run_config(k)
+    ending(k)
+    menus(k)
     library(k)
     research_menu(k)
     trade_gate(k)
