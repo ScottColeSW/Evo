@@ -1,5 +1,9 @@
 """A/B test (2026-10-04): the project-wide nudge switch, NUDGES=on against NUDGES=off.
 
+Also (2026-10-05, --knob menu_cap): the same harness with the MENU_CAP experiment, a full menu ("full") against a menu capped at 8 actions ("cap8"),
+to test whether smaller action sets give better choices. Results go to scripts/ab_test_menu_cap_results.json. Extra numbers recorded for it: the mean
+menu size and the share of decisions that changed nothing, read from the run's own decision log.
+
 Question: when the prompt lines whose job is to steer a tribe (build hints, farm hints, the Historian's "choose something different", the
 survival-warning text, the growth framing; docs/NUDGE-AUDIT.md) are removed, do tribes still survive, advance and build? Only prompt text
 differs between the arms: menus, gates and mechanics are identical (tests/test_nudge_switch.py).
@@ -37,6 +41,7 @@ from backend.tribe_fixtures import apply_tribe_fixture, load_fixture
 
 MODEL = "qwen2.5:3b"
 RESULTS = "scripts/ab_test_nudges_off_results.json"
+KNOBS = {"nudges": ("on", "off"), "menu_cap": ("full", "cap8")}
 FIXTURES = ("mid_game_15k_a", "mid_game_15k_b")
 SAMPLE_CYCLES = (50, 100, 150, 200, 250)
 STRUCTURE_FLAGS = ("long_houses_built", "kitchen_built", "tannery_built", "library_built", "barracks_built", "forge_built",
@@ -45,8 +50,30 @@ STRUCTURE_FLAGS = ("long_houses_built", "kitchen_built", "tannery_built", "libra
                    "hatchery_built", "bath_house_built", "warehouses_built")
 
 
-async def run_once(variant: str, seed: int, cycles: int, mode: str) -> dict:
-    os.environ["NUDGES"] = variant
+def _decision_stats(run_id: str) -> dict:
+    sizes, no_effect, total = [], 0, 0
+    try:
+        for line in open(f"logs/{run_id}.jsonl", encoding="utf-8"):
+            record = json.loads(line)
+            if record.get("kind") == "decision":
+                data = record["data"]
+                total += 1
+                if data.get("menu_size"):
+                    sizes.append(data["menu_size"])
+                if not data.get("built") and not any(data.get("delta", {}).values()) and not data.get("moved"):
+                    no_effect += 1
+    except OSError:
+        pass
+    return {"decisions": total, "mean_menu_size": round(sum(sizes) / len(sizes), 1) if sizes else None,
+            "max_menu_size": max(sizes) if sizes else None, "no_effect_share": round(no_effect / total, 3) if total else None}
+
+
+async def run_once(variant: str, seed: int, cycles: int, mode: str, knob: str = "nudges") -> dict:
+    if knob == "menu_cap":
+        os.environ["MENU_CAP"] = "8" if variant == "cap8" else "0"
+        os.environ["NUDGES"] = "on"
+    else:
+        os.environ["NUDGES"] = variant
     random.seed(seed)
     sim = await Simulation.create([{"name": "Tribe 1", "model": MODEL}, {"name": "Tribe 2", "model": MODEL}])
     if mode == "mid":
@@ -84,7 +111,7 @@ async def run_once(variant: str, seed: int, cycles: int, mode: str) -> dict:
             "built_during_run": [f for f in STRUCTURE_FLAGS if getattr(t, f, 0) and not start_flags[tid][f]],
             "action_mix": dict(actions[tid].most_common()),
         }
-    return {"variant": variant, "seed": seed, "mode": mode, "start_cycle": start_cycle, "cycles": sim.cycle - start_cycle, "seconds": int(time.time() - started),
+    return {"knob": knob, "decision_stats": _decision_stats(sim.run_id), "variant": variant, "seed": seed, "mode": mode, "start_cycle": start_cycle, "cycles": sim.cycle - start_cycle, "seconds": int(time.time() - started),
             "run_id": sim.run_id, "tribes": tribes}
 
 
@@ -100,18 +127,23 @@ async def main() -> None:
     parser.add_argument("--cycles", type=int, default=250)
     parser.add_argument("--seeds", type=int, default=2)
     parser.add_argument("--mode", choices=("early", "mid"), default="early")
+    parser.add_argument("--knob", choices=tuple(KNOBS), default="nudges")
     args = parser.parse_args()
+    global RESULTS
+    if args.knob == "menu_cap":
+        RESULTS = "scripts/ab_test_menu_cap_results.json"
+    first, second = KNOBS[args.knob]
     seeds = [1000 + i for i in range(args.seeds)]
     order = []
     for i, seed in enumerate(seeds):
-        order += [(seed, "on"), (seed, "off")] if i % 2 == 0 else [(seed, "off"), (seed, "on")]
+        order += [(seed, first), (seed, second)] if i % 2 == 0 else [(seed, second), (seed, first)]
     results = load()
     for seed, variant in order:
         if any(r["seed"] == seed and r["variant"] == variant and r.get("mode", "early") == args.mode for r in results):
             print(f"skip seed {seed} {variant} (already recorded)")
             continue
-        print(f"=== {args.mode} seed {seed}, NUDGES={variant}, {args.cycles} cycles ===", flush=True)
-        results.append(await run_once(variant, seed, args.cycles, args.mode))
+        print(f"=== {args.mode} seed {seed}, {args.knob}={variant}, {args.cycles} cycles ===", flush=True)
+        results.append(await run_once(variant, seed, args.cycles, args.mode, args.knob))
         json.dump(results, open(RESULTS, "w", encoding="utf-8"), indent=1)
         r = results[-1]
         print(f"=== done: {r['cycles']} cycles in {r['seconds']}s, "

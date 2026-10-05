@@ -4932,6 +4932,14 @@ class Simulation:
         except Exception:  # noqa: BLE001
             pass
 
+        # Experiment (config.MENU_CAP, off by default): keep the basic gathers and only the top-ranked of the rest.
+        cap = config.menu_cap()
+        if cap and len(available_actions) > cap:
+            basics = [a for a in available_actions if a in _EVERGREEN_GATHER_ACTIONS]
+            others = [a for a in available_actions if a not in _EVERGREEN_GATHER_ACTIONS]
+            keep = set(others[: max(0, cap - len(basics))])
+            available_actions = [a for a in available_actions if a in _EVERGREEN_GATHER_ACTIONS or a in keep]
+
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
         # Explicit request, 2026-09-18: surface a chief's own past private
         # reflection back into its live reasoning, not just the spectator's
@@ -6038,7 +6046,7 @@ class Simulation:
                 break
         return lines
 
-    def _journal_record(self, tribe: Tribe, action: str, before: dict, note: str | None) -> None:
+    def _journal_record(self, tribe: Tribe, action: str, before: dict, note: str | None, menu_size: int | None = None) -> None:
         """Compare the tribe now with `before` and record what the choice changed. Best-effort: never raises."""
         try:
             after = self._journal_snapshot(tribe)
@@ -6049,6 +6057,8 @@ class Simulation:
                      "built": changed, "moved": before["pos"] != after["pos"],
                      "stock_before": {k: before[k] for k in ("wood", "stone", "food", "water")},
                      "population": after["population"], "note": (note or "")[:160] or None}
+            if menu_size is not None:
+                entry["menu_size"] = menu_size
             tribe.decision_journal.append(entry)
             del tribe.decision_journal[:-config.DECISION_JOURNAL_LENGTH]
             self.event_log.record_data(
@@ -6165,7 +6175,8 @@ class Simulation:
         tribe.current_broadcast = broadcast
         hazard_note = self._apply_action(tribe, action, ctx["biome"], target)
         if journal_before is not None:
-            self._journal_record(tribe, action, journal_before, hazard_note if isinstance(hazard_note, str) else None)
+            self._journal_record(tribe, action, journal_before, hazard_note if isinstance(hazard_note, str) else None,
+                                 menu_size=len(ctx.get("available_actions") or []) or None)
 
         # Regression: this used to reset cycles_since_relocate to 0 purely because
         # RELOCATE was the *chosen action*, even when the tribe had already arrived

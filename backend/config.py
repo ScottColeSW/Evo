@@ -2887,6 +2887,20 @@ DISABLED_NUDGE_TAGS: set[str] = set()
 # affected: menus, gates and mechanics never read this. Sites are listed, with what is and is not covered yet, in docs/NUDGE-AUDIT.md.
 NUDGES = "on"
 
+# 2026-10-05: an experiment, off by default (0). A tribe's menu is capped at this many actions after every filter and the usual ordering: the
+# four basic gathers are always kept and the highest-ranked of the rest fill what is left (Simulation._prepare_turn). The MENU_CAP environment
+# variable overrides it. It exists to test the owner's observation that smaller action sets seem to give better, more predictable choices;
+# the recorded run could not answer it (docs/ACTION-UNLOCKS.md and scripts/ab_test_menu_cap.py). Not a design change: leave at 0 for play.
+MENU_CAP = 0
+
+
+def menu_cap() -> int:
+    import os
+    try:
+        return max(0, int(os.environ.get("MENU_CAP", MENU_CAP)))
+    except ValueError:
+        return 0
+
 
 def nudge_active(tag: str) -> bool:
     import os

@@ -82,3 +82,37 @@ def test_the_repetition_notice_is_a_nudge_but_the_menu_removal_it_comes_with_is_
     request, ctx = sim._prepare_turn(tribe)
     assert "The Historian has counseled against repeating" not in request["prompt"]
     assert ctx["available_actions"] == on_actions and "GATHER_STONE" not in on_actions
+
+
+def test_the_menu_cap_experiment_is_off_by_default_and_keeps_the_basic_gathers_when_on(monkeypatch):
+    """2026-10-05: config.MENU_CAP / the MENU_CAP environment variable caps the menu after every filter. Off (0) changes nothing; on, the basic
+    gathers are always kept and the highest-ranked of the rest fill what is left."""
+    from backend.simulation import _EVERGREEN_GATHER_ACTIONS
+
+    sim, tribe = _settled_sim()
+    tribe.era = "tribal_synapse"
+    tribe.long_houses_built = 3
+    monkeypatch.delenv("MENU_CAP", raising=False)
+    full = sim._prepare_turn(tribe)[1]["available_actions"]
+    monkeypatch.setenv("MENU_CAP", "0")
+    assert sim._prepare_turn(tribe)[1]["available_actions"] == full  # explicitly off equals the default
+    assert len(full) > 5
+
+    monkeypatch.setenv("MENU_CAP", "5")
+    capped = sim._prepare_turn(tribe)[1]["available_actions"]
+    assert len(capped) <= 5
+    assert [a for a in full if a in capped] == capped            # same order, a subset
+    assert {a for a in full if a in _EVERGREEN_GATHER_ACTIONS} <= set(capped)
+    monkeypatch.setenv("MENU_CAP", "not a number")
+    assert sim._prepare_turn(tribe)[1]["available_actions"] == full
+
+
+def test_the_decision_record_carries_the_menu_size():
+    from tests.test_actions import _bare_simulation
+    from backend.simulation import Tribe
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    before = sim._journal_snapshot(tribe)
+    sim._journal_record(tribe, "SCOUT", before, None, menu_size=11)
+    assert tribe.decision_journal[-1]["menu_size"] == 11
