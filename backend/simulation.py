@@ -5941,12 +5941,16 @@ class Simulation:
         request = {"id": tribe.id, "model": tribe.model, "prompt": prompt, "temperature": temperature}
         return request, {"biome": biome, "available_actions": available_actions}
 
-    def _track_action_repetition(self, tribe: Tribe, action: str) -> None:
+    def _track_action_repetition(self, tribe: Tribe, action: str, moved: bool = True) -> None:
         """Explicit request, after a live run showed one tribe choose GATHER_STONE on
         49% of all 728 turns (and a different run's tribe choose BREED on 63.8%) while
         other real needs went untouched -- see config.ACTION_REPETITION_THROTTLE_*.
-        RELOCATE is exempt: a real, sustained multi-cycle journey is documented,
-        desired behavior (see DESIGN.md), not fixation.
+        RELOCATE is exempt while it actually moves the tribe: a real, sustained multi-cycle
+        journey is documented, desired behavior (see DESIGN.md), not fixation. 2026-10-04:
+        a RELOCATE that does not move the tribe (already settled, nowhere to go) is a no-op
+        and counts like any other repeat. A live trial from a departure-era fixture chose it
+        on 246 of 300 turns, with no effect on any of them, and never gathered the wood it
+        needed, because the blanket exemption meant nothing could ever stop the loop.
 
         CONSTRUCT_WALL is exempt for the same reason, confirmed via a live run
         (run_20260911_100258): it's the only action that can unlock or build a wall
@@ -5962,7 +5966,7 @@ class Simulation:
         else:
             tribe.action_streak_name = action
             tribe.action_streak_count = 1
-        if action in ("RELOCATE", "CONSTRUCT_WALL"):
+        if action == "CONSTRUCT_WALL" or (action == "RELOCATE" and moved):
             return
         if tribe.action_streak_count >= config.ACTION_REPETITION_THROTTLE_THRESHOLD:
             tribe.throttled_actions[action] = self.cycle + config.ACTION_REPETITION_THROTTLE_COOLDOWN
@@ -6187,7 +6191,7 @@ class Simulation:
                                            message=f"[conflict] chose {action}")
         except Exception:  # noqa: BLE001
             pass
-        self._track_action_repetition(tribe, action)
+        self._track_action_repetition(tribe, action, moved=(tribe.x, tribe.y) != pos_before)
         self.translation.record_broadcast(tribe.id, broadcast, action)
 
         # Regression: this used to hard-cut at 60 chars with no ellipsis, silently

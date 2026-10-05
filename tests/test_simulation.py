@@ -2339,9 +2339,23 @@ def test_action_repetition_relocate_is_exempt_from_throttling():
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
 
     for _ in range(config.ACTION_REPETITION_THROTTLE_THRESHOLD + 5):
-        sim._track_action_repetition(tribe, "RELOCATE")
+        sim._track_action_repetition(tribe, "RELOCATE", moved=True)
 
     assert tribe.throttled_actions == {}
+
+
+def test_a_relocate_that_does_not_move_the_tribe_is_throttled_like_any_other_repeat():
+    """2026-10-04: the exemption assumes a journey. A live trial from a departure-era fixture chose RELOCATE on 246 of 300 turns while settled,
+    every one a no-op, and never gathered the wood it needed; nothing could stop the loop. Only a RELOCATE that actually moves is exempt."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+
+    for _ in range(config.ACTION_REPETITION_THROTTLE_THRESHOLD):
+        sim._track_action_repetition(tribe, "RELOCATE", moved=False)
+
+    assert "RELOCATE" in tribe.throttled_actions
 
 
 def test_action_repetition_construct_wall_is_exempt_from_throttling():
