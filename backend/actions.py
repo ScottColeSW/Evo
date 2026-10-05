@@ -1890,20 +1890,36 @@ def _declare_conquest(sim, tribe, biome, target):
 
 
 def _build_vessel(sim, tribe, biome, target):
-    """Beyond the Horizon era's real building -- ordinary construction
-    (BUILD_CASTLE's own shape: wood/stone cost + a free footprint slot),
-    unrelated to the DMM's cooldown-gated creation pattern. Gated on
-    tribe.departure_dreamed rather than just era + cost: the Chief's own
-    dream (Simulation._run_night_cycle, grounded in real events) is the
-    real permission here, not just having grown large enough. Plan file
-    amber-drifting-tern.md."""
-    if tribe.vessel_built or not tribe.departure_dreamed:
+    """Beyond the Horizon era's real building, built in stages (2026-10-04). Each call puts in whatever wood and stone the tribe holds,
+    up to config.VESSEL_MAX_CONTRIBUTION_PER_ACTION of each, toward config.VESSEL_WOOD_COST/VESSEL_STONE_COST; the hull's footprint is
+    placed on the first stage, and vessel_built flips when both are paid. It used to need the whole cost at once and the Chief's
+    departure dream (departure_dreamed); in a recorded run no tribe ever held half the wood and the dream never came. The dream, when
+    one is written, is now flavor for the final summary. Plan file amber-drifting-tern.md."""
+    if tribe.vessel_built:
         return None
-    if _place_building(sim, tribe, "vessel", config.VESSEL_WOOD_COST, config.VESSEL_STONE_COST) is None:
+    need_wood = max(0, config.VESSEL_WOOD_COST - tribe.vessel_wood_paid)
+    need_stone = max(0, config.VESSEL_STONE_COST - tribe.vessel_stone_paid)
+    give_wood = min(tribe.wood, need_wood, config.VESSEL_MAX_CONTRIBUTION_PER_ACTION)
+    give_stone = min(tribe.stone, need_stone, config.VESSEL_MAX_CONTRIBUTION_PER_ACTION)
+    if give_wood + give_stone <= 0:
         return None
+    if tribe.vessel_wood_paid + tribe.vessel_stone_paid == 0:
+        slot = architect.find_free_slot(sim.world, tribe, "vessel")
+        if slot is None:
+            return None
+        w, h = config.BUILDING_FOOTPRINTS["vessel"]
+        architect.record_building(tribe, "vessel", slot[0], slot[1], w, h, sim.cycle)
+    tribe.wood -= give_wood
+    tribe.stone -= give_stone
+    tribe.vessel_wood_paid += give_wood
+    tribe.vessel_stone_paid += give_stone
+    if tribe.vessel_wood_paid < config.VESSEL_WOOD_COST or tribe.vessel_stone_paid < config.VESSEL_STONE_COST:
+        return (f"the vessel's hull rises -- {tribe.vessel_wood_paid}/{config.VESSEL_WOOD_COST} wood and "
+                f"{tribe.vessel_stone_paid}/{config.VESSEL_STONE_COST} stone put in so far")
     tribe.vessel_built = True
     sim._award_trophy(tribe, "Horizon Seeker")
-    return "a real vessel takes shape -- built to carry the tribe beyond the horizon, exactly as the Chief dreamed"
+    dreamed = ", exactly as the Chief dreamed" if tribe.departure_dreamed else ""
+    return f"a real vessel takes shape -- built to carry the tribe beyond the horizon{dreamed}"
 
 
 def _depart(sim, tribe, biome, target):
@@ -1915,7 +1931,9 @@ def _depart(sim, tribe, biome, target):
     if not tribe.vessel_built or tribe.departed:
         return None
     tribe.departed = True
-    return f"the tribe boards the vessel and sails beyond the horizon, chasing the dream Chief {tribe.chief_name} once spoke of"
+    if tribe.departure_dreamed:
+        return f"the tribe boards the vessel and sails beyond the horizon, chasing the dream Chief {tribe.chief_name} once spoke of"
+    return f"the tribe boards the vessel under Chief {tribe.chief_name} and sails beyond the horizon, leaving the island behind"
 
 
 def _plant_crop_cost(farm_plots: int) -> int:
@@ -3648,7 +3666,7 @@ ACTION_DESCRIPTIONS = {
     "CREATE_ITEM": "Design and craft a genuinely new item at the DMM -- a real, permanent effect (a bonus to gathering, combat, defense, celebrations, exploration speed, or an immediate population grant), shaped by whatever the Chief has lately dreamed of, or picked for you otherwise. Only possible once the DMM stands, and it rests 10 days between uses.",
     "CREATE_USEFUL_STRUCTURE": "Design and build a genuinely new structure at the DMM -- same real, permanent effects as CREATE_ITEM, but a building instead of a portable item. Only possible once the DMM stands, and it rests 10 days between uses.",
     "DECLARE_CONQUEST": "An all-in campaign to fully and immediately conquer a rival tribe near target_vector, in one decisive stroke rather than several raids. A win absorbs them completely; a loss costs far more than an ordinary failed raid. Does nothing if no rival is there.",
-    "BUILD_VESSEL": "Build a real vessel using stored wood and stone -- a one-time, permanent structure meant to carry the tribe beyond the horizon. Only possible once the Chief has genuinely dreamed of leaving.",
+    "BUILD_VESSEL": "Build a real vessel from stored wood and stone, in stages -- each time puts in what the tribe can spare until the whole cost is paid. A permanent structure meant to carry the tribe beyond the horizon.",
     "DEPART": "Board the vessel and sail beyond the horizon, for good -- ends the tribe's story here. Only possible once the vessel stands.",
     "BUILD_JOINT_CASTLE": "Contribute wood and stone toward a Joint Castle raised together with a genuinely, mutually allied rival tribe -- a shared monument to the alliance, built up over several turns from either side. Completing it marks both tribes as having reached Castle-state. Only possible once truly allied, not just once one side has declared it.",
     "BUILD_KITCHEN": "Build a kitchen using stored wood and stone -- only possible once cooking is known and a long house stands. A one-time, permanent structure: stacks with cooking for nine times as much food from every future forage, hunt, or catch, instead of only three.",

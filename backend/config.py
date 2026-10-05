@@ -2328,14 +2328,17 @@ DEPARTURE_DREAM_KEYWORDS = (
     "elsewhere", "unknown", "new life", "escape", "depart",
 )
 # BUILD_VESSEL: a real, visible building (architect.find_free_slot,
-# BUILD_CASTLE's own shape), gated on tribe.departure_dreamed rather than
-# the DMM's cooldown -- this is ordinary construction, unrelated to
-# actions._dmm_ready. Cost is a first-pass guess, explicitly untuned:
+# BUILD_CASTLE's own shape), unrelated to the DMM's cooldown (actions._dmm_ready).
+# 2026-10-04: built in stages, and no longer gated on the Chief's departure dream. A recorded run's tribes never held more than about 1,200
+# wood against a lump-sum cost of 2,500 (they spend wood as they earn it), and the dream depended on a small model volunteering one
+# keyword on a night it may skip. Each BUILD_VESSEL puts in what the tribe can spare, up to VESSEL_MAX_CONTRIBUTION_PER_ACTION of each
+# resource, until the costs below are paid. Cost is a first-pass guess, explicitly untuned:
 # CASTLE_WOOD_COST/STONE_COST's 40/50 is trivial against the
 # 2,000-30,000-stockpile economies these runs actually reach late-game, so
 # this needs to feel like a real capstone cost, not a rounding error.
 VESSEL_WOOD_COST = 2500
 VESSEL_STONE_COST = 2500
+VESSEL_MAX_CONTRIBUTION_PER_ACTION = 500
 # DEPART: small and deliberate, no real cost -- this is the moment itself,
 # not another resource sink on top of BUILD_VESSEL's own cost.
 

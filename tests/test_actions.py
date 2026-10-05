@@ -3032,25 +3032,24 @@ def test_declare_conquest_finds_no_rival_returns_a_note_not_a_crash():
     assert "no rival" in result.lower()
 
 
-def test_build_vessel_requires_the_departure_dream():
-    """Available the instant the era unlocks it, but inert until the Chief's
-    own dream calls for it -- same shape BUILD_JOINT_CASTLE's mutual-alliance
-    gate already uses. Plan file amber-drifting-tern.md."""
-    from backend import config
-
+def test_build_vessel_needs_no_dream_and_does_nothing_with_nothing_to_give():
+    """2026-10-04: no longer gated on the Chief's departure dream. It does nothing only when the tribe holds no wood and no stone."""
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     _settle(sim, tribe)
-    tribe.wood = config.VESSEL_WOOD_COST
-    tribe.stone = config.VESSEL_STONE_COST
+    tribe.territory_radius = 40
+    tribe.wood = tribe.stone = 0
 
+    assert ACTION_REGISTRY["BUILD_VESSEL"](sim, tribe, "plains", _NO_TARGET) is None
+    assert tribe.vessel_built is False and tribe.vessel_wood_paid == 0
+
+    tribe.wood = 100
     result = ACTION_REGISTRY["BUILD_VESSEL"](sim, tribe, "plains", _NO_TARGET)
+    assert result is not None and tribe.vessel_wood_paid == 100 and tribe.wood == 0
+    assert tribe.departure_dreamed is False and tribe.vessel_built is False
 
-    assert tribe.vessel_built is False
-    assert result is None
 
-
-def test_build_vessel_places_a_real_building_and_awards_a_trophy():
+def test_build_vessel_is_built_in_stages_and_finishes_when_both_costs_are_paid():
     from backend import config
 
     sim = _bare_simulation()
@@ -3059,17 +3058,41 @@ def test_build_vessel_places_a_real_building_and_awards_a_trophy():
     tribe.territory_radius = 40  # room for the 6x3 footprint, same trick BUILD_CASTLE's own tests use
     tribe.wood = config.VESSEL_WOOD_COST
     tribe.stone = config.VESSEL_STONE_COST
-    tribe.departure_dreamed = True
-    wood_before, stone_before = tribe.wood, tribe.stone
+    step = config.VESSEL_MAX_CONTRIBUTION_PER_ACTION
 
     result = ACTION_REGISTRY["BUILD_VESSEL"](sim, tribe, "plains", _NO_TARGET)
 
+    assert tribe.vessel_built is False
+    assert tribe.vessel_wood_paid == step and tribe.vessel_stone_paid == step
+    assert tribe.wood == config.VESSEL_WOOD_COST - step
+    assert "hull rises" in result
+    assert sum(1 for b in tribe.buildings if b["type"] == "vessel") == 1  # the footprint is placed once, on the first stage
+
+    for _ in range(config.VESSEL_WOOD_COST // step - 1):
+        result = ACTION_REGISTRY["BUILD_VESSEL"](sim, tribe, "plains", _NO_TARGET)
+
     assert tribe.vessel_built is True
-    assert tribe.wood < wood_before
-    assert tribe.stone < stone_before
+    assert tribe.vessel_wood_paid == config.VESSEL_WOOD_COST and tribe.vessel_stone_paid == config.VESSEL_STONE_COST
+    assert tribe.wood == 0 and tribe.stone == 0
     assert any(t["name"] == "Horizon Seeker" for t in tribe.trophies)
-    assert any(b["type"] == "vessel" for b in tribe.buildings)
+    assert sum(1 for b in tribe.buildings if b["type"] == "vessel") == 1
     assert "vessel takes shape" in result
+
+
+def test_build_vessel_stages_pay_whatever_the_tribe_can_spare_when_one_resource_is_short():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.territory_radius = 40
+    tribe.wood = 120
+    tribe.stone = 4000
+
+    ACTION_REGISTRY["BUILD_VESSEL"](sim, tribe, "plains", _NO_TARGET)
+
+    assert tribe.vessel_wood_paid == 120
+    assert tribe.vessel_stone_paid == config.VESSEL_MAX_CONTRIBUTION_PER_ACTION
 
 
 def test_build_vessel_is_one_time():

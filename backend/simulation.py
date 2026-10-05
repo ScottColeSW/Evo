@@ -938,14 +938,14 @@ AFFORDABILITY_CHECKS = {
     "DECLARE_CONQUEST": lambda t, w: (
         t.wood >= config.DECLARE_CONQUEST_WOOD_COST and t.stone >= config.DECLARE_CONQUEST_STONE_COST
     ),
-    # Beyond the Horizon era -- plan file amber-drifting-tern.md. BUILD_VESSEL
-    # is real construction (BUILD_CASTLE's own shape), gated on the Chief's
-    # own departure_dreamed flag rather than just cost -- available the
-    # instant the era unlocks it, but inert until that real condition is met,
-    # same shape BUILD_JOINT_CASTLE's own mutual-alliance gate already uses.
+    # Beyond the Horizon era -- plan file amber-drifting-tern.md. BUILD_VESSEL is built in stages (2026-10-04, see actions._build_vessel):
+    # offered whenever the tribe holds some wood or stone the vessel still needs, and, before the first stage, room for its footprint.
+    # It is no longer gated on the Chief's departure dream.
     "BUILD_VESSEL": lambda t, w: (
-        t.departure_dreamed and t.wood >= config.VESSEL_WOOD_COST
-        and t.stone >= config.VESSEL_STONE_COST and _can_place(t, w, "vessel")
+        not t.vessel_built
+        and ((t.wood > 0 and t.vessel_wood_paid < config.VESSEL_WOOD_COST)
+             or (t.stone > 0 and t.vessel_stone_paid < config.VESSEL_STONE_COST))
+        and (t.vessel_wood_paid + t.vessel_stone_paid > 0 or _can_place(t, w, "vessel"))
     ),
     "DEPART": lambda t, w: t.vessel_built and not t.departed,
     # Live report: "I keep seeing 'send hunting party'" -- confirmed against a
@@ -1733,6 +1733,9 @@ class Tribe:
         self.departure_dreamed = False
         self.departure_dream: str | None = None
         self.vessel_built = False
+        # Wood and stone put into the vessel so far (actions._build_vessel builds it in stages; vessel_built flips when both are paid).
+        self.vessel_wood_paid = 0
+        self.vessel_stone_paid = 0
         self.departed = False
         # See actions.py._build_warehouse/_storage_cap -- explicit request after a
         # live run showed unbounded hoarding (200+ wood while starved on stone).
@@ -2100,6 +2103,8 @@ class Tribe:
             "departure_dreamed": self.departure_dreamed,
             "departure_dream": self.departure_dream,
             "vessel_built": self.vessel_built,
+            "vessel_wood_paid": self.vessel_wood_paid,
+            "vessel_stone_paid": self.vessel_stone_paid,
             "departed": self.departed,
             "warehouses_built": self.warehouses_built,
             "warehouse_upgrades": self.warehouse_upgrades,
@@ -5011,15 +5016,15 @@ class Simulation:
         # Castle nudge just above). The second one matters most: a finished
         # vessel that never gets boarded is the exact failure mode
         # DECLARE_CONQUEST suffered before its own eligibility nudge existed.
-        if tribe.departure_dreamed and not tribe.vessel_built:
+        if tribe.era == "departure_era" and not tribe.vessel_built:
             visible_entities.append(
-                "The Chief has dreamed of leaving this place behind -- BUILD_VESSEL would begin "
-                "making that real."
+                "The tribe can build a vessel to leave this island for good. BUILD_VESSEL puts in what the tribe can spare "
+                f"({tribe.vessel_wood_paid}/{config.VESSEL_WOOD_COST} wood and {tribe.vessel_stone_paid}/{config.VESSEL_STONE_COST} "
+                "stone put in so far)."
             )
         elif tribe.vessel_built and not tribe.departed:
             visible_entities.append(
-                "The vessel stands ready -- DEPART would carry the tribe beyond the horizon, "
-                "fulfilling the Chief's dream, for good."
+                "The vessel stands ready -- DEPART would carry the tribe beyond the horizon, for good."
             )
         if tribe.throttled_actions:
             # See "should we always keep them in the dark like this?" -- unlike
@@ -6468,10 +6473,16 @@ class Simulation:
             departed = [t for t in self.tribes.values() if t.departed]
             remaining = [t for t in living if not t.departed]
             for t in departed:
-                lines.append(
-                    f'Analysis: {t.name} sails beyond the horizon, answering the Chief\'s own dream: '
-                    f'"{t.departure_dream}." Session concluded at cycle {self.cycle}.'
-                )
+                if t.departure_dream:
+                    lines.append(
+                        f'Analysis: {t.name} sails beyond the horizon, answering the Chief\'s own dream: '
+                        f'"{t.departure_dream}." Session concluded at cycle {self.cycle}.'
+                    )
+                else:
+                    lines.append(
+                        f"Analysis: {t.name} finishes its vessel and sails beyond the horizon, leaving the island behind. "
+                        f"Session concluded at cycle {self.cycle}."
+                    )
             if remaining:
                 names = " and ".join(t.name for t in remaining)
                 lines.append(f"{names} inherit the island uncontested -- theirs alone, at last.")

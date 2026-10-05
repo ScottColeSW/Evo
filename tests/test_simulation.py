@@ -3914,23 +3914,25 @@ def test_post_conquest_castle_nudge_names_the_real_resource_shortfall_once_long_
     assert "long-house credits" not in request["prompt"]
 
 
-def test_build_vessel_is_unavailable_without_the_departure_dream_even_if_affordable():
-    """AFFORDABILITY_CHECKS["BUILD_VESSEL"] gates on tribe.departure_dreamed
-    directly, not just cost -- available the instant the era unlocks it, but
-    inert until the real condition is met, same shape BUILD_JOINT_CASTLE uses."""
-    from backend import config
-
+def test_build_vessel_is_offered_without_a_dream_whenever_the_tribe_has_wood_or_stone_to_give():
+    """2026-10-04: no dream gate, and no lump-sum cost. Any wood or stone the vessel still needs makes it available;
+    a tribe holding neither is not offered it."""
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
     tribe = sim.tribes["tribe_0"]
     tribe.has_ever_settled = True
     sim._found_territory(tribe)
+    tribe.territory_radius = 40
     tribe.era = "departure_era"
-    tribe.wood = tribe.stone = config.VESSEL_WOOD_COST
     tribe.food = tribe.water = 500
 
+    tribe.wood = tribe.stone = 0
     _request, ctx = sim._prepare_turn(tribe)
-
     assert "BUILD_VESSEL" not in ctx["available_actions"]
+
+    tribe.wood, tribe.stone = 40, 0
+    _request, ctx = sim._prepare_turn(tribe)
+    assert "BUILD_VESSEL" in ctx["available_actions"]
+    assert tribe.departure_dreamed is False
 
 
 def test_build_vessel_is_available_once_the_dream_and_cost_are_both_met():
@@ -3992,17 +3994,20 @@ def test_depart_is_available_only_once_the_vessel_stands():
     assert "DEPART" in ctx["available_actions"]
 
 
-def test_departure_dream_nudge_fires_once_dreamed_but_not_yet_built():
-    """Same "an action being merely available doesn't mean a small model
-    chooses it" lesson this project has hit every time so far. Plan file
-    amber-drifting-tern.md."""
+def test_departure_era_states_the_vessel_progress_as_a_fact_until_it_is_built():
+    """Same "an action being merely available doesn't mean a small model chooses it" lesson this project has hit every time so
+    far. 2026-10-04: the fact appears in the departure era (no dream needed) and carries the stages paid so far."""
+    from backend import config
+
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b"}])
     tribe = sim.tribes["tribe_0"]
-    tribe.departure_dreamed = True
+    tribe.era = "departure_era"
+    tribe.vessel_wood_paid = 700
+    tribe.vessel_stone_paid = 500
 
     request, _ctx = sim._prepare_turn(tribe)
 
-    assert "BUILD_VESSEL would begin making that real" in request["prompt"]
+    assert f"700/{config.VESSEL_WOOD_COST} wood and 500/{config.VESSEL_STONE_COST} stone put in so far" in request["prompt"]
     assert "DEPART would carry the tribe" not in request["prompt"]
 
 
@@ -4018,7 +4023,7 @@ def test_departure_vessel_nudge_fires_once_built_but_not_yet_departed():
     request, _ctx = sim._prepare_turn(tribe)
 
     assert "DEPART would carry the tribe beyond the horizon" in request["prompt"]
-    assert "BUILD_VESSEL would begin making that real" not in request["prompt"]
+    assert "put in so far" not in request["prompt"]
 
 
 def test_departure_nudges_silent_before_the_dream_and_after_departing():
@@ -4032,7 +4037,7 @@ def test_departure_nudges_silent_before_the_dream_and_after_departing():
     tribe.vessel_built = True
     tribe.departed = True
     request, _ctx = sim._prepare_turn(tribe)
-    assert "BUILD_VESSEL would begin making that real" not in request["prompt"]
+    assert "put in so far" not in request["prompt"]
     assert "DEPART would carry the tribe beyond the horizon" not in request["prompt"]
 
 
