@@ -112,3 +112,35 @@ def test_the_shipped_war_ready_fixtures_load_and_look_real():
         assert tribe["population"] > 3000
         assert tribe["barracks_built"]
         assert tribe["battalion_size"] > 0
+
+
+def test_a_fixture_tribe_that_had_settled_near_water_keeps_relocate_off_its_menu():
+    """2026-10-05: settled_permanently_near_water is never in a board snapshot, so a settled fixture tribe kept RELOCATE on its menu and chose it on
+    most turns (246 of 300 in a live trial, none moving the tribe). The loader now restores it when the source tribe had settled with water known."""
+    from backend.simulation import Simulation
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b"}])
+    tribe = next(iter(sim.tribes.values()))
+    fixture = _fixture(has_ever_settled=True, confirmed_water_sites=[[41, 38]], territory_center=[40, 37], cycles_since_relocate=200,
+                       era="cognitive_horizon")
+    apply_tribe_fixture(tribe, fixture, new_cycle=100)
+
+    assert tribe.settled_permanently_near_water is True
+    _request, ctx = sim._prepare_turn(tribe)
+    assert "RELOCATE" not in ctx["available_actions"]
+
+
+def test_a_fixture_tribe_with_a_built_sawmill_gets_its_timber_grove_back():
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 0, 0, "#c084fc")
+
+    apply_tribe_fixture(tribe, _fixture(sawmill_built=True, lumber_sites=[[58, 13], [80, 42]]), new_cycle=100)
+
+    assert tribe.lumber_site == (58, 13)
+
+
+def test_a_fixture_that_never_settled_is_not_marked_settled():
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 0, 0, "#c084fc")
+
+    apply_tribe_fixture(tribe, _fixture(has_ever_settled=False, confirmed_water_sites=[]), new_cycle=100)
+
+    assert tribe.settled_permanently_near_water is False

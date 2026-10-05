@@ -232,7 +232,9 @@ def _material_gather_floor(tribe) -> int:
     Correction, 2026-10-03: the first version used config.MATERIAL_SURPLUS_THRESHOLD (50), which a test showed made the 2,500
     wood and stone VESSEL unreachable: a departure-era tribe holding 1,200 was not offered the gathers (cheap builds are always
     on its menu), so it could never save up. The floor is now the largest ordinary build cost in the config (computed, so a new
-    cost cannot make it stale), or the vessel's cost while a departure-era tribe has not built its vessel yet."""
+    cost cannot make it stale), or one vessel stage while a departure-era tribe has not built its vessel yet. 2026-10-04: it was the whole
+    2,500 cost while the vessel had to be paid in one go; the vessel is built in stages now (config.VESSEL_MAX_CONTRIBUTION_PER_ACTION), so the
+    gathers narrow once a stage can be paid, as they do for any other build."""
     floor = max(
         (value for name, value in vars(config).items()
          if isinstance(value, (int, float)) and not isinstance(value, bool)
@@ -240,7 +242,7 @@ def _material_gather_floor(tribe) -> int:
         default=config.MATERIAL_SURPLUS_THRESHOLD)
     floor = max(floor, config.MATERIAL_SURPLUS_THRESHOLD)
     if tribe.era == "departure_era" and not tribe.vessel_built:
-        floor = max(floor, config.VESSEL_WOOD_COST, config.VESSEL_STONE_COST)
+        floor = max(floor, config.VESSEL_MAX_CONTRIBUTION_PER_ACTION)
     return int(floor)
 
 

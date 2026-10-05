@@ -48,26 +48,27 @@ def test_a_poor_tribe_keeps_both_material_gathers_even_with_a_cheap_build_on_off
 
 def test_a_departure_era_tribe_can_always_gather_toward_the_vessel():
     """The bug this floor fixes: with the old fixed line (50), a departure-era tribe holding 100 or 1,200 wood and stone was not
-    offered the gathers (cheap builds are always on its menu) and could never save the 2,500 each the vessel costs."""
+    offered the gathers (cheap builds are always on its menu). 2026-10-04: the vessel is built in stages, so the gathers stay on only until
+    a stage (VESSEL_MAX_CONTRIBUTION_PER_ACTION) can be paid, then narrow like any other build."""
     sim, tribe = _camped_tribe(wood=100, stone=100)
     tribe.era = "departure_era"
     tribe.departure_dreamed = True
     tribe.warehouses_built = config.WAREHOUSE_MAX_COUNT  # a real departure-era tribe can store the vessel; stock above the cap cannot exist
-    for held in (100, 1200, config.VESSEL_WOOD_COST - 1):
+    for held in (100, 300, config.VESSEL_MAX_CONTRIBUTION_PER_ACTION - 1):
         tribe.wood = tribe.stone = held
         _, ctx = sim._prepare_turn(tribe)
         assert "GATHER_WOOD" in ctx["available_actions"] and "GATHER_STONE" in ctx["available_actions"], held
-    tribe.wood = tribe.stone = config.VESSEL_WOOD_COST
+    tribe.wood = tribe.stone = config.VESSEL_MAX_CONTRIBUTION_PER_ACTION
     _, ctx = sim._prepare_turn(tribe)
-    assert "BUILD_VESSEL" in ctx["available_actions"]                      # affordable now, and the gathers can go
+    assert "BUILD_VESSEL" in ctx["available_actions"]                      # a stage is payable now, and the gathers can go
     assert "GATHER_WOOD" not in ctx["available_actions"]
 
 
 def test_the_floor_is_the_largest_ordinary_cost_and_rises_only_for_an_unbuilt_vessel():
     sim, tribe = _camped_tribe(wood=0, stone=0)
     ordinary = _material_gather_floor(tribe)
-    assert ordinary >= config.DECLARE_CONQUEST_WOOD_COST and ordinary < config.VESSEL_WOOD_COST
+    assert ordinary >= config.DECLARE_CONQUEST_WOOD_COST and ordinary < config.VESSEL_MAX_CONTRIBUTION_PER_ACTION
     tribe.era = "departure_era"
-    assert _material_gather_floor(tribe) == config.VESSEL_WOOD_COST
+    assert _material_gather_floor(tribe) == config.VESSEL_MAX_CONTRIBUTION_PER_ACTION
     tribe.vessel_built = True
     assert _material_gather_floor(tribe) == ordinary

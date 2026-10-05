@@ -80,10 +80,11 @@ Splitting these means rewriting them as the fact alone, which changes the wordin
   10 off. First entry to the Cognitive Horizon: cycle 91 on, 64 off. Entry to tribal synapse: 180 on, 173 off. Tribes still built long houses, kitchens,
   tanneries, sawmills, quarries, wells and took up fishing with the build hints off. The spread inside one arm is larger than any gap between arms,
   so this shows no harm from turning the gated nudges off, not that they do nothing.
-- **Mid game** (from the 15,000-population fixtures, 100 cycles, 3 seeds per arm): **not usable.** In both arms the tribes chose RELOCATE in about
-  60% of decisions (117 of 200 in one run, none with an effect), while the original run over the same cycles never did. Starting from a saved
-  state changes something that makes the model pick RELOCATE; the cause is not found. The fixture also does not copy `lumber_site`, so "wood
-  mastered" is never true and a fixture tribe in tribal synapse can never meet the monolithic gate. Fix both before using the fixtures again.
+- **Mid game** (from the 15,000-population fixtures, 100 cycles, 3 seeds per arm): **not usable, cause now found and fixed.** In both arms the tribes
+  chose RELOCATE in about 60% of decisions (117 of 200 in one run, none with an effect), while the original run over the same cycles never did.
+  A board snapshot does not carry `settled_permanently_near_water`, the flag that removes RELOCATE from a settled tribe's menu for good, so a fixture
+  tribe looked settled but kept RELOCATE on its menu. It also does not carry `lumber_site`, so "wood mastered" was never true and a fixture tribe in
+  tribal synapse could never meet the monolithic gate. `apply_tribe_fixture` now restores both. The mid-game batch needs repeating.
 - Next: more early-game seeds (each run is about 15 minutes), then repair the fixtures and repeat the mid-game batch.
 
 ## How to back them out

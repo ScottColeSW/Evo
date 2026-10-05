@@ -128,3 +128,10 @@ def apply_tribe_fixture(tribe, fixture: dict, new_cycle: int) -> None:
     for field in FIXTURE_CYCLE_SHIFT_FIELDS:
         if field in source and source[field]:
             setattr(tribe, field, source[field] + offset)
+    # State a board snapshot never serializes but a live tribe always has by the time it looks like this one (2026-10-05). Without the first,
+    # a fixture tribe that had really settled kept RELOCATE on its menu (Simulation._prepare_turn removes it only for settled_permanently_near_water)
+    # and chose it on most turns; without the second, a built sawmill never counted as "wood mastered" (simulation._is_wood_secure).
+    if source.get("has_ever_settled") and source.get("confirmed_water_sites"):
+        tribe.settled_permanently_near_water = True
+    if tribe.sawmill_built and tribe.lumber_site is None and source.get("lumber_sites"):
+        tribe.lumber_site = tuple(source["lumber_sites"][0])
