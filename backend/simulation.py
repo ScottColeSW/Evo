@@ -10,7 +10,7 @@ from . import architect, city_layout, config, lexicon, peace_gate, physics
 from .actions import (
     military_intel_text, research_candidates, research_candidates_with_source,
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
-    _battalion_capacity, _conquest_ready, _created_object_bonus, _dmm_ready, _eligible_breeding_pair,
+    _battalion_capacity, _conquest_ready, _created_object_bonus, _dmm_ready, _eligible_breeding_pair, _expedition_speed_bonus,
     _food_multiplier, _forge_item, _plant_crop_cost,
     _generate_raider_name, _has_room_to_grow, _is_departure_dream, _item_storage_cap, _labor_multiplier,
     _long_house_fur_discount, _mutual_ally_at_top_era, _push_past_visited_ground, _record_combat,
@@ -5587,11 +5587,6 @@ class Simulation:
                     f"The mine has produced {tribe.mine_resource_name} -- a forge would let it be worked "
                     "into real tools, weapons, and inventions instead of just sitting in storage."
                 )
-        if "FORGE_ITEM" in available_actions and tribe.forge_built and tribe.items:
-            visible_entities.append(
-                f"{len(tribe.items)} crafted item(s) are on hand -- each can be redeemed for its stored "
-                "value (USE_ITEM) or handed over in a future trade."
-            )
 
         # NUDGE (2026-09-13, action-legibility audit): BUILD_DMM/CREATE_ITEM/
         # CREATE_USEFUL_STRUCTURE had zero nudges anywhere -- lower priority than
@@ -5634,7 +5629,7 @@ class Simulation:
                     if tribe.chief_dream else ""
                 )
                 visible_entities.append(
-                    "The Dream Manifestation Machine stands ready -- creating an item or a structure now "
+                    "The Dream Manifestation Machine stands ready -- creating an item now "
                     "would give the tribe a genuinely new invention with a real, permanent effect on "
                     f"gathering, combat, defense, celebrations, expeditions, or population.{dream_note}"
                 )
@@ -6922,10 +6917,9 @@ class Simulation:
             # tiles/cycle per created object of that category (see config.
             # CREATED_OBJECT_EXPEDITION_SPEED_BONUS), not a percentage --
             # measured the same way ROAD_SPEED_BONUS already is.
-            expedition_boost_count = sum(1 for obj in tribe.created_objects if obj["category"] == "expedition_boost")
             base_speed = (
                 speed_base + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
-                + expedition_boost_count * config.CREATED_OBJECT_EXPEDITION_SPEED_BONUS
+                + _expedition_speed_bonus(tribe)
             )
             # Explicit request: "travel speed is 5x on toll roads."
             if self.world.is_toll_road(px, py):
@@ -7188,10 +7182,9 @@ class Simulation:
             # tiles/cycle per created object of that category (see config.
             # CREATED_OBJECT_EXPEDITION_SPEED_BONUS), not a percentage --
             # measured the same way ROAD_SPEED_BONUS already is.
-            expedition_boost_count = sum(1 for obj in tribe.created_objects if obj["category"] == "expedition_boost")
             base_speed = (
                 speed_base + bonus + (config.ROAD_SPEED_BONUS if tribe.road_built else 0)
-                + expedition_boost_count * config.CREATED_OBJECT_EXPEDITION_SPEED_BONUS
+                + _expedition_speed_bonus(tribe)
             )
             # Explicit request: "travel speed is 5x on toll roads."
             if self.world.is_toll_road(px, py):

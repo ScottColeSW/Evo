@@ -2212,6 +2212,13 @@ ITEM_STORAGE_CAP_PER_WAREHOUSE = 1
 # USE_ITEM redeems a crafted item for its value, split across wood/stone -- the
 # straightforward cash-out for a value that otherwise just sits on the tribe.
 USE_ITEM_STONE_SHARE = 0.5
+# 2026-10-04: crafted items used to do nothing but be redeemed or traded, except weapons (battalion strength, might.py). Tools now count toward
+# the same gather boost a DMM creation gives (actions._created_object_bonus, which feeds the food multiplier), and innovations toward
+# expedition speed (actions._expedition_speed_bonus), each a small fraction of what one DMM creation gives (CREATED_OBJECT_MAGNITUDE 0.2,
+# CREATED_OBJECT_EXPEDITION_SPEED_BONUS 2). Redeeming an item with USE_ITEM gives its bonus up. Untuned first guesses; at the item cap
+# (5 plus 1 per warehouse) all tools would be +10% to +20% gathering.
+ITEM_TOOL_GATHER_BONUS = 0.02
+ITEM_INNOVATION_EXPEDITION_SPEED_BONUS = 0.25
 
 # Dream Manifestation Machine (DMM) era, renamed 2026-09-13 from "Object
 # Creator" (replaces the old empty mechanization_era/silicon_era reserved
@@ -2260,6 +2267,11 @@ CREATED_OBJECT_NAMES = (
 # repeated -- explicit invitation: "if you want to add different ways the
 # new things can alter the Tribes, I'm ok with creativity." See
 # actions.py._created_object_bonus for where each is read.
+# Actions kept in the code and the era tables for the record but turned off: eras.unlocked_actions_through and ordered_actions_through leave
+# them out, so no menu offers them. Remove a name to switch the action back on. CREATE_USEFUL_STRUCTURE (2026-10-04) duplicated CREATE_ITEM:
+# the same DMM, the same cooldown, the same pool of effects, differing only in whether the result is a building.
+DISABLED_ACTIONS = ("CREATE_USEFUL_STRUCTURE",)
+
 CREATED_OBJECT_CATEGORIES = (
     "gather_boost", "combat_boost", "defense_boost",
     "celebration_discount", "expedition_boost", "population_boost",

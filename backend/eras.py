@@ -38,6 +38,8 @@ replacement -- each needs its own future design/sign-off pass.
 
 from dataclasses import dataclass
 
+from . import config
+
 
 @dataclass(frozen=True)
 class Era:
@@ -318,7 +320,7 @@ def unlocked_actions_through(current_key: str) -> set[str]:
     actions: set[str] = set()
     for era in ERAS[: idx + 1]:
         actions.update(era.unlocks_actions)
-    return actions
+    return actions - set(config.DISABLED_ACTIONS)
 
 
 def ordered_actions_through(current_key: str) -> list[str]:
@@ -344,7 +346,7 @@ def ordered_actions_through(current_key: str) -> list[str]:
     ordered: list[str] = []
     for era in ERAS[: idx + 1]:
         for action in era.unlocks_actions:
-            if action not in seen:
+            if action not in seen and action not in config.DISABLED_ACTIONS:
                 seen.add(action)
                 ordered.append(action)
     return ordered

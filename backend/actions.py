@@ -1464,7 +1464,18 @@ def _created_object_bonus(tribe, category: str) -> float:
     population grant aren't percentages), so they aren't summed here -- see
     _create_item's own population_boost branch and Simulation.
     _advance_one_expedition's expedition_boost hook."""
-    return sum(config.CREATED_OBJECT_MAGNITUDE for obj in tribe.created_objects if obj["category"] == category)
+    total = sum(config.CREATED_OBJECT_MAGNITUDE for obj in tribe.created_objects if obj["category"] == category)
+    if category == "gather_boost":
+        total += config.ITEM_TOOL_GATHER_BONUS * sum(1 for item in tribe.items if item["type"] == "tool")
+    return total
+
+
+def _expedition_speed_bonus(tribe) -> float:
+    """Flat extra tiles/cycle for every expedition and RELOCATE: each DMM expedition_boost creation, plus each crafted innovation on hand
+    (config.ITEM_INNOVATION_EXPEDITION_SPEED_BONUS). Both call sites in Simulation read this one function."""
+    created = sum(1 for obj in tribe.created_objects if obj["category"] == "expedition_boost")
+    innovations = sum(1 for item in tribe.items if item["type"] == "innovation")
+    return created * config.CREATED_OBJECT_EXPEDITION_SPEED_BONUS + innovations * config.ITEM_INNOVATION_EXPEDITION_SPEED_BONUS
 
 
 def _armed_count(tribe) -> int:
@@ -3661,7 +3672,7 @@ ACTION_DESCRIPTIONS = {
     "TRAIN_BATTALION": "Train soldiers for your Battalion -- only possible once a Barracks stands. Costs food, not wood/stone. Built up over several turns like a wall section, not finished in one -- more people trains faster. Repeatable up to your Barracks' own capacity. A Warrior to lead it is named automatically the moment anyone earns a trophy -- no separate action needed.",
     "BUILD_FORGE": "Build a forge using stored wood and stone -- only possible once a mine stands and at least one unit of its ore is already in stock. A one-time, permanent structure: from then on, ore can be worked into real tools, weapons, and inventions.",
     "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. No durability to track: each item just carries a flat value, usable later or given away in a trade.",
-    "USE_ITEM": "Redeem your oldest crafted item for its stored value, converted into wood and stone. Does nothing if you have no items.",
+    "USE_ITEM": "Redeem your oldest crafted item for its stored value, converted into wood and stone. The item's own bonus (tools help gathering, innovations speed expeditions, weapons arm the battalion) is lost. Does nothing if you have no items.",
     "BUILD_DMM": "Build the Dream Manifestation Machine (DMM) using stored wood and stone -- a one-time, permanent factory that lets the tribe start making the Chief's dreams real.",
     "CREATE_ITEM": "Design and craft a genuinely new item at the DMM -- a real, permanent effect (a bonus to gathering, combat, defense, celebrations, exploration speed, or an immediate population grant), shaped by whatever the Chief has lately dreamed of, or picked for you otherwise. Only possible once the DMM stands, and it rests 10 days between uses.",
     "CREATE_USEFUL_STRUCTURE": "Design and build a genuinely new structure at the DMM -- same real, permanent effects as CREATE_ITEM, but a building instead of a portable item. Only possible once the DMM stands, and it rests 10 days between uses.",
