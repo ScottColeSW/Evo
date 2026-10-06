@@ -3727,7 +3727,7 @@ def test_hunt_deer_wolf_attack_marks_a_map_encounter():
     with mock.patch("backend.actions.random.random", return_value=0.0):  # trigger the wolf hazard
         ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "forest", _NO_TARGET)
 
-    assert sim.recent_encounters == [{"x": 50, "y": 50, "kind": "wolf_attack", "label": "Wolf pack!", "outcome": "struck"}]
+    assert [{k: v for k, v in e.items() if k != "skirmish"} for e in sim.recent_encounters] == [{"x": 50, "y": 50, "kind": "wolf_attack", "label": "Wolf pack!", "outcome": "struck"}]
 
 
 def test_later_catches_do_not_re_learn_or_re_celebrate():

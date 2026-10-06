@@ -27,6 +27,7 @@ from .endgame_report import Timeline, build_report, timeline_row
 from .eras import ERAS, READINESS_LABELS, era_index, next_era, ordered_actions_through, reached_era_or_later, unlocked_actions_through
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
+from .skirmish import skirmish
 from .instincts import survival_bias_string
 from .threat import threat_assessment_string
 from .wellbeing import compute_wellbeing
@@ -8429,6 +8430,8 @@ class Simulation:
             self.recent_encounters.append({
                 "x": tribe.x, "y": tribe.y, "kind": "raider_attack",
                 "label": "Raiders repelled", "outcome": "repelled",
+                "skirmish": skirmish(f"Raiders strike {tribe.name}", "Raiders", tribe.name, False, attacker_chance=1.0 - defense_chance,
+                                     defender_force=tribe.population, outcome="The raiders are repelled" + (" and the walls held" if wall_fraction > 0 else "")),
             })
             return
 
@@ -8462,6 +8465,9 @@ class Simulation:
         self.recent_encounters.append({
             "x": tribe.x, "y": tribe.y, "kind": "raider_attack",
             "label": "Raiders struck", "outcome": "struck",
+            "skirmish": skirmish(f"Raiders strike {tribe.name}", "Raiders", tribe.name, True, attacker_chance=1.0 - defense_chance,
+                                 defender_force=tribe.population + loss, defender_lost=loss,
+                                 outcome="The defense fails and supplies are stolen" + (" (a wall section is breached)" if wall_fraction > 0 else "")),
         })
         _record_combat(tribe, "Home Defense", "lost")
 

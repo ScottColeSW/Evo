@@ -228,6 +228,25 @@
      still worked to get back. This is the actual missing rule. */
   #btn-return-to-summary.hidden { display: none; }
 
+  /* Skirmish card, 2026-10-06 ("I'd like to see the battle scene when raiders strike or any battle really"): a small card that does not block the board, for every fight
+     that is not DECLARE_CONQUEST (which keeps the full-screen #battle-splash). Fed by the `skirmish` record on a recent_encounters entry (backend/skirmish.py). */
+  #skirmish-card { position: fixed; left: 16px; bottom: 16px; width: 330px; z-index: 90; pointer-events: none; background: rgba(18,12,14,0.94); border: 1px solid #5b2a2a;
+    border-radius: 10px; padding: 12px 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.55); color: #e2e2e7; font-size: 12px; opacity: 0; transform: translateY(14px); transition: opacity .25s, transform .25s; }
+  #skirmish-card.show { opacity: 1; transform: translateY(0); }
+  #skirmish-card .sk-title { font-size: 13px; font-weight: 800; letter-spacing: 0.6px; color: #fca5a5; margin-bottom: 8px; }
+  #skirmish-card .sk-sides { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; color: #fde68a; }
+  #skirmish-card .sk-sides span.sk-force { display: block; font-weight: 500; font-size: 10.5px; color: #93a0c7; }
+  #skirmish-card .sk-right { text-align: right; }
+  #skirmish-card .sk-bar { position: relative; height: 12px; border-radius: 6px; overflow: hidden; background: #3b1d1d; margin: 8px 0 6px; }
+  #skirmish-card .sk-bar .sk-att { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #f59e0b, #fbbf24); width: 50%; transition: width 1.1s cubic-bezier(.2,.8,.2,1); }
+  #skirmish-card .sk-bar.clash .sk-att { animation: sk-clash .22s linear infinite alternate; }
+  @keyframes sk-clash { from { width: 38%; } to { width: 62%; } }
+  #skirmish-card .sk-odds { font-size: 10.5px; color: #93a0c7; display: flex; justify-content: space-between; }
+  #skirmish-card .sk-outcome { margin-top: 8px; font-weight: 700; min-height: 16px; opacity: 0; transition: opacity .4s; }
+  #skirmish-card .sk-outcome.show { opacity: 1; }
+  #skirmish-card .sk-outcome.win { color: #6ee7b7; }
+  #skirmish-card .sk-outcome.loss { color: #fca5a5; }
+  #skirmish-card .sk-losses { font-size: 11px; color: #c7c7d1; margin-top: 3px; min-height: 14px; }
   /* Battle popup: DECLARE_CONQUEST's multi-round war of attrition, played back
      round by round -- see backend/actions.py's _declare_conquest docstring. */
   #battle-splash { position: fixed; inset: 0; background: radial-gradient(circle at 50% 0%, #3a1b1b 0%, rgba(9,9,13,0.98) 55%); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; padding: 32px 24px; }
@@ -980,6 +999,7 @@ function startSimulation(tribes, immortalCycles, reflectionJudge = false, journa
       checkCelebrations(latestState);
       checkRaids(latestState);
       checkConquestBattle(latestState);
+      checkSkirmishes(latestState);
       checkGameOver(latestState);
       updateSidebar(latestState);
     } catch (err) {
@@ -1384,6 +1404,54 @@ document.getElementById("btn-game-over-quit").addEventListener("click", () => {
   }
   location.reload();
 });
+
+/* ---------- Skirmish card: every fight except DECLARE_CONQUEST (see backend/skirmish.py). Queued so two fights in a cycle play one after the other; never blocks the board. */
+const skirmishQueue = [];
+let skirmishPlaying = false;
+const SKIRMISH_CLASH_MS = 1300;
+const SKIRMISH_HOLD_MS = 3200;
+
+function checkSkirmishes(state) {
+  (state.recent_encounters || []).forEach(e => { if (e.skirmish) skirmishQueue.push(e.skirmish); });
+  if (skirmishQueue.length > 6) skirmishQueue.splice(0, skirmishQueue.length - 6);  // a flood of raids plays the latest few
+  playNextSkirmish();
+}
+
+function playNextSkirmish() {
+  if (skirmishPlaying || !skirmishQueue.length) return;
+  skirmishPlaying = true;
+  const sk = skirmishQueue.shift();
+  let card = document.getElementById("skirmish-card");
+  if (!card) { card = document.createElement("div"); card.id = "skirmish-card"; document.body.appendChild(card); }
+  const esc = t => String(t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const force = f => (f === null || f === undefined) ? "" : `<span class="sk-force">${f} strong</span>`;
+  const odds = sk.attacker_chance;
+  card.innerHTML =
+    `<div class="sk-title">⚔️ ${esc(sk.title)}</div>` +
+    `<div class="sk-sides"><div>${esc(sk.attacker)}${force(sk.attacker_force)}</div><div class="sk-right">${esc(sk.defender)}${force(sk.defender_force)}</div></div>` +
+    `<div class="sk-bar clash"><div class="sk-att"></div></div>` +
+    `<div class="sk-odds"><span>${odds === null ? "" : Math.round(odds * 100) + "% to prevail"}</span><span>${odds === null ? "" : Math.round((1 - odds) * 100) + "% to hold"}</span></div>` +
+    `<div class="sk-outcome"></div><div class="sk-losses"></div>`;
+  requestAnimationFrame(() => card.classList.add("show"));
+  setTimeout(() => {
+    const bar = card.querySelector(".sk-bar");
+    bar.classList.remove("clash");
+    card.querySelector(".sk-att").style.width = sk.attacker_won ? "92%" : "8%";
+    const out = card.querySelector(".sk-outcome");
+    out.textContent = sk.outcome || (sk.attacker_won ? `${sk.attacker} prevails` : `${sk.defender} holds`);
+    const hostile = n => n === "Raiders" || n === "Wolf pack";  // a tribe's own win is green, its loss red; between two tribes the line stays neutral
+    const tone = hostile(sk.attacker) ? (sk.attacker_won ? "loss" : "win") : hostile(sk.defender) ? (sk.attacker_won ? "win" : "loss") : "";
+    out.classList.add("show"); if (tone) out.classList.add(tone);
+    const lost = [];
+    if (sk.attacker_lost) lost.push(`${esc(sk.attacker)} lost ${sk.attacker_lost}`);
+    if (sk.defender_lost) lost.push(`${esc(sk.defender)} lost ${sk.defender_lost}`);
+    card.querySelector(".sk-losses").innerHTML = lost.join(" · ");
+    setTimeout(() => {
+      card.classList.remove("show");
+      setTimeout(() => { skirmishPlaying = false; playNextSkirmish(); }, 350);
+    }, SKIRMISH_HOLD_MS);
+  }, SKIRMISH_CLASH_MS);
+}
 
 /* ---------- Battle popup: DECLARE_CONQUEST's multi-round war of attrition --
    see backend/actions.py's _declare_conquest for the mechanic itself. Unlike

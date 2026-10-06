@@ -18,6 +18,7 @@ import random
 import re
 
 from . import architect, city_layout, config, lexicon, physics
+from .skirmish import skirmish
 from .might import compute_might
 from .world import BIOME_LABELS, biome_at, mark_visited_sector, sector_of
 
@@ -357,6 +358,8 @@ def _hunt_deer(sim, tribe, biome, target):
         sim.recent_encounters.append({
             "x": tribe.x, "y": tribe.y, "kind": "wolf_attack",
             "label": "Wolf pack!", "outcome": "struck",
+            "skirmish": skirmish("A wolf pack strikes the hunters", "Wolf pack", tribe.name, True, defender_force=tribe.population + config.HUNT_HAZARD_POPULATION_LOSS,
+                                 defender_lost=config.HUNT_HAZARD_POPULATION_LOSS, outcome=f"The hunting party loses {config.HUNT_HAZARD_POPULATION_LOSS} and some food"),
         })
         return "a wolf pack struck the hunting party"
     node = _homeland_node(sim, tribe, "wildlife")
@@ -2676,6 +2679,8 @@ def _raid_minor_settlement(sim, tribe, settlement):
     sim.recent_encounters.append({
         "x": settlement["x"], "y": settlement["y"], "kind": "minor_settlement_raid",
         "label": "Settlement raided", "outcome": "won",
+        "skirmish": skirmish(f"{tribe.name} raids an outlying settlement", tribe.name, "Outlying settlement", True, attacker_force=tribe.population,
+                             outcome=f"{looted['food']} food, {looted['wood']} wood, {looted['stone']} stone and {looted['water']} water taken"),
     })
     return (
         f"raided an outlying settlement -- {looted['wood']} wood, {looted['stone']} stone, "
@@ -2717,6 +2722,7 @@ def _raid(sim, tribe, biome, target):
     effective_population = tribe.population * (1 + _created_object_bonus(tribe, "combat_boost"))
     attacker_win_chance = effective_population / max(1, effective_population + defender.population)
     attacker_win_chance = _might_adjusted_win_chance(tribe, defender, attacker_win_chance)
+    att_pop0, def_pop0 = tribe.population, defender.population
     if random.random() < attacker_win_chance:
         # Code-quality pass: the attacker's own gain here used to setattr the
         # stolen amount directly -- the same uncapped-mutation bug already fixed
@@ -2746,6 +2752,9 @@ def _raid(sim, tribe, biome, target):
         sim.recent_encounters.append({
             "x": defender.x, "y": defender.y, "kind": "tribe_raid",
             "label": f"{tribe.name} raids {defender.name}", "outcome": "won",
+            "skirmish": skirmish(f"{tribe.name} raids {defender.name}", tribe.name, defender.name, True, attacker_chance=attacker_win_chance,
+                                 attacker_force=att_pop0, defender_force=def_pop0, attacker_lost=config.RAID_ATTACKER_POPULATION_LOSS_ON_WIN,
+                                 defender_lost=absorbed, outcome=f"{tribe.name} wins and takes {absorbed} captives and supplies"),
         })
 
         if defender.population <= 0:
@@ -2786,6 +2795,9 @@ def _raid(sim, tribe, biome, target):
         sim.recent_encounters.append({
             "x": defender.x, "y": defender.y, "kind": "tribe_raid",
             "label": f"{tribe.name} repelled by {defender.name}", "outcome": "lost",
+            "skirmish": skirmish(f"{tribe.name} raids {defender.name}", tribe.name, defender.name, False, attacker_chance=attacker_win_chance,
+                                 attacker_force=att_pop0, defender_force=def_pop0, attacker_lost=config.RAID_ATTACKER_POPULATION_LOSS_ON_LOSS,
+                                 outcome=f"{defender.name} drives {tribe.name} off"),
         })
 
         if tribe.extinct:
@@ -2836,6 +2848,8 @@ def _strike_raider_camp(sim, tribe, biome, target):
         sim.recent_encounters.append({
             "x": camp[0], "y": camp[1], "kind": "raider_camp_strike",
             "label": "Raider camp destroyed", "outcome": "won",
+            "skirmish": skirmish(f"{tribe.name} strikes a raider camp", tribe.name, "Raiders", True, attacker_chance=win_chance,
+                                 attacker_force=tribe.population, outcome=f"The camp is destroyed and {looted} food recovered"),
         })
         _record_combat(tribe, "Raider Camp Strike", "won")
         return f"the raider camp at {camp} is destroyed -- {looted} food recovered"
@@ -2845,6 +2859,9 @@ def _strike_raider_camp(sim, tribe, biome, target):
     sim.recent_encounters.append({
         "x": camp[0], "y": camp[1], "kind": "raider_camp_strike",
         "label": "Strike failed", "outcome": "lost",
+        "skirmish": skirmish(f"{tribe.name} strikes a raider camp", tribe.name, "Raiders", False, attacker_chance=win_chance,
+                             attacker_force=tribe.population, attacker_lost=config.STRIKE_RAIDER_CAMP_POPULATION_LOSS_ON_FAILURE,
+                             outcome="The raiders escape into the wilds"),
     })
     _record_combat(tribe, "Raider Camp Strike", "lost")
     return f"the strike on the raider camp at {camp} failed -- they escaped into the wilds"
@@ -2910,6 +2927,8 @@ def _expel_raiders_from_territory(sim, tribe, biome, target):
             sim.recent_encounters.append({
                 "x": ax, "y": ay, "kind": "raider_attack",
                 "label": "Raiders expelled", "outcome": "repelled",
+                "skirmish": skirmish(f"{tribe.name} drives off the raiders", tribe.name, "Raiders", True, attacker_chance=win_chance,
+                                     attacker_force=tribe.population, outcome=f"Raiders expelled after {wave} wave{'s' if wave != 1 else ''}; {gained_population} join the tribe"),
             })
             _record_combat(tribe, "Expel Raiders", "won")
             wave_note = "" if wave == 1 else f" after {wave} furious waves of resistance"
