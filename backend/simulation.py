@@ -4993,8 +4993,10 @@ class Simulation:
         # food-security/construction tiers above) buried it behind COOK_FOOD/
         # PLANT_CROP/GATHER_EGGS/CATCH_FISH and BUILD_FIRE -- see eras.py's
         # own primitive_dawn declaration, where it's listed last.
+        # 2026-10-06 (the owner: "CLEAR_TERRITORY should be the only action when it is available. I saw them ignore the threat a lot."): offered at all only while raiders
+        # sit at the boundary, it is then the whole menu. Putting it first and removing the builds still left tribes free to gather past a camp at their gates.
         if "CLEAR_TERRITORY" in available_actions:
-            available_actions = ["CLEAR_TERRITORY"] + [a for a in available_actions if a != "CLEAR_TERRITORY"]
+            available_actions = ["CLEAR_TERRITORY"]
 
         # Phase 0 of docs/CONFLICT-MODE-DESIGN.md: while a conflict logging window is open, record what this tribe is offered.
         try:
@@ -5066,8 +5068,8 @@ class Simulation:
             )
         if territory_threatened:
             visible_entities.append(
-                "Raiders are camped at or just outside the territory boundary -- CLEAR_TERRITORY has "
-                "to drive them off before any real construction (a fire is still fine) can continue."
+                "Raiders are camped at or just outside the territory boundary. Nothing else can go on while they are there; "
+                "CLEAR_TERRITORY drives them off."
             )
         if battle_ready_locked:
             visible_entities.append(

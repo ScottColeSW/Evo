@@ -7722,10 +7722,10 @@ def test_prepare_turn_hides_build_actions_while_a_raider_camp_threatens_the_boun
     assert "CLEAR_TERRITORY" in ctx["available_actions"]
     assert "BUILD_WELL" not in ctx["available_actions"]
     assert "CONSTRUCT_WALL" not in ctx["available_actions"]
-    assert "has to drive them off before any real construction" in request["prompt"]
+    assert "CLEAR_TERRITORY drives them off" in request["prompt"]
 
 
-def test_prepare_turn_still_allows_building_a_fire_during_a_territory_threat():
+def test_prepare_turn_offers_only_clear_territory_during_a_territory_threat():
     from backend import config
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
@@ -7738,7 +7738,7 @@ def test_prepare_turn_still_allows_building_a_fire_during_a_territory_threat():
 
     request, ctx = sim._prepare_turn(tribe)
 
-    assert "BUILD_FIRE" in ctx["available_actions"]
+    assert ctx["available_actions"] == ["CLEAR_TERRITORY"]  # 2026-10-06: the whole menu, not merely first on it
 
 
 def test_prepare_turn_does_not_hide_building_once_the_boundary_is_actually_clear():

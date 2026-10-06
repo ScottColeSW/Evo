@@ -133,14 +133,18 @@ def test_a_respawned_site_stands_on_ground_that_suits_it():
     import random
 
     sim, tribe = _settled()
-    for seed in range(8):
-        random.seed(seed)
-        for node_type in ("lumber", "wildlife", "quarry"):
-            sim.world.respawned_sites[node_type] = []
-            placed = sim._respawn_node(node_type, tribe.territory_center[0], tribe.territory_center[1])
-            assert placed is not None, (node_type, seed)
-            assert sim.world.site_affinity(node_type, *placed) > 0, (node_type, seed, placed)
-            assert not sim._inside_any_territory(*placed)
+    state = random.getstate()  # seeding the global generator must not leak into later tests (it once made a trade test fail only in the full suite)
+    try:
+        for seed in range(8):
+            random.seed(seed)
+            for node_type in ("lumber", "wildlife", "quarry"):
+                sim.world.respawned_sites[node_type] = []
+                placed = sim._respawn_node(node_type, tribe.territory_center[0], tribe.territory_center[1])
+                assert placed is not None, (node_type, seed)
+                assert sim.world.site_affinity(node_type, *placed) > 0, (node_type, seed, placed)
+                assert not sim._inside_any_territory(*placed)
+    finally:
+        random.setstate(state)
 
 
 def test_a_sawmill_before_any_grove_was_scouted_still_counts_as_wood_mastered_once_one_is():
