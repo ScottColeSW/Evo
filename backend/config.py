@@ -400,6 +400,10 @@ def nodes_active() -> bool:
     import os
     return os.environ.get("NODES", NODES).strip().lower() != "off"
 NODE_REACH_BEYOND_TERRITORY = 3
+# When a node inside a settled tribe's reach is spent, the founding guarantee (Simulation._ensure_homeland) runs again for that tribe after this many cycles, so a homeland
+# never stays dead for the rest of the run (2026-10-06: in the nodes A/B two tribes lost their only grove, stone site and hunting ground by cycle 30 to 109, and the spent
+# node's replacement always lands outside every territory, so nothing ever refilled their reach). The delay is a number the owner has not set yet.
+HOMELAND_REFILL_CYCLES = 20
 MAX_SCARCITY = 0.8
 
 # Water (backend/actions.py, backend/eras.py). River tiles yield far more than

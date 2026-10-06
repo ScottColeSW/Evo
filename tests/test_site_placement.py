@@ -155,3 +155,25 @@ def test_a_sawmill_before_any_grove_was_scouted_still_counts_as_wood_mastered_on
     assert _is_wood_secure(tribe) is False  # no grove known yet
     tribe.lumber_sites.append((70, 70))
     assert _is_wood_secure(tribe) is True   # the sawmill was built first; the scouted grove still counts
+
+
+def test_a_spent_homeland_node_is_replaced_in_reach_after_the_wait():
+    """2026-10-06 (nodes A/B): the only grove, stone site and hunting ground in a tribe's reach were spent by cycle 30 to 109, and a spent node's replacement lands outside
+    every territory, so the homeland stayed dead. The founding guarantee now re-runs for the tribe after config.HOMELAND_REFILL_CYCLES."""
+    from backend import config
+
+    sim, tribe = _settled()
+    for t in ("lumber", "wildlife", "quarry"):
+        sim.world.exhausted_sites |= {(t, x, y) for x, y in site_seed_points(t, G)}
+        sim.world.respawned_sites[t] = []
+    sim._ensure_homeland(tribe)
+    sim.cycle = 100
+    grove = sim.homeland_nodes(tribe, "lumber")[0]
+    for _ in range(config.NODE_USES):
+        sim.use_node(tribe, "lumber", *grove)
+    assert sim.homeland_nodes(tribe, "lumber") == []  # spent, and its replacement is out in the wild
+    sim._advance_homeland_refills()
+    assert sim.homeland_nodes(tribe, "lumber") == []  # not yet
+    sim.cycle = 100 + config.HOMELAND_REFILL_CYCLES
+    sim._advance_homeland_refills()
+    assert len(sim.homeland_nodes(tribe, "lumber")) == 1

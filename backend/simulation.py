@@ -3375,6 +3375,7 @@ class Simulation:
         self.world.decay_trails(config.TRAIL_DECAY_PER_CYCLE)
         self._advance_weather()
         self._advance_minor_settlements()
+        self._advance_homeland_refills()
         # One-cycle-lifetime, same as lightning_strike -- repopulated fresh below by
         # _check_raider_attack/_raid/_strike_raider_camp, whichever fire this cycle.
         self.recent_encounters = []
@@ -6754,9 +6755,32 @@ class Simulation:
             return f"drawn from the {label} at ({x},{y}), {left} {'use' if left == 1 else 'uses'} left"
         self.world.exhausted_sites.add(key)
         self._respawn_node(node_type, x, y)
+        self._schedule_homeland_refills(x, y)
         self._prune_spent_sites(tribe)
         tribe.history.append(f"the {label} at ({x},{y}) gives out for good")
         return f"the {label} at ({x},{y}) gives out for good"
+
+    def _schedule_homeland_refills(self, x: int, y: int) -> None:
+        """Every settled tribe whose reach covered the spent site gets its founding guarantee re-run after config.HOMELAND_REFILL_CYCLES (see _advance_homeland_refills)."""
+        pending = self.__dict__.setdefault("homeland_refills", {})
+        for other in self.tribes.values():
+            if other.territory_center is None or other.extinct:
+                continue
+            reach = other.territory_radius + config.NODE_REACH_BEYOND_TERRITORY
+            if math.hypot(x - other.territory_center[0], y - other.territory_center[1]) <= reach:
+                pending.setdefault(other.id, self.cycle + config.HOMELAND_REFILL_CYCLES)
+
+    def _advance_homeland_refills(self) -> None:
+        """Re-runs the founding guarantee for tribes whose wait is over: a node of any type that is missing from their reach is placed again (types that still have one
+        are left alone). Called once a cycle from step()."""
+        pending = self.__dict__.get("homeland_refills")
+        if not pending or not config.nodes_active():
+            return
+        for tribe_id in [t for t, due in pending.items() if due <= self.cycle]:
+            del pending[tribe_id]
+            tribe = self.tribes.get(tribe_id)
+            if tribe is not None and not tribe.extinct:
+                self._ensure_homeland(tribe)
 
     def _respawn_node(self, node_type: str, x: int, y: int) -> tuple[int, int] | None:
         """Places a replacement for a spent node by the same rule a cleared hunting ground and a raided sighting use (an angle and a distance between
