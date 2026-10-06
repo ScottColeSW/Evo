@@ -386,6 +386,12 @@ GAME_SIGHTING_RADIUS = 2
 # anyone is currently there.
 DEPLETION_PER_HARVEST = 0.15
 DEPLETION_REGEN_PER_CYCLE = 0.02
+# Resource nodes (docs/RESOURCE-NODES-DESIGN.md, 2026-10-06). A timber grove, a stone-rich site or a hunting ground can be drawn from NODE_USES times (shared by every
+# tribe: the count lives on the world), then it is spent and a new one appears elsewhere, undiscovered. A gather draws from a node when one lies within reach of the
+# tribe's territory (its radius plus NODE_REACH_BEYOND_TERRITORY, the owner's number); otherwise it harvests the tile as it always did. A node is a rich spot by
+# definition, so it pays the nominal base yield (no tile depletion, and no biome discount for the tile it happens to sit on).
+NODE_USES = 3
+NODE_REACH_BEYOND_TERRITORY = 3
 MAX_SCARCITY = 0.8
 
 # Water (backend/actions.py, backend/eras.py). River tiles yield far more than

@@ -2322,6 +2322,10 @@ def _append_expedition_path_point(exp: dict, x: int, y: int) -> None:
         exp["path"].append([x, y])
 
 
+# What each node type is called in the chronicle.
+NODE_LABEL = {"lumber": "timber grove", "quarry": "stone-rich site", "wildlife": "hunting ground"}
+
+
 def party_ground_points(path, step: float = 4.0) -> list[tuple[int, int]]:
     """The ground a party actually stood on and crossed, as points no more than `step` tiles apart (2026-10-06). exp["path"] holds where the party
     was each time it moved, which for a settled tribe's scouts is a point every 10 tiles; a site is found within SITE_DISCOVERY_RADIUS (8) of a point,
@@ -4206,6 +4210,7 @@ class Simulation:
         return nx, ny
 
     def _prepare_turn(self, tribe: Tribe) -> tuple[dict, dict]:
+        self._prune_spent_sites(tribe)
         """Builds this tribe's prompt with no network calls; returns (request, context)."""
         biome = self.world.biome(tribe.x, tribe.y)
         nearby = self.world.nearby_structures(tribe.x, tribe.y)
@@ -6720,6 +6725,67 @@ class Simulation:
                 ms["raids_remaining"] = config.MINOR_SETTLEMENT_MAX_RAIDS
                 ms["depleted_at_cycle"] = None
 
+    def homeland_nodes(self, tribe: Tribe, node_type: str) -> list[tuple[int, int]]:
+        """The live sites of this type within reach of the tribe's territory (its radius plus config.NODE_REACH_BEYOND_TERRITORY), nearest first. Not stored on the
+        tribe: they are the ground it lives on, known from the day the territory is founded, and they stay out of the discovery lists (a scout cannot "discover"
+        a site inside a territory, see _inside_any_territory). Empty before the territory exists."""
+        if tribe.territory_center is None:
+            return []
+        cx, cy = tribe.territory_center
+        reach = tribe.territory_radius + config.NODE_REACH_BEYOND_TERRITORY
+        near = [(math.hypot(x - cx, y - cy), (x, y)) for x, y in self.world.live_sites(node_type)]
+        return [p for d, p in sorted(near) if d <= reach]
+
+    def use_node(self, tribe: Tribe, node_type: str, x: int, y: int) -> str:
+        """One draw from a node. The count is the world's (shared), so a rival drawing on the same ground spends the same uses. The last use spends it for good: the
+        site is retired, a new one is placed elsewhere (undiscovered, in nobody's list), the tribe is told, and any list that still names the spent site is cleared.
+        Returns a short note for the turn's result."""
+        key = (node_type, x, y)
+        used = self.world.site_uses.get(key, 0) + 1
+        self.world.site_uses[key] = used
+        label = NODE_LABEL[node_type]
+        left = max(0, config.NODE_USES - used)
+        if left > 0:
+            return f"drawn from the {label} at ({x},{y}), {left} {'use' if left == 1 else 'uses'} left"
+        self.world.exhausted_sites.add(key)
+        self._respawn_node(node_type, x, y)
+        self._prune_spent_sites(tribe)
+        tribe.history.append(f"the {label} at ({x},{y}) gives out for good")
+        return f"the {label} at ({x},{y}) gives out for good"
+
+    def _respawn_node(self, node_type: str, x: int, y: int) -> tuple[int, int] | None:
+        """Places a replacement for a spent node by the same rule a cleared hunting ground and a raided sighting use (an angle and a distance between
+        RAIDER_SIGHTING_MIN_OFFSET and RAIDER_SIGHTING_OFFSET, up to 40 tries on buildable ground), kept outside every territory so it is wild ground a scout has to
+        find. It goes into the world's respawned_sites, not into any tribe's list."""
+        live = set(self.world.live_sites(node_type))
+        # The usual offset first. A spent homeland node sits inside a territory, whose no-discovery zone is wider than that offset, so when the first tries all land
+        # inside it the search widens (to the zone's own width and a little past) until a point outside every territory is found.
+        for max_dist in (config.RAIDER_SIGHTING_OFFSET, 2 * config.RAIDER_SIGHTING_OFFSET, 3 * config.RAIDER_SIGHTING_OFFSET + 20):
+            for _ in range(40):
+                angle = random.uniform(0, 2 * math.pi)
+                dist = random.randint(config.RAIDER_SIGHTING_MIN_OFFSET, max_dist)
+                rx = max(0, min(self.world.grid_size - 1, x + round(dist * math.cos(angle))))
+                ry = max(0, min(self.world.grid_size - 1, y + round(dist * math.sin(angle))))
+                if (rx, ry) == (x, y) or biome_at(rx, ry) in config.UNBUILDABLE_BIOMES or self._inside_any_territory(rx, ry) or (rx, ry) in live:
+                    continue
+                self.world.respawned_sites.setdefault(node_type, []).append((rx, ry))
+                return rx, ry
+        return None
+
+    def _prune_spent_sites(self, tribe: Tribe) -> None:
+        """Drops from this tribe's discovery lists any site the world has spent, and says so in its chronicle, so nobody keeps a ghost entry or sends a party to
+        ground that is gone. Called when a tribe spends a node and at the start of each of its turns (a rival's spent node reaches the others as news)."""
+        spent = {(t, x, y) for (t, x, y) in self.world.exhausted_sites}
+        if not spent:
+            return
+        lists = (("lumber", tribe.lumber_sites), ("quarry", tribe.quarry_sites), ("wildlife", tribe.wildlife_sites))
+        for node_type, entries in lists:
+            for entry in list(entries):
+                ex, ey = (entry["x"], entry["y"]) if isinstance(entry, dict) else (entry[0], entry[1])
+                if (node_type, ex, ey) in spent:
+                    entries.remove(entry)
+                    tribe.history.append(f"word comes that the {NODE_LABEL[node_type]} at ({ex},{ey}) is worked out")
+
     def _discover_along_party_ground(self, tribe: Tribe, exp: dict, scout: str) -> None:
         """Checks every point of ground a party covered for a real resource site, however the trip ended (found water, turned back at an edge, was
         ambushed, reached its target). Before 2026-10-06 the check ran only in the branch for a party that reached its target and surveyed it; in a live
@@ -6747,19 +6813,19 @@ class Simulation:
         reported as found, the same way any other out-of-range candidate isn't --
         a scout will pass other real, pre-seeded points on later trips."""
         grid_size = self.world.grid_size
-        lumber_found = find_nearby_site("lumber", x, y, grid_size, set(tribe.lumber_sites))
+        lumber_found = find_nearby_site("lumber", x, y, grid_size, set(tribe.lumber_sites) | self.world.spent_of("lumber"), extra_points=tuple(self.world.respawned_sites.get("lumber", ())))
         if lumber_found is not None and not self._inside_any_territory(*lumber_found):
             tribe.lumber_sites.append(lumber_found)
             tribe.history.append(f"{scout}'s party marks a timber grove at ({lumber_found[0]},{lumber_found[1]})")
         known_wildlife = {(s["x"], s["y"]) for s in tribe.wildlife_sites}
-        wildlife_found = find_nearby_site("wildlife", x, y, grid_size, known_wildlife)
+        wildlife_found = find_nearby_site("wildlife", x, y, grid_size, known_wildlife | self.world.spent_of("wildlife"), extra_points=tuple(self.world.respawned_sites.get("wildlife", ())))
         if wildlife_found is not None and not self._inside_any_territory(*wildlife_found):
             wx, wy = wildlife_found
             site_type = random.choice(WILDLIFE_SITE_TYPES)
             tribe.wildlife_sites.append({"x": wx, "y": wy, "type": site_type})
             if tribe.last_celebration_cycle != self.cycle:
                 self._celebrate_game_discovery(tribe, wx, wy)
-        quarry_found = find_nearby_site("quarry", x, y, grid_size, set(tribe.quarry_sites))
+        quarry_found = find_nearby_site("quarry", x, y, grid_size, set(tribe.quarry_sites) | self.world.spent_of("quarry"), extra_points=tuple(self.world.respawned_sites.get("quarry", ())))
         if quarry_found is not None and not self._inside_any_territory(*quarry_found):
             tribe.quarry_sites.append(quarry_found)
             tribe.history.append(f"{scout}'s party marks a stone-rich site at ({quarry_found[0]},{quarry_found[1]})")

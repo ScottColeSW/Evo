@@ -152,6 +152,27 @@ def _harvest(sim, tribe, resource_key, base_yield, biome):
     return yield_amount
 
 
+def _homeland_node(sim, tribe, node_type: str):
+    """The nearest live resource node of this type within reach of the tribe's territory (Simulation.homeland_nodes), or None -- in which case the gather
+    harvests the tile as it always did."""
+    nodes = sim.homeland_nodes(tribe, node_type)
+    return nodes[0] if nodes else None
+
+
+def _harvest_node(sim, tribe, resource_key: str, base_yield: int, node) -> int:
+    """What one draw from a node pays: the base yield, the tribe's labor and item bonuses, and the node's own ground (BIOME_YIELD_MULTIPLIER at the node's tile,
+    so a grove in forest pays in full and one on the plains edge pays 0.4). No tile depletion: a node has its own limit, the three uses it gives."""
+    biome_factor = BIOME_YIELD_MULTIPLIER.get(resource_key, {}).get(sim.world.biome(node[0], node[1]), 1.0)
+    return round(base_yield * biome_factor * _labor_multiplier(tribe.population) * (1 + _item_effect_bonus(tribe, resource_key)))
+
+
+def _with_node_note(result, note: str):
+    """The turn's result with the note about which node it drew from (or the note alone when the gather itself had nothing to add)."""
+    if result and note:
+        return f"{result} ({note})"
+    return note or result
+
+
 def expedition_capacity(tribe) -> int:
     """How many expedition parties (scouting or hunting, any mix) this tribe can have
     out at once. config.MAX_CONCURRENT_EXPEDITIONS is the floor -- a tribe of 8
@@ -272,23 +293,33 @@ def _gather_wood(sim, tribe, biome, target):
     # multiplier on every future harvest once built (config.SAWMILL_WOOD_MULTIPLIER),
     # not a separate conversion action spent on the stockpile. Same "3x via a
     # multiplier applied once at the point of harvest" shape cooking already uses.
-    amount = _harvest(sim, tribe, "wood", 10, biome)
+    node = _homeland_node(sim, tribe, "lumber")
+    if node is not None:
+        amount = _harvest_node(sim, tribe, "wood", 10, node)
+    else:
+        amount = _harvest(sim, tribe, "wood", 10, biome)
     if tribe.sawmill_built:
         amount *= config.SAWMILL_WOOD_MULTIPLIER
     if amount > 0:
         tribe.wood_ever_gathered = True  # see actions.py._build_sawmill's own prerequisite
-    return _add_capped(sim, tribe, "wood", amount, "wood")
+    note = sim.use_node(tribe, "lumber", *node) if node is not None else ""
+    return _with_node_note(_add_capped(sim, tribe, "wood", amount, "wood"), note)
 
 
 def _gather_stone(sim, tribe, biome, target):
     # Explicit request: "quarried stone is also worth 3 times as much as a
     # harvested stone" -- mirrors _gather_wood's sawmill multiplier exactly.
-    amount = _harvest(sim, tribe, "stone", 10, biome)
+    node = _homeland_node(sim, tribe, "quarry")
+    if node is not None:
+        amount = _harvest_node(sim, tribe, "stone", 10, node)
+    else:
+        amount = _harvest(sim, tribe, "stone", 10, biome)
     if tribe.quarry_built:
         amount *= config.QUARRY_STONE_MULTIPLIER
     if amount > 0:
         tribe.stone_ever_gathered = True  # see actions.py._build_quarry's own prerequisite
-    return _add_capped(sim, tribe, "stone", amount, "stone")
+    note = sim.use_node(tribe, "quarry", *node) if node is not None else ""
+    return _with_node_note(_add_capped(sim, tribe, "stone", amount, "stone"), note)
 
 
 def _gather_water(sim, tribe, biome, target):
@@ -327,7 +358,11 @@ def _hunt_deer(sim, tribe, biome, target):
             "label": "Wolf pack!", "outcome": "struck",
         })
         return "a wolf pack struck the hunting party"
-    base = _harvest(sim, tribe, "game", 15, biome)
+    node = _homeland_node(sim, tribe, "wildlife")
+    if node is not None:
+        base = _harvest_node(sim, tribe, "game", 15, node)
+    else:
+        base = _harvest(sim, tribe, "game", 15, biome)
     if tribe.tannery_built:
         # Explicit request: "it also gives the meat to the kitchen (2 meat per
         # catch) which cooks it (multiplier)" -- a flat bonus folded into the
@@ -346,7 +381,8 @@ def _hunt_deer(sim, tribe, biome, target):
     # hunt_ever_succeeded's single flip, since the Deer Pen's own gate is "3-5
     # successful hunts," not just one.
     tribe.hunt_deer_success_count += 1
-    return _add_capped(sim, tribe, "food", amount, "food")
+    note = sim.use_node(tribe, "wildlife", *node) if node is not None else ""
+    return _with_node_note(_add_capped(sim, tribe, "food", amount, "food"), note)
 
 
 def _forage(sim, tribe, biome, target):

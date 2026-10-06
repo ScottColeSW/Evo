@@ -470,13 +470,15 @@ def site_seed_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], .
 
 
 def find_nearby_site(
-    seed_type: str, x: int, y: int, grid_size: int, known: set, radius: int = SITE_DISCOVERY_RADIUS
+    seed_type: str, x: int, y: int, grid_size: int, known: set, radius: int = SITE_DISCOVERY_RADIUS, extra_points: tuple = ()
 ) -> tuple[int, int] | None:
     """The nearest real, pre-seeded site of this type within `radius` of (x, y) that
     isn't already in `known` -- how a scout's report turns into an actual new
-    discovery now, instead of an independent chance roll on their exact tile."""
+    discovery now, instead of an independent chance roll on their exact tile.
+    `extra_points` are sites that came into being after the seeding (a spent node's
+    respawn, see Landscape.respawned_sites); spent seed points arrive in `known`."""
     best, best_dist = None, None
-    for px, py in site_seed_points(seed_type, grid_size):
+    for px, py in list(site_seed_points(seed_type, grid_size)) + list(extra_points):
         if (px, py) in known:
             continue
         dist = (px - x) ** 2 + (py - y) ** 2
@@ -507,6 +509,19 @@ class Landscape:
         # multiple tribes' paths stay visually distinct instead of blending into one
         # shared amber-to-gold gradient).
         self.trails: dict[tuple[int, int], dict] = {}
+        # Resource nodes (docs/RESOURCE-NODES-DESIGN.md): how many times each pre-seeded site has been drawn from (shared by every tribe), the sites that are
+        # spent for good, and the sites that appeared elsewhere when one was spent. Keys are (type, x, y) with type "lumber", "quarry" or "wildlife".
+        self.site_uses: dict[tuple[str, int, int], int] = {}
+        self.exhausted_sites: set[tuple[str, int, int]] = set()
+        self.respawned_sites: dict[str, list[tuple[int, int]]] = {}
+
+    def live_sites(self, seed_type: str) -> list[tuple[int, int]]:
+        """Every site of this type that can still be drawn from: the seeded points and the respawned ones, minus the spent."""
+        points = list(site_seed_points(seed_type, self.grid_size)) + list(self.respawned_sites.get(seed_type, []))
+        return [p for p in points if (seed_type, p[0], p[1]) not in self.exhausted_sites]
+
+    def spent_of(self, seed_type: str) -> set[tuple[int, int]]:
+        return {(x, y) for (t, x, y) in self.exhausted_sites if t == seed_type}
 
     def biome(self, x: int, y: int) -> str:
         return biome_at(x, y)
