@@ -391,6 +391,14 @@ DEPLETION_REGEN_PER_CYCLE = 0.02
 # tribe's territory (its radius plus NODE_REACH_BEYOND_TERRITORY, the owner's number); otherwise it harvests the tile as it always did. A node is a rich spot by
 # definition, so it pays the nominal base yield (no tile depletion, and no biome discount for the tile it happens to sit on).
 NODE_USES = 3
+# "on" (default) or "off"; the NODES environment variable overrides it. Off makes every gather harvest the tile as it did before the nodes existed (the A/B switch for
+# scripts/ab_test_nudges_off.py --knob nodes); discovery and placement are unchanged either way.
+NODES = "on"
+
+
+def nodes_active() -> bool:
+    import os
+    return os.environ.get("NODES", NODES).strip().lower() != "off"
 NODE_REACH_BEYOND_TERRITORY = 3
 MAX_SCARCITY = 0.8
 

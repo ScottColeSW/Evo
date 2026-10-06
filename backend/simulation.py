@@ -3685,7 +3685,7 @@ class Simulation:
             from .benchmark_db import current_git_commit
             data = {
                 "git_commit": current_git_commit(), "nudges": os.environ.get("NUDGES", config.NUDGES), "disabled_nudge_tags": sorted(config.DISABLED_NUDGE_TAGS),
-                "menu_cap": config.menu_cap(), "disabled_actions": list(config.DISABLED_ACTIONS),
+                "menu_cap": config.menu_cap(), "nodes": "on" if config.nodes_active() else "off", "disabled_actions": list(config.DISABLED_ACTIONS),
                 "tribes": [{"id": t.id, "name": t.name, "model": t.model} for t in self.tribes.values()],
                 "immortality_cycles": self.immortality_cycles, "reflection_judge": getattr(self, "reflection_judge_status", "off"),
                 "journal_readback": bool(getattr(self, "journal_readback", False)), "reflection_model": config.REFLECTION_MODEL,
@@ -6731,7 +6731,7 @@ class Simulation:
         """The live sites of this type within reach of the tribe's territory (its radius plus config.NODE_REACH_BEYOND_TERRITORY), nearest first. Not stored on the
         tribe: they are the ground it lives on, known from the day the territory is founded, and they stay out of the discovery lists (a scout cannot "discover"
         a site inside a territory, see _inside_any_territory). Empty before the territory exists."""
-        if tribe.territory_center is None:
+        if tribe.territory_center is None or not config.nodes_active():
             return []
         cx, cy = tribe.territory_center
         reach = tribe.territory_radius + config.NODE_REACH_BEYOND_TERRITORY

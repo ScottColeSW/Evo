@@ -127,3 +127,14 @@ def test_a_tribe_still_listing_a_spent_site_is_told_it_is_worked_out_and_the_ent
     sim._prune_spent_sites(other)
     assert sites[0] not in other.lumber_sites and (90, 90) in other.lumber_sites and other.wildlife_sites
     assert any("is worked out" in str(line) for line in other.history)
+
+
+def test_the_nodes_switch_turns_the_homeland_off_for_an_ab_run(monkeypatch):
+    sim, tribe, sites = _sim_with("lumber", [(3, 0)])
+    monkeypatch.setenv("NODES", "on")
+    assert sim.homeland_nodes(tribe, "lumber") == [sites[0]]
+    monkeypatch.setenv("NODES", "off")
+    assert sim.homeland_nodes(tribe, "lumber") == []
+    before = tribe.wood
+    ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "forest", _NO_TARGET)
+    assert tribe.wood > before and not sim.world.site_uses  # the tile paid; no node was touched

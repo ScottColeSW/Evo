@@ -41,7 +41,7 @@ from backend.tribe_fixtures import apply_tribe_fixture, load_fixture
 
 MODEL = "qwen2.5:3b"
 RESULTS = "scripts/ab_test_nudges_off_results.json"
-KNOBS = {"nudges": ("on", "off"), "menu_cap": ("full", "cap8")}
+KNOBS = {"nudges": ("on", "off"), "menu_cap": ("full", "cap8"), "nodes": ("on", "off")}
 FIXTURES = ("mid_game_15k_a", "mid_game_15k_b")
 SAMPLE_CYCLES = (50, 100, 150, 200, 250)
 STRUCTURE_FLAGS = ("long_houses_built", "kitchen_built", "tannery_built", "library_built", "barracks_built", "forge_built",
@@ -71,6 +71,9 @@ def _decision_stats(run_id: str) -> dict:
 async def run_once(variant: str, seed: int, cycles: int, mode: str, knob: str = "nudges") -> dict:
     if knob == "menu_cap":
         os.environ["MENU_CAP"] = "8" if variant == "cap8" else "0"
+        os.environ["NUDGES"] = "on"
+    elif knob == "nodes":
+        os.environ["NODES"] = variant
         os.environ["NUDGES"] = "on"
     else:
         os.environ["NUDGES"] = variant
@@ -132,6 +135,8 @@ async def main() -> None:
     global RESULTS
     if args.knob == "menu_cap":
         RESULTS = "scripts/ab_test_menu_cap_results.json"
+    elif args.knob == "nodes":
+        RESULTS = "scripts/ab_test_nodes_results.json"
     first, second = KNOBS[args.knob]
     seeds = [1000 + i for i in range(args.seeds)]
     order = []
