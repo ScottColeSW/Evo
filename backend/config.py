@@ -2562,6 +2562,14 @@ BROADCAST_HEARING_RADIUS = 65
 
 # How long a party's overheard word stays among the Chief's visible facts once the party is home (2026-10-03).
 PARTY_HEARD_VISIBLE_CYCLES = 60
+# Parties of non-allied tribes that come within PARTY_MEETING_RADIUS tiles of each other in the field meet (2026-10-06: "what about when their paths cross in the wild?").
+# Two armed parties (hunting, exploration) fight at even odds shifted by their leaders' determination and each tribe's Might; the loser turns back, loses
+# FIELD_PARTY_LOSS_POPULATION people and the food it carried. A scout meeting an armed party is only chased off (turns back, loses nothing); two scouts pass. Allies never
+# fight. Every party files a report of the meeting with its Chief when it gets home, and the Chief sees it for PARTY_HEARD_VISIBLE_CYCLES.
+PARTY_MEETING_RADIUS = 3
+FIELD_PARTY_SIZE = 3
+FIELD_PARTY_LOSS_POPULATION = 1
+FIELD_PARTY_DETERMINATION_EDGE = 0.1  # the odds shift from the full determination gap between the two leaders
 
 # Step B of docs/LANGUAGE-LEXICON-DESIGN.md (2026-10-04, the owner's idea): an attack carries a war cry the victim hears. A tribe's cry is
 # whatever it was broadcasting on the turn it attacked. The NPC raiders have one fixed cry (the owner: "a weird war cry"), so a tribe that

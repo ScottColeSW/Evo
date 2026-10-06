@@ -15,7 +15,7 @@ from .actions import (
     _battalion_capacity, _conquest_ready, _created_object_bonus, _dmm_ready, _eligible_breeding_pair, _expedition_speed_bonus,
     _food_multiplier, _forge_item, _plant_crop_cost,
     _generate_raider_name, _has_room_to_grow, _is_departure_dream, _item_storage_cap, _labor_multiplier,
-    _long_house_fur_discount, _mutual_ally_at_top_era, _push_past_visited_ground, _record_combat,
+    _long_house_fur_discount, _might_adjusted_win_chance, _mutual_ally_at_top_era, _push_past_visited_ground, _record_combat,
     _storage_cap, _sustainable_population, _territory_has_nearby_threats, _warehouse_upgrade_ready,
     expedition_capacity,
 )
@@ -1294,6 +1294,8 @@ class Tribe:
         # 2026-10-03: vocabulary a traveling party overheard near a rival's camp and carried home, newest last. Each entry:
         # {"token", "from", "action", "cycle"}. See Simulation._party_listen.
         self.heard_by_parties: list[dict] = []
+        # 2026-10-06: what this tribe's parties filed about meeting another tribe's party in the field (see Simulation._resolve_party_meetings), newest last.
+        self.party_meeting_reports: list[dict] = []
         # Phase 0 of docs/TRADE-GATE-DESIGN.md: what the peace tier would need, tracked and logged only. See peace_gate.py.
         self.peace_gate: dict = peace_gate.new_state()
         # Steps A and B of docs/LANGUAGE-LEXICON-DESIGN.md: the tribe's own words and what they were used with, the words it has heard
@@ -3533,6 +3535,7 @@ class Simulation:
             if tribe.extinct or not tribe.expeditions:
                 continue
             self._advance_expeditions(tribe)
+        self._resolve_party_meetings()
 
         for tribe in self.tribes.values():
             if not tribe.extinct:
@@ -4058,6 +4061,12 @@ class Simulation:
                 visible_entities.append(
                     f"your travelers overheard {heard['from']} broadcast '{heard['token']}' while performing {heard['action']}"
                     f"{_heard_place(heard)} (cycle {heard['cycle']})"
+                )
+        for report in tribe.party_meeting_reports[-3:]:
+            if self.cycle - report["filed"] <= config.PARTY_HEARD_VISIBLE_CYCLES:
+                visible_entities.append(
+                    f"your {report['ours']} led by {report['our_lead']} reports meeting {report['with']}'s {report['theirs']} led by {report['their_lead']}"
+                    f"{_heard_place(report)} (cycle {report['met']}): {report['outcome']}"
                 )
 
         # Explicit follow-up from the Agentic Evolution spec reconciliation (Age 4's
@@ -6883,6 +6892,92 @@ class Simulation:
                 f"{resource_name}, waiting to be excavated"
             )
 
+    def _resolve_party_meetings(self) -> None:
+        """Parties of non-allied tribes that are within config.PARTY_MEETING_RADIUS of each other meet, once per pair of parties (2026-10-06, the owner: "what about when
+        their paths cross in the wild?", "scouts just get chased off", "all parties involved in the encounter will file a report with the respective Chief"). Two
+        armed parties (hunting, exploration) fight: even odds, shifted by the leaders' determination and each tribe's Might (the raid's own adjustment). The loser
+        turns back, loses config.FIELD_PARTY_LOSS_POPULATION people and the food it carried, which the winner takes. A scout meeting an armed party is chased off (turns back,
+        loses nothing); two scouts pass each other. Allies do not fight. The fight rides the skirmish card; each party's report reaches its Chief when it gets home
+        (_party_report_meetings)."""
+        tribes = sorted((t for t in self.tribes.values() if not t.extinct and t.expeditions), key=lambda t: t.id)
+        for i, a in enumerate(tribes):
+            for b in tribes[i + 1:]:
+                if a.stance_toward.get(b.id) == "ALLIED" or b.stance_toward.get(a.id) == "ALLIED":
+                    continue
+                for ea in list(a.expeditions):
+                    for eb in list(b.expeditions):
+                        pa, pb = ea.get("pos"), eb.get("pos")
+                        if not pa or not pb or math.hypot(pa[0] - pb[0], pa[1] - pb[1]) > config.PARTY_MEETING_RADIUS:
+                            continue
+                        ida = ea.setdefault("pid", f"{a.id}:{ea.get('lead_scout')}:{self.cycle}")
+                        idb = eb.setdefault("pid", f"{b.id}:{eb.get('lead_scout')}:{self.cycle}")
+                        met_a = ea.setdefault("met", [])
+                        if idb in met_a:
+                            continue
+                        met_a.append(idb)
+                        eb.setdefault("met", []).append(ida)
+                        self._party_meeting(a, ea, b, eb)
+
+    def _party_meeting(self, a: Tribe, ea: dict, b: Tribe, eb: dict) -> None:
+        names = {"scout": "scout party", "explore": "exploration party", "hunt": "hunting party"}
+        armed = lambda e: e.get("kind") in ("hunt", "explore")  # noqa: E731
+        pos = [round(ea["pos"][0]), round(ea["pos"][1])]
+        title = f"{a.name}'s {names.get(ea['kind'], 'party')} meets {b.name}'s {names.get(eb['kind'], 'party')}"
+        card = None
+        outcome_a = outcome_b = "the parties passed each other without a fight"
+        if armed(ea) and armed(eb):
+            edge = (ea.get("determination", 0.5) - eb.get("determination", 0.5)) * config.FIELD_PARTY_DETERMINATION_EDGE
+            base = max(0.05, min(0.95, 0.5 + edge))
+            chance = _might_adjusted_win_chance(a, b, base)
+            a_won = random.random() < chance
+            winner, win_exp, loser, lose_exp = (a, ea, b, eb) if a_won else (b, eb, a, ea)
+            taken = int(lose_exp.get("food_gathered", 0)) + int(lose_exp.get("food_caught", 0))
+            lose_exp["food_gathered"] = 0
+            if "food_caught" in lose_exp:
+                lose_exp["food_caught"] = 0
+            win_exp["food_gathered"] = win_exp.get("food_gathered", 0) + taken
+            if lose_exp.get("phase") == "outbound":
+                lose_exp["phase"] = "returning"
+            self._lose_population(loser, config.FIELD_PARTY_LOSS_POPULATION, cause="field_party_defeat")
+            outcome_a = (f"won the meeting and took {taken} food" if a_won else f"lost the meeting, lost {config.FIELD_PARTY_LOSS_POPULATION} and {taken} food, and turned back")
+            outcome_b = (f"lost the meeting, lost {config.FIELD_PARTY_LOSS_POPULATION} and {taken} food, and turned back" if a_won else f"won the meeting and took {taken} food")
+            card = skirmish(title, a.name, b.name, a_won, attacker_chance=chance, attacker_force=config.FIELD_PARTY_SIZE, defender_force=config.FIELD_PARTY_SIZE,
+                            attacker_lost=0 if a_won else config.FIELD_PARTY_LOSS_POPULATION, defender_lost=config.FIELD_PARTY_LOSS_POPULATION if a_won else 0,
+                            outcome=f"{winner.name}'s party wins and the other turns back")
+        elif armed(ea) or armed(eb):
+            chased_t, chased_e, other_t = (b, eb, a) if armed(ea) else (a, ea, b)
+            if chased_e.get("phase") == "outbound":
+                chased_e["phase"] = "returning"
+            text_chased, text_other = "was chased off and turned back", "chased the scouts off"
+            outcome_a, outcome_b = (text_other, text_chased) if armed(ea) else (text_chased, text_other)
+            card = skirmish(title, other_t.name, chased_t.name, True, outcome=f"{other_t.name}'s party chases the scouts off")
+        # every party files its own report with its own Chief
+        for tribe, exp, rival, rexp, outcome in ((a, ea, b, eb, outcome_a), (b, eb, a, ea, outcome_b)):
+            exp.setdefault("meetings", []).append({
+                "met": self.cycle, "with": rival.name, "rival_id": rival.id, "theirs": names.get(rexp.get("kind"), "party"), "their_lead": rexp.get("lead_scout", "an unknown leader"),
+                "ours": names.get(exp.get("kind"), "party"), "our_lead": exp.get("lead_scout", "an unknown leader"),
+                "outcome": outcome, **self._where_heard(pos),
+            })
+        if card is not None:
+            self.recent_encounters.append({"x": pos[0], "y": pos[1], "kind": "party_meeting", "label": "Parties meet", "outcome": "won", "skirmish": card})
+
+    def _party_report_meetings(self, tribe: Tribe, exp: dict) -> None:
+        """The party is home: what it met in the field becomes the tribe's knowledge (the rival is now known, a chronicle line, and a plain fact in the Chief's view for
+        PARTY_HEARD_VISIBLE_CYCLES)."""
+        for meeting in exp.get("meetings", []):
+            report = {**meeting, "filed": self.cycle}
+            tribe.party_meeting_reports.append(report)
+            tribe.discovered_rivals.add(meeting["rival_id"])
+            tribe.history.append(
+                f"Our {meeting['ours']} led by {meeting['our_lead']} reports meeting {meeting['with']}'s {meeting['theirs']} led by {meeting['their_lead']}"
+                f"{_heard_place(meeting)}: {meeting['outcome']}."
+            )
+            try:
+                self.event_log.record_data(tribe.name, "party_meeting_report", report, message=f"[party report] met {meeting['with']}'s {meeting['theirs']}: {meeting['outcome']}")
+            except Exception:  # noqa: BLE001 -- never interrupt a turn
+                pass
+        del tribe.party_meeting_reports[:-12]
+
     def _advance_expeditions(self, tribe: Tribe) -> None:
         """Advances every one of a tribe's in-field parties by one day (see
         actions.py._scout/_hunting_party) -- a tribe can have up to
@@ -6894,6 +6989,7 @@ class Simulation:
             if done:
                 if exp.get("phase") == "returning":
                     self._party_report_overheard(tribe, exp)
+                    self._party_report_meetings(tribe, exp)
                 tribe.expeditions.remove(exp)
 
     def _night_watch(self, tribe: Tribe) -> None:
