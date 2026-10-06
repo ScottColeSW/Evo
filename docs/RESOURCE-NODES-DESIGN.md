@@ -1,6 +1,6 @@
 # Resource nodes: finite uses, shared, respawning elsewhere (design, 2026-10-06)
 
-Status: design, not built. Decisions marked **settled** were made by the project owner; the rest are proposals waiting on an answer.
+Status (2026-10-06): the homeland nodes and the new placement rules are built (commits `c82c24d` and the placement commit after it). Not built yet: far nodes reached by parties, the contest in the field, the party model. Decisions marked **settled** were made by the project owner; the rest are proposals waiting on an answer.
 
 ## Why
 
@@ -98,6 +98,23 @@ So the natural shape is two tiers, with no invented nodes:
 
 A homeland wildlife site count of 1 or 2 means about 3 to 6 instant hunts before the homeland game runs out; after that, game comes from hunting parties (a flat 20 to 35 food each at any
 tribe size today), which the models rarely choose (1 in 200 cycles in the live run). That is a design pressure to look at, not a flaw to hide.
+
+## Built, 2026-10-06
+
+- **Homeland nodes.** `GATHER_WOOD`, `GATHER_STONE` and `HUNT_DEER` draw from the nearest live grove, stone-rich site or hunting ground within territory radius + 3 (`Simulation.homeland_nodes`), three
+  shared uses each (`Landscape.site_uses`), paying the base yield by the node's own ground (`BIOME_YIELD_MULTIPLIER` at its tile) with no tile depletion; no node in reach means the tile, as before. The third use
+  spends the site, places a replacement undiscovered by the raider and hunting-ground offset rule widened past a territory's no-discovery zone, tells the tribe, and prunes the site from every discovery list that
+  still holds it (`word comes that the ... is worked out`).
+- **Placement with game smarts** (`world.site_seed_points`, `world.site_affinity`). Affinity is read off the game's own yield table: groves in forest and on plains within 6 tiles of forest; hunting grounds in
+  forest and on plains within 8 tiles of forest or a river or lake; stone-rich sites and mines on mountains and on the foothills within 6 tiles; desert barren for wood and game. Measured on the real map:
+  groves in forest 28% to 82%, stone-rich sites on mountains 6% to 66%, mines 6% to 55%; woods and hunting grounds cluster (72% and 53% have a neighbor within 7 tiles, from none); 19 of 20 mines stand within
+  7 tiles of a quarry. Counts: lumber 47 (was 54), wildlife 30 (19), quarry 15 (29), mine 20 (48). Stone and ore are scarcer and sit in the mountains, so a scout finds one on a given trip less often (a random
+  point is within 8 tiles of a quarry 21% of the time, was 54%); the replay of the live run's trips still has both tribes knowing a mine and a quarry by cycle 100.
+- **A fair start.** Every spawn point gets one site of each type within 4 to 12 tiles on the best ground there, and `Simulation._ensure_homeland` guarantees a settling tribe a grove, a hunting ground and a
+  stone-rich site within its own territory (tribes settle far from where they spawn: Tribe 1 spawned at (76,17) and settled at (61,45)); nothing is added where the map already has them.
+- **Respawns** obey the same affinity rule (the last resort, when nothing suits anywhere in range, is any buildable ground).
+- Landmarks keep the original scatter. `_is_wood_secure` now counts any scouted grove whichever came first (a sawmill built before any grove was scouted never set `lumber_site`, which would have kept an era's
+  readiness out of reach for good).
 
 ## Open decisions
 

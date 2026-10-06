@@ -446,7 +446,9 @@ def _is_wood_secure(tribe) -> bool:
     """A Sawmill plus a real, discovered-and-in-use Timber Grove -- see
     Simulation._advance_wood_supply's own docstring. Module-level for the same
     shared-definition reason as _is_food_secure/_is_water_secure above."""
-    return tribe.sawmill_built and tribe.lumber_site is not None
+    # A sawmill built before any grove was scouted never got a lumber_site, which would have kept "wood mastered" (an era's readiness) out of reach for good (2026-10-06);
+    # any known grove now counts, whichever came first.
+    return tribe.sawmill_built and (tribe.lumber_site is not None or bool(tribe.lumber_sites))
 
 
 def _is_stone_secure(tribe) -> bool:
@@ -6759,14 +6761,19 @@ class Simulation:
         find. It goes into the world's respawned_sites, not into any tribe's list."""
         live = set(self.world.live_sites(node_type))
         # The usual offset first. A spent homeland node sits inside a territory, whose no-discovery zone is wider than that offset, so when the first tries all land
-        # inside it the search widens (to the zone's own width and a little past) until a point outside every territory is found.
-        for max_dist in (config.RAIDER_SIGHTING_OFFSET, 2 * config.RAIDER_SIGHTING_OFFSET, 3 * config.RAIDER_SIGHTING_OFFSET + 20):
-            for _ in range(40):
+        # inside it the search widens (to the zone's own width and a little past) until a point outside every territory is found. The ground has to suit the site
+        # (site_affinity above zero: a grove respawns in or beside forest, a quarry on or beside mountains); only if nothing suits anywhere in range does any buildable
+        # ground do.
+        wide = 3 * config.RAIDER_SIGHTING_OFFSET + 20
+        for max_dist, must_suit in ((config.RAIDER_SIGHTING_OFFSET, True), (2 * config.RAIDER_SIGHTING_OFFSET, True), (wide, True), (2 * wide, True), (wide, False)):
+            for _ in range(60):
                 angle = random.uniform(0, 2 * math.pi)
                 dist = random.randint(config.RAIDER_SIGHTING_MIN_OFFSET, max_dist)
                 rx = max(0, min(self.world.grid_size - 1, x + round(dist * math.cos(angle))))
                 ry = max(0, min(self.world.grid_size - 1, y + round(dist * math.sin(angle))))
                 if (rx, ry) == (x, y) or biome_at(rx, ry) in config.UNBUILDABLE_BIOMES or self._inside_any_territory(rx, ry) or (rx, ry) in live:
+                    continue
+                if must_suit and self.world.site_affinity(node_type, rx, ry) <= 0:
                     continue
                 self.world.respawned_sites.setdefault(node_type, []).append((rx, ry))
                 return rx, ry
@@ -7516,7 +7523,6 @@ class Simulation:
                         tribe.memory.remember(f"Scouts spotted signs of raiders near ({rx},{ry}).", self.cycle, weight=0.7)
                         tribe.history.append(f"{scout} reports signs of raiders near ({rx},{ry}) on the way home -- best be cautious")
 
-                self._discover_along_party_ground(tribe, exp, scout)
                 if exp["found"]:
                     fx, fy = exp["found"]
                     tribe.expeditions_succeeded += 1
@@ -7565,6 +7571,8 @@ class Simulation:
                         f"{scout} is home and gives {recipient} a full report: "
                         f"nothing new found, though not empty-handed -- {forage_note}"
                     )
+                # The ground the trip crossed, whichever of those it was. After the report, so a find of water keeps the one celebration a cycle allows.
+                self._discover_along_party_ground(tribe, exp, scout)
                 return True
             return False
 
@@ -9731,6 +9739,28 @@ class Simulation:
                 occupied.remove((ms["x"], ms["y"]))
                 ms["x"], ms["y"] = self._find_minor_settlement_site(occupied)
                 occupied.append((ms["x"], ms["y"]))
+        self._ensure_homeland(tribe)
+
+    def _ensure_homeland(self, tribe: Tribe) -> None:
+        """A tribe that settles is guaranteed at least one timber grove, one hunting ground and one stone-rich site within reach of its own territory (2026-10-06,
+        the owner's fair-start rule: tribes settle far from where they spawn, so the guarantee has to hold where they actually live). Where the real map already has
+        them nothing is added. Where it does not, a site is placed on the best ground inside the territory for that type (any buildable ground if nothing suits), at
+        least 3 tiles from the others of its type. It is the world's, like every node: shared use counts, spent after three, never in a discovery list."""
+        if tribe.territory_center is None:
+            return
+        cx, cy = tribe.territory_center
+        radius = tribe.territory_radius
+        for node_type in ("lumber", "wildlife", "quarry"):
+            if self.homeland_nodes(tribe, node_type):
+                continue
+            live = self.world.live_sites(node_type)
+            ring = [(x, y) for x in range(cx - radius, cx + radius + 1) for y in range(cy - radius, cy + radius + 1)
+                    if 3 <= math.hypot(x - cx, y - cy) <= radius and 0 <= x < self.world.grid_size and 0 <= y < self.world.grid_size
+                    and biome_at(x, y) not in config.UNBUILDABLE_BIOMES and all(math.hypot(x - a, y - b) >= 3 for a, b in live)]
+            if not ring:
+                continue
+            ring.sort(key=lambda p: (-self.world.site_affinity(node_type, p[0], p[1]), random.random()))
+            self.world.respawned_sites.setdefault(node_type, []).append(ring[0])
 
     def _award_trophy(self, tribe: Tribe, name: str, individual: str | None = None) -> None:
         """`individual`, when given, credits a specific named person (e.g. the scout or

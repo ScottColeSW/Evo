@@ -412,8 +412,85 @@ def _site_spacing_radius(x: float, y: float, seed_type: str, spawn_points: tuple
     return r_far - (r_far - r_near) * falloff
 
 
+# ------------------------------------------------------------------------------------------------------------------------------------------------------
+# Where resource sites go (2026-10-06, the owner: "I think it is probably lacking in game smarts"). The old placement was a Poisson-disc scatter that knew nothing about
+# what a site is for: on the real map only 28% of timber groves stood in forest (19% were in desert), 6% of stone-rich sites and mines stood on mountains, and nothing
+# clustered. The rules now:
+#   - Affinity: how well a tile suits a site, read off the game's own yield table (actions.BIOME_YIELD_MULTIPLIER). Groves stand in forest, and on plains within
+#     a few tiles of forest; hunting grounds in forest, and on plains near forest or water; stone-rich sites and mines on mountains, and on the foothills (poorer ground within a few
+#     tiles of mountains). Desert is barren for wood and game. A site pays by its ground, so a foothill quarry pays little.
+#   - Clusters: groves come in woods of two or three, hunting grounds near forest edges, and a mine usually stands beside a quarry (a range).
+#   - A fair start: every spawn point gets one of each type close by whatever its biome (the best ground within reach), and a settling tribe is guaranteed the same in its own
+#     territory (Simulation._ensure_homeland), because tribes settle far from where they spawn.
+#   - The count of sites of each type still thins out with distance from the spawn points, as before (_site_spacing_radius).
+# ------------------------------------------------------------------------------------------------------------------------------------------------------
+_AFFINITY_RESOURCE = {"lumber": "wood", "wildlife": "game", "quarry": "stone", "mine": "stone"}
+_NEAR_FOREST_TILES = 6        # plains this close to forest can hold a grove
+_NEAR_COVER_TILES = 8         # plains this close to forest or water can hold a hunting ground
+_FOOTHILL_TILES = 6           # poorer ground this close to mountains can hold stone or ore
+_CLUSTER_CHANCE = {"lumber": 0.55, "wildlife": 0.35, "quarry": 0.25, "mine": 0.0}
+_CLUSTER_RADIUS = (3, 6)      # satellites stand this far from the site they cluster around
+_SATELLITE_GAP = 3            # and never closer than this to anything
+_MINE_BESIDE_QUARRY = (3, 7)  # a mine's distance from the quarry it is paired with
+_MINE_PAIR_CHANCE = 0.85
+_STARTER_RING = (4, 12)       # a spawn point's guaranteed site stands this far from it
+_DART_CANDIDATES = 4000
+
+
 @functools.lru_cache(maxsize=None)
-def site_seed_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], ...]:
+def _distance_to_biomes(grid_size: int, biomes: frozenset) -> tuple[tuple[float, ...], ...]:
+    """For every tile, the distance in tiles to the nearest tile of any of these biomes (a multi-source sweep over 8-neighbors, close enough to straight-line for a
+    few tiles' worth of 'near')."""
+    inf = float("inf")
+    dist = [[0.0 if biome_at(x, y) in biomes else inf for y in range(grid_size)] for x in range(grid_size)]
+    frontier = [(x, y) for x in range(grid_size) for y in range(grid_size) if dist[x][y] == 0.0]
+    while frontier:
+        nxt = []
+        for x, y in frontier:
+            d = dist[x][y] + 1
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    a, b = x + dx, y + dy
+                    if 0 <= a < grid_size and 0 <= b < grid_size and dist[a][b] > d:
+                        dist[a][b] = d
+                        nxt.append((a, b))
+        frontier = nxt
+    return tuple(tuple(row) for row in dist)
+
+
+def site_affinity(seed_type: str, x: int, y: int, grid_size: int = 100) -> float:
+    """How well the tile (x, y) suits a site of this type, 0 (never) to 1 (the best ground), from the game's own yield table (see the notes above)."""
+    from .actions import BIOME_YIELD_MULTIPLIER  # deferred: actions imports this module
+
+    if not (0 <= x < grid_size and 0 <= y < grid_size):
+        return 0.0
+    biome = biome_at(x, y)
+    if biome in config.UNBUILDABLE_BIOMES:
+        return 0.0
+    value = BIOME_YIELD_MULTIPLIER.get(_AFFINITY_RESOURCE[seed_type], {}).get(biome, 0.0)
+    if seed_type == "lumber":
+        if biome == "forest":
+            return value
+        if biome == "plains" and _distance_to_biomes(grid_size, frozenset({"forest"}))[x][y] <= _NEAR_FOREST_TILES:
+            return value
+        return 0.0
+    if seed_type == "wildlife":
+        if biome == "forest":
+            return value
+        near = _distance_to_biomes(grid_size, frozenset({"forest", "river", "lake"}))[x][y]
+        return value if biome == "plains" and near <= _NEAR_COVER_TILES else 0.0
+    # quarry and mine: mountains, and the foothills around them
+    if biome == "mountains":
+        return value
+    if value > 0 and _distance_to_biomes(grid_size, frozenset({"mountains"}))[x][y] <= _FOOTHILL_TILES:
+        return value
+    return 0.0
+
+
+@functools.lru_cache(maxsize=None)
+def _scatter_site_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], ...]:
+    """The original placement: an even Poisson-disc scatter over buildable ground with no idea what the site is for. Kept for types that have no ground
+    to suit (the landmarks); resource sites use site_seed_points' affinity rules."""
     # Deferred import: simulation.py imports from this module at load time, so a
     # top-level import here would be circular -- safe deferred to call time, well
     # after both modules have finished loading (this is never called from either
@@ -469,6 +546,88 @@ def site_seed_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], .
     return tuple((x, y) for x, y, _ in placed)
 
 
+@functools.lru_cache(maxsize=None)
+def site_seed_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], ...]:
+    # Deferred import: simulation.py imports from this module at load time, so a
+    # top-level import here would be circular -- safe deferred to call time, well
+    # after both modules have finished loading (this is never called from either
+    # module's own top-level init).
+    if seed_type not in _AFFINITY_RESOURCE:
+        return _scatter_site_points(seed_type, grid_size)
+    from .simulation import SPAWN_POINTS
+
+    rng = random.Random(f"site_seed:{seed_type}:{grid_size}")
+    placed: list[tuple[int, int, float]] = []  # x, y, the spacing this site demands of its neighbors
+
+    def far_enough(x: int, y: int, gap: float, parent: tuple[int, int] | None = None) -> bool:
+        # A satellite keeps only a short gap from the site it clusters around (`parent`) and no more than 60% of the spacing any other site demands.
+        for ox, oy, o_gap in placed:
+            if parent is not None and (ox, oy) == parent:
+                if math.hypot(x - ox, y - oy) < _SATELLITE_GAP:
+                    return False
+            elif math.hypot(x - ox, y - oy) < max(gap, o_gap * (0.6 if parent is not None else 1.0)):
+                return False
+        return True
+
+    def add(x: int, y: int, gap: float) -> None:
+        placed.append((x, y, gap))
+
+    # 1. A fair start: one site close to every spawn point, on the best ground within reach (any buildable ground if there is none that suits).
+    lo, hi = _STARTER_RING
+    for sx, sy in SPAWN_POINTS:
+        ring = [(x, y) for x in range(sx - hi, sx + hi + 1) for y in range(sy - hi, sy + hi + 1)
+                if lo <= math.hypot(x - sx, y - sy) <= hi and 0 <= x < grid_size and 0 <= y < grid_size and biome_at(x, y) not in config.UNBUILDABLE_BIOMES]
+        ring.sort(key=lambda p: (-site_affinity(seed_type, p[0], p[1], grid_size), math.hypot(p[0] - sx, p[1] - sy), rng.random()))
+        for x, y in ring:
+            if far_enough(x, y, _SATELLITE_GAP):
+                add(x, y, _SATELLITE_GAP)
+                break
+
+    # 2. A mine usually stands beside a quarry: the mountains hold both.
+    if seed_type == "mine":
+        for qx, qy in site_seed_points("quarry", grid_size):
+            if rng.random() > _MINE_PAIR_CHANCE:
+                continue
+            for _ in range(20):
+                angle, dist = rng.uniform(0, 2 * math.pi), rng.uniform(*_MINE_BESIDE_QUARRY)
+                x, y = round(qx + math.cos(angle) * dist), round(qy + math.sin(angle) * dist)
+                if site_affinity("mine", x, y, grid_size) > 0 and far_enough(x, y, _SATELLITE_GAP):
+                    add(x, y, _SATELLITE_GAP)
+                    break
+
+    # 3. The rest: darts thrown over the map, kept with the chance the ground suits them (best ground first), at the usual spacing.
+    darts = []
+    for _ in range(_DART_CANDIDATES):
+        x, y = rng.randrange(grid_size), rng.randrange(grid_size)
+        a = site_affinity(seed_type, x, y, grid_size)
+        if a > 0 and rng.random() < a:
+            darts.append((a * rng.random(), x, y))
+    darts.sort(reverse=True)
+    core = []
+    tight = SITE_DENSITY_BY_TYPE[seed_type][0]
+    for _priority, x, y in darts:
+        # Prime ground (a forest, a mountain range) is packed at the near spacing everywhere; the thinning with distance from spawn applies to the poorer ground.
+        gap = tight if site_affinity(seed_type, x, y, grid_size) >= 0.9 else _site_spacing_radius(x, y, seed_type, SPAWN_POINTS)
+        if far_enough(x, y, gap):
+            add(x, y, gap)
+            core.append((x, y))
+
+    # 4. Clusters: a grove has neighbors, a hunting ground sits near others along an edge, a quarry may have a second face.
+    chance = _CLUSTER_CHANCE.get(seed_type, 0.0)
+    for cx, cy in list(core):
+        if rng.random() >= chance:
+            continue
+        for _ in range(rng.choice((1, 1, 2))):
+            for _try in range(12):
+                angle, dist = rng.uniform(0, 2 * math.pi), rng.uniform(*_CLUSTER_RADIUS)
+                x, y = round(cx + math.cos(angle) * dist), round(cy + math.sin(angle) * dist)
+                if site_affinity(seed_type, x, y, grid_size) > 0.3 and far_enough(x, y, _SATELLITE_GAP, parent=(cx, cy)):
+                    add(x, y, _SATELLITE_GAP)
+                    break
+
+    return tuple((x, y) for x, y, _ in placed)
+
+
 def find_nearby_site(
     seed_type: str, x: int, y: int, grid_size: int, known: set, radius: int = SITE_DISCOVERY_RADIUS, extra_points: tuple = ()
 ) -> tuple[int, int] | None:
@@ -514,6 +673,9 @@ class Landscape:
         self.site_uses: dict[tuple[str, int, int], int] = {}
         self.exhausted_sites: set[tuple[str, int, int]] = set()
         self.respawned_sites: dict[str, list[tuple[int, int]]] = {}
+
+    def site_affinity(self, seed_type: str, x: int, y: int) -> float:
+        return site_affinity(seed_type, x, y, self.grid_size)
 
     def live_sites(self, seed_type: str) -> list[tuple[int, int]]:
         """Every site of this type that can still be drawn from: the seeded points and the respawned ones, minus the spent."""

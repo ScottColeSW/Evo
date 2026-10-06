@@ -54,62 +54,43 @@ def test_site_seed_points_never_land_on_an_unbuildable_biome():
 
 
 def test_site_seed_points_respect_real_minimum_spacing():
-    """2026-09-12 rework: replaced the old grid-cell-plus-jitter scatter with real
-    Poisson-disc sampling (Bridson's algorithm) -- live report, with a
-    screenshot: "objects landed along the boards of the map... in a line,"
-    confirmed as the old grid system's own seams (only ~5-6 cells per axis on a
-    100-tile map, so a whole row of independent per-cell hits near an edge read
-    as a line). The actual guarantee a disc-sampled layout makes, and the old one
-    never did: no two points of the same type are closer together than each
-    point's own local minimum spacing (world._site_spacing_radius)."""
+    """2026-09-12 rework: replaced the old grid-cell-plus-jitter scatter with real Poisson-disc sampling (Bridson's algorithm) -- live report, with a screenshot:
+    "objects landed along the boards of the map... in a line," confirmed as the old grid system's own seams. The scattered types (the landmarks) still guarantee that
+    no two points are closer than each point's own local minimum spacing (world._site_spacing_radius). Resource sites (2026-10-06, see tests/test_site_placement.py)
+    cluster on purpose, so they keep a hard floor of 3 tiles instead."""
     import math
 
     from backend.world import _site_spacing_radius
     from backend.simulation import SPAWN_POINTS
 
-    for seed_type in SITE_SEED_TYPES:
+    points = site_seed_points("landmark", 100)
+    for i, (x1, y1) in enumerate(points):
+        r1 = _site_spacing_radius(x1, y1, "landmark", SPAWN_POINTS)
+        for x2, y2 in points[i + 1:]:
+            r2 = _site_spacing_radius(x2, y2, "landmark", SPAWN_POINTS)
+            dist = math.hypot(x1 - x2, y1 - y2)
+            assert dist >= max(r1, r2) - 1e-9, (
+                f"landmark points {(x1, y1)} and {(x2, y2)} are only {dist:.1f} apart, "
+                f"closer than the required {max(r1, r2):.1f}"
+            )
+    for seed_type in ("lumber", "wildlife", "quarry", "mine"):
         points = site_seed_points(seed_type, 100)
         for i, (x1, y1) in enumerate(points):
-            r1 = _site_spacing_radius(x1, y1, seed_type, SPAWN_POINTS)
             for x2, y2 in points[i + 1:]:
-                r2 = _site_spacing_radius(x2, y2, seed_type, SPAWN_POINTS)
-                dist = math.hypot(x1 - x2, y1 - y2)
-                assert dist >= max(r1, r2) - 1e-9, (
-                    f"{seed_type} points {(x1, y1)} and {(x2, y2)} are only {dist:.1f} apart, "
-                    f"closer than the required {max(r1, r2):.1f}"
-                )
+                assert math.hypot(x1 - x2, y1 - y2) >= 3, f"{seed_type} points {(x1, y1)} and {(x2, y2)} are closer than 3 tiles"
 
 
-def test_site_seed_points_are_denser_near_a_spawn_point_than_far_from_every_spawn():
-    """The actual "bias centered from spawn points, degrading" property, not a
-    hard count/quota -- explicit correction from an earlier two-pass "guarantee N
-    nearby" design, which would have created an artificial density cliff right at
-    the guarantee radius. Checked via average nearest-neighbor distance (smaller
-    = denser) in a region close to a real spawn vs. a region far from every one,
-    using a dense type (quarry) on a large enough sample to be stable."""
+def test_every_spawn_point_has_a_site_of_every_type_close_by():
+    """2026-10-06: the old test here measured the thinning of resource sites with distance from the spawn points, a property of the old scatter. Resource sites now
+    guarantee a fair start instead: one of each type within 12 tiles of every spawn point, whatever its biome (see world.site_seed_points)."""
     import math
 
     from backend.simulation import SPAWN_POINTS
 
-    def nearest_spawn_distance(x, y):
-        return min(math.hypot(x - sx, y - sy) for sx, sy in SPAWN_POINTS)
-
-    def nearest_neighbor_distances(points):
-        return [
-            min(math.hypot(x - ox, y - oy) for ox, oy in points if (ox, oy) != (x, y))
-            for x, y in points
-        ]
-
-    points = site_seed_points("quarry", 100)
-    near = [p for p in points if nearest_spawn_distance(*p) < 20]
-    far = [p for p in points if nearest_spawn_distance(*p) > 40]
-    assert near and far, "test needs both a near-spawn and a far-from-spawn point to compare"
-    avg_near = sum(nearest_neighbor_distances(near)) / len(near) if len(near) > 1 else nearest_spawn_distance(*near[0])
-    avg_far = sum(nearest_neighbor_distances(far)) / len(far) if len(far) > 1 else nearest_spawn_distance(*far[0])
-    # Weaker per-point signal (small samples), so just confirm more real points
-    # land near spawns than the map's own area split would predict by chance --
-    # the direct, low-noise evidence the gradient is actually doing something.
-    assert len(near) >= len(far)
+    for seed_type in ("lumber", "wildlife", "quarry", "mine"):
+        points = site_seed_points(seed_type, 100)
+        for sx, sy in SPAWN_POINTS:
+            assert any(math.hypot(x - sx, y - sy) <= 12 for x, y in points), f"no {seed_type} site within 12 tiles of the spawn point {(sx, sy)}"
 
 
 def test_landmark_seed_points_are_sparser_than_the_resource_sites():

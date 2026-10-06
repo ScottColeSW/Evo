@@ -5697,7 +5697,9 @@ def test_expedition_stops_foraging_water_home_once_settled_near_water():
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
     }]
 
-    sim._advance_expeditions(tribe)
+    # Site discovery along the trip's ground is not what this test is about (and a hunting ground found near (50,50) would cost a feast's worth of food).
+    with mock.patch("backend.simulation.find_nearby_site", return_value=None):
+        sim._advance_expeditions(tribe)
 
     assert tribe.food == 10 + 7 + config.EXPEDITION_RETURN_DAILY_FOOD
     assert tribe.water == 10 + 5  # no EXPEDITION_RETURN_DAILY_WATER credited
