@@ -162,7 +162,8 @@ def _homeland_node(sim, tribe, node_type: str):
 def _harvest_node(sim, tribe, resource_key: str, base_yield: int, node) -> int:
     """What one draw from a node pays: the base yield, the tribe's labor and item bonuses, and the node's own ground (BIOME_YIELD_MULTIPLIER at the node's tile,
     so a grove in forest pays in full and one on the plains edge pays 0.4). No tile depletion: a node has its own limit, the three uses it gives."""
-    biome_factor = BIOME_YIELD_MULTIPLIER.get(resource_key, {}).get(sim.world.biome(node[0], node[1]), 1.0)
+    # Timber stands anywhere valid, so a grove pays in full wherever it is (the owner, 2026-10-06); stone and game still pay by their ground.
+    biome_factor = 1.0 if resource_key == "wood" else BIOME_YIELD_MULTIPLIER.get(resource_key, {}).get(sim.world.biome(node[0], node[1]), 1.0)
     return round(base_yield * biome_factor * _labor_multiplier(tribe.population) * (1 + _item_effect_bonus(tribe, resource_key)))
 
 

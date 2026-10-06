@@ -127,3 +127,10 @@ tribe size today), which the models rarely choose (1 in 200 cycles in the live r
 
 Replay the first 200 cycles of `run_20261005_154817` and the early A/B runs under the new rules (yield per action, food at cycle 60 and 120, cycle of first era exit), and run the early
 A/B harness with a `--knob nodes`. The nudge A/B and the menu-size A/B show the run-to-run spread to compare against: first era exit moved by about 27 cycles between identical setups.
+
+## Placement revision, 2026-10-06 (the owner's review of the resource matrix)
+
+- **Dry ground only** (`world.is_inland`): no site on or beside ocean, shoals, river, lake or cliffs (nothing unbuildable within 1 tile, at most 25% within 3). The map draws waterfalls on river heads and tails, so this keeps sites off them too.
+- **Timber anywhere valid** (`site_affinity("lumber")` is 1.0 on any inland ground: forest, plains, desert, foothills), spread evenly instead of clustered, and a grove pays in full wherever it stands (`_harvest_node`); stone and game still pay by their ground.
+- **No overlaps**: types are generated in a fixed order (lumber, wildlife, quarry, mine) and each keeps at least 5 tiles from the earlier ones; a mine sits 5-8 tiles from its quarry; the founding guarantee and respawns keep 4 tiles from every live site and stay inland.
+- Counts now: lumber 48, wildlife 22, quarry 10, mine 11. Quarries and mines are scarcer than before (15 and 20), and mines gate the Dream era, so watch them in the next live run.

@@ -69,10 +69,18 @@ def test_stone_and_game_draw_from_their_own_nodes():
 
 
 def test_a_node_pays_by_its_own_ground():
+    sim, tribe, sites = _sim_with("wildlife", [(3, 0)])
+    start = tribe.food
+    with mock.patch.object(sim.world, "biome", return_value="plains"), mock.patch("backend.actions.random.random", return_value=0.99):  # a plains-edge hunting ground: game plains is 0.6
+        ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.food - start == 9
+
+
+def test_a_grove_pays_in_full_on_any_ground():
     sim, tribe, sites = _sim_with("lumber", [(3, 0)])
-    with mock.patch.object(sim.world, "biome", return_value="plains"):  # a plains-edge grove: BIOME_YIELD_MULTIPLIER wood plains is 0.4
+    with mock.patch.object(sim.world, "biome", return_value="desert"):  # timber stands anywhere valid (2026-10-06), so no ground penalty
         ACTION_REGISTRY["GATHER_WOOD"](sim, tribe, "plains", _NO_TARGET)
-    assert tribe.wood == 50 + 4
+    assert tribe.wood == 50 + 10
 
 
 def test_no_node_in_reach_means_the_tile_as_before():

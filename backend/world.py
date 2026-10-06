@@ -428,13 +428,51 @@ _AFFINITY_RESOURCE = {"lumber": "wood", "wildlife": "game", "quarry": "stone", "
 _NEAR_FOREST_TILES = 6        # plains this close to forest can hold a grove
 _NEAR_COVER_TILES = 8         # plains this close to forest or water can hold a hunting ground
 _FOOTHILL_TILES = 6           # poorer ground this close to mountains can hold stone or ore
-_CLUSTER_CHANCE = {"lumber": 0.55, "wildlife": 0.35, "quarry": 0.25, "mine": 0.0}
+_CLUSTER_CHANCE = {"lumber": 0.0, "wildlife": 0.35, "quarry": 0.25, "mine": 0.0}  # timber is spread over any valid ground, not clustered (the owner, 2026-10-06)
 _CLUSTER_RADIUS = (3, 6)      # satellites stand this far from the site they cluster around
 _SATELLITE_GAP = 3            # and never closer than this to anything
-_MINE_BESIDE_QUARRY = (3, 7)  # a mine's distance from the quarry it is paired with
+_MINE_BESIDE_QUARRY = (5, 8)  # a mine's distance from the quarry it is paired with (never on top of it: see _CROSS_TYPE_GAP)
 _MINE_PAIR_CHANCE = 0.85
 _STARTER_RING = (4, 12)       # a spawn point's guaranteed site stands this far from it
 _DART_CANDIDATES = 4000
+# Sites of different types never overlap (the owner, 2026-10-06: "I hate seeing overlapping resources on the map"): no two are closer than this. The types are generated in this
+# order and each avoids the ones before it, so the layout stays the same from run to run.
+_CROSS_TYPE_GAP = 5
+_GENERATION_ORDER = ("lumber", "wildlife", "quarry", "mine")
+# A site needs dry ground around it (the owner: sites were "out of bounds" along the ocean, and the map draws waterfalls on river heads and tails): no unbuildable tile
+# within 1 tile, and at most this share of the tiles within 3 tiles unbuildable.
+_INLAND_RADIUS = 3
+_INLAND_MAX_WET_SHARE = 0.25
+
+
+@functools.lru_cache(maxsize=None)
+def _inland_map(grid_size: int) -> tuple[tuple[bool, ...], ...]:
+    """For every tile, whether it has dry ground around it (see _INLAND_RADIUS): nothing unbuildable within 1 tile and not much within 3."""
+    unbuildable = [[biome_at(x, y) in config.UNBUILDABLE_BIOMES for y in range(grid_size)] for x in range(grid_size)]
+    out = []
+    for x in range(grid_size):
+        row = []
+        for y in range(grid_size):
+            if unbuildable[x][y]:
+                row.append(False)
+                continue
+            near_wet = wet = total = 0
+            for dx in range(-_INLAND_RADIUS, _INLAND_RADIUS + 1):
+                for dy in range(-_INLAND_RADIUS, _INLAND_RADIUS + 1):
+                    a, b = x + dx, y + dy
+                    if 0 <= a < grid_size and 0 <= b < grid_size:
+                        total += 1
+                        if unbuildable[a][b]:
+                            wet += 1
+                            if abs(dx) <= 1 and abs(dy) <= 1:
+                                near_wet += 1
+            row.append(near_wet == 0 and wet / total <= _INLAND_MAX_WET_SHARE)
+        out.append(tuple(row))
+    return tuple(out)
+
+
+def is_inland(x: int, y: int, grid_size: int = 100) -> bool:
+    return 0 <= x < grid_size and 0 <= y < grid_size and _inland_map(grid_size)[x][y]
 
 
 @functools.lru_cache(maxsize=None)
@@ -462,18 +500,12 @@ def site_affinity(seed_type: str, x: int, y: int, grid_size: int = 100) -> float
     """How well the tile (x, y) suits a site of this type, 0 (never) to 1 (the best ground), from the game's own yield table (see the notes above)."""
     from .actions import BIOME_YIELD_MULTIPLIER  # deferred: actions imports this module
 
-    if not (0 <= x < grid_size and 0 <= y < grid_size):
+    if not is_inland(x, y, grid_size):
         return 0.0
     biome = biome_at(x, y)
-    if biome in config.UNBUILDABLE_BIOMES:
-        return 0.0
-    value = BIOME_YIELD_MULTIPLIER.get(_AFFINITY_RESOURCE[seed_type], {}).get(biome, 0.0)
     if seed_type == "lumber":
-        if biome == "forest":
-            return value
-        if biome == "plains" and _distance_to_biomes(grid_size, frozenset({"forest"}))[x][y] <= _NEAR_FOREST_TILES:
-            return value
-        return 0.0
+        return 1.0  # timber stands anywhere valid: forest, plains, desert, the foothills (the owner, 2026-10-06; wood was the bottleneck, so it is plentiful)
+    value = BIOME_YIELD_MULTIPLIER.get(_AFFINITY_RESOURCE[seed_type], {}).get(biome, 0.0)
     if seed_type == "wildlife":
         if biome == "forest":
             return value
@@ -558,8 +590,11 @@ def site_seed_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], .
 
     rng = random.Random(f"site_seed:{seed_type}:{grid_size}")
     placed: list[tuple[int, int, float]] = []  # x, y, the spacing this site demands of its neighbors
+    earlier = [p for t in _GENERATION_ORDER[:_GENERATION_ORDER.index(seed_type)] for p in site_seed_points(t, grid_size)]  # other types already on the map
 
     def far_enough(x: int, y: int, gap: float, parent: tuple[int, int] | None = None) -> bool:
+        if any(math.hypot(x - a, y - b) < _CROSS_TYPE_GAP for a, b in earlier):
+            return False
         # A satellite keeps only a short gap from the site it clusters around (`parent`) and no more than 60% of the spacing any other site demands.
         for ox, oy, o_gap in placed:
             if parent is not None and (ox, oy) == parent:
@@ -576,7 +611,7 @@ def site_seed_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], .
     lo, hi = _STARTER_RING
     for sx, sy in SPAWN_POINTS:
         ring = [(x, y) for x in range(sx - hi, sx + hi + 1) for y in range(sy - hi, sy + hi + 1)
-                if lo <= math.hypot(x - sx, y - sy) <= hi and 0 <= x < grid_size and 0 <= y < grid_size and biome_at(x, y) not in config.UNBUILDABLE_BIOMES]
+                if lo <= math.hypot(x - sx, y - sy) <= hi and is_inland(x, y, grid_size)]
         ring.sort(key=lambda p: (-site_affinity(seed_type, p[0], p[1], grid_size), math.hypot(p[0] - sx, p[1] - sy), rng.random()))
         for x, y in ring:
             if far_enough(x, y, _SATELLITE_GAP):
@@ -607,7 +642,7 @@ def site_seed_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], .
     tight = SITE_DENSITY_BY_TYPE[seed_type][0]
     for _priority, x, y in darts:
         # Prime ground (a forest, a mountain range) is packed at the near spacing everywhere; the thinning with distance from spawn applies to the poorer ground.
-        gap = tight if site_affinity(seed_type, x, y, grid_size) >= 0.9 else _site_spacing_radius(x, y, seed_type, SPAWN_POINTS)
+        gap = tight if (seed_type != "lumber" and site_affinity(seed_type, x, y, grid_size) >= 0.9) else _site_spacing_radius(x, y, seed_type, SPAWN_POINTS)
         if far_enough(x, y, gap):
             add(x, y, gap)
             core.append((x, y))
@@ -676,6 +711,13 @@ class Landscape:
 
     def site_affinity(self, seed_type: str, x: int, y: int) -> float:
         return site_affinity(seed_type, x, y, self.grid_size)
+
+    def is_inland(self, x: int, y: int) -> bool:
+        return is_inland(x, y, self.grid_size)
+
+    def all_live_sites(self) -> list[tuple[int, int]]:
+        """Every live site of every type: what a new site keeps its distance from."""
+        return [p for t in _GENERATION_ORDER for p in self.live_sites(t)]
 
     def live_sites(self, seed_type: str) -> list[tuple[int, int]]:
         """Every site of this type that can still be drawn from: the seeded points and the respawned ones, minus the spent."""
