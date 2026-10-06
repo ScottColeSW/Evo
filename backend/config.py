@@ -404,6 +404,11 @@ NODE_REACH_BEYOND_TERRITORY = 3
 # never stays dead for the rest of the run (2026-10-06: in the nodes A/B two tribes lost their only grove, stone site and hunting ground by cycle 30 to 109, and the spent
 # node's replacement always lands outside every territory, so nothing ever refilled their reach). The delay is a number the owner has not set yet.
 HOMELAND_REFILL_CYCLES = 20
+# A field contest over a node (docs/RESOURCE-NODES-DESIGN.md, 2026-10-06): a tribe that goes to draw from a node a non-allied rival drew from within this many cycles has to
+# win it first. The odds are the same population share (adjusted by Might) a raid uses. The loser draws nothing, does not spend a use, and loses this many people. No
+# settlement is needed on either side; allies share a node freely.
+NODE_CONTEST_WINDOW_CYCLES = 2
+NODE_CONTEST_LOSS_POPULATION = 1
 MAX_SCARCITY = 0.8
 
 # Water (backend/actions.py, backend/eras.py). River tiles yield far more than

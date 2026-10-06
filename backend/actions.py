@@ -168,6 +168,44 @@ def _harvest_node(sim, tribe, resource_key: str, base_yield: int, node) -> int:
     return round(base_yield * biome_factor * _labor_multiplier(tribe.population) * (1 + _item_effect_bonus(tribe, resource_key)))
 
 
+def _node_contest(sim, tribe, node_type: str, node):
+    """A tribe going to a node that a non-allied rival drew from within config.NODE_CONTEST_WINDOW_CYCLES has to win it first (2026-10-06: "make sure proximity battle is
+    working", "the visual battle of might is best"; tribes do not have to be settled for a field conflict). Returns None when there is no contest or the tribe won
+    (the gather goes on), or the result line when it lost: it draws nothing, spends no use, and loses config.NODE_CONTEST_LOSS_POPULATION people. Odds are the raid's:
+    population share, adjusted by Might. The fight rides the skirmish card (backend/skirmish.py)."""
+    key = (node_type, node[0], node[1])
+    last = sim.world.site_last_draw.get(key)
+    if last is None or last[0] == tribe.id or sim.cycle - last[1] > config.NODE_CONTEST_WINDOW_CYCLES:
+        return None
+    rival = sim.tribes.get(last[0])
+    if rival is None or rival.extinct or tribe.stance_toward.get(rival.id) == "ALLIED":
+        return None
+    label = NODE_LABEL_BY_TYPE[node_type]
+    effective = tribe.population * (1 + _created_object_bonus(tribe, "combat_boost"))
+    chance = _might_adjusted_win_chance(tribe, rival, effective / max(1, effective + rival.population))
+    att_pop0, def_pop0 = tribe.population, rival.population
+    won = random.random() < chance
+    lost = 0 if won else config.NODE_CONTEST_LOSS_POPULATION
+    title = f"{tribe.name} and {rival.name} meet at the {label}"
+    outcome = f"{tribe.name} takes the {label}" if won else f"{rival.name} holds the {label} and drives {tribe.name} off"
+    sim.recent_encounters.append({
+        "x": node[0], "y": node[1], "kind": "node_contest", "label": "Contest over a " + label, "outcome": "won" if won else "lost",
+        "skirmish": skirmish(title, tribe.name, rival.name, won, attacker_chance=chance, attacker_force=att_pop0, defender_force=def_pop0,
+                             attacker_lost=lost, outcome=outcome),
+    })
+    if won:
+        tribe.history.append(f"met {rival.name} at the {label} at ({node[0]},{node[1]}) and took it")
+        rival.history.append(f"{tribe.name} came to the {label} at ({node[0]},{node[1]}) and took it from us")
+        return None
+    sim._lose_population(tribe, lost, cause="node_contest")
+    tribe.history.append(f"met {rival.name} at the {label} at ({node[0]},{node[1]}) and was driven off")
+    rival.history.append(f"drove {tribe.name} off the {label} at ({node[0]},{node[1]})")
+    return f"{rival.name} was already working the {label} at ({node[0]},{node[1]}) and drove the party off"
+
+
+NODE_LABEL_BY_TYPE = {"lumber": "timber grove", "quarry": "stone-rich site", "wildlife": "hunting ground"}
+
+
 def _with_node_note(result, note: str):
     """The turn's result with the note about which node it drew from (or the note alone when the gather itself had nothing to add)."""
     if result and note:
@@ -297,6 +335,9 @@ def _gather_wood(sim, tribe, biome, target):
     # multiplier applied once at the point of harvest" shape cooking already uses.
     node = _homeland_node(sim, tribe, "lumber")
     if node is not None:
+        driven_off = _node_contest(sim, tribe, "lumber", node)
+        if driven_off:
+            return driven_off
         amount = _harvest_node(sim, tribe, "wood", 10, node)
     else:
         amount = _harvest(sim, tribe, "wood", 10, biome)
@@ -313,6 +354,9 @@ def _gather_stone(sim, tribe, biome, target):
     # harvested stone" -- mirrors _gather_wood's sawmill multiplier exactly.
     node = _homeland_node(sim, tribe, "quarry")
     if node is not None:
+        driven_off = _node_contest(sim, tribe, "quarry", node)
+        if driven_off:
+            return driven_off
         amount = _harvest_node(sim, tribe, "stone", 10, node)
     else:
         amount = _harvest(sim, tribe, "stone", 10, biome)
@@ -364,6 +408,9 @@ def _hunt_deer(sim, tribe, biome, target):
         return "a wolf pack struck the hunting party"
     node = _homeland_node(sim, tribe, "wildlife")
     if node is not None:
+        driven_off = _node_contest(sim, tribe, "wildlife", node)
+        if driven_off:
+            return driven_off
         base = _harvest_node(sim, tribe, "game", 15, node)
     else:
         base = _harvest(sim, tribe, "game", 15, biome)

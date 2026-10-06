@@ -6749,6 +6749,7 @@ class Simulation:
         key = (node_type, x, y)
         used = self.world.site_uses.get(key, 0) + 1
         self.world.site_uses[key] = used
+        self.world.site_last_draw[key] = (tribe.id, self.cycle)
         label = NODE_LABEL[node_type]
         left = max(0, config.NODE_USES - used)
         if left > 0:

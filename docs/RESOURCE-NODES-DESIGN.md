@@ -134,3 +134,9 @@ A/B harness with a `--knob nodes`. The nudge A/B and the menu-size A/B show the 
 - **Timber anywhere valid** (`site_affinity("lumber")` is 1.0 on any inland ground: forest, plains, desert, foothills), spread evenly instead of clustered, and a grove pays in full wherever it stands (`_harvest_node`); stone and game still pay by their ground.
 - **No overlaps**: types are generated in a fixed order (lumber, wildlife, quarry, mine) and each keeps at least 5 tiles from the earlier ones; a mine sits 5-8 tiles from its quarry; the founding guarantee and respawns keep 4 tiles from every live site and stay inland.
 - Counts now: lumber 48, wildlife 22, quarry 10, mine 11. Quarries and mines are scarcer than before (15 and 20), and mines gate the Dream era, so watch them in the next live run.
+
+## Homeland refill and field contests, 2026-10-06
+
+- **Refill**: when a node in a settled tribe's reach is spent, the founding guarantee (`_ensure_homeland`) re-runs for that tribe `HOMELAND_REFILL_CYCLES` (20) later, so a homeland never stays dead. Types still present in reach are left alone.
+- **Contest** (`actions._node_contest`): a tribe going to a node a non-allied rival drew from within `NODE_CONTEST_WINDOW_CYCLES` (2) must win it first. Odds are a raid's (population share, Might adjusted). The loser draws nothing, spends no use and loses `NODE_CONTEST_LOSS_POPULATION` (1). Allies share freely. No settlement needed. The fight rides the skirmish card (`kind: node_contest`).
+- **Limit**: homeland nodes are the ones within a tribe's own territory reach, so a contest needs two tribes' reaches to overlap the same node. That is rare until parties reach far nodes (still to build); until then most contests will not fire.

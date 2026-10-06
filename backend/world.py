@@ -707,6 +707,7 @@ class Landscape:
         # spent for good, and the sites that appeared elsewhere when one was spent. Keys are (type, x, y) with type "lumber", "quarry" or "wildlife".
         self.site_uses: dict[tuple[str, int, int], int] = {}
         self.exhausted_sites: set[tuple[str, int, int]] = set()
+        self.site_last_draw: dict[tuple[str, int, int], tuple[str, int]] = {}  # (type, x, y) -> (tribe id, cycle) of the latest draw, for field contests
         self.respawned_sites: dict[str, list[tuple[int, int]]] = {}
 
     def site_affinity(self, seed_type: str, x: int, y: int) -> float:
