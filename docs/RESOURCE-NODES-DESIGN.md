@@ -73,6 +73,32 @@ Proposed first version, small and using what exists: a node remembers the last t
 resolved with the existing might comparison (`backend/might.py`); the loser takes nothing from that use and loses a few people (`_record_combat` records it, the usual encounter marker
 is drawn), the winner takes the yield. The use is spent either way. Allies share. This makes a shared node worth contesting without adding a new combat system.
 
+## Update, 2026-10-06: discovery fixed first, and what the replay shows
+
+The owner's read of the 21 to 23 scouting trips with no finds was right: it was not a missing action. Site discovery ran only for a party that reached its target and surveyed
+it, and 40 of the 43 scouting reports in the first 230 cycles came from trips that ended another way. Fixed (`_discover_along_party_ground`, commit `3c6779e`): every stretch of
+ground a party crossed is checked at homecoming, whatever ended the trip. Replaying that run's trips under the new rule (straight-line paths from the chronicle, a conservative
+reading for turn-backs, so approximate): both tribes know one node of every type by cycle 6 to 8 (actually: nothing until cycle 200), and by cycle 100 Tribe 1 would know 13 lumber,
+4 wildlife, 9 quarry and 12 mine sites, Tribe 2 9, 2, 3 and 7. **Wildlife is the scarce one** (19 sites on the whole map), which fits the shared, contested design.
+
+Decisions from the owner this round: the tile fallback stays (it works now); the conflict is a **visual battle of might**; the reach is **territory radius + 3**; field conflict needs no settlement.
+
+**The reach and the discovery rule pull against each other.** Discovery hides every site within territory radius + `MINOR_SETTLEMENT_TERRITORY_BUFFER` (8), so 20 tiles from home;
+reach +3 is 15. No site a scout can find is within reach of a gather. The only nodes within +3 are the homeland sites inside the territory, which discovery hides:
+Tribe 1 has 7 lumber, 2 wildlife, 3 quarry and 4 mine within 15 tiles of home, Tribe 2 has 5, 1, 3 and 6.
+
+So the natural shape is two tiers, with no invented nodes:
+
+- **Homeland nodes (instant gathers):** the real sites inside the territory become known when the territory is founded ("you know the ground you live on"), within reach +3. Three uses each,
+  shared, and the respawn lands outside reach, undiscovered, so the homeland runs down and the tribe has to look further.
+- **Far nodes (parties):** discovered by scouts, 21 tiles and more away. Reached by the parties that already exist (a hunting party to a wildlife site, an exploration party to a grove or
+  quarry), with the same three-use cap and the same exhaustion report. This is also where the party model (3 carrying 5 each, named warriors +20%) belongs.
+- **The tile fallback** covers only what is left: before founding, and when every node in reach is spent. Its yields stay on the depleted tile, so it is never the better choice (the
+  "lazy tribe" trap closes itself).
+
+A homeland wildlife site count of 1 or 2 means about 3 to 6 instant hunts before the homeland game runs out; after that, game comes from hunting parties (a flat 20 to 35 food each at any
+tribe size today), which the models rarely choose (1 in 200 cycles in the live run). That is a design pressure to look at, not a flaw to hide.
+
 ## Open decisions
 
 1. Tile fallback when no known node is in reach (recommended, to avoid a 150-cycle soft lock).
