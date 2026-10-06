@@ -113,3 +113,17 @@ def test_a_real_simulation_samples_each_step_and_builds_the_report_at_game_over(
     assert report["timeline"]["tribes"]["tribe_0"]["cycles"][-1] == sim.cycle
     row = timeline_row(sim.tribes["tribe_0"])
     assert row["pop"] == sim.tribes["tribe_0"].population and tribe_finals(sim.tribes.values())["tribe_0"]["name"] == "A"
+
+
+def test_a_war_that_ends_a_tribe_is_not_a_lead_change_and_its_cost_is_called_the_cost_of_victory():
+    """A real run: the winner of a conquest lost 24,875 people on the last cycle, which briefly put the tribe it was absorbing ahead; that is not a lead change."""
+    t = Timeline()
+    for c in range(1, 101):
+        t.sample(c, {"a": _row("Alpha", 100 + c * 30, era="cognitive_horizon"), "b": _row("Beta", 100 + c * 20, era="cognitive_horizon")})
+    t.sample(101, {"a": _row("Alpha (Advanced)", 400, era="cognitive_horizon", conquests=1)})  # Beta is gone, Alpha paid for the war
+    payload = t.payload()
+    findings = build_findings(payload, {})
+    titles = {f["title"]: f for f in findings}
+    assert "The cost of victory" in titles and "winning a war" in titles["The cost of victory"]["text"]
+    race = titles.get("Wire to wire") or titles.get("A real race")
+    assert race and "101" not in race["text"]  # nothing happened at the final cycle that counts as taking the lead

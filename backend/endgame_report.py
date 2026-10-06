@@ -109,6 +109,8 @@ class Timeline:
             self._event(cycle, tid, name, "extinct", "died out")
         if last["pop"] >= 200 and row["pop"] < last["pop"] * 0.88 and not row["extinct"]:
             hint = row["last_history"] if any(word in row["last_history"].lower() for word in _CAUSE_WORDS) else ""
+            if row["conquests"] > last["conquests"]:
+                hint = "winning a war"
             self._event(cycle, tid, name, "drop", f"lost {last['pop'] - row['pop']:,} people" + (f" ({hint})" if hint else ""))
 
     def payload(self, max_points: int = 220) -> dict:
@@ -195,7 +197,9 @@ def build_findings(payload: dict, finals: dict[str, dict]) -> list[dict]:
 
     # How the lead changed hands, when there were at least two tribes.
     if len(tribes) >= 2:
-        all_cycles = sorted({c for s in tribes.values() for c in s["cycles"]})
+        ends = [e["cycle"] for e in payload["events"] if e["kind"] in ("absorbed", "extinct")]
+        horizon = min(ends) if ends else None  # after a tribe leaves the board the "lead" is an artifact of how it left (a war's cost, a merge)
+        all_cycles = sorted({c for s in tribes.values() for c in s["cycles"] if horizon is None or c < horizon})
         lookup = {tid: dict(zip(s["cycles"], s["pop"])) for tid, s in tribes.items()}
         leader, changes, last_change = None, 0, None
         current = {}
@@ -225,7 +229,9 @@ def build_findings(payload: dict, finals: dict[str, dict]) -> list[dict]:
     drops = [e for e in payload["events"] if e["kind"] == "drop"]
     if drops:
         e = max(drops, key=lambda ev: int("".join(ch for ch in ev["label"].split(" people")[0] if ch.isdigit()) or 0))
-        out.append({"icon": "💥", "title": "The worst blow", "text": f"{e['name']}: {e['label'][0].upper() + e['label'][1:]}, at cycle {e['cycle']}."})
+        victory = "winning a war" in e["label"]
+        out.append({"icon": "⚔️" if victory else "💥", "title": "The cost of victory" if victory else "The worst blow",
+                    "text": f"{e['name']} {e['label'][0].lower() + e['label'][1:]}, at cycle {e['cycle']}."})
 
     # What they actually spent their turns on.
     for tid, counts in payload["actions"].items():
