@@ -20,7 +20,7 @@ def _settled_sim():
 
 def test_the_switch_reads_the_environment_each_call_and_the_tag_set(monkeypatch):
     monkeypatch.delenv("NUDGES", raising=False)
-    assert config.nudge_active("build_hint") is True
+    assert config.nudge_active("build_hint") is False  # off by default since 2026-10-07
     monkeypatch.setenv("NUDGES", "off")
     assert config.nudge_active("build_hint") is False
     assert config.nudge_active("anything_else") is False

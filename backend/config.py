@@ -2912,11 +2912,11 @@ MODEL_FAILURE_STREAK_THRESHOLD = 10
 # text), tested against the "survival" benchmark scenario since that's the one
 # whose whole premise is "don't starve" -- see run_benchmark.py.
 DISABLED_NUDGE_TAGS: set[str] = set()
-# 2026-10-04: the master switch (the owner: "nudges should be turned off with a variable overall in the whole project"). "on" (default, today's
-# behavior) or "off"; the NUDGES environment variable overrides it, read at each call like RUN_DATA_LOG. Off silences every site that goes through
+# 2026-10-04: the master switch (the owner: "nudges should be turned off with a variable overall in the whole project"). "off" is the default
+# since 2026-10-07 (the owner: "the default has to be nudges off"); "on" restores the old prompt text. The NUDGES environment variable overrides it, read at each call like RUN_DATA_LOG. Off silences every site that goes through
 # nudge_active, whatever DISABLED_NUDGE_TAGS holds; the tag set still silences one category at a time with the switch on. Only prompt text is
 # affected: menus, gates and mechanics never read this. Sites are listed, with what is and is not covered yet, in docs/NUDGE-AUDIT.md.
-NUDGES = "on"
+NUDGES = "off"
 
 # 2026-10-05: an experiment, off by default (0). A tribe's menu is capped at this many actions after every filter and the usual ordering: the
 # four basic gathers are always kept and the highest-ranked of the rest fill what is left (Simulation._prepare_turn). The MENU_CAP environment

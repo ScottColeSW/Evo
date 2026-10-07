@@ -7,7 +7,7 @@ what is switched off by the new variable and what is not covered yet.
 
 ## The switch
 
-- `config.NUDGES = "on"` (default, today's behavior). The `NUDGES` environment variable overrides it at each call, like `RUN_DATA_LOG`.
+- `config.NUDGES = "off"` (default since 2026-10-07; `NUDGES=on` restores the prompt text). The `NUDGES` environment variable overrides it at each call, like `RUN_DATA_LOG`.
   `NUDGES=off python run.py --port 8790` silences every gated site below.
 - `config.DISABLED_NUDGE_TAGS` (older, from 2026-09-16) still silences one category at a time with the switch on.
 - `config.nudge_active(tag)` is the one test. `Simulation._nudge(visible_entities, tag, text)` is the helper for the turn builder.
