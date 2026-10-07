@@ -81,6 +81,7 @@ async def game_config(request: web.Request) -> web.Response:
         "crop_harvest_yield_per_plot": config.CROP_HARVEST_YIELD,
         "wall_ring_section_count": config.WALL_RING_SECTION_COUNT,
         "wall_max_layers": config.WALL_MAX_LAYERS,
+        "hazard_landmark_min_spacing": config.HAZARD_LANDMARK_MIN_SPACING,
         "bath_house_upkeep_multiplier": config.BATH_HOUSE_UPKEEP_MULTIPLIER,
         "hatchery_hatch_chance_multiplier": config.HATCHERY_HATCH_CHANCE_MULTIPLIER,
         "coop_lay_chance_multiplier": config.COOP_LAY_CHANCE_MULTIPLIER,

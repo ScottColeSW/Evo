@@ -864,6 +864,7 @@ async function fetchGameConfig() {
     BATTALION_CAPACITY_PER_BARRACKS = cfg.battalion_capacity_per_barracks;
     BARRACKS_MAX_COUNT = cfg.barracks_max_count;
     WALL_MAX_LAYERS = cfg.wall_max_layers;
+    HAZARD_MARKER_SPACING = cfg.hazard_landmark_min_spacing;
     ERA_ORDER = cfg.era_order;
   } catch (e) { /* server not reachable yet -- keep the hardcoded fallbacks */ }
 }
@@ -3610,6 +3611,11 @@ function drawLandmarks() {
   // Floors raised well past anything the terrain/trail layers use, plus a solid
   // (not translucent) backing disc and a heavier ring so a landmark reads as a real,
   // deliberate marker at a glance, not a stray pixel.
+  // 2026-10-07 ("a duplication of the display label for the resources, stacked"): every tribe's lists were drawn on their own, so a site two tribes both know got two
+  // markers and two tags, which claimBubbleSlot then stacked one under the other. Each site is drawn once (the first tribe that knows it keeps it), and a danger marker
+  // within HAZARD_MARKER_SPACING tiles of one already drawn this frame is skipped, the same spacing the backend uses for a tribe's own (config.HAZARD_LANDMARK_MIN_SPACING).
+  const drawnSites = new Set();
+  const drawnDangers = [];
   Object.values(latestState.tribes || {}).forEach(t => {
     LANDMARK_TYPES.forEach(([field, emoji, [ox, oy], label]) => {
       // wildlife_sites/mine_sites entries are {x, y, ...} objects (they carry a
@@ -3617,6 +3623,11 @@ function drawLandmarks() {
       // handle both without needing every list to share one shape.
       (t[field] || []).forEach(entry => {
         const [x, y] = Array.isArray(entry) ? entry : [entry.x, entry.y];
+        const siteKey = `${field}:${x},${y}`;
+        if (drawnSites.has(siteKey)) return;
+        if (field === "hazard_landmarks" && drawnDangers.some(([dx, dy]) => Math.hypot(dx - x, dy - y) < HAZARD_MARKER_SPACING)) return;
+        drawnSites.add(siteKey);
+        if (field === "hazard_landmarks") drawnDangers.push([x, y]);
         const entryLabel = entry && (entry.type || entry.resource || entry.name) ? (entry.type || entry.resource || entry.name) : label;
         let cx = x * TILE + TILE / 2 + ox * TILE;
         let cy = y * TILE + TILE / 2 + oy * TILE;
@@ -4891,6 +4902,7 @@ let BARRACKS_MAX_COUNT = 5;
 // Mirrors backend/config.py's WALL_MAX_LAYERS -- a section is fully reinforced once
 // its tier reaches this cap (backend/city_layout.py.ring_fully_reinforced).
 let WALL_MAX_LAYERS = 2;
+let HAZARD_MARKER_SPACING = 6;  // tiles; from /api/config (config.HAZARD_LANDMARK_MIN_SPACING)
 
 // Mirrors backend/eras.py's ERAS order exactly -- CONSTRUCT_WALL
 // only unlocks at "tribal_synapse", but tribe.wall_rings (Simulation._found_territory)
