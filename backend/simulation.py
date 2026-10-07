@@ -1080,6 +1080,16 @@ GRADUATED_ACTION_UPGRADES = {
 }
 
 
+# 2026-10-07: words a model uses for an action that has another name here. A live run's Pip (gemma3:4b) answered FORTIFY or BUILD_WALL 15 times across the runs on record
+# (its reasoning was always about walls: "bolstering our defenses is paramount"); the parser knew neither word, so a text-similarity guess picked what was applied: RAID
+# six times, CONSTRUCT_WALL six, a hatchery and a barracks once each. Like GRADUATED_ACTION_UPGRADES above, this translates intent that is still legible, and only
+# when the real action is on the menu; otherwise the old ladder runs unchanged.
+ACTION_ALIASES = {
+    "FORTIFY": "CONSTRUCT_WALL", "FORTIFY_WALL": "CONSTRUCT_WALL", "BUILD_WALL": "CONSTRUCT_WALL", "REINFORCE_WALL": "CONSTRUCT_WALL",
+    "STRENGTHEN_WALL": "CONSTRUCT_WALL", "BUILD_WALLS": "CONSTRUCT_WALL", "FORTIFY_WALLS": "CONSTRUCT_WALL",
+}
+
+
 def _resolve_action(raw: str, available_actions: list[str]) -> tuple[str, str | None]:
     """Returns (action_to_apply, unresolved_raw). unresolved_raw is None on any real
     match (exact, normalized, or a confident fuzzy match) -- including a syntactically
@@ -1100,6 +1110,9 @@ def _resolve_action(raw: str, available_actions: list[str]) -> tuple[str, str | 
     normalized = raw.strip().upper().replace(" ", "_").replace("-", "_")
     if normalized in available_actions:
         return normalized, None
+    alias = ACTION_ALIASES.get(normalized)
+    if alias in available_actions:
+        return alias, None
     if normalized in ACTION_REGISTRY:
         # A real action name, just not unlocked/available right now -- a legitimate
         # "can't do that here," not confusion, so no correction nudge fires. If
