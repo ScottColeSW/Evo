@@ -865,6 +865,8 @@ async function fetchGameConfig() {
     BARRACKS_MAX_COUNT = cfg.barracks_max_count;
     WALL_MAX_LAYERS = cfg.wall_max_layers;
     HAZARD_MARKER_SPACING = cfg.hazard_landmark_min_spacing;
+    VESSEL_WOOD_COST = cfg.vessel_wood_cost;
+    VESSEL_STONE_COST = cfg.vessel_stone_cost;
     ERA_ORDER = cfg.era_order;
   } catch (e) { /* server not reachable yet -- keep the hardcoded fallbacks */ }
 }
@@ -4902,6 +4904,8 @@ let BARRACKS_MAX_COUNT = 5;
 // Mirrors backend/config.py's WALL_MAX_LAYERS -- a section is fully reinforced once
 // its tier reaches this cap (backend/city_layout.py.ring_fully_reinforced).
 let WALL_MAX_LAYERS = 2;
+let VESSEL_WOOD_COST = 2500;  // from /api/config
+let VESSEL_STONE_COST = 2500;
 let HAZARD_MARKER_SPACING = 6;  // tiles; from /api/config (config.HAZARD_LANDMARK_MIN_SPACING)
 
 // Mirrors backend/eras.py's ERAS order exactly -- CONSTRUCT_WALL
@@ -5301,6 +5305,13 @@ function farmingPanel(t) {
     } else {
       industry.push("🛠️ Dream Manifestation Machine — nothing manifested yet");
     }
+  }
+  // 2026-10-07 ("I saw them choose Build_vessel but never say it in the sidebar"): the vessel is built over several BUILD_VESSEL turns (backend: vessel_wood_paid/
+  // vessel_stone_paid toward the cost), and the sidebar only knew the finished flag, so a hull going up showed nothing until it was done.
+  if (t.vessel_built) {
+    industry.push("🚢 Vessel — built, ready to depart");
+  } else if ((t.vessel_wood_paid || 0) + (t.vessel_stone_paid || 0) > 0) {
+    industry.push(`🚢 Vessel — hull under construction: ${t.vessel_wood_paid || 0}/${VESSEL_WOOD_COST} wood, ${t.vessel_stone_paid || 0}/${VESSEL_STONE_COST} stone`);
   }
 
   // Explicit request, 2026-09-11: "Barracks and Battalion... should be in this new
