@@ -3380,50 +3380,28 @@ def _alliance_backfire_skirmish(sim, tribe, rival, was_already_at_war: bool) -> 
 
     attacker_start_population = tribe.population
     defender_start_population = rival.population
-    attacker_might = compute_might(tribe)
-    defender_might = compute_might(rival)
-    attacker_armed = _armed_count(tribe)
-    defender_armed = _armed_count(rival)
 
     win_chance = tribe.population / max(1, tribe.population + rival.population)
     win_chance = _might_adjusted_win_chance(tribe, rival, win_chance)
     tribe_won = random.random() < win_chance
     winner, loser = (tribe, rival) if tribe_won else (rival, tribe)
-    sim._lose_population(
-        loser, round(loser.population * config.ALLIANCE_BACKFIRE_LOSER_POPULATION_LOSS_FRACTION),
-        cause="alliance_backfire",
-    )
-    sim._lose_population(
-        winner, round(winner.population * config.ALLIANCE_BACKFIRE_WINNER_POPULATION_LOSS_FRACTION),
-        cause="alliance_backfire",
-    )
-
-    die, die_target, die_effective_pct = _pick_battle_die(win_chance)
-    die_roll = random.randint(die_target, die) if tribe_won else random.randint(1, die_target - 1)
-    battle_record = {
-        "attacker_name": tribe.name, "defender_name": rival.name,
-        "attacker_color": tribe.color, "defender_color": rival.color,
-        "attacker_start_population": attacker_start_population, "defender_start_population": defender_start_population,
-        "attacker_might": attacker_might, "defender_might": defender_might,
-        "attacker_armed": attacker_armed, "defender_armed": defender_armed,
-        "rounds": [{
-            "round": 1, "attacker_won": tribe_won,
-            "attacker_population": tribe.population, "defender_population": rival.population,
-            "die": die, "die_target": die_target, "die_roll": die_roll, "die_effective_pct": die_effective_pct,
-        }],
-        # No merge either way -- "stalemate" is the frontend outcome key that
-        # already reads as "both battered, both still standing," which is
-        # exactly what happens here regardless of which side wins the roll.
-        "outcome": "stalemate",
-    }
+    loser_loss = round(loser.population * config.ALLIANCE_BACKFIRE_LOSER_POPULATION_LOSS_FRACTION)
+    winner_loss = round(winner.population * config.ALLIANCE_BACKFIRE_WINNER_POPULATION_LOSS_FRACTION)
+    sim._lose_population(loser, loser_loss, cause="alliance_backfire")
+    sim._lose_population(winner, winner_loss, cause="alliance_backfire")
     _record_combat(tribe, "Alliance Backfire", "won" if tribe_won else "lost")
     _record_combat(rival, "Alliance Backfire", "lost" if tribe_won else "won")
     sim.trauma.radiate_event_wave(rival.x, rival.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
     sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
+    # 2026-10-07 (the owner): a one-round skirmish from a botched overture is shown on the skirmish card, not the full-screen WAR splash, which stays for DECLARE_CONQUEST.
+    # No merge either way: both tribes are battered and both still stand.
     sim.recent_encounters.append({
-        "x": rival.x, "y": rival.y, "kind": "tribe_conquest_battle",
-        "label": f"{tribe.name}'s peace offer to {rival.name} backfires into open war",
-        "outcome": "stalemate", "battle": battle_record,
+        "x": rival.x, "y": rival.y, "kind": "alliance_backfire",
+        "label": f"{tribe.name}'s peace offer to {rival.name} backfires into open war", "outcome": "won" if tribe_won else "lost",
+        "skirmish": skirmish(f"{tribe.name}'s peace offer to {rival.name} backfires", tribe.name, rival.name, tribe_won, attacker_chance=win_chance,
+                             attacker_force=attacker_start_population, defender_force=defender_start_population,
+                             attacker_lost=winner_loss if tribe_won else loser_loss, defender_lost=loser_loss if tribe_won else winner_loss,
+                             outcome=f"{winner.name} gets the better of it; both tribes are battered"),
     })
     aftermath = "the war continues" if was_already_at_war else "war breaks out instead"
     return (

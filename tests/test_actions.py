@@ -5242,9 +5242,29 @@ def test_declare_alliance_backfires_into_war_when_starving():
     assert b.stance_toward["tribe_0"] == "WAR"
     assert "backfires into open war" in result or "fighting erupts" in result
     assert a.pending_cultural_crossover is None  # no alliance was actually formed
-    assert sim.recent_encounters[-1]["kind"] == "tribe_conquest_battle"
-    assert sim.recent_encounters[-1]["battle"]["outcome"] == "stalemate"
-    assert len(sim.recent_encounters[-1]["battle"]["rounds"]) == 1
+    assert sim.recent_encounters[-1]["kind"] == "alliance_backfire"  # the skirmish card, not the full-screen WAR splash (2026-10-07)
+    card = sim.recent_encounters[-1]["skirmish"]
+    assert card["attacker"] == "Forest Tribe" and card["defender"] == "Mountain Tribe" and card["attacker_force"] == 100 and card["defender_force"] == 100
+    assert card["attacker_lost"] > 0 and card["defender_lost"] > 0
+    assert not any(e["kind"] == "tribe_conquest_battle" for e in sim.recent_encounters)
+
+
+def test_a_second_peace_offer_at_war_still_fires_another_clash():
+    """2026-10-07 (the owner asked for a guard against this, then withdrew the request): the repeat offer at war stays as designed."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.discovered_rivals.add("tribe_1")
+    a.barracks_built = 1
+    a.population = b.population = 100
+    a.wellbeing = {"tiers": {"physiological": 0.0}}
+    a.stance_toward["tribe_1"] = b.stance_toward["tribe_0"] = "WAR"
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
+    assert [e["kind"] for e in sim.recent_encounters] == ["alliance_backfire"]
 
 
 def test_alliance_backfire_costs_population_but_never_merges_either_tribe():
