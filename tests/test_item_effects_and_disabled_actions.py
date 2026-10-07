@@ -93,16 +93,19 @@ def test_the_forge_message_says_what_the_new_item_does():
     assert "Iron Plow" in message and config.ITEM_EFFECT_TEXT["food"] in message
 
 
-def test_redeeming_an_item_gives_its_effect_up():
+def test_use_item_never_consumes_an_item_that_carries_an_effect():
+    """2026-10-07: a live run's Chief chose USE_ITEM five times to "leverage the Dream Manifestation Machine" and burned a Forged Hoe, an Iron Plow and a Pressure Valve for
+    0 to 6 wood and stone, each giving up a permanent bonus. Every forged item has an effect (weapons arm the battalion), so none can be redeemed; a trade still hands them over."""
+    from backend import config
     from tests.test_actions import _bare_simulation
+    from backend.simulation import AFFORDABILITY_CHECKS
 
     sim, tribe = _bare_simulation(), _tribe()
-    tribe.items = [_item("Iron Plow")]
-    with_plow = _food_multiplier(tribe)
-
-    ACTION_REGISTRY["USE_ITEM"](sim, tribe, "plains", _NO_TARGET)
-
-    assert tribe.items == [] and _food_multiplier(tribe) < with_plow
+    tribe.items = [_item(name) for name in config.ITEM_EFFECT_BY_NAME] + [_item("War Hammer")]
+    with_all = _food_multiplier(tribe)
+    assert AFFORDABILITY_CHECKS["USE_ITEM"](tribe, sim.world) is False
+    assert ACTION_REGISTRY["USE_ITEM"](sim, tribe, "plains", _NO_TARGET) is None
+    assert len(tribe.items) == len(config.ITEM_EFFECT_BY_NAME) + 1 and _food_multiplier(tribe) == with_all
 
 
 def test_a_disabled_action_is_in_the_era_table_but_in_no_menu():

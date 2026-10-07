@@ -1506,7 +1506,7 @@ def _forge_item(sim, tribe, biome, target):
     if not tribe.forge_built:
         return None
     if len(tribe.items) >= _item_storage_cap(tribe):
-        return "the item stores are already full -- USE_ITEM or a TRADE must free up room before another can be forged"
+        return "the item stores are already full -- a TRADE must free up room before another can be forged"
     if tribe.unique_resources.get(tribe.mine_resource_name, 0) < config.FORGE_ITEM_ORE_COST:
         return None
     if tribe.wood < config.FORGE_ITEM_WOOD_COST:
@@ -1527,14 +1527,24 @@ def _forge_item(sim, tribe, biome, target):
     return f"the forge produces a {item_name} ({item_type}) -- {tribe.mine_resource_name} well spent{effect_note}"
 
 
+def _redeemable_items(tribe) -> list[dict]:
+    """The crafted items USE_ITEM may redeem: only a plain one that carries no standing effect (2026-10-07). A live run's Chief wrote that it would "leverage the Dream
+    Manifestation Machine" and chose USE_ITEM five times, burning a Forged Hoe, an Iron Plow and a Pressure Valve for 0 to 6 wood and stone (its stores were full), each one
+    giving up a permanent bonus. Every item the forge makes has an effect (config.ITEM_EFFECT_BY_NAME, and a weapon arms the battalion), so redeeming one is almost always a
+    loss; those stay with the tribe until a trade hands them over."""
+    return [item for item in tribe.items if item["name"] not in config.ITEM_EFFECT_BY_NAME and item.get("type") != "weapon"]
+
+
 def _use_item(sim, tribe, biome, target):
     """Redeems the oldest crafted item for its stored value -- split across wood and
     stone, the straightforward cash-out for a value that would otherwise just sit on
     the tribe forever. No durability/degradation to model, so using an item is a
     one-shot conversion, not a repeatable wear-down."""
-    if not tribe.items:
+    redeemable = _redeemable_items(tribe)
+    if not redeemable:
         return None
-    item = tribe.items.pop(0)
+    item = redeemable[0]
+    tribe.items.remove(item)
     stone_gain_nominal = round(item["value"] * config.USE_ITEM_STONE_SHARE)
     wood_gain_nominal = item["value"] - stone_gain_nominal
     # Code-quality pass: this used to add straight to tribe.wood/stone with no
@@ -3785,7 +3795,7 @@ ACTION_DESCRIPTIONS = {
     "TRAIN_BATTALION": "Train soldiers for your Battalion -- only possible once a Barracks stands. Costs food, not wood/stone. Built up over several turns like a wall section, not finished in one -- more people trains faster. Repeatable up to your Barracks' own capacity. A Warrior to lead it is named automatically the moment anyone earns a trophy -- no separate action needed.",
     "BUILD_FORGE": "Build a forge using stored wood and stone -- only possible once a mine stands and at least one unit of its ore is already in stock. A one-time, permanent structure: from then on, ore can be worked into real tools, weapons, and inventions.",
     "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. No durability to track: each item just carries a flat value, usable later or given away in a trade.",
-    "USE_ITEM": "Redeem your oldest crafted item for its stored value, converted into wood and stone. The item's own effect (a plow or hoe brings in more food, a whetstone or chisel more stone, a bow or spearhead more game, an axe more wood, a wheel faster travel, and so on; any weapon also arms the battalion) is lost. Does nothing if you have no items.",
+    "USE_ITEM": "Redeem your oldest plain crafted item for its stored value, converted into wood and stone. Only an item with no standing effect can be redeemed: a plow or hoe (more food), a whetstone or chisel (more stone), a bow or spearhead (more game), an axe (more wood), a wheel (faster travel), any weapon (it arms the battalion) and the rest keep working for the tribe until a trade hands them over. Does nothing if no item is plain.",
     "BUILD_DMM": "Build the Dream Manifestation Machine (DMM) using stored wood and stone -- a one-time, permanent factory that lets the tribe start making the Chief's dreams real.",
     "CREATE_ITEM": "Design and craft a genuinely new item at the DMM -- a real, permanent effect (a bonus to gathering, combat, defense, celebrations, exploration speed, or an immediate population grant), shaped by whatever the Chief has lately dreamed of, or picked for you otherwise. Only possible once the DMM stands, and it rests 10 days between uses.",
     "CREATE_USEFUL_STRUCTURE": "Design and build a genuinely new structure at the DMM -- same real, permanent effects as CREATE_ITEM, but a building instead of a portable item. Only possible once the DMM stands, and it rests 10 days between uses.",

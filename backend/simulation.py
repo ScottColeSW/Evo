@@ -15,7 +15,7 @@ from .actions import (
     _battalion_capacity, _conquest_ready, _created_object_bonus, _dmm_ready, _eligible_breeding_pair, _expedition_speed_bonus,
     _food_multiplier, _forge_item, _plant_crop_cost,
     _generate_raider_name, _has_room_to_grow, _is_departure_dream, _item_storage_cap, _labor_multiplier,
-    _long_house_fur_discount, _might_adjusted_win_chance, _mutual_ally_at_top_era, _raider_might_modifier, _push_past_visited_ground, _record_combat,
+    _long_house_fur_discount, _might_adjusted_win_chance, _mutual_ally_at_top_era, _raider_might_modifier, _push_past_visited_ground, _record_combat, _redeemable_items,
     _storage_cap, _sustainable_population, _territory_has_nearby_threats, _warehouse_upgrade_ready,
     expedition_capacity,
 )
@@ -961,7 +961,7 @@ AFFORDABILITY_CHECKS = {
     # Gating audit, 2026-09-08: same missed-plain-boolean shape as
     # STRIKE_RAIDER_CAMP/EXPEL_RAIDERS_FROM_TERRITORY above -- actions._use_item's
     # own guard is just "does the tribe have any items at all," never wired in here.
-    "USE_ITEM": lambda t, w: bool(t.items),
+    "USE_ITEM": lambda t, w: bool(_redeemable_items(t)),
     # Both a real resource cost AND config.ITEM_STORAGE_CAP_BASE's own ceiling --
     # see _forge_item's matching "item stores are already full" no-op message.
     "FORGE_ITEM": lambda t, w: (
@@ -9401,7 +9401,7 @@ class Simulation:
             if not tribe.item_stores_full_notified:
                 tribe.item_stores_full_notified = True
                 tribe.history.append(
-                    "the item stores are already full -- USE_ITEM or a TRADE must free up room before another can be forged"
+                    "the item stores are already full -- a TRADE must free up room before another can be forged"
                 )
             return
         tribe.item_stores_full_notified = False

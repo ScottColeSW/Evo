@@ -2361,17 +2361,18 @@ def test_use_item_converts_value_to_wood_and_stone():
 
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Mountain Tribe", "gemma2:2b", 50, 50, "#c084fc")
-    tribe.items = [{"name": "War Hammer", "type": "weapon", "value": config.ITEM_VALUE_BY_TYPE["weapon"], "cycle_made": 1}]
+    # 2026-10-07: only a plain item (no standing effect) can be redeemed; a made-up curio stands in for one, since every forged item has an effect.
+    tribe.items = [{"name": "Curio", "type": "tool", "value": config.ITEM_VALUE_BY_TYPE["tool"], "cycle_made": 1}]
     wood_before, stone_before = tribe.wood, tribe.stone
 
     result = ACTION_REGISTRY["USE_ITEM"](sim, tribe, "plains", _NO_TARGET)
 
     assert tribe.items == []
-    stone_gain = round(config.ITEM_VALUE_BY_TYPE["weapon"] * config.USE_ITEM_STONE_SHARE)
-    wood_gain = config.ITEM_VALUE_BY_TYPE["weapon"] - stone_gain
+    stone_gain = round(config.ITEM_VALUE_BY_TYPE["tool"] * config.USE_ITEM_STONE_SHARE)
+    wood_gain = config.ITEM_VALUE_BY_TYPE["tool"] - stone_gain
     assert tribe.wood == wood_before + wood_gain
     assert tribe.stone == stone_before + stone_gain
-    assert "War Hammer" in result
+    assert "Curio" in result
 
 
 def test_use_item_is_a_no_op_with_no_items():
@@ -5830,6 +5831,8 @@ def test_can_afford_use_item_matches_the_action_itself():
     assert AFFORDABILITY_CHECKS["USE_ITEM"](tribe, sim.world) is False
 
     tribe.items = [{"name": "Iron Spearhead", "type": "weapon", "value": 12, "cycle_made": 1}]
+    assert AFFORDABILITY_CHECKS["USE_ITEM"](tribe, sim.world) is False  # it carries an effect, so it is not redeemable (2026-10-07)
+    tribe.items = [{"name": "Curio", "type": "tool", "value": 8, "cycle_made": 1}]
     assert AFFORDABILITY_CHECKS["USE_ITEM"](tribe, sim.world) is True
 
 
