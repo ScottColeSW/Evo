@@ -437,6 +437,40 @@ def _is_water_secure(tribe) -> bool:
     return tribe.well_built or len(tribe.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD
 
 
+def locked_building_facts(tribe, world, unlocked_actions) -> list[str]:
+    """Plain facts about a building the tribe's era has unlocked but its situation does not yet allow, with what is missing and what it has (2026-10-07, after a
+    live run: Flinx held 251 of another tribe's ore and wanted a forge for about 180 cycles, but the forge needs ore from its own mine, which only flows after one
+    GATHER_ORE, and nothing said so; its Chief wrote "UPGRADE_LONG_HOUSE: to address the lack of a forge"). Facts, not a nudge: it says what stands in the way and
+    never what to do, and it is not switched off by NUDGES. Covers the forge and the mine, the two whose missing piece is not just wood and stone."""
+    facts = []
+    if "BUILD_FORGE" in unlocked_actions and tribe.mine_built and not tribe.forge_built and not AFFORDABILITY_CHECKS["BUILD_FORGE"](tribe, world):
+        ore = tribe.mine_resource_name or "ore"
+        missing = []
+        have = tribe.unique_resources.get(tribe.mine_resource_name, 0)
+        if have < config.FORGE_ITEM_ORE_COST:
+            missing.append(f"{config.FORGE_ITEM_ORE_COST} {ore} from your own mine (you have {have}"
+                           + ("; the mine has not been worked yet, so none flows in" if not tribe.ore_ever_gathered else "") + ")")
+        if tribe.wood < config.FORGE_WOOD_COST:
+            missing.append(f"{config.FORGE_WOOD_COST} wood (you have {tribe.wood})")
+        if tribe.stone < config.FORGE_STONE_COST:
+            missing.append(f"{config.FORGE_STONE_COST} stone (you have {tribe.stone})")
+        if not missing:
+            missing.append("room inside the territory for its footprint")
+        facts.append("A forge cannot be built yet: it needs " + "; ".join(missing) + ".")
+    if "BUILD_MINE" in unlocked_actions and not tribe.mine_built and not AFFORDABILITY_CHECKS["BUILD_MINE"](tribe, world):
+        missing = []
+        if not tribe.mine_sites:
+            missing.append("a known vein (none has been found)")
+        if tribe.wood < config.MINE_WOOD_COST:
+            missing.append(f"{config.MINE_WOOD_COST} wood (you have {tribe.wood})")
+        if tribe.stone < config.MINE_STONE_COST:
+            missing.append(f"{config.MINE_STONE_COST} stone (you have {tribe.stone})")
+        if not missing:
+            missing.append("room inside the territory for its footprint")
+        facts.append("A mine cannot be built yet: it needs " + "; ".join(missing) + ".")
+    return facts
+
+
 def _is_battle_ready(tribe) -> bool:
     """Explicit request, 2026-09-10: "limit the actions available to only
     Declare_Conquest... when they are both 'battle-ready'." A real, checkable
@@ -5716,6 +5750,7 @@ class Simulation:
                 f"The mine stands ready -- gathering ore here would bring in the first real supply of "
                 f"{tribe.mine_resource_name}."
             )
+        visible_entities.extend(locked_building_facts(tribe, self.world, unlocked_actions_through(tribe.era)))
         if "BUILD_FORGE" in available_actions and not tribe.forge_built and tribe.mine_built:
             ore_in_stock = tribe.unique_resources.get(tribe.mine_resource_name, 0)
             if ore_in_stock >= config.FORGE_ITEM_ORE_COST:
