@@ -1626,6 +1626,22 @@ def _might_adjusted_win_chance(tribe, rival, base_win_chance: float) -> float:
     )
 
 
+def _raider_might_modifier(sim, tribe) -> float:
+    """Raiders have no Battalion of their own, so their strength is the average Might of the living tribes (2026-10-07, the owner: "raiders strength/odds are not
+    scaled to the average of both tribes Might value"). A tribe's odds against them shift by the same log-ratio the tribe-versus-tribe fights use: above the average
+    it has the edge, below it the raiders do, and at the average nothing changes. 0 while nobody has a Battalion, so a world that has not touched Military plays
+    exactly as before."""
+    living = [t for t in sim.tribes.values() if not t.extinct]
+    if not living:
+        return 0.0
+    average = sum(compute_might(t) for t in living) / len(living)
+    mine = compute_might(tribe)
+    if average == 0 and mine == 0:
+        return 0.0
+    ratio = max(1, mine) / max(1, average)
+    return max(config.MIGHT_MODIFIER_MIN, min(config.MIGHT_MODIFIER_MAX, math.log2(ratio) * config.MIGHT_MODIFIER_LOG2_SCALE))
+
+
 def _build_dmm(sim, tribe, biome, target):
     """DMM (Dream Manifestation Machine) era's signature building -- the
     factory that lets a tribe start making the Chief's dreams real. Renamed
@@ -2882,6 +2898,7 @@ def _strike_raider_camp(sim, tribe, biome, target):
         config.STRIKE_RAIDER_CAMP_BASE_WIN_CHANCE
         + (tribe.population // 10) * config.STRIKE_RAIDER_CAMP_POPULATION_BONUS_PER_10,
     )
+    win_chance = max(config.MIGHT_ADJUSTED_WIN_CHANCE_FLOOR, min(config.MIGHT_ADJUSTED_WIN_CHANCE_CEILING, win_chance + _raider_might_modifier(sim, tribe)))
     if random.random() < win_chance:
         tribe.raider_sightings.remove(camp)
         # Live bug, same shape as Simulation._resolve_raider_attack's own fix:
@@ -2957,6 +2974,7 @@ def _expel_raiders_from_territory(sim, tribe, biome, target):
             config.EXPEL_RAIDERS_BASE_WIN_CHANCE
             + (tribe.population // 10) * config.EXPEL_RAIDERS_WIN_CHANCE_POPULATION_BONUS_PER_10,
         )
+        win_chance = max(config.MIGHT_ADJUSTED_WIN_CHANCE_FLOOR, min(config.MIGHT_ADJUSTED_WIN_CHANCE_CEILING, win_chance + _raider_might_modifier(sim, tribe)))
         if random.random() < win_chance:
             tribe.raiders_approaching = None
             # Code-quality pass: uncapped tribe.food += -- same bug class as the

@@ -15,7 +15,7 @@ from .actions import (
     _battalion_capacity, _conquest_ready, _created_object_bonus, _dmm_ready, _eligible_breeding_pair, _expedition_speed_bonus,
     _food_multiplier, _forge_item, _plant_crop_cost,
     _generate_raider_name, _has_room_to_grow, _is_departure_dream, _item_storage_cap, _labor_multiplier,
-    _long_house_fur_discount, _might_adjusted_win_chance, _mutual_ally_at_top_era, _push_past_visited_ground, _record_combat,
+    _long_house_fur_discount, _might_adjusted_win_chance, _mutual_ally_at_top_era, _raider_might_modifier, _push_past_visited_ground, _record_combat,
     _storage_cap, _sustainable_population, _territory_has_nearby_threats, _warehouse_upgrade_ready,
     expedition_capacity,
 )
@@ -8524,6 +8524,8 @@ class Simulation:
             # _created_object_bonus.
             + _created_object_bonus(tribe, "defense_boost")
             - config.RAIDER_STRENGTH_DEFENSE_PENALTY_AT_MAX * raider_strength
+            # 2026-10-07: raiders are as strong as the average tribe's Might; this tribe's own Might against that average shifts its defense (see actions._raider_might_modifier).
+            + _raider_might_modifier(self, tribe)
         ))
         if random.random() < defense_chance:
             tribe.raids_defended += 1
