@@ -2869,6 +2869,7 @@ LANDMARK_RESOURCE_NAMES = (
 # separate, chance-based death roll (see each hazard function's own
 # HAZARD_CHANCE) -- merely knowing the ground is dangerous doesn't require
 # losing someone first.
+HAZARD_LANDMARK_MIN_SPACING = 6  # tiles: a new hazard marker is not made within this distance of one the tribe already has (2026-10-07)
 HAZARD_LANDMARK_NAMES = (
     "Widow's Reach", "Skull Hollow", "The Bleeding Ground", "Deadfall Ridge",
     "Cursed Hollow", "The Gnawed Bones", "Ashen Scar", "The Last Warning",

@@ -7765,9 +7765,12 @@ class Simulation:
         Landmarks already use against tribe.landmarks) so a lingering party
         doesn't re-report the same known-dangerous tile every single day --
         "no party should ever linger.\""""
-        if any(lm["x"] == x and lm["y"] == y for lm in tribe.hazard_landmarks):
+        # 2026-10-07: a hazard already marked within HAZARD_LANDMARK_MIN_SPACING tiles counts as this one (one live run ended with 29 markers piled along the coast,
+        # half within 3 tiles of another, because only the exact tile was deduplicated). The name is one this tribe has not used yet while any remain.
+        if any(math.hypot(lm["x"] - x, lm["y"] - y) < config.HAZARD_LANDMARK_MIN_SPACING for lm in tribe.hazard_landmarks):
             return
-        name = random.choice(config.HAZARD_LANDMARK_NAMES)
+        used = {lm["name"] for lm in tribe.hazard_landmarks}
+        name = random.choice([n for n in config.HAZARD_LANDMARK_NAMES if n not in used] or list(config.HAZARD_LANDMARK_NAMES))
         # hazard_label carried forward from 2026-09-13 onward -- previously only used
         # for the one-time chronicle line below, discarded otherwise, so a durable
         # fact about this danger (see _prepare_turn) could only ever show the random

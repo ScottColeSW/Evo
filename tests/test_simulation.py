@@ -15856,3 +15856,26 @@ def test_the_both_battle_ready_lock_keeps_depart_when_a_vessel_stands():
 
     assert "DEPART" in ctx["available_actions"]
     assert set(ctx["available_actions"]) <= {"DECLARE_CONQUEST", "DEPART"}
+
+
+def test_a_hazard_near_one_already_marked_is_not_marked_again():
+    """2026-10-07: a live run ended with 29 hazard markers piled along the coast, half within 3 tiles of another (only the exact tile was deduplicated)."""
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    sim._landmark_hazard(tribe, 10, 20, "loose cliffside rock")
+    sim._landmark_hazard(tribe, 10 + config.HAZARD_LANDMARK_MIN_SPACING - 1, 20, "loose cliffside rock")  # beside the first
+    assert len(tribe.hazard_landmarks) == 1
+    sim._landmark_hazard(tribe, 10 + config.HAZARD_LANDMARK_MIN_SPACING, 20, "loose cliffside rock")  # far enough to be its own marker
+    assert len(tribe.hazard_landmarks) == 2
+
+
+def test_hazard_names_are_not_reused_until_every_name_has_been():
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    for i in range(len(config.HAZARD_LANDMARK_NAMES)):
+        sim._landmark_hazard(tribe, 5 + i * 10, 5, "a volcano")
+    assert {lm["name"] for lm in tribe.hazard_landmarks} == set(config.HAZARD_LANDMARK_NAMES)
