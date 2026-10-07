@@ -342,6 +342,10 @@ ENDGAME_RESOLUTION_ACTIONS = {
     # tribe in the last era with a living rival could not build the vessel, gather the wood and stone it needs, or depart (found when a live
     # trial departed only because it had no rival). The gathers are filtered back out by the usual rule once a build can be paid.
     "BUILD_VESSEL", "DEPART", "GATHER_WOOD", "GATHER_STONE",
+    # 2026-10-07: a raider camp inside the clearing radius strips every BUILD_* action (the territory lock) and leaves CLEAR_TERRITORY as the way past it, and this lock then
+    # stripped CLEAR_TERRITORY too. A live run's tribe sat in the departure era with its vessel at 2000/2500, a camp just inside its grown territory, and a menu of
+    # TRAIN_BATTALION and DECLARE_CONQUEST: it could not clear the camp or finish the vessel, and ended on conquest.
+    "CLEAR_TERRITORY",
 } | SURVIVAL_CRISIS_ACTIONS
 
 # 2026-10-04 (the owner: at this point food, water and shelter are secure and the land is mostly spent; they need to expand, which leads to
