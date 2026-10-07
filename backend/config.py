@@ -681,6 +681,13 @@ MAX_WALL_RINGS = 2
 # section is tolerated before _choose_territory_center goes looking for
 # somewhere less water-dominated.
 TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS = 1
+# 2026-10-07 (the owner, about a live run's Tribe 1: its boundary crossed the river twice and 15% of the circle was river): the barrier rule above only counts wall
+# sections, not how much of the ground inside is open water, so a territory could keep most of the river's course and lose a seventh of its land. After that rule picks a
+# center, the search also considers any center within TERRITORY_WATER_REFINE_MAX_SHIFT tiles of where the tribe stands (so the tribe stays inside its own ring, and well
+# short of the 12-tile move that once read as the city teleporting) and takes the one with the least unbuildable ground inside the ring, but only if that is at least
+# TERRITORY_WATER_REFINE_MIN_GAIN (as a share of the ring's tiles) better than the first pick, so a tribe on dry ground does not move.
+TERRITORY_WATER_REFINE_MAX_SHIFT = 11
+TERRITORY_WATER_REFINE_MIN_GAIN = 0.03
 
 # CONSTRUCT_WALL's expansion fallback unlocks exactly one new wall section per
 # call, in fixed compass order -- "expansion must be done for each wall section,"

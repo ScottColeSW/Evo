@@ -9874,8 +9874,43 @@ class Simulation:
                 if best_count is None or count < best_count:
                     best_center, best_count = (cx, cy), count
                 if count <= config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS:
-                    return (cx, cy)
+                    return self._refine_center_for_water(tribe, (cx, cy), count)
         return best_center
+
+    def _unbuildable_share(self, cx: int, cy: int) -> float:
+        """The share of the tiles inside ring 0's circle around (cx, cy) that are unbuildable (open water, cliffs, ...)."""
+        radius = config.WALL_RING_RADIUS_STEP
+        total = wet = 0
+        for x in range(cx - radius, cx + radius + 1):
+            for y in range(cy - radius, cy + radius + 1):
+                if math.hypot(x - cx, y - cy) <= radius and 0 <= x < self.world.grid_size and 0 <= y < self.world.grid_size:
+                    total += 1
+                    wet += self.world.biome(x, y) in config.UNBUILDABLE_BIOMES
+        return wet / total if total else 0.0
+
+    def _refine_center_for_water(self, tribe: Tribe, center: tuple[int, int], barriers: int) -> tuple[int, int]:
+        """See config.TERRITORY_WATER_REFINE_MAX_SHIFT: from the center the barrier rule chose, look within that many tiles of the tribe for one with clearly less open
+        water inside the ring (and no more natural-barrier sections than the cap), and take it only if it gains at least TERRITORY_WATER_REFINE_MIN_GAIN. Candidates are
+        tried best first, so the costlier ring build runs only for the few that are in the running."""
+        reach = config.TERRITORY_WATER_REFINE_MAX_SHIFT
+        current = self._unbuildable_share(*center)
+        if current < config.TERRITORY_WATER_REFINE_MIN_GAIN:
+            return center
+        candidates = []
+        for x in range(tribe.x - reach, tribe.x + reach + 1):
+            for y in range(tribe.y - reach, tribe.y + reach + 1):
+                if (x, y) == tuple(center) or math.hypot(x - tribe.x, y - tribe.y) > reach or self.world.biome(x, y) in config.UNBUILDABLE_BIOMES:
+                    continue
+                if not (0 <= x < self.world.grid_size and 0 <= y < self.world.grid_size):
+                    continue
+                candidates.append((self._unbuildable_share(x, y), math.hypot(x - tribe.x, y - tribe.y), x, y))
+        for share, _distance, x, y in sorted(candidates):
+            if current - share < config.TERRITORY_WATER_REFINE_MIN_GAIN:
+                break
+            ring = city_layout.build_ring(self.world, (x, y), ring_index=0)
+            if sum(1 for sec in ring["sections"] if sec["natural_barrier"]) <= max(config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS, barriers):
+                return (x, y)
+        return center
 
     def _found_territory(self, tribe: Tribe) -> None:
         """Grants a real, owned territory the instant a tribe first qualifies as
