@@ -1270,9 +1270,9 @@ MIGHT_TRAINING_BONUS = 0.25
 # used at all), the modifier is exactly 0 -- ordinary RAID/DECLARE_CONQUEST
 # behavior for every tribe that hasn't touched Military stays completely
 # unchanged.
-MIGHT_MODIFIER_MIN = -0.2
-MIGHT_MODIFIER_MAX = 0.2
-MIGHT_MODIFIER_SCALE = 0.15
+MIGHT_MODIFIER_MIN = -0.35
+MIGHT_MODIFIER_MAX = 0.35
+MIGHT_MODIFIER_LOG2_SCALE = 0.12  # per doubling of the Might ratio (2026-10-07; was a linear 0.15 per unit of ratio, capped at +-0.2)
 # The combined (population + Might) win chance still can't be a sure thing
 # either way -- same reasoning STRIKE_RAIDER_CAMP_MAX_WIN_CHANCE/
 # EXPEL_RAIDERS_MAX_WIN_CHANCE already codify for their own fights.

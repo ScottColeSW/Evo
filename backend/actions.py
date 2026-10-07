@@ -1615,10 +1615,11 @@ def _might_adjusted_win_chance(tribe, rival, base_win_chance: float) -> float:
     if tribe_might == 0 and rival_might == 0:
         modifier = 0.0
     else:
-        might_ratio = tribe_might / max(1, rival_might)
-        modifier = max(
-            config.MIGHT_MODIFIER_MIN, min(config.MIGHT_MODIFIER_MAX, (might_ratio - 1) * config.MIGHT_MODIFIER_SCALE)
-        )
+        # 2026-10-07: scaled by the log of the ratio, not the ratio itself. The old (ratio - 1) * 0.15 hit its +-0.2 cap at a 2.3x edge, so a 10x army counted
+        # the same as a 2.3x one (a live war: Might 249 against 2413, and the 26k tribe beat the 41k one, a 2% upset). Each doubling is now worth
+        # MIGHT_MODIFIER_LOG2_SCALE until the (wider) cap; small edges (the 1.3x conquest nudge) are worth about what they were.
+        might_ratio = max(1, tribe_might) / max(1, rival_might)
+        modifier = max(config.MIGHT_MODIFIER_MIN, min(config.MIGHT_MODIFIER_MAX, math.log2(might_ratio) * config.MIGHT_MODIFIER_LOG2_SCALE))
     return max(
         config.MIGHT_ADJUSTED_WIN_CHANCE_FLOOR,
         min(config.MIGHT_ADJUSTED_WIN_CHANCE_CEILING, base_win_chance + modifier),

@@ -6236,3 +6236,23 @@ def test_generate_raider_name_varies_across_raids():
     names = {_generate_raider_name("tribe_0", cycle) for cycle in range(20)}
 
     assert len(names) > 1
+
+
+def test_might_keeps_counting_beyond_a_2x_edge_up_to_the_cap():
+    """2026-10-07: the old linear modifier hit its cap at a 2.3x Might edge, so a 10x army was worth no more than a 2.3x one (a live war between Might 249 and 2413 was
+    a 2% upset for the weaker side). Each doubling now counts until the wider cap, and a tribe with no Battalion against a strong one gets the full penalty."""
+    from unittest import mock
+
+    from backend import config
+    from backend.actions import _might_adjusted_win_chance
+
+    def chance(mine, theirs):
+        with mock.patch("backend.actions.compute_might", side_effect=[mine, theirs]):
+            return _might_adjusted_win_chance(None, None, 0.5)
+
+    assert chance(100, 100) == 0.5
+    assert chance(200, 100) == 0.5 + config.MIGHT_MODIFIER_LOG2_SCALE
+    assert chance(800, 100) > chance(200, 100) > 0.5          # 8x is worth more than 2x
+    assert chance(100, 1000) < chance(100, 200) < 0.5          # and the weak side is penalized by degrees
+    assert chance(100000, 1) == 0.5 + config.MIGHT_MODIFIER_MAX
+    assert chance(0, 2413) == 0.5 + config.MIGHT_MODIFIER_MIN  # no Battalion at all against a strong one
