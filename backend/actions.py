@@ -3763,6 +3763,19 @@ ACTION_REGISTRY = {
 # wherever they stand (just at a lower yield than a river tile gets). This is the same
 # category as the nearest_water fact already given to a founding chief: information the
 # simulation legitimately has, not an instruction about what to pick.
+# What each building of the era chain opens, by action name. One table, read by the action descriptions (as an available building) and by
+# simulation.locked_building_facts (as one that cannot be built yet), so the two can never say different things.
+GATE_OPENS = {
+    "BUILD_MINE": ("GATHER_ORE", "BUILD_FORGE"),
+    "BUILD_FORGE": (),
+    "BUILD_KEEP": ("BUILD_BARRACKS", "BUILD_FORTRESS"),
+    "BUILD_BARRACKS": ("TRAIN_BATTALION",),
+    "BUILD_LIBRARY": ("RESEARCH",),
+    "BUILD_FORTRESS": ("BUILD_CASTLE",),
+    "BUILD_CASTLE": (),
+}
+
+
 def _gate_text(does: str, needs: str, costs: str, opens: tuple = (), flag: str | None = None) -> str:
     """One uniform shape for the chain of buildings an era is built from (2026-10-08): what it does, what it needs and costs, the
     named actions it opens, and which eras count it. Numbers come from config and the era credit from eras.ERAS, so the text
@@ -3789,7 +3802,7 @@ ACTION_DESCRIPTIONS = {
     "UPGRADE_LONG_HOUSE": "Expand the long houses already standing to support more households -- only worth considering once 5 long houses already stand. No new structure, no placement needed. Repeatable, but each upgrade costs more than the last.",
     "BUILD_CASTLE": _gate_text(
         f"Build a castle at your current tile. Adds {round(config.CASTLE_DEFENSE_BONUS * 100)} points to your chance of beating off a raider attack, on top of whatever your wall already provides, and another {round(config.MIGHT_TIER_BONUS_PER_TIER * 100)}% to your Might once you have a Battalion.",
-        f"a fortress and {config.CASTLE_LONG_HOUSES_REQUIRED} long houses (built or upgraded)", f"{config.CASTLE_WOOD_COST} wood, {config.CASTLE_STONE_COST} stone", (), "castle_built"),
+        f"a fortress and {config.CASTLE_LONG_HOUSES_REQUIRED} long houses (built or upgraded)", f"{config.CASTLE_WOOD_COST} wood, {config.CASTLE_STONE_COST} stone", GATE_OPENS["BUILD_CASTLE"], "castle_built"),
     "BUILD_ROAD": "Build a road at your current tile using stored wood and stone. A one-time, permanent improvement: every future scouting party, hunting party, or exploration party you send out travels faster from then on.",
     "BUILD_DOCK": "Build a dock at your current tile using stored wood -- only possible once the tribe has settled here and has already learned to fish (a real successful catch). A one-time, permanent structure: every future fish caught here pays out more from then on.",
     "BUILD_FISHERY": "Build a fishery using stored wood and stone -- only possible once a dock already stands. A one-time, permanent structure: the settlement's passive daily fish supply flows in even more steadily from then on.",
@@ -3797,7 +3810,7 @@ ACTION_DESCRIPTIONS = {
     "BUILD_QUARRY": "Build a quarry using stored wood and stone -- only possible once stone has actually been gathered here at least once. A one-time, permanent structure at your settlement: every future load of harvested stone is worth three times as much from then on.",
     "BUILD_MINE": _gate_text(
         f"Excavate a mine at the newest vein your scouts have found; that vein's ore becomes your mine's ore for good. Once GATHER_ORE has been done once, the mine yields {config.MINE_YIELD_PER_CYCLE} ore every cycle.",
-        "a known vein", f"{config.MINE_WOOD_COST} wood, {config.MINE_STONE_COST} stone", ("GATHER_ORE", "BUILD_FORGE"), "mine_built"),
+        "a known vein", f"{config.MINE_WOOD_COST} wood, {config.MINE_STONE_COST} stone", GATE_OPENS["BUILD_MINE"], "mine_built"),
     "GATHER_ORE": _gate_text(
         f"Fetch {config.GATHER_ORE_BASE_YIELD} of the mine's own ore (more with a larger tribe). The first fetch also starts the mine's steady yield of {config.MINE_YIELD_PER_CYCLE} ore every cycle. "
         f"The forge needs {config.FORGE_ITEM_ORE_COST} of it in stock to be built and uses {config.FORGE_ITEM_ORE_COST} for each item it makes.",
@@ -3809,7 +3822,7 @@ ACTION_DESCRIPTIONS = {
     "BUILD_BATH_HOUSE": "Build a bath house using stored wood and stone -- no prerequisite beyond being settled. A one-time, permanent structure at your settlement: the tribe's daily food and water consumption drops from then on.",
     "BUILD_LIBRARY": _gate_text(
         "Build a library, where the tribe's own remembered history can be studied and filed.",
-        "at least one long house", f"{config.LIBRARY_WOOD_COST} wood, {config.LIBRARY_STONE_COST} stone", ("RESEARCH",), "library_built"),
+        "at least one long house", f"{config.LIBRARY_WOOD_COST} wood, {config.LIBRARY_STONE_COST} stone", GATE_OPENS["BUILD_LIBRARY"], "library_built"),
     "RESEARCH": _gate_text(
         f"Study the tribe's own remembered history at the library and file up to {config.LIBRARY_ENTRY_MEMORY_COUNT} of its most weighty memories as a permanent Library entry. Repeatable.",
         "a library", f"{config.RESEARCH_WOOD_COST} wood"),
@@ -3818,14 +3831,14 @@ ACTION_DESCRIPTIONS = {
     "UPGRADE_WAREHOUSE": "Reinforce the warehouses already standing to raise storage capacity further -- only worth considering once 5 warehouses already stand. No new structure, no placement needed. Repeatable, but each upgrade costs more than the last.",
     "BUILD_BARRACKS": _gate_text(
         f"Build a barracks (repeatable up to {config.BARRACKS_MAX_COUNT}). A Battalion is staffed at once from your own people, up to {config.BATTALION_CAPACITY_PER_BARRACKS} per barracks. Real housing for a standing military, the first building of the Military branch.",
-        "a keep and a kitchen", f"{config.BARRACKS_WOOD_COST} wood, {config.BARRACKS_STONE_COST} stone", ("TRAIN_BATTALION",), "barracks_built"),
+        "a keep and a kitchen", f"{config.BARRACKS_WOOD_COST} wood, {config.BARRACKS_STONE_COST} stone", GATE_OPENS["BUILD_BARRACKS"], "barracks_built"),
     "UPGRADE_BARRACKS": "Reinforce the barracks already standing to raise Battalion capacity further -- only worth considering once 5 barracks already stand. No new structure, no placement needed. Repeatable, but each upgrade costs more than the last.",
     "TRAIN_BATTALION": "Train soldiers for your Battalion -- only possible once a Barracks stands. Costs food, not wood/stone. Built up over several turns like a wall section, not finished in one -- more people trains faster. Repeatable up to your Barracks' own capacity. A Warrior to lead it is named automatically the moment anyone earns a trophy -- no separate action needed.",
     "BUILD_FORGE": _gate_text(
         f"Build a forge. From then on it makes items on its own, with no action needed: each uses {config.FORGE_ITEM_ORE_COST} ore and {config.FORGE_ITEM_WOOD_COST} wood and is a random tool, weapon or invention, "
         f"while the item store has room. Weapons arm your Battalion (up to +{round(config.MIGHT_WEAPON_BONUS * 100)}% Might at one per soldier, and they are kept). Every other item adds "
         f"{round(config.ITEM_EFFECT_MAGNITUDE * 100)}% to one effect: more food, stone, wood, game or water per load, or faster travel, walls or Battalion drills. Items can be traded.",
-        "a built mine and at least one of its ore in stock", f"{config.FORGE_WOOD_COST} wood, {config.FORGE_STONE_COST} stone", (), "forge_built"),
+        "a built mine and at least one of its ore in stock", f"{config.FORGE_WOOD_COST} wood, {config.FORGE_STONE_COST} stone", GATE_OPENS["BUILD_FORGE"], "forge_built"),
     "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. Once a forge stands this happens on its own every cycle, so there is nothing to choose.",
     "USE_ITEM": "Redeem your oldest plain crafted item for its stored value, converted into wood and stone. Only an item with no standing effect can be redeemed: a plow or hoe (more food), a whetstone or chisel (more stone), a bow or spearhead (more game), an axe (more wood), a wheel (faster travel), any weapon (it arms the battalion) and the rest keep working for the tribe until a trade hands them over. Does nothing if no item is plain.",
     "BUILD_DMM": "Build the Dream Manifestation Machine (DMM) using stored wood and stone -- a one-time, permanent factory that lets the tribe start making the Chief's dreams real.",
@@ -3839,10 +3852,10 @@ ACTION_DESCRIPTIONS = {
     "BUILD_MOAT": "Dig a moat using stored wood and stone -- only possible once the wall has been reinforced with a second layer. A one-time, permanent structure, cheaper than another wall layer: a further defense bonus.",
     "BUILD_KEEP": _gate_text(
         f"Build a keep. Adds {round(config.KEEP_DEFENSE_BONUS * 100)} points to your chance of beating off a raider attack, and {round(config.MIGHT_TIER_BONUS_PER_TIER * 100)}% to your Might once you have a Battalion.",
-        f"{config.KEEP_LONG_HOUSES_REQUIRED} long houses (built or upgraded)", f"{config.KEEP_WOOD_COST} wood, {config.KEEP_STONE_COST} stone", ("BUILD_BARRACKS", "BUILD_FORTRESS"), "keep_built"),
+        f"{config.KEEP_LONG_HOUSES_REQUIRED} long houses (built or upgraded)", f"{config.KEEP_WOOD_COST} wood, {config.KEEP_STONE_COST} stone", GATE_OPENS["BUILD_KEEP"], "keep_built"),
     "BUILD_FORTRESS": _gate_text(
         f"Build a fortress. Adds {round(config.FORTRESS_DEFENSE_BONUS * 100)} points to your chance of beating off a raider attack, and another {round(config.MIGHT_TIER_BONUS_PER_TIER * 100)}% to your Might once you have a Battalion.",
-        f"a keep and {config.FORTRESS_LONG_HOUSES_REQUIRED} long houses (built or upgraded)", f"{config.FORTRESS_WOOD_COST} wood, {config.FORTRESS_STONE_COST} stone", ("BUILD_CASTLE",), "fortress_built"),
+        f"a keep and {config.FORTRESS_LONG_HOUSES_REQUIRED} long houses (built or upgraded)", f"{config.FORTRESS_WOOD_COST} wood, {config.FORTRESS_STONE_COST} stone", GATE_OPENS["BUILD_FORTRESS"], "fortress_built"),
     "PLANT_CROP": "Plant a farm plot at your current tile, fenced and set with a scarecrow using stored wood -- only possible once the tribe has settled here. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
     "GATHER_EGGS": "Search for wild fowl nests near your current tile, spending a little stored wood on the attempt -- only possible once the tribe has settled here and the current egg stockpile is empty. A found egg is set aside and, like the rest of the flock's own eggs, takes a full day to hatch -- most survive to grow the flock, but not every egg makes it.",
     "CATCH_FISH": "Attempt to harvest food by fishing at your current tile, spending a little stored wood on the attempt -- only possible once the tribe has settled here. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",

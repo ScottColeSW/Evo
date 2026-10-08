@@ -446,37 +446,86 @@ def _is_known_water_report(text: str, known_water: set) -> bool:
     return bool(match) and (int(match.group(1)), int(match.group(2))) in known_water
 
 
+def _cost_gaps(tribe, wood: int, stone: int) -> list[str]:
+    gaps = []
+    if tribe.wood < wood:
+        gaps.append(f"{wood} wood (you have {tribe.wood})")
+    if tribe.stone < stone:
+        gaps.append(f"{stone} stone (you have {tribe.stone})")
+    return gaps
+
+
+def _long_house_gap(tribe, required: int) -> list[str]:
+    have = tribe.long_houses_built + tribe.long_house_upgrades
+    return [f"{required} long houses, built or upgraded (you have {have})"] if have < required else []
+
+
+def _chain_gaps(action: str, tribe) -> list[str]:
+    """What is missing for one building of the era chain, piece by piece, in the same terms AFFORDABILITY_CHECKS tests it (a test keeps
+    the two in step). The footprint check is added by the caller once nothing else is missing."""
+    if action == "BUILD_MINE":
+        return (["a known vein (none has been found)"] if not tribe.mine_sites else []) + _cost_gaps(tribe, config.MINE_WOOD_COST, config.MINE_STONE_COST)
+    if action == "BUILD_FORGE":
+        gaps = []
+        if tribe.mine_built:
+            ore = tribe.mine_resource_name or "ore"
+            have = tribe.unique_resources.get(tribe.mine_resource_name, 0)
+            if have < config.FORGE_ITEM_ORE_COST:
+                gaps.append(f"{config.FORGE_ITEM_ORE_COST} {ore} from your own mine (you have {have}"
+                            + ("; the mine has not been worked yet, so none flows in" if not tribe.ore_ever_gathered else "") + ")")
+        else:
+            gaps.append("a built mine")
+        return gaps + _cost_gaps(tribe, config.FORGE_WOOD_COST, config.FORGE_STONE_COST)
+    if action == "BUILD_KEEP":
+        return _long_house_gap(tribe, config.KEEP_LONG_HOUSES_REQUIRED) + _cost_gaps(tribe, config.KEEP_WOOD_COST, config.KEEP_STONE_COST)
+    if action == "BUILD_BARRACKS":
+        return (["a keep (none built yet)"] if not tribe.keep_built else []) + (["a kitchen (none built yet)"] if not tribe.kitchen_built else [])             + _cost_gaps(tribe, config.BARRACKS_WOOD_COST, config.BARRACKS_STONE_COST)
+    if action == "BUILD_LIBRARY":
+        return (["a long house (you have none)"] if tribe.long_houses_built == 0 else []) + _cost_gaps(tribe, config.LIBRARY_WOOD_COST, config.LIBRARY_STONE_COST)
+    if action == "BUILD_FORTRESS":
+        return (["a keep (none built yet)"] if not tribe.keep_built else []) + _long_house_gap(tribe, config.FORTRESS_LONG_HOUSES_REQUIRED)             + _cost_gaps(tribe, config.FORTRESS_WOOD_COST, config.FORTRESS_STONE_COST)
+    if action == "BUILD_CASTLE":
+        return (["a fortress (none built yet)"] if not tribe.fortress_built else []) + _long_house_gap(tribe, config.CASTLE_LONG_HOUSES_REQUIRED)             + _cost_gaps(tribe, config.CASTLE_WOOD_COST, config.CASTLE_STONE_COST)
+    return []
+
+
+# The buildings an era is made of, in chain order: action -> (what it is called in the sentence, the Tribe flag that says it stands).
+_CHAIN_BUILDINGS = {
+    "BUILD_MINE": ("mine", "mine_built"), "BUILD_FORGE": ("forge", "forge_built"), "BUILD_KEEP": ("keep", "keep_built"),
+    "BUILD_BARRACKS": ("barracks", "barracks_built"), "BUILD_LIBRARY": ("library", "library_built"),
+    "BUILD_FORTRESS": ("fortress", "fortress_built"), "BUILD_CASTLE": ("castle", "castle_built"),
+}
+_ALWAYS_EXPLAINED = ("BUILD_MINE", "BUILD_FORGE")  # explained whenever unlocked (2026-10-07); the rest only when the next era asks for them
+
+
 def locked_building_facts(tribe, world, unlocked_actions) -> list[str]:
-    """Plain facts about a building the tribe's era has unlocked but its situation does not yet allow, with what is missing and what it has (2026-10-07, after a
-    live run: Flinx held 251 of another tribe's ore and wanted a forge for about 180 cycles, but the forge needs ore from its own mine, which only flows after one
-    GATHER_ORE, and nothing said so; its Chief wrote "UPGRADE_LONG_HOUSE: to address the lack of a forge"). Facts, not a nudge: it says what stands in the way and
-    never what to do, and it is not switched off by NUDGES. Covers the forge and the mine, the two whose missing piece is not just wood and stone."""
+    """Plain facts about a building the tribe's era has unlocked but its situation does not yet allow, with what is missing, what the tribe has, and what
+    the building would open (2026-10-07, after a live run: Flinx held 251 of another tribe's ore and wanted a forge for about 180 cycles, but the forge
+    needs ore from its own mine, which only flows after one GATHER_ORE, and nothing said so; its Chief wrote "UPGRADE_LONG_HOUSE: to address the lack of
+    a forge"). Facts, not a nudge: it says what stands in the way and never what to do, and it is not switched off by NUDGES.
+
+    Extended 2026-10-08 from the forge and mine to every building of the era chain (keep, barracks, library, fortress, castle): in a live run a tribe was
+    told "still short on: a barracks, a keep" for 340 turns and nothing said what a keep needs. The mine and forge are explained whenever unlocked; the
+    others only when the next era requires them, so the prompt carries what stands between the tribe and the next era, not every distant building."""
+    from .actions import GATE_OPENS
+    nxt = next_era(tribe.era)
+    wanted = set(nxt.requires_ready) if nxt is not None else set()
     facts = []
-    if "BUILD_FORGE" in unlocked_actions and tribe.mine_built and not tribe.forge_built and not AFFORDABILITY_CHECKS["BUILD_FORGE"](tribe, world):
-        ore = tribe.mine_resource_name or "ore"
-        missing = []
-        have = tribe.unique_resources.get(tribe.mine_resource_name, 0)
-        if have < config.FORGE_ITEM_ORE_COST:
-            missing.append(f"{config.FORGE_ITEM_ORE_COST} {ore} from your own mine (you have {have}"
-                           + ("; the mine has not been worked yet, so none flows in" if not tribe.ore_ever_gathered else "") + ")")
-        if tribe.wood < config.FORGE_WOOD_COST:
-            missing.append(f"{config.FORGE_WOOD_COST} wood (you have {tribe.wood})")
-        if tribe.stone < config.FORGE_STONE_COST:
-            missing.append(f"{config.FORGE_STONE_COST} stone (you have {tribe.stone})")
-        if not missing:
-            missing.append("room inside the territory for its footprint")
-        facts.append("A forge cannot be built yet: it needs " + "; ".join(missing) + ".")
-    if "BUILD_MINE" in unlocked_actions and not tribe.mine_built and not AFFORDABILITY_CHECKS["BUILD_MINE"](tribe, world):
-        missing = []
-        if not tribe.mine_sites:
-            missing.append("a known vein (none has been found)")
-        if tribe.wood < config.MINE_WOOD_COST:
-            missing.append(f"{config.MINE_WOOD_COST} wood (you have {tribe.wood})")
-        if tribe.stone < config.MINE_STONE_COST:
-            missing.append(f"{config.MINE_STONE_COST} stone (you have {tribe.stone})")
-        if not missing:
-            missing.append("room inside the territory for its footprint")
-        facts.append("A mine cannot be built yet: it needs " + "; ".join(missing) + ".")
+    for action, (name, flag) in _CHAIN_BUILDINGS.items():
+        if action not in unlocked_actions or getattr(tribe, flag):
+            continue
+        if action not in _ALWAYS_EXPLAINED and flag not in wanted:
+            continue
+        if action == "BUILD_FORGE" and not tribe.mine_built:
+            continue  # until a mine stands, the mine's own line already says what it opens
+        gaps = _chain_gaps(action, tribe)
+        if not gaps and AFFORDABILITY_CHECKS[action](tribe, world):
+            continue
+        if not gaps:
+            gaps = ["room inside the territory for its footprint"]
+        opens = GATE_OPENS.get(action, ())
+        facts.append(f"A {name} cannot be built yet: it needs " + "; ".join(gaps) + "."
+                     + (f" Once built it opens {' and '.join(opens)}." if opens else ""))
     return facts
 
 
