@@ -305,3 +305,62 @@ async def test_generate_json_gives_up_after_a_second_token_repeat_abort():
         except httpx.HTTPStatusError:
             pass
     assert post.await_count == 2
+
+
+@run_async
+async def test_a_reply_that_stops_partway_keeps_the_choice_it_had_already_made():
+    """Live run 2026-10-08: gemma3:4b sent '{"visual_action": "GATHER_STONE", "metacognitive_rationale"' and
+    stopped, on 37 of 201 turns. The whole reply was discarded, the game ran the first menu item, and the
+    chronicle blamed the chief's intent. The finished pairs are kept; the unfinished tail is dropped."""
+    client = OllamaClient()
+    cut = '{\n    "visual_action": "GATHER_STONE",\n    "metacognitive_rationale"'
+    fake = _FakeResponse({"response": cut, "done_reason": "stop"})
+
+    with mock.patch.object(httpx.AsyncClient, "post", mock.AsyncMock(return_value=fake)):
+        parsed, raw = await client.generate_json_with_raw("gemma3:4b", "prompt")
+
+    assert parsed == {"visual_action": "GATHER_STONE"}
+    assert raw == cut
+    assert client.truncated_replies == {"gemma3:4b": 1}
+    assert client.last_truncation == {"model": "gemma3:4b", "done_reason": "stop", "length": len(cut)}
+
+
+@run_async
+async def test_a_truncated_reply_keeps_a_finished_list_and_drops_a_half_written_string():
+    client = OllamaClient()
+    cut = '{"visual_action": "RAID", "target_vector": [31,64], "metacognitive_rationale": "Tribe 2 is stro'
+    fake = _FakeResponse({"response": cut})
+
+    with mock.patch.object(httpx.AsyncClient, "post", mock.AsyncMock(return_value=fake)):
+        parsed, _raw = await client.generate_json_with_raw("gemma3:4b", "prompt")
+
+    assert parsed == {"visual_action": "RAID", "target_vector": [31, 64]}
+
+
+@run_async
+async def test_a_reply_with_nothing_finished_is_not_counted_as_a_truncation():
+    client = OllamaClient()
+    fake = _FakeResponse({"response": '{"visual_act'})
+
+    with mock.patch.object(httpx.AsyncClient, "post", mock.AsyncMock(return_value=fake)):
+        parsed, _raw = await client.generate_json_with_raw("gemma3:4b", "prompt")
+
+    assert parsed == {}
+    assert client.truncated_replies == {}
+
+
+@run_async
+async def test_a_reply_with_nothing_usable_is_asked_for_once_more():
+    """Live run 2026-10-08: some replies were just '{"visual_action"'. Nothing to salvage, so one more request
+    is made instead of the game choosing the first menu item for the tribe."""
+    client = OllamaClient()
+    first = _FakeResponse({"response": '{\n    "visual_action"'})
+    second = _FakeResponse({"response": '{"visual_action": "GATHER_WOOD"}'})
+
+    post = mock.AsyncMock(side_effect=[first, second])
+    with mock.patch.object(httpx.AsyncClient, "post", post):
+        parsed, raw = await client.generate_json_with_raw("gemma3:4b", "prompt")
+
+    assert parsed == {"visual_action": "GATHER_WOOD"}
+    assert post.await_count == 2
+    assert client.empty_reply_retries == {"gemma3:4b": 1}

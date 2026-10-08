@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 
 import httpx
 
@@ -15,6 +16,24 @@ from . import config
 _CAPABILITY_CACHE: dict[tuple, list] = {}  # (model name, digest) -> Ollama's capabilities for it, so the setup screen does not ask again on every load
 UNLOAD_POLL_INTERVAL_SECONDS = 0.5
 UNLOAD_POLL_MAX_ATTEMPTS = 20
+
+
+_COMPLETE_PAIR = re.compile(r'"(\w+)"\s*:\s*("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?|true|false|null|\[[^\[\]]*\])')
+
+
+def _salvage_truncated_json(raw: str) -> dict:
+    """The complete "key": value pairs of a reply that stopped partway through.
+    2026-10-08, live run: gemma3:4b sent '{"visual_action": "GATHER_STONE", "metacognitive_rationale"' and
+    nothing more on 37 of 201 turns; the whole reply was thrown away, the game picked the first menu item
+    instead, and the chronicle said the chief's intent "didn't come through" when it had. Only values that
+    finished are kept (a string with its closing quote, a number, a flat list); the unfinished tail is dropped."""
+    salvaged = {}
+    for key, value in _COMPLETE_PAIR.findall(raw):
+        try:
+            salvaged[key] = json.loads(value)
+        except json.JSONDecodeError:
+            continue
+    return salvaged
 
 
 def _raise_with_body(r: httpx.Response, model: str) -> None:
@@ -51,6 +70,9 @@ class OllamaClient:
         # server mid-session.
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.truncated_replies: dict[str, int] = {}  # model -> replies that stopped partway and were salvaged (see _salvage_truncated_json)
+        self.empty_reply_retries: dict[str, int] = {}  # model -> replies with nothing usable that were asked for again once
+        self.last_truncation: dict = {}  # the latest one: model, Ollama's done_reason and the reply length, to find why generation stopped
         self.repeat_retries: dict[str, int] = {}  # model -> how many "token repeat limit" aborts were retried (see generate_json_with_raw)
 
     async def embed(self, text: str, model: str = "nomic-embed-text") -> list[float] | None:
@@ -153,11 +175,29 @@ class OllamaClient:
                 if r.status_code >= 400:
                     print(f"[ollama] {model}: the retry failed too")
             _raise_with_body(r, model)
-            raw = r.json().get("response", "{}")
+            body = r.json()
+            raw = body.get("response", "{}")
             try:
                 parsed = json.loads(raw)
             except json.JSONDecodeError:
-                return {}, raw
+                salvaged = _salvage_truncated_json(raw)
+                if not salvaged:
+                    # Nothing finished (a reply of '{"visual_action"' and no more): one more try costs a couple of seconds
+                    # and is far better than the game choosing the first menu item for the tribe.
+                    self.empty_reply_retries[model] = self.empty_reply_retries.get(model, 0) + 1
+                    r = await client.post(f"{self.base_url}/api/generate", json=payload)
+                    _raise_with_body(r, model)
+                    body = r.json()
+                    raw = body.get("response", "{}")
+                    try:
+                        parsed = json.loads(raw)
+                        return (parsed if isinstance(parsed, dict) else {}), raw
+                    except json.JSONDecodeError:
+                        salvaged = _salvage_truncated_json(raw)
+                if salvaged:
+                    self.truncated_replies[model] = self.truncated_replies.get(model, 0) + 1
+                    self.last_truncation = {"model": model, "done_reason": body.get("done_reason"), "length": len(raw)}
+                return salvaged, raw
             # `format: "json"` guarantees valid JSON, not a JSON *object* -- a weak or
             # very small model (seen live with llama3.2:1b) can emit a bare string,
             # number, or list that parses without error but isn't a dict. Every caller
