@@ -1,3 +1,4 @@
+import functools
 import math
 import random
 
@@ -212,6 +213,17 @@ def river_tiles() -> frozenset[tuple[int, int]]:
 def lake_tiles() -> frozenset[tuple[int, int]]:
     """The baked lake (+tributary) tile set -- see river_tiles()."""
     return world_layers.LAKE_TILES
+
+
+# One letter per biome, for the grid the page is sent (terrain_grid).
+BIOME_LETTERS = {"ocean": "o", "plains": "p", "forest": "f", "mountains": "m", "desert": "d", "river": "r", "lake": "l", "cliffs": "c", "shoals": "s", "volcano": "v"}
+
+
+@functools.lru_cache(maxsize=None)
+def terrain_grid(size: int = 100) -> tuple[str, ...]:
+    """The finished terrain, one string per row (y) of one letter per tile (x), straight from biome_at. The server fills it into the page (backend/app.py render_index), so the
+    frontend never recomputes terrain: it used to carry a hand-mirrored copy of this module's coast, mountain, forest, desert, river and lake logic, and the two drifted."""
+    return tuple("".join(BIOME_LETTERS[biome_at(x, y)] for x in range(size)) for y in range(size))
 
 
 def field_tiles() -> frozenset[tuple[int, int]]:
@@ -452,7 +464,7 @@ _INLAND_RADIUS = 3
 _INLAND_MAX_WET_SHARE = 0.25
 
 
-@world_layers.derived("terrain")
+@functools.lru_cache(maxsize=None)
 def _inland_map(grid_size: int) -> tuple[tuple[bool, ...], ...]:
     """For every tile, whether it has dry ground around it (see _INLAND_RADIUS): nothing unbuildable within 1 tile and not much within 3."""
     unbuildable = [[biome_at(x, y) in config.UNBUILDABLE_BIOMES for y in range(grid_size)] for x in range(grid_size)]
@@ -482,7 +494,7 @@ def is_inland(x: int, y: int, grid_size: int = 100) -> bool:
     return 0 <= x < grid_size and 0 <= y < grid_size and _inland_map(grid_size)[x][y]
 
 
-@world_layers.derived("terrain")
+@functools.lru_cache(maxsize=None)
 def _distance_to_biomes(grid_size: int, biomes: frozenset) -> tuple[tuple[float, ...], ...]:
     """For every tile, the distance in tiles to the nearest tile of any of these biomes (a multi-source sweep over 8-neighbors, close enough to straight-line for a
     few tiles' worth of 'near')."""
@@ -526,7 +538,7 @@ def site_affinity(seed_type: str, x: int, y: int, grid_size: int = 100) -> float
     return 0.0
 
 
-@world_layers.derived("terrain", "metadata")
+@functools.lru_cache(maxsize=None)
 def _scatter_site_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], ...]:
     """The original placement: an even Poisson-disc scatter over buildable ground with no idea what the site is for. Kept for types that have no ground
     to suit (the landmarks); resource sites use site_seed_points' affinity rules."""
@@ -585,7 +597,7 @@ def _scatter_site_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int
     return tuple((x, y) for x, y, _ in placed)
 
 
-@world_layers.derived("terrain", "metadata")
+@functools.lru_cache(maxsize=None)
 def site_seed_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], ...]:
     # Deferred import: simulation.py imports from this module at load time, so a
     # top-level import here would be circular -- safe deferred to call time, well

@@ -2364,20 +2364,9 @@ function checkChiefElections(state) {
 
 /* ---------- Canvas rendering ---------- */
 
-// Mirrors backend/world.py's biome_at exactly -- the river winds from the mountains
-// (west) to the coast (east) rather than being an arbitrary diagonal band.
-const OCEAN_X_START = 90, MOUNTAIN_X_END = 24, MOUNTAIN_Y_END = 55;
-// The coast is wavy, not a straight line -- mirrors world.py's _coast_boundary_x/
-// _coast_is_headland exactly.
-const COAST_BAND_WIDTH = 3;
-// Map dream, phase 1 -- mirrors world.py's VOLCANO_CENTER/_RADIUS and
-// DESERT_NORTH_BOUNDARY_BASE exactly. VOLCANO_CENTER moved to (13, 13) in phase
+// Map dream, phase 1 -- mirrors world.py's VOLCANO_CENTER/_RADIUS (the glow is drawn from the centre). VOLCANO_CENTER moved to (13, 13) in phase
 // 2 -- see the matching comment on world.py's own constant.
 const VOLCANO_CENTER = [13, 13], VOLCANO_RADIUS = 4;
-const DESERT_NORTH_BOUNDARY_BASE = 78;
-// Map dream, phase 2 -- mirrors world.py's WEST/NORTH/SOUTH_COAST_INSET_BASE
-// exactly (config.py).
-const WEST_COAST_INSET_BASE = 6, NORTH_COAST_INSET_BASE = 6, SOUTH_COAST_INSET_BASE = 6;
 
 // Natural river/lake rework, phase 1: "I'd love the river and lake to look
 // better and more natural." The river/lake used to be pure sine-wave/circle
@@ -2391,39 +2380,14 @@ const WEST_COAST_INSET_BASE = 6, NORTH_COAST_INSET_BASE = 6, SOUTH_COAST_INSET_B
 // phase, so both sides only need the *result*, not a second from-scratch
 // computation that would be a real hazard to keep byte-for-byte identical to
 // Python's numpy/RNG pipeline by hand.
-// === WORLD LAYERS (filled in by the server from world/world_layers.json on every request; see backend/app.py, backend/world_layers.py, docs/WORLD-LAYERS.md) ===
-// One source for the river, the lake, the field and the spawn points: the backend loads the same document, so there is no second copy here to keep in step. If this page
-// is opened straight from disk the placeholder stays null and the water layers are empty, so serve it through the app.
-const WORLD_LAYERS = /*__WORLD_LAYERS__*/null;
-if (!WORLD_LAYERS) console.error("world layers missing: open the game through the server (python run.py), not the file directly");
-const _layerTiles = name => new Set(((WORLD_LAYERS && WORLD_LAYERS.layers.terrain[name]) || []).map(([x, y]) => x * 100 + y));
-const HYDROLOGY_RIVER_TILES = _layerTiles("river");
-const HYDROLOGY_LAKE_TILES = _layerTiles("lake");
-const HYDROLOGY_FIELD_TILES = _layerTiles("field");
-// === END WORLD LAYERS ===
-
-function isRiver(x, y) {
-  return HYDROLOGY_RIVER_TILES.has(x * 100 + y);
-}
-
-function isLake(x, y) {
-  return HYDROLOGY_LAKE_TILES.has(x * 100 + y);
-}
-
-// Mirrors world.py's _is_volcano exactly.
-function isVolcano(x, y) {
-  const [vx, vy] = VOLCANO_CENTER;
-  return Math.hypot(x - vx, y - vy) <= VOLCANO_RADIUS;
-}
-
-// Mirrors world.py's _desert_north_boundary exactly.
-function desertNorthBoundary(x) {
-  return DESERT_NORTH_BOUNDARY_BASE + 5 * Math.sin(x * 0.06) + 2 * Math.sin(x * 0.17 + 0.6);
-}
-
-function coastBoundaryX(y) {
-  return OCEAN_X_START + 5 * Math.sin(y * 0.08) + 2 * Math.sin(y * 0.23 + 1.7);
-}
+// === TERRAIN GRID (filled in by the server from backend/world.py's biome_at on every request; see docs/WORLD-LAYERS.md) ===
+// The page does not recompute terrain. The backend sends the finished 100x100 grid, one letter per tile (row = y, column = x), so the map drawn here is always the map the
+// simulation runs on. It used to carry a hand-mirrored copy of the backend's coast, mountain, forest, desert, river and lake logic, and the two drifted apart. If this page
+// is opened straight from disk the placeholder stays null and everything reads as ocean, so serve it through the app (python run.py).
+const TERRAIN_GRID = /*__TERRAIN_GRID__*/null;
+if (!TERRAIN_GRID) console.error("terrain grid missing: open the game through the server (python run.py), not the file directly");
+const BIOME_BY_LETTER = { o: "ocean", p: "plains", f: "forest", m: "mountains", d: "desert", r: "river", l: "lake", c: "cliffs", s: "shoals", v: "volcano" };
+// === END TERRAIN GRID ===
 
 // Explicit request: "make that end of the river flowing into the ocean look like a
 // waterfall," later trimmed tighter as part of the natural river/lake rework
@@ -2436,9 +2400,10 @@ function coastBoundaryX(y) {
 // wherever generation put it.
 function computeWaterfallTiles() {
   const tiles = [];
-  for (const encoded of HYDROLOGY_RIVER_TILES) {
-    const x = Math.floor(encoded / 100), y = encoded % 100;
-    if (biomeNameAt(x + 1, y) === "ocean") tiles.push([x, y]);
+  for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < GRID; x++) {
+      if (biomeNameAt(x, y) === "river" && biomeNameAt(x + 1, y) === "ocean") tiles.push([x, y]);
+    }
   }
   return tiles;
 }
@@ -2472,85 +2437,11 @@ function drawWaterfall() {
   });
 }
 
-function coastIsHeadland(y) {
-  const step = 1.0;
-  const curvature = coastBoundaryX(y + step) - 2 * coastBoundaryX(y) + coastBoundaryX(y - step);
-  return curvature < 0;
-}
-
-// Coastline texture rework -- mirrors world.py's _west_coast_boundary/
-// _north_coast_boundary/_south_coast_boundary exactly (three sine
-// frequencies instead of two, same overall 4-8 tile envelope).
-function westCoastBoundary(y) {
-  return WEST_COAST_INSET_BASE
-    + 1.1 * Math.sin(y * 0.05 + 0.4) + 0.6 * Math.sin(y * 0.14 + 2.3) + 0.3 * Math.sin(y * 0.33 + 1.0);
-}
-
-function northCoastBoundary(x) {
-  return NORTH_COAST_INSET_BASE
-    + 1.1 * Math.sin(x * 0.04 + 1.1) + 0.6 * Math.sin(x * 0.12 + 0.3) + 0.3 * Math.sin(x * 0.29 + 2.6);
-}
-
-function southCoastBoundary(x) {
-  return (GRID - 1) - SOUTH_COAST_INSET_BASE
-    - 1.1 * Math.sin(x * 0.045 + 2.5) - 0.6 * Math.sin(x * 0.11 + 0.9) - 0.3 * Math.sin(x * 0.27 + 1.5);
-}
-
-// Mirrors world.py's _is_headland_like exactly.
-function isHeadlandLike(boundaryFn, coord, oceanOnIncreasingSide) {
-  const step = 1.0;
-  const curvature = boundaryFn(coord + step) - 2 * boundaryFn(coord) + boundaryFn(coord - step);
-  return oceanOnIncreasingSide ? curvature < 0 : curvature > 0;
-}
-
-// Mountain/forest/plains boundaries wobble with the same two-frequency sine technique
-// as the coastline above, instead of meeting along perfectly straight lines -- mirrors
-// backend/world.py's _mountain_x_boundary/_mountain_y_boundary/_forest_north_boundary/
-// _forest_east_boundary exactly.
-function mountainXBoundary(y) {
-  return MOUNTAIN_X_END + 4 * Math.sin(y * 0.1) + 2 * Math.sin(y * 0.27 + 0.9);
-}
-
-function mountainYBoundary(x) {
-  return MOUNTAIN_Y_END + 4 * Math.sin(x * 0.09 + 2.1) + 2 * Math.sin(x * 0.22);
-}
-
-function forestNorthBoundary(x) {
-  return 18 + 3 * Math.sin(x * 0.08) + 1.5 * Math.sin(x * 0.19 + 1.3);
-}
-
-function forestEastBoundary(y) {
-  return 70 + 4 * Math.sin(y * 0.07 + 0.5) + 2 * Math.sin(y * 0.21);
-}
-
 // Mirrors backend/world.py's biome_at exactly -- one source of truth for both the
 // terrain color and which biome-relevant flora/fauna decoration a tile can show.
 function biomeNameAt(x, y) {
-  if (isRiver(x, y)) return "river";
-  // Map dream, phase 2 correction: "we shouldn't have any legs on the
-  // island." Every edge's plain ocean condition is checked before any edge's
-  // coast-band (cliffs/shoals) condition gets a chance to commit -- otherwise,
-  // right next to a corner, one edge's band check could claim a tile a
-  // different edge's ocean check would have correctly claimed first, had it
-  // ever gotten the chance. That produced a visible strip of coastal texture
-  // jutting out past the real coastline at every corner. Mirrors
-  // backend/world.py's biome_at exactly.
-  const eastBoundary = coastBoundaryX(y);
-  const westBoundary = westCoastBoundary(y);
-  const northBoundary = northCoastBoundary(x);
-  const southBoundary = southCoastBoundary(x);
-  if (x >= eastBoundary || x <= westBoundary || y <= northBoundary || y >= southBoundary) return "ocean";
-  if (eastBoundary - x <= COAST_BAND_WIDTH) return coastIsHeadland(y) ? "cliffs" : "shoals";
-  if (x - westBoundary <= COAST_BAND_WIDTH) return isHeadlandLike(westCoastBoundary, y, false) ? "cliffs" : "shoals";
-  if (y - northBoundary <= COAST_BAND_WIDTH) return isHeadlandLike(northCoastBoundary, x, false) ? "cliffs" : "shoals";
-  if (southBoundary - y <= COAST_BAND_WIDTH) return isHeadlandLike(southCoastBoundary, x, true) ? "cliffs" : "shoals";
-  if (isLake(x, y)) return "lake";
-  if (HYDROLOGY_FIELD_TILES.has(x * 100 + y)) return "plains"; // the field: mirrors backend/world.py's FIELD_TILES check
-  if (isVolcano(x, y)) return "volcano";
-  if (x < mountainXBoundary(y) && y < mountainYBoundary(x)) return "mountains";
-  if (y >= desertNorthBoundary(x)) return "desert";
-  if (y < forestNorthBoundary(x) || x >= forestEastBoundary(y)) return "forest";
-  return "plains";
+  if (!TERRAIN_GRID || x < 0 || y < 0 || y >= TERRAIN_GRID.length || x >= TERRAIN_GRID[y].length) return "ocean";
+  return BIOME_BY_LETTER[TERRAIN_GRID[y][x]] || "ocean";
 }
 
 // A settled tribe's own tile can legitimately be river/lake (see FARMABLE_BIOMES in

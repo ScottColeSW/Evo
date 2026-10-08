@@ -18,9 +18,6 @@ def main() -> int:
     print("layers:")
     print(f"  metadata   spawn points {meta['spawn_points']}")
     print(f"  terrain    river {len(terrain['river'])} tiles, lake {len(terrain['lake'])}, field {len(terrain['field'])}")
-    print("derived from them (cleared when a layer they depend on changes):")
-    for name, deps in world_layers.derived_registry():
-        print(f"  {name:22s} depends on {', '.join(deps)}")
     problems = world_layers.validate(biome_fn=world.biome_at)
     if problems:
         print("rules broken:")
