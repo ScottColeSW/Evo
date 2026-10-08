@@ -19,7 +19,10 @@ DEFAULT_DB_PATH = "logs/board_history.db"
 def _connect(path: str | None = None) -> sqlite3.Connection:
     target = Path(path or DEFAULT_DB_PATH)
     target.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(target)
+    # 2026-10-08: a live run's snapshot write failed with "database is locked" while analysis scripts were reading the history. In SQLite's default journal mode
+    # a reader blocks the writer, and the default wait is short. WAL mode lets readers and the one writer work at once, and the wait is now 30 seconds.
+    conn = sqlite3.connect(target, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS board_snapshots (

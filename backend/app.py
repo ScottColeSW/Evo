@@ -298,11 +298,16 @@ async def _tick_session(ws: web.WebSocketResponse, session: dict) -> None:
     try:
         await sim.step()
         snapshot = sim.snapshot()
-        record_board_state(sim.run_id, sim.cycle, snapshot)
     except Exception:
         import traceback
         traceback.print_exc()
         return
+    # The history write is a record, not part of the game: if it fails (a locked database, a full disk) the cycle is still broadcast. It used to share the try above,
+    # so one failed write (2026-10-08, "database is locked") also dropped that cycle's snapshot from the browser.
+    try:
+        record_board_state(sim.run_id, sim.cycle, snapshot)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[board_history] cycle {sim.cycle} not recorded: {exc}")
     try:
         await ws.send_str(json.dumps(snapshot))
     except Exception:

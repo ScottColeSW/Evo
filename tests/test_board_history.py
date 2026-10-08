@@ -54,3 +54,19 @@ def test_list_runs_returns_distinct_sorted_run_ids(tmp_path):
     record_board_state("run_a", 1, {}, path=path)
 
     assert list_runs(path=path) == ["run_a", "run_b"]
+
+
+def test_a_snapshot_can_be_written_while_another_connection_is_reading(tmp_path):
+    """2026-10-08: a live run's write failed with 'database is locked' while analysis scripts read the history. WAL mode lets a reader and the writer work together."""
+    import sqlite3
+
+    from backend.board_history import read_cycle, record_board_state
+
+    db = str(tmp_path / "board.db")
+    record_board_state("run_a", 1, {"cycle": 1}, path=db)
+    reader = sqlite3.connect(db)
+    reader.execute("BEGIN")
+    reader.execute("SELECT * FROM board_snapshots").fetchall()  # an open read transaction
+    record_board_state("run_a", 2, {"cycle": 2}, path=db)       # would raise 'database is locked' in the default journal mode
+    reader.close()
+    assert read_cycle("run_a", 2, path=db)["snapshot"] == {"cycle": 2}
