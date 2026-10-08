@@ -8,7 +8,7 @@ import re
 import random
 from collections import Counter, deque
 
-from . import architect, city_layout, config, lexicon, peace_gate, physics
+from . import architect, city_layout, config, lexicon, peace_gate, physics, world_layers
 from .actions import (
     military_intel_text, research_candidates, research_candidates_with_source,
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
@@ -138,7 +138,7 @@ from .world import (
 # (was 75.0) -- see BROADCAST_HEARING_RADIUS's own comment (config.py),
 # raised from 50 to 65 the same day so this pairing still converges on
 # shared vocabulary once both are genuinely settled.
-SPAWN_POINTS = [(76, 17), (65, 76), (50, 55), (40, 37)]
+SPAWN_POINTS = list(world_layers.SPAWN_POINTS)  # from the metadata layer (world/world_layers.json), same four points as before
 COLORS = ["#c084fc", "#fb923c", "#34d399", "#60a5fa"]
 # Design intent, not just "whichever body is closest": Tribe 1 settles the
 # river, Tribe 2 the lake -- each gets a distinct natural-barrier wall ring

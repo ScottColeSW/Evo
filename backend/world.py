@@ -1,9 +1,8 @@
-import functools
 import math
 import random
 
 from . import config
-from . import world_hydrology_data as _hydrology
+from . import world_layers
 
 BIOME_LABELS = {
     "forest": "Whispering Wilds",
@@ -187,13 +186,13 @@ def _is_river(x: int, y: int) -> bool:
     # RIVER_HALF_WIDTH ribbon around _river_center_y(x). That formula is now the
     # generator's OUTER FOOTPRINT (see scripts/generate_hydrology.py) rather than
     # the live check: a heightfield+erosion pass only ever subtracts from it
-    # (never widens or relocates it), baked once into world_hydrology_data.py so
+    # (never widens or relocates it), loaded once from world/world_layers.json (backend/world_layers.py) so
     # this stays an O(1) lookup despite biome_at running thousands of times per
     # tick. _river_center_y/RIVER_SOURCE_X/RIVER_HALF_WIDTH etc. are kept below,
     # still real and still load-bearing -- the generator's protected "core" is
     # exactly this centerline, which is why tests deriving expected points from
     # it still pass unchanged.
-    return (x, y) in _hydrology.RIVER_TILES
+    return (x, y) in world_layers.RIVER_TILES
 
 
 def _is_lake(x: int, y: int) -> bool:
@@ -201,18 +200,23 @@ def _is_lake(x: int, y: int) -> bool:
     # old perfect-circle-plus-straight-tributary formula is the generator's
     # outer footprint; LAKE_CENTER and the exact tributary line are its
     # protected core.
-    return (x, y) in _hydrology.LAKE_TILES
+    return (x, y) in world_layers.LAKE_TILES
 
 
 def river_tiles() -> frozenset[tuple[int, int]]:
-    """The baked river tile set -- for tests and scripts/compare_hydrology_wall_impact.py
-    rather than reaching into world_hydrology_data directly."""
-    return _hydrology.RIVER_TILES
+    """The river tile set (terrain layer) -- for tests and scripts/compare_hydrology_wall_impact.py
+    rather than reaching into backend/world_layers.py directly."""
+    return world_layers.RIVER_TILES
 
 
 def lake_tiles() -> frozenset[tuple[int, int]]:
     """The baked lake (+tributary) tile set -- see river_tiles()."""
-    return _hydrology.LAKE_TILES
+    return world_layers.LAKE_TILES
+
+
+def field_tiles() -> frozenset[tuple[int, int]]:
+    """The field of plain land (terrain layer), for tests and scripts."""
+    return world_layers.FIELD_TILES
 
 
 def _is_volcano(x: int, y: int) -> bool:
@@ -289,7 +293,7 @@ def biome_at(x: int, y: int) -> str:
     if _is_lake(x, y):
         return "lake"
     # The owner's field (2026-10-08): ground where the old river ran, written as plain land whatever the surrounding terrain (scripts/apply_river_design.py).
-    if (x, y) in _hydrology.FIELD_TILES:
+    if (x, y) in world_layers.FIELD_TILES:
         return "plains"
     # Checked before mountains -- the volcano sits inside the mountain region and
     # must win there (see VOLCANO_CENTER/_RADIUS's own comment).
@@ -448,7 +452,7 @@ _INLAND_RADIUS = 3
 _INLAND_MAX_WET_SHARE = 0.25
 
 
-@functools.lru_cache(maxsize=None)
+@world_layers.derived("terrain")
 def _inland_map(grid_size: int) -> tuple[tuple[bool, ...], ...]:
     """For every tile, whether it has dry ground around it (see _INLAND_RADIUS): nothing unbuildable within 1 tile and not much within 3."""
     unbuildable = [[biome_at(x, y) in config.UNBUILDABLE_BIOMES for y in range(grid_size)] for x in range(grid_size)]
@@ -478,7 +482,7 @@ def is_inland(x: int, y: int, grid_size: int = 100) -> bool:
     return 0 <= x < grid_size and 0 <= y < grid_size and _inland_map(grid_size)[x][y]
 
 
-@functools.lru_cache(maxsize=None)
+@world_layers.derived("terrain")
 def _distance_to_biomes(grid_size: int, biomes: frozenset) -> tuple[tuple[float, ...], ...]:
     """For every tile, the distance in tiles to the nearest tile of any of these biomes (a multi-source sweep over 8-neighbors, close enough to straight-line for a
     few tiles' worth of 'near')."""
@@ -522,7 +526,7 @@ def site_affinity(seed_type: str, x: int, y: int, grid_size: int = 100) -> float
     return 0.0
 
 
-@functools.lru_cache(maxsize=None)
+@world_layers.derived("terrain", "metadata")
 def _scatter_site_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], ...]:
     """The original placement: an even Poisson-disc scatter over buildable ground with no idea what the site is for. Kept for types that have no ground
     to suit (the landmarks); resource sites use site_seed_points' affinity rules."""
@@ -581,7 +585,7 @@ def _scatter_site_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int
     return tuple((x, y) for x, y, _ in placed)
 
 
-@functools.lru_cache(maxsize=None)
+@world_layers.derived("terrain", "metadata")
 def site_seed_points(seed_type: str, grid_size: int) -> tuple[tuple[int, int], ...]:
     # Deferred import: simulation.py imports from this module at load time, so a
     # top-level import here would be circular -- safe deferred to call time, well

@@ -34,7 +34,7 @@ NORTH_COAST_INSET_BASE = 6
 SOUTH_COAST_INSET_BASE = 6
 
 # Natural river/lake rework, phase 1: "I'd love the river and lake to look
-# better and more natural." backend/world_hydrology_data.py is a ONE-TIME baked
+# better and more natural." the river and lake (now world/world_layers.json, see docs/WORLD-LAYERS.md; this was a ONE-TIME baked
 # tile set (see scripts/generate_hydrology.py), not something world.py computes
 # per call -- this seed is what that offline generator used, kept here so it's
 # reproducible and so a future map-variety phase has an obvious place to thread

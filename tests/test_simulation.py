@@ -5140,7 +5140,7 @@ def test_expedition_senses_nearby_water_without_stepping_onto_it():
 
     assert tribe.expeditions[0]["pos"] == [22, 54]  # landed short of the lake itself
     assert tribe.expeditions[0]["phase"] == "returning"
-    assert tribe.expeditions[0]["found"] == [25, 54]  # the actual water tile it sensed, not its own position
+    assert tribe.expeditions[0]["found"] == [26, 54]  # the actual water tile it sensed, not its own position (the redesigned river's west arm, 2026-10-08; it was the lake's (25, 54))
     assert tribe.population == 8  # no drowning -- never touched the water
     assert any("hears water nearby" in entry for entry in tribe.history)
 
@@ -6317,18 +6317,18 @@ def test_expedition_records_every_tile_it_walks_as_a_breadcrumb_path():
     actively happening. This is the per-expedition breadcrumb line instead: everywhere
     this one party has actually walked, regardless of reuse."""
     sim = _bare_simulation()
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 60, "#c084fc")  # (50, 60), 2026-10-08: (50, 50) is in the redesigned river, which ends a walk at once
     tribe.expeditions = [{
-        "pos": [50, 50], "origin": [50, 50], "target": [80, 80],
+        "pos": [50, 60], "origin": [50, 60], "target": [80, 80],
         "day": 0, "phase": "outbound", "found": None, "terrain_report": None,
         "food_gathered": 0, "water_gathered": 0,
-        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [[50, 50]],
+        "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [[50, 60]],
     }]
 
     sim._advance_expeditions(tribe)
     sim._advance_expeditions(tribe)
 
-    assert tribe.expeditions[0]["path"][0] == [50, 50]
+    assert tribe.expeditions[0]["path"][0] == [50, 60]
     assert len(tribe.expeditions[0]["path"]) == 3
     assert tribe.expeditions[0]["path"][-1] == tribe.expeditions[0]["pos"]
 
@@ -7321,7 +7321,7 @@ def test_find_minor_settlement_site_avoids_every_tribes_territory():
         assert dist > 20 + config.MINOR_SETTLEMENT_TERRITORY_BUFFER
 
 
-def test_found_territory_accepts_a_single_natural_barrier():
+def test_found_territory_accepts_a_single_natural_barrier(monkeypatch):
     """Explicit correction (2026-09-06), after watching a full run through to
     its era ceiling: "with 2 built, they feel too safe even in an open
     field" -- lowered config.TERRITORY_MAX_ACCEPTABLE_NATURAL_BARRIERS back to
@@ -7331,6 +7331,7 @@ def test_found_territory_accepts_a_single_natural_barrier():
     actually stands."""
     from backend import config, world
 
+    monkeypatch.setattr(config, "TERRITORY_WATER_REFINE_MIN_GAIN", 2.0)  # 2026-10-08: switch the open-water refinement off; this test is about the barrier rule alone
     sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 40, "y": 62}])
     tribe = sim.tribes["tribe_0"]
     assert world.biome_at(40, 62) == "plains"
@@ -7391,13 +7392,13 @@ def test_found_territory_narrates_backing_the_center_away():
     real bug: a silent placement, not the distance itself."""
     from backend import world
 
-    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 50, "y": 39}])
+    sim = Simulation([{"name": "River Tribe", "model": "gemma2:2b", "x": 55, "y": 48}])
     tribe = sim.tribes["tribe_0"]
-    assert world.biome_at(50, 39) == "river"  # same real bug case as the test above
+    assert world.biome_at(55, 48) == "river"  # same real bug case as the test above
 
     sim._found_territory(tribe)
 
-    assert tribe.territory_center != (50, 39)
+    assert tribe.territory_center != (55, 48)
     cx, cy = tribe.territory_center
     assert any(f"({cx},{cy})" in entry and "backed off" in entry for entry in tribe.history)
 

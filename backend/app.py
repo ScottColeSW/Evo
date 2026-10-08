@@ -6,6 +6,7 @@ import httpx
 from aiohttp import WSMsgType, web
 
 from . import config
+from . import world_layers
 from .board_history import record_board_state
 from .eras import ERAS
 from .experiment_log import read_all_experiment_runs, summarize_experiment
@@ -22,9 +23,19 @@ routes = web.RouteTableDef()
 _NO_CACHE = {"Cache-Control": "no-cache"}
 
 
+_WORLD_PLACEHOLDER = "/*__WORLD_LAYERS__*/null"
+
+
+def render_index() -> str:
+    """index.html with the world layers filled in (2026-10-08). The page has no copy of the river, lake, field or spawn points of its own: the server hands it the same
+    document the backend loaded (world_layers.DOCUMENT), on every request, so the map the page draws cannot differ from the one the simulation runs on."""
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    return html.replace(_WORLD_PLACEHOLDER, json.dumps(world_layers.DOCUMENT, separators=(",", ":")))
+
+
 @routes.get("/")
-async def index(request: web.Request) -> web.FileResponse:
-    return web.FileResponse(FRONTEND_DIR / "index.html", headers=_NO_CACHE)
+async def index(request: web.Request) -> web.Response:
+    return web.Response(text=render_index(), content_type="text/html", headers=_NO_CACHE)
 
 
 @routes.get("/debug")

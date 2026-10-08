@@ -662,7 +662,9 @@ def test_river_and_lake_form_one_connected_body_of_water_from_source_to_sea():
 
 
 def test_the_field_is_plain_land_whatever_was_there_before():
-    from backend.world_hydrology_data import FIELD_TILES
+    from backend.world import field_tiles
+
+    FIELD_TILES = field_tiles()
 
     assert len(FIELD_TILES) > 100
     assert all(biome_at(x, y) == "plains" for x, y in FIELD_TILES)

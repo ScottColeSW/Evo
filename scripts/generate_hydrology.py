@@ -1,4 +1,7 @@
-"""One-time generator for the river/lake tile sets baked into
+"""SUPERSEDED 2026-10-08 -- do not run. The river, lake and field now live in world/world_layers.json (see docs/WORLD-LAYERS.md), which is the source; this
+script wrote the old generated module and frontend block and would write a stale river. Kept for how the first natural-looking river was made.
+
+One-time generator for the river/lake tile sets baked into
 backend/world_hydrology_data.py and the generated data block inside
 frontend/index.html.
 
@@ -321,6 +324,7 @@ def _write_frontend_block(river_tiles: frozenset, lake_tiles: frozenset) -> None
 
 
 if __name__ == "__main__":
+    sys.exit("scripts/generate_hydrology.py is superseded by world/world_layers.json (docs/WORLD-LAYERS.md); it would write a stale river. Refusing to run.")
     river_tiles, lake_tiles = generate()
     _write_backend_module(river_tiles, lake_tiles)
     _write_frontend_block(river_tiles, lake_tiles)

@@ -1087,7 +1087,7 @@ def test_larger_population_builds_wall_progress_faster():
     _settle(sim, small)
     _unlock_all_ring0_sections(sim, small)
     small.wood, small.stone, small.population = 100, 100, 8
-    big = Tribe("tribe_1", "Big Tribe", "gemma2:2b", 60, 60, "#f97316")
+    big = Tribe("tribe_1", "Big Tribe", "gemma2:2b", 70, 70, "#f97316")  # (70, 70), 2026-10-08: ring 0's first section at (60, 60) is now a free natural barrier (the redesigned river)
     _settle(sim, big)
     _unlock_all_ring0_sections(sim, big)
     big.wood, big.stone, big.population = 100, 100, 40
@@ -3905,16 +3905,17 @@ def test_relocate_moves_five_times_as_fast_from_an_evolved_toll_road():
     # the Scout speed pre-settlement") pushed the toll-boosted speed past what
     # the map's east coast leaves clear from the exact center; 30 leaves enough
     # real land eastward for the full, uncapped speed to land short of the coast.
-    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 30, 50, "#c084fc")
+    # y=28 (2026-10-08): the redesigned river crosses every row between y=31 and y=79 somewhere east of x=30, so this clear run east to the coast is on a row it leaves dry.
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 30, 28, "#c084fc")
     # Evolving the road itself also wears the tile a little (unavoidable, same
     # wear_trail call) -- computed against the exact bonus this leaves behind
     # rather than assuming a bare config.MOVEMENT_SPEED baseline.
     for _ in range(config.ROAD_EVOLVE_CROSSINGS + 1):
-        sim.world.wear_trail(30, 50, 0.01, tribe_id=tribe.id)
-    trail_bonus = sim.world.trail_speed_bonus(30, 50, config.MAX_TRAIL_BONUS_SPEED)
+        sim.world.wear_trail(30, 28, 0.01, tribe_id=tribe.id)
+    trail_bonus = sim.world.trail_speed_bonus(30, 28, config.MAX_TRAIL_BONUS_SPEED)
     expected_speed = round((config.MOVEMENT_SPEED + trail_bonus) * config.TOLL_ROAD_SPEED_MULTIPLIER)
 
-    ACTION_REGISTRY["RELOCATE"](sim, tribe, "plains", (95, 50))
+    ACTION_REGISTRY["RELOCATE"](sim, tribe, "plains", (95, 28))
 
     assert tribe.x - 30 == expected_speed
     assert expected_speed > config.MOVEMENT_SPEED * config.TOLL_ROAD_SPEED_MULTIPLIER - 1  # genuinely ~5x, not 1x
