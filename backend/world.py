@@ -288,6 +288,9 @@ def biome_at(x: int, y: int) -> str:
         return "cliffs" if _is_headland_like(_south_coast_boundary, x, ocean_on_increasing_side=True) else "shoals"
     if _is_lake(x, y):
         return "lake"
+    # The owner's field (2026-10-08): ground where the old river ran, written as plain land whatever the surrounding terrain (scripts/apply_river_design.py).
+    if (x, y) in _hydrology.FIELD_TILES:
+        return "plains"
     # Checked before mountains -- the volcano sits inside the mountain region and
     # must win there (see VOLCANO_CENTER/_RADIUS's own comment).
     if _is_volcano(x, y):

@@ -129,7 +129,11 @@ def test_a_tribe_still_listing_a_spent_site_is_told_it_is_worked_out_and_the_ent
     other = Tribe("tribe_1", "Rival", "qwen2.5:3b", 10, 10, "#fb923c")
     sim.tribes["tribe_1"] = other
     other.lumber_sites = [sites[0], (90, 90)]
-    other.wildlife_sites = [{"x": 70, "y": 70, "type": "Deer Stand"}]
+    from backend.world import site_seed_points
+
+    seeds = {p for t in ("lumber", "wildlife", "quarry", "mine") for p in site_seed_points(t, 100)}
+    nowhere = next((x, y) for x in range(60, 80) for y in range(60, 80) if (x, y) not in seeds)  # not a seeded site, so the test's "every seed is spent" setup does not touch it
+    other.wildlife_sites = [{"x": nowhere[0], "y": nowhere[1], "type": "Deer Stand"}]
     for _ in range(config.NODE_USES):
         sim.use_node(tribe, "lumber", *sites[0])
     sim._prune_spent_sites(other)

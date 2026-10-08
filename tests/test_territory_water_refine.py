@@ -23,9 +23,9 @@ def test_the_live_runs_river_site_gets_a_much_drier_center_the_tribe_still_stand
 
 
 def test_a_tribe_on_dry_ground_does_not_move():
-    sim, tribe = _sim_with_tribe_at(44, 52)  # plains with no water anywhere inside the ring
-    assert sim._unbuildable_share(44, 52) < config.TERRITORY_WATER_REFINE_MIN_GAIN
-    assert sim._choose_territory_center(tribe) == (44, 52)
+    sim, tribe = _sim_with_tribe_at(42, 75)  # plains with no water anywhere inside the ring
+    assert sim._unbuildable_share(42, 75) < config.TERRITORY_WATER_REFINE_MIN_GAIN
+    assert sim._choose_territory_center(tribe) == (42, 75)
 
 
 def test_the_new_center_keeps_the_natural_barrier_cap():

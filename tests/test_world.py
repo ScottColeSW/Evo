@@ -429,29 +429,15 @@ def test_river_tiles_never_touch_ocean_except_at_the_mouth():
         assert y < _south_coast_boundary(x)
 
 
-def test_river_tiles_are_a_subset_of_the_pre_rework_shape():
-    """The river's own anchoring guarantee: erosion only ever subtracts from
-    the original sine-wave ribbon, never grows or relocates it -- so every
-    gameplay fixture that already depended on a specific tile NOT being river
-    keeps working. Recomputes the pre-rework formula directly (the same one
-    scripts/generate_hydrology.py treats as its outer footprint) rather than
-    importing a frozen copy.
+def test_the_traced_river_stays_on_land_and_meets_the_sea_only_at_its_mouth():
+    """2026-10-08: the river is now the owner's traced design (scripts/river_design.json, applied by scripts/apply_river_design.py); this replaces the old test that held the
+    river to a subset of the pre-rework formula. Every river tile is land-side or the mouth's own cliff/shoal band cut through to the sea (biome_at checks river first)."""
+    from backend.world import river_tiles
 
-    The lake doesn't get an equivalent test: a direct request ("we can extend
-    the lake, naturally curving into the south-west") deliberately lets the
-    lake grow a real bay beyond its old circle in that one direction -- see
-    test_lake_does_not_sprawl_past_a_generous_bound and
-    test_wall_barrier_anchor_points_stay_dry_land below for what actually
-    matters there instead."""
-    from backend.world import OCEAN_X_START, RIVER_HALF_WIDTH, RIVER_SOURCE_X, _coast_boundary_x, _river_center_y, _west_coast_boundary, river_tiles
-
-    def old_is_river(x, y):
-        if x < max(RIVER_SOURCE_X, _west_coast_boundary(y)) or x >= min(OCEAN_X_START, _coast_boundary_x(y)):
-            return False
-        return abs(y - _river_center_y(x)) <= RIVER_HALF_WIDTH
-
-    assert all(old_is_river(x, y) for x, y in river_tiles())
-
+    tiles = river_tiles()
+    assert 300 <= len(tiles) <= 600
+    assert all(0 < x < 99 and 0 < y < 99 for x, y in tiles)
+    assert min(x for x, y in tiles) <= 16 and max(x for x, y in tiles) >= 84  # from the northwest mountains to the east coast
 
 def test_lake_does_not_sprawl_past_a_generous_bound():
     """The southwest bay is a deliberate, bounded extension (see
@@ -552,21 +538,11 @@ def test_river_originates_near_the_mountains():
 
 
 def test_river_reaches_the_coast():
-    """The river must actually connect to the ocean, not fade out into forest or
-    plains before reaching it -- an Earth-like river runs from source to sea. Scans
-    the river's own course for its last river tile and checks the very next step is
-    ocean (not forest/plains) -- robust to exactly where the wavy coastline sits,
-    unlike asserting a single hardcoded coordinate."""
-    from backend.world import RIVER_SOURCE_X, OCEAN_X_START, _river_center_y
+    """The river must actually connect to the ocean: at least one river tile has open ocean directly to its east (that is also what draws the frontend's waterfall)."""
+    from backend.world import river_tiles
 
-    last_river_x = None
-    for x in range(RIVER_SOURCE_X, OCEAN_X_START):
-        if biome_at(x, round(_river_center_y(x))) == "river":
-            last_river_x = x
-    assert last_river_x is not None
-    y = round(_river_center_y(last_river_x))
-    assert biome_at(last_river_x + 1, y) == "ocean"
-
+    mouth = [(x, y) for x, y in river_tiles() if biome_at(x + 1, y) == "ocean"]
+    assert mouth
 
 def test_river_crosses_more_than_one_biome_on_its_way_to_the_sea():
     from backend.world import OCEAN_X_START, RIVER_SOURCE_X, _river_center_y
@@ -670,21 +646,26 @@ def test_volcano_clears_every_coastline_with_real_margin():
     assert biome_at(vx, vy) == "volcano"
 
 
-def test_river_still_connects_real_land_to_real_land_end_to_end():
-    """Map dream, phase 2: the river's west (source) end now clips to the real
-    west coastline instead of the old fixed RIVER_SOURCE_X (see
-    test_river_originates_near_the_mountains) -- confirms the river, sampled
-    along its own course, never starts or ends in the new ocean at a handful
-    of representative x values, the same connectivity test_river_reaches_the_
-    coast already runs for the east end."""
-    from backend.world import OCEAN_X_START, RIVER_SOURCE_X, _river_center_y
+def test_river_and_lake_form_one_connected_body_of_water_from_source_to_sea():
+    """The river, its west arm and the lake are one connected body (8-neighbour), so there is no stranded pool and no gap between the arm and the lake."""
+    from backend.world import lake_tiles, river_tiles
 
-    river_xs = [x for x in range(RIVER_SOURCE_X, OCEAN_X_START) if biome_at(x, round(_river_center_y(x))) == "river"]
-    assert river_xs  # the river exists somewhere along this stretch
-    first_x, last_x = min(river_xs), max(river_xs)
-    assert biome_at(first_x - 1, round(_river_center_y(first_x - 1))) != "river"
-    assert biome_at(last_x + 1, round(_river_center_y(last_x + 1))) == "ocean"
+    water = set(river_tiles()) | set(lake_tiles())
+    seen, stack = set(), [next(iter(river_tiles()))]
+    while stack:
+        p = stack.pop()
+        if p in seen:
+            continue
+        seen.add(p)
+        stack.extend((p[0] + dx, p[1] + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1) if (p[0] + dx, p[1] + dy) in water and (p[0] + dx, p[1] + dy) not in seen)
+    assert seen == water
 
+
+def test_the_field_is_plain_land_whatever_was_there_before():
+    from backend.world_hydrology_data import FIELD_TILES
+
+    assert len(FIELD_TILES) > 100
+    assert all(biome_at(x, y) == "plains" for x, y in FIELD_TILES)
 
 def test_nearest_water_returns_own_tile_when_already_on_water():
     land = Landscape(100)
