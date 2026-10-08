@@ -4438,6 +4438,8 @@ def test_exploration_party_credits_real_wood_and_stone_home():
     """Only EXPLORATION_PARTY should ever bring real wood/stone home -- SCOUT/
     HUNTING_PARTY/SEND_TRADE_EMISSARY never populate these fields at all."""
     sim = Simulation([{"name": "Forest Tribe", "model": "gemma2:2b", "x": 50, "y": 50}])
+    from unittest import mock
+
     tribe = sim.tribes["tribe_0"]
     tribe.wood = 0
     tribe.stone = 0
@@ -4449,7 +4451,9 @@ def test_exploration_party_credits_real_wood_and_stone_home():
     }
     tribe.expeditions = [exp]
 
-    sim._advance_one_expedition(tribe, exp)
+    # Discovery samples are covered in test_discovery_samples.py; keep this to the haul.
+    with mock.patch.object(sim, "_deliver_discovery_samples"):
+        sim._advance_one_expedition(tribe, exp)
 
     assert tribe.wood == 12
     assert tribe.stone == 9

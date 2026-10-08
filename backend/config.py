@@ -2948,3 +2948,10 @@ def nudge_active(tag: str) -> bool:
 # Model names that mean a "thinking" model, used only when Ollama does not report capabilities (OllamaClient.list_models). 2026-10-08: such a model writes long hidden
 # reasoning before each answer (qwen3:4b: a median of 53 seconds a decision in a live run, against 1.3 for qwen2.5:3b), so they are not offered to play.
 THINKING_MODEL_NAME_PREFIXES = ("qwen3", "deepseek-r1", "gpt-oss", "magistral", "qwq", "phi4-reasoning", "cogito")
+
+# 2026-10-08 (the owner: "let's make 'discover' a first 'gather' of anything encountered. They will have to deliver a small amount and mark it."): a scout that marks a
+# site brings home a small sample of what is there, and that counts as having gathered it once. A grove gives wood (so wood_ever_gathered, which a sawmill waits for), a
+# stone site gives stone (stone_ever_gathered: quarry, well, bath house), a game site gives food, and a vein gives a little of its own ore (ore_ever_gathered: the mine's
+# yield flows and the forge can be built). A live run's two tribes sat 500+ cycles in the monolithic era because nothing ever made the one manual GATHER_ORE worth choosing.
+DISCOVERY_SAMPLE_AMOUNT = 5   # wood, stone or food from a marked site
+DISCOVERY_ORE_SAMPLE = 3      # of a vein's own ore (the forge needs FORGE_ITEM_ORE_COST of it)

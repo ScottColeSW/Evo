@@ -2386,17 +2386,16 @@ _HAUL_JOURNAL_KEYS = {"lumber": "timber groves known", "wildlife": "game sites k
 
 
 def _haul_text(haul: list[dict]) -> str:
-    """What a scouting trip brought home, in the report's own words: 'brought home a timber grove at (53,36) and a stone-rich site at (60,37)'. Empty when it brought none."""
+    """What a scouting trip brought home, in the report's own words: 'brought home 5 wood from a timber grove at (53,36) and 3 Orosite Ore from a vein at (12,17)'. Each site is
+    marked, and the sample it gave (see Simulation._deliver_discovery_samples) is named when there was one. Empty when it brought none."""
     parts = []
     for h in haul:
-        if h["type"] == "lumber":
-            parts.append(f"a timber grove at ({h['x']},{h['y']})")
-        elif h["type"] == "wildlife":
-            parts.append(f"a game-rich site at ({h['x']},{h['y']})")
-        elif h["type"] == "quarry":
-            parts.append(f"a stone-rich site at ({h['x']},{h['y']})")
-        else:
-            parts.append(f"a vein of {h.get('label', 'ore')} at ({h['x']},{h['y']})")
+        place = f"({h['x']},{h['y']})"
+        what = {"lumber": "a timber grove", "wildlife": "a game-rich site", "quarry": "a stone-rich site"}.get(h["type"], f"a vein of {h.get('label', 'ore')}")
+        if h["type"] == "mine":
+            what = "a vein"
+        amount = h.get("amount")
+        parts.append(f"{amount} {h['resource']} from {what} at {place}" if amount else f"{what} at {place}" if h["type"] != "mine" else f"a vein of {h.get('label', 'ore')} at {place}")
     if not parts:
         return ""
     return "brought home " + (parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1])
@@ -6213,6 +6212,25 @@ class Simulation:
                 break
         return lines
 
+    def _deliver_discovery_samples(self, tribe: Tribe, haul: list[dict]) -> None:
+        """Discovery is a first gather (2026-10-08, the owner): each site a scout marks also brings home a small sample of what is there, delivered to the stores and counted
+        as having gathered it once (config.DISCOVERY_SAMPLE_AMOUNT). Sets the same first-gather flags a manual gather sets, so a sawmill, quarry or mine no longer waits on one
+        manual fetch; a vein's sample is of its own ore (ore_ever_gathered, which starts the mine's yield and lets the forge be built). Each entry gains "amount" and "resource"
+        so the report can say what came home; a full store delivers 0 but the gather still counts."""
+        for h in haul:
+            if h["type"] == "lumber":
+                h["resource"], h["amount"] = "wood", self._capped_add(tribe, "wood", config.DISCOVERY_SAMPLE_AMOUNT)
+                tribe.wood_ever_gathered = True
+            elif h["type"] == "quarry":
+                h["resource"], h["amount"] = "stone", self._capped_add(tribe, "stone", config.DISCOVERY_SAMPLE_AMOUNT)
+                tribe.stone_ever_gathered = True
+            elif h["type"] == "wildlife":
+                h["resource"], h["amount"] = "food", self._capped_add(tribe, "food", config.DISCOVERY_SAMPLE_AMOUNT)
+            elif h["type"] == "mine":
+                h["resource"] = h.get("label", "ore")
+                h["amount"] = self._capped_unique_add(tribe, h["resource"], config.DISCOVERY_ORE_SAMPLE)
+                tribe.ore_ever_gathered = True
+
     def _journal_scout_haul(self, tribe: Tribe, exp: dict, scout: str, haul: list[dict]) -> None:
         """A SCOUT's result arrives days after the choice, so the journal entry written at the choice saw no change in anything it tracks and the read-back called
         every scouting trip "no change" (2026-10-08). When the party gets home, the sites it brought are added to that entry's changes (known sites, a count the
@@ -7768,6 +7786,7 @@ class Simulation:
                 # found, even for a trip that came back with sites, and the Chief's journal saw no change at all). The game-site celebration waits until after the report,
                 # so a find of water keeps the one celebration a cycle allows.
                 haul = self._discover_along_party_ground(tribe, exp, scout, celebrate=False)
+                self._deliver_discovery_samples(tribe, haul)
                 brought = _haul_text(haul)
                 if exp["found"]:
                     fx, fy = exp["found"]

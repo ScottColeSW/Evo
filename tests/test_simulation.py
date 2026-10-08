@@ -5614,7 +5614,9 @@ def test_water_discovery_does_not_stack_a_second_celebration_the_same_cycle():
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
     }]
 
-    sim._advance_expeditions(tribe)
+    # Discovery samples are covered in test_discovery_samples.py; keep this to the haul.
+    with mock.patch.object(sim, "_deliver_discovery_samples"):
+        sim._advance_expeditions(tribe)
 
     # Only the ordinary arrival-home food delivery -- no extra feast cost stacked on top.
     assert tribe.food == 100 + config.EXPEDITION_RETURN_DAILY_FOOD
@@ -5661,7 +5663,9 @@ def test_expedition_arrival_delivers_foraged_food_and_water_to_the_tribe():
         "lead_scout": "Test Scout", "determination": 0.5, "max_days": 3, "path": [],
     }]
 
-    sim._advance_expeditions(tribe)
+    # Discovery samples are covered in test_discovery_samples.py; keep this to the haul.
+    with mock.patch.object(sim, "_deliver_discovery_samples"):
+        sim._advance_expeditions(tribe)
 
     # Confirming water for the first time now throws a celebration (explicit request)
     # -- a real food cost on top of the delivered/foraged amounts, not a separate
