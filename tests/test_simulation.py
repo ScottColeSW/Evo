@@ -5749,7 +5749,11 @@ def test_expedition_arrival_home_empty_handed_clears_state_without_a_water_memor
     sim._advance_expeditions(tribe)
 
     assert tribe.expeditions == []
-    assert any("empty-handed" in entry for entry in tribe.history)
+    # 2026-10-08: the report now says what the trip brought home. This scout (no water found) crossed sites near home, so it says so; "nothing new found" is for a trip
+    # that brought nothing (see tests/test_scout_report.py). What matters here: a report was filed and no water was remembered.
+    reports = [str(entry) for entry in tribe.history if "is home and gives" in str(entry)]
+    assert len(reports) == 1 and "fresh water" not in reports[0]
+    assert tribe.confirmed_water_sites == []
 
 
 def test_hunting_party_catches_something_and_heads_home():

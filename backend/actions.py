@@ -2344,6 +2344,7 @@ def _scout(sim, tribe, biome, target):
     scout = _generate_scout(tribe, sim.cycle)
     tribe.expeditions.append({
         "kind": "scout",
+        "launched": sim.cycle,
         "pos": [lx, ly],
         "origin": [lx, ly],
         "target": [tx, ty],

@@ -2382,6 +2382,26 @@ def _append_expedition_path_point(exp: dict, x: int, y: int) -> None:
 NODE_LABEL = {"lumber": "timber grove", "quarry": "stone-rich site", "wildlife": "hunting ground"}
 
 
+_HAUL_JOURNAL_KEYS = {"lumber": "timber groves known", "wildlife": "game sites known", "quarry": "stone sites known", "mine": "veins known"}
+
+
+def _haul_text(haul: list[dict]) -> str:
+    """What a scouting trip brought home, in the report's own words: 'brought home a timber grove at (53,36) and a stone-rich site at (60,37)'. Empty when it brought none."""
+    parts = []
+    for h in haul:
+        if h["type"] == "lumber":
+            parts.append(f"a timber grove at ({h['x']},{h['y']})")
+        elif h["type"] == "wildlife":
+            parts.append(f"a game-rich site at ({h['x']},{h['y']})")
+        elif h["type"] == "quarry":
+            parts.append(f"a stone-rich site at ({h['x']},{h['y']})")
+        else:
+            parts.append(f"a vein of {h.get('label', 'ore')} at ({h['x']},{h['y']})")
+    if not parts:
+        return ""
+    return "brought home " + (parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1])
+
+
 SITE_TYPES_PER_TRIP = ("lumber", "wildlife", "quarry", "mine")  # a trip captures at most one new site of each (Simulation._discover_along_party_ground)
 
 
@@ -6193,6 +6213,26 @@ class Simulation:
                 break
         return lines
 
+    def _journal_scout_haul(self, tribe: Tribe, exp: dict, scout: str, haul: list[dict]) -> None:
+        """A SCOUT's result arrives days after the choice, so the journal entry written at the choice saw no change in anything it tracks and the read-back called
+        every scouting trip "no change" (2026-10-08). When the party gets home, the sites it brought are added to that entry's changes (known sites, a count the
+        Chief can read back like a stockpile), and the haul is logged. Best-effort: an entry that has rolled out of the journal is simply not amended."""
+        try:
+            counts: dict[str, int] = {}
+            for h in haul:
+                key = _HAUL_JOURNAL_KEYS[h["type"]]
+                counts[key] = counts.get(key, 0) + 1
+            launched = exp.get("launched")
+            if counts and launched is not None:
+                entry = next((e for e in reversed(tribe.decision_journal) if e["action"] == "SCOUT" and e["cycle"] == launched), None)
+                if entry is not None:
+                    for key, n in counts.items():
+                        entry["delta"][key] = entry["delta"].get(key, 0) + n
+            self.event_log.record_data(tribe.name, "scout_haul", {"scout": scout, "launched": launched, "sites": haul},
+                                       message=f"[scout haul] {scout}: " + (_haul_text(haul) or "no new site"))
+        except Exception:  # noqa: BLE001 -- the journal must never interrupt a turn
+            pass
+
     def _journal_record(self, tribe: Tribe, action: str, before: dict, note: str | None, menu_size: int | None = None,
                         menu: list | None = None) -> None:
         """Compare the tribe now with `before` and record what the choice changed. Best-effort: never raises."""
@@ -6887,7 +6927,7 @@ class Simulation:
                     entries.remove(entry)
                     tribe.history.append(f"word comes that the {NODE_LABEL[node_type]} at ({ex},{ey}) is worked out")
 
-    def _discover_along_party_ground(self, tribe: Tribe, exp: dict, scout: str) -> None:
+    def _discover_along_party_ground(self, tribe: Tribe, exp: dict, scout: str, celebrate: bool = True) -> list[dict]:
         """Checks every point of ground a party covered for a real resource site, however the trip ended (found water, turned back at an edge, was
         ambushed, reached its target). Before 2026-10-06 the check ran only in the branch for a party that reached its target and surveyed it; in a live
         run 40 of the 43 scouting reports in the first 230 cycles came from trips that ended some other way, so they came home having discarded all the ground they crossed, and neither tribe knew a single
@@ -6895,12 +6935,14 @@ class Simulation:
         # 2026-10-08 (the owner: a trip "only captures 1 site of each type", and a scout reporting 7 groves or 7 quarries at once was the thing to fix): one new site per
         # type per trip, the first the party meets along its route. Sites the tribe already knows are skipped as before, so the next scout is shown the next one.
         taken: set[str] = set()
+        haul: list[dict] = []
         for gx, gy in party_ground_points(exp.get("path")):
-            self._discover_sites_along_route(tribe, gx, gy, scout, taken)
+            self._discover_sites_along_route(tribe, gx, gy, scout, taken, haul, celebrate)
             if len(taken) == len(SITE_TYPES_PER_TRIP):
                 break
+        return haul
 
-    def _discover_sites_along_route(self, tribe: Tribe, x: int, y: int, scout: str, taken: set | None = None) -> None:
+    def _discover_sites_along_route(self, tribe: Tribe, x: int, y: int, scout: str, taken: set | None = None, haul: list | None = None, celebrate: bool = True) -> None:
         """Checks one point a scout actually walked through for a real, pre-seeded
         lumber/wildlife/quarry/mine site (world.site_seed_points) -- extracted so a
         multi-leg pushed-onward trip (see _advance_one_expedition's outbound arrival
@@ -6923,6 +6965,8 @@ class Simulation:
         lumber_found = None if "lumber" in taken else find_nearby_site("lumber", x, y, grid_size, set(tribe.lumber_sites) | self.world.spent_of("lumber"), extra_points=tuple(self.world.respawned_sites.get("lumber", ())))
         if lumber_found is not None and not self._inside_any_territory(*lumber_found):
             taken.add("lumber")
+            if haul is not None:
+                haul.append({"type": "lumber", "x": lumber_found[0], "y": lumber_found[1]})
             tribe.lumber_sites.append(lumber_found)
             tribe.history.append(f"{scout}'s party marks a timber grove at ({lumber_found[0]},{lumber_found[1]})")
         known_wildlife = {(s["x"], s["y"]) for s in tribe.wildlife_sites}
@@ -6932,11 +6976,15 @@ class Simulation:
             wx, wy = wildlife_found
             site_type = random.choice(WILDLIFE_SITE_TYPES)
             tribe.wildlife_sites.append({"x": wx, "y": wy, "type": site_type})
-            if tribe.last_celebration_cycle != self.cycle:
+            if haul is not None:
+                haul.append({"type": "wildlife", "x": wx, "y": wy, "label": site_type})
+            if celebrate and tribe.last_celebration_cycle != self.cycle:
                 self._celebrate_game_discovery(tribe, wx, wy)
         quarry_found = None if "quarry" in taken else find_nearby_site("quarry", x, y, grid_size, set(tribe.quarry_sites) | self.world.spent_of("quarry"), extra_points=tuple(self.world.respawned_sites.get("quarry", ())))
         if quarry_found is not None and not self._inside_any_territory(*quarry_found):
             taken.add("quarry")
+            if haul is not None:
+                haul.append({"type": "quarry", "x": quarry_found[0], "y": quarry_found[1]})
             tribe.quarry_sites.append(quarry_found)
             tribe.history.append(f"{scout}'s party marks a stone-rich site at ({quarry_found[0]},{quarry_found[1]})")
         # Explicit request: "Mines can [also] contain the Unique Resource of the
@@ -6952,6 +7000,8 @@ class Simulation:
             mine_biome = biome_at(mx, my)
             resource_name = UNIQUE_RESOURCE_BY_BIOME.get(mine_biome, "Unknown Ore")
             tribe.mine_sites.append({"x": mx, "y": my, "biome": mine_biome, "resource": resource_name})
+            if haul is not None:
+                haul.append({"type": "mine", "x": mx, "y": my, "label": resource_name})
             tribe.history.append(
                 f"{scout} also reports something rarer at ({mx},{my}) -- a vein of "
                 f"{resource_name}, waiting to be excavated"
@@ -7714,6 +7764,11 @@ class Simulation:
                         tribe.memory.remember(f"Scouts spotted signs of raiders near ({rx},{ry}).", self.cycle, weight=0.7)
                         tribe.history.append(f"{scout} reports signs of raiders near ({rx},{ry}) on the way home -- best be cautious")
 
+                # What the trip brought home, worked out first so the report can say it (2026-10-08: the report said "nothing new found" whenever no water or landmark was
+                # found, even for a trip that came back with sites, and the Chief's journal saw no change at all). The game-site celebration waits until after the report,
+                # so a find of water keeps the one celebration a cycle allows.
+                haul = self._discover_along_party_ground(tribe, exp, scout, celebrate=False)
+                brought = _haul_text(haul)
                 if exp["found"]:
                     fx, fy = exp["found"]
                     tribe.expeditions_succeeded += 1
@@ -7737,7 +7792,7 @@ class Simulation:
                         tribe.confirmed_water_sites.append((fx, fy))
                     tribe.history.append(
                         f"{scout} is home and gives {recipient} a full report: "
-                        f"fresh water confirmed at ({fx},{fy}), {forage_note}"
+                        f"fresh water confirmed at ({fx},{fy}), {brought + ', ' if brought else ''}{forage_note}"
                     )
                     # `!= self.cycle`, not the full CELEBRATION_COOLDOWN_CYCLES gate --
                     # this is meant to fire on every genuine new find, just not twice
@@ -7755,15 +7810,22 @@ class Simulation:
                     # _discover_along_party_ground, whichever way the trip ended.)
                     tribe.history.append(
                         f"{scout} is home and gives {recipient} a full report: "
-                        f"{label} terrain at ({tx},{ty}), {forage_note}"
+                        f"{label} terrain at ({tx},{ty}), {brought + ', ' if brought else ''}{forage_note}"
+                    )
+                elif brought:
+                    tribe.history.append(
+                        f"{scout} is home and gives {recipient} a full report: {brought}, {forage_note}"
                     )
                 else:
                     tribe.history.append(
                         f"{scout} is home and gives {recipient} a full report: "
                         f"nothing new found, though not empty-handed -- {forage_note}"
                     )
-                # The ground the trip crossed, whichever of those it was. After the report, so a find of water keeps the one celebration a cycle allows.
-                self._discover_along_party_ground(tribe, exp, scout)
+                # (The ground the trip crossed, whichever of those it was, was checked above.) Now the game-site celebration, if the cycle still has room for one.
+                game = next((h for h in haul if h["type"] == "wildlife"), None)
+                if game is not None and tribe.last_celebration_cycle != self.cycle:
+                    self._celebrate_game_discovery(tribe, game["x"], game["y"])
+                self._journal_scout_haul(tribe, exp, scout, haul)
                 return True
             return False
 
