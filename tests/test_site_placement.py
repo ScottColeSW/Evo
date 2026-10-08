@@ -177,3 +177,18 @@ def test_a_spent_homeland_node_is_replaced_in_reach_after_the_wait():
     sim.cycle = 100 + config.HOMELAND_REFILL_CYCLES
     sim._advance_homeland_refills()
     assert len(sim.homeland_nodes(tribe, "lumber")) == 1
+
+
+def test_the_guarantee_never_places_a_node_on_the_coordinate_of_a_spent_site():
+    """2026-10-08: a node placed exactly where a site was already spent counted as spent at once, so the tribe's homeland stayed empty (1 seed in 60 hit it)."""
+    import random
+
+    for seed in range(60):
+        random.seed(seed)
+        sim, tribe = _settled()
+        for t in ("lumber", "wildlife", "quarry"):
+            sim.world.exhausted_sites |= {(t, x, y) for x, y in site_seed_points(t, G)}
+            sim.world.respawned_sites[t] = []
+        sim._ensure_homeland(tribe)
+        for t in ("lumber", "wildlife", "quarry"):
+            assert len(sim.homeland_nodes(tribe, t)) == 1, (seed, t)

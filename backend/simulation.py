@@ -6903,7 +6903,7 @@ class Simulation:
                 dist = random.randint(config.RAIDER_SIGHTING_MIN_OFFSET, max_dist)
                 rx = max(0, min(self.world.grid_size - 1, x + round(dist * math.cos(angle))))
                 ry = max(0, min(self.world.grid_size - 1, y + round(dist * math.sin(angle))))
-                if (rx, ry) == (x, y) or not self.world.is_inland(rx, ry) or self._inside_any_territory(rx, ry):
+                if (rx, ry) == (x, y) or not self.world.is_inland(rx, ry) or self._inside_any_territory(rx, ry) or (rx, ry) in self.world.spent_of(node_type):
                     continue
                 if any(math.hypot(rx - a, ry - b) < 4 for a, b in live):
                     continue
@@ -10052,8 +10052,9 @@ class Simulation:
             if self.homeland_nodes(tribe, node_type):
                 continue
             live = self.world.all_live_sites()  # of every type: sites never overlap
+            spent = self.world.spent_of(node_type)  # a node placed on the coordinate of a spent site would count as spent at once and never be seen (found 2026-10-08)
             ring = [(x, y) for x in range(cx - radius, cx + radius + 1) for y in range(cy - radius, cy + radius + 1)
-                    if 3 <= math.hypot(x - cx, y - cy) <= radius and self.world.is_inland(x, y)
+                    if 3 <= math.hypot(x - cx, y - cy) <= radius and self.world.is_inland(x, y) and (x, y) not in spent
                     and all(math.hypot(x - a, y - b) >= 4 for a, b in live)]
             if not ring:
                 continue
