@@ -66,14 +66,9 @@ async def books_page(request: web.Request) -> web.FileResponse:
 
 @routes.get("/api/models")
 async def models(request: web.Request) -> web.Response:
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        try:
-            r = await client.get(f"{config.OLLAMA_URL}/api/tags")
-            r.raise_for_status()
-            names = [m["name"] for m in r.json().get("models", [])]
-        except Exception:
-            names = []
-    return web.json_response({"models": names})
+    # 2026-10-08: through OllamaClient.list_models, which leaves out thinking models and ones that cannot generate text. This endpoint used to ask Ollama for its tag
+    # list itself, so the setup dropdown still offered qwen3:4b, an embedding model and muse-glimmer after the filter was added to the client (found in a browser run).
+    return web.json_response({"models": await OllamaClient(config.OLLAMA_URL).list_models()})
 
 
 @routes.get("/api/config")

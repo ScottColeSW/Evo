@@ -1,5 +1,6 @@
 """2026-10-08: thinking models (and models that cannot generate text) are not offered to play. A live run on qwen3:4b took a median of 53 seconds a decision."""
 import asyncio
+from unittest import mock
 
 import httpx
 
@@ -74,3 +75,18 @@ def test_token_repeat_aborts_are_counted_and_printed_sparingly(capsys):
     assert client.repeat_retries == {"hermes3:3b": 25}
     printed = capsys.readouterr().out.strip().splitlines()
     assert len(printed) == 3 and "20 token repeat aborts" in printed[2]  # the first in full, then one line each at 10 and 20
+
+
+def test_the_setup_pages_model_list_is_the_filtered_one():
+    """2026-10-08: found in a browser run: /api/models asked Ollama for its tags itself, so the dropdown still offered qwen3:4b (a thinking model) and an embedding model."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from backend.app import create_app
+
+    async def fetch():
+        with mock.patch.object(OllamaClient, "list_models", mock.AsyncMock(return_value=["qwen2.5:3b", "hermes3:3b"])):
+            async with TestClient(TestServer(create_app())) as client:
+                r = await client.get("/api/models")
+                return await r.json()
+
+    assert asyncio.run(fetch()) == {"models": ["qwen2.5:3b", "hermes3:3b"]}
