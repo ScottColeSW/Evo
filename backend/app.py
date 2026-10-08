@@ -17,10 +17,14 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 routes = web.RouteTableDef()
 
+# 2026-10-08: the pages are plain files with no cache instructions, so a browser that loaded index.html earlier could keep using that copy for hours on an ordinary
+# navigation (heuristic freshness) and show a map from before an update. "no-cache" makes it revalidate every time (a 304 when unchanged, so it costs almost nothing).
+_NO_CACHE = {"Cache-Control": "no-cache"}
+
 
 @routes.get("/")
 async def index(request: web.Request) -> web.FileResponse:
-    return web.FileResponse(FRONTEND_DIR / "index.html")
+    return web.FileResponse(FRONTEND_DIR / "index.html", headers=_NO_CACHE)
 
 
 @routes.get("/debug")
@@ -32,7 +36,7 @@ async def debug_console(request: web.Request) -> web.FileResponse:
     not a tab or toggle inside index.html's own board UI. See ws_handler's
     OBSERVE command for how it attaches to a run already going in another
     tab instead of starting a second, independent one."""
-    return web.FileResponse(FRONTEND_DIR / "debug.html")
+    return web.FileResponse(FRONTEND_DIR / "debug.html", headers=_NO_CACHE)
 
 
 @routes.get("/about.html")
@@ -40,13 +44,13 @@ async def about_page(request: web.Request) -> web.FileResponse:
     """Static personal about/bio page -- same one-route-per-file shape as
     index/debug_console above (this app has no generic static-directory
     route), just serving a file with no simulation logic behind it."""
-    return web.FileResponse(FRONTEND_DIR / "about.html")
+    return web.FileResponse(FRONTEND_DIR / "about.html", headers=_NO_CACHE)
 
 
 @routes.get("/books.html")
 async def books_page(request: web.Request) -> web.FileResponse:
     """Static book list, same shape as about_page above."""
-    return web.FileResponse(FRONTEND_DIR / "books.html")
+    return web.FileResponse(FRONTEND_DIR / "books.html", headers=_NO_CACHE)
 
 
 @routes.get("/api/models")
