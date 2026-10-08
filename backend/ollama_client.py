@@ -51,6 +51,7 @@ class OllamaClient:
         # server mid-session.
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.repeat_retries: dict[str, int] = {}  # model -> how many "token repeat limit" aborts were retried (see generate_json_with_raw)
 
     async def embed(self, text: str, model: str = "nomic-embed-text") -> list[float] | None:
         """Real semantic embedding via Ollama's /api/embeddings -- explicit
@@ -140,10 +141,17 @@ class OllamaClient:
                 # with gemma2:2b in the night reflection. One retry with a little more randomness and a repeat penalty usually
                 # gets a clean answer; a second failure raises as before.
                 payload["options"] = {**payload["options"], "temperature": min(1.0, temperature + 0.2), "repeat_penalty": 1.2}
-                print(f"[ollama] {model}: token repeat abort, retrying once")
+                # 2026-10-08: hermes3:3b hit this on a dozen turns in a few minutes and the two lines per event buried the rest of the terminal. The first event
+                # for a model is printed in full, then one summary line per 10, and the counts stay on the client (repeat_retries) for anyone who wants them.
+                self.repeat_retries[model] = self.repeat_retries.get(model, 0) + 1
+                count = self.repeat_retries[model]
+                if count == 1:
+                    print(f"[ollama] {model}: token repeat abort, retrying once (further ones are counted, one line per 10)")
+                elif count % 10 == 0:
+                    print(f"[ollama] {model}: {count} token repeat aborts so far, each retried")
                 r = await client.post(f"{self.base_url}/api/generate", json=payload)
-                if r.status_code < 400:
-                    print(f"[ollama] {model}: the retry worked")
+                if r.status_code >= 400:
+                    print(f"[ollama] {model}: the retry failed too")
             _raise_with_body(r, model)
             raw = r.json().get("response", "{}")
             try:

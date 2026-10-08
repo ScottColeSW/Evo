@@ -51,3 +51,26 @@ def test_when_ollama_reports_no_capabilities_a_known_thinking_name_is_still_left
     finally:
         ollama_client.httpx.AsyncClient = real
     assert "qwen3:4b" not in names and "deepseek-r1:7b" not in names and "qwen2.5:3b" in names
+
+
+def test_token_repeat_aborts_are_counted_and_printed_sparingly(capsys):
+    """2026-10-08: hermes3:3b hit a token repeat abort on a dozen turns in a few minutes; two terminal lines each buried everything else."""
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] % 2 == 1:  # every first attempt aborts, every retry works
+            return httpx.Response(500, text="prediction aborted, token repeat limit reached")
+        return httpx.Response(200, json={"response": "{\"ok\": 1}"})
+
+    real = httpx.AsyncClient
+    ollama_client.httpx.AsyncClient = lambda *a, **k: real(*a, transport=httpx.MockTransport(handler), **{x: y for x, y in k.items() if x != "transport"})
+    try:
+        client = OllamaClient()
+        for _ in range(25):
+            assert asyncio.run(client.generate_json("hermes3:3b", "p")) == {"ok": 1}
+    finally:
+        ollama_client.httpx.AsyncClient = real
+    assert client.repeat_retries == {"hermes3:3b": 25}
+    printed = capsys.readouterr().out.strip().splitlines()
+    assert len(printed) == 3 and "20 token repeat aborts" in printed[2]  # the first in full, then one line each at 10 and 20
