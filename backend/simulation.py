@@ -2382,6 +2382,9 @@ def _append_expedition_path_point(exp: dict, x: int, y: int) -> None:
 NODE_LABEL = {"lumber": "timber grove", "quarry": "stone-rich site", "wildlife": "hunting ground"}
 
 
+SITE_TYPES_PER_TRIP = ("lumber", "wildlife", "quarry", "mine")  # a trip captures at most one new site of each (Simulation._discover_along_party_ground)
+
+
 def party_ground_points(path, step: float = 4.0) -> list[tuple[int, int]]:
     """The ground a party actually stood on and crossed, as points no more than `step` tiles apart (2026-10-06). exp["path"] holds where the party
     was each time it moved, which for a settled tribe's scouts is a point every 10 tiles; a site is found within SITE_DISCOVERY_RADIUS (8) of a point,
@@ -6889,10 +6892,15 @@ class Simulation:
         ambushed, reached its target). Before 2026-10-06 the check ran only in the branch for a party that reached its target and surveyed it; in a live
         run 40 of the 43 scouting reports in the first 230 cycles came from trips that ended some other way, so they came home having discarded all the ground they crossed, and neither tribe knew a single
         site for the first 150 cycles although a random point on the map is within 8 tiles of a lumber site 74% of the time."""
+        # 2026-10-08 (the owner: a trip "only captures 1 site of each type", and a scout reporting 7 groves or 7 quarries at once was the thing to fix): one new site per
+        # type per trip, the first the party meets along its route. Sites the tribe already knows are skipped as before, so the next scout is shown the next one.
+        taken: set[str] = set()
         for gx, gy in party_ground_points(exp.get("path")):
-            self._discover_sites_along_route(tribe, gx, gy, scout)
+            self._discover_sites_along_route(tribe, gx, gy, scout, taken)
+            if len(taken) == len(SITE_TYPES_PER_TRIP):
+                break
 
-    def _discover_sites_along_route(self, tribe: Tribe, x: int, y: int, scout: str) -> None:
+    def _discover_sites_along_route(self, tribe: Tribe, x: int, y: int, scout: str, taken: set | None = None) -> None:
         """Checks one point a scout actually walked through for a real, pre-seeded
         lumber/wildlife/quarry/mine site (world.site_seed_points) -- extracted so a
         multi-leg pushed-onward trip (see _advance_one_expedition's outbound arrival
@@ -6911,20 +6919,24 @@ class Simulation:
         reported as found, the same way any other out-of-range candidate isn't --
         a scout will pass other real, pre-seeded points on later trips."""
         grid_size = self.world.grid_size
-        lumber_found = find_nearby_site("lumber", x, y, grid_size, set(tribe.lumber_sites) | self.world.spent_of("lumber"), extra_points=tuple(self.world.respawned_sites.get("lumber", ())))
+        taken = set() if taken is None else taken  # the types this trip has already captured a site of (see _discover_along_party_ground)
+        lumber_found = None if "lumber" in taken else find_nearby_site("lumber", x, y, grid_size, set(tribe.lumber_sites) | self.world.spent_of("lumber"), extra_points=tuple(self.world.respawned_sites.get("lumber", ())))
         if lumber_found is not None and not self._inside_any_territory(*lumber_found):
+            taken.add("lumber")
             tribe.lumber_sites.append(lumber_found)
             tribe.history.append(f"{scout}'s party marks a timber grove at ({lumber_found[0]},{lumber_found[1]})")
         known_wildlife = {(s["x"], s["y"]) for s in tribe.wildlife_sites}
-        wildlife_found = find_nearby_site("wildlife", x, y, grid_size, known_wildlife | self.world.spent_of("wildlife"), extra_points=tuple(self.world.respawned_sites.get("wildlife", ())))
+        wildlife_found = None if "wildlife" in taken else find_nearby_site("wildlife", x, y, grid_size, known_wildlife | self.world.spent_of("wildlife"), extra_points=tuple(self.world.respawned_sites.get("wildlife", ())))
         if wildlife_found is not None and not self._inside_any_territory(*wildlife_found):
+            taken.add("wildlife")
             wx, wy = wildlife_found
             site_type = random.choice(WILDLIFE_SITE_TYPES)
             tribe.wildlife_sites.append({"x": wx, "y": wy, "type": site_type})
             if tribe.last_celebration_cycle != self.cycle:
                 self._celebrate_game_discovery(tribe, wx, wy)
-        quarry_found = find_nearby_site("quarry", x, y, grid_size, set(tribe.quarry_sites) | self.world.spent_of("quarry"), extra_points=tuple(self.world.respawned_sites.get("quarry", ())))
+        quarry_found = None if "quarry" in taken else find_nearby_site("quarry", x, y, grid_size, set(tribe.quarry_sites) | self.world.spent_of("quarry"), extra_points=tuple(self.world.respawned_sites.get("quarry", ())))
         if quarry_found is not None and not self._inside_any_territory(*quarry_found):
+            taken.add("quarry")
             tribe.quarry_sites.append(quarry_found)
             tribe.history.append(f"{scout}'s party marks a stone-rich site at ({quarry_found[0]},{quarry_found[1]})")
         # Explicit request: "Mines can [also] contain the Unique Resource of the
@@ -6933,8 +6945,9 @@ class Simulation:
         # resource name is read off whatever real biome the pre-seeded point itself
         # sits on (world.UNIQUE_RESOURCE_BY_BIOME), not the scout's own tile.
         known_mines = {(site["x"], site["y"]) for site in tribe.mine_sites}
-        mine_found = find_nearby_site("mine", x, y, grid_size, known_mines)
+        mine_found = None if "mine" in taken else find_nearby_site("mine", x, y, grid_size, known_mines)
         if mine_found is not None and not self._inside_any_territory(*mine_found):
+            taken.add("mine")
             mx, my = mine_found
             mine_biome = biome_at(mx, my)
             resource_name = UNIQUE_RESOURCE_BY_BIOME.get(mine_biome, "Unknown Ore")
