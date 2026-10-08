@@ -3,6 +3,8 @@ import json
 
 import httpx
 
+from . import config
+
 # Live-confirmed (explicit report: "the quit isn't cleaning up after itself and
 # making sure the system stops"): Ollama's /api/generate keep_alive=0 responds
 # done:true immediately, well before the model actually leaves VRAM -- observed
@@ -10,6 +12,7 @@ import httpx
 # QUIT left the backend process already exited. unload_model polls for real
 # eviction instead of trusting that response; bounded so a genuinely stuck
 # Ollama can't hang shutdown forever.
+_CAPABILITY_CACHE: dict[tuple, list] = {}  # (model name, digest) -> Ollama's capabilities for it, so the setup screen does not ask again on every load
 UNLOAD_POLL_INTERVAL_SECONDS = 0.5
 UNLOAD_POLL_MAX_ATTEMPTS = 20
 
@@ -74,13 +77,36 @@ class OllamaClient:
             return None
 
     async def list_models(self) -> list[str]:
+        """The models a tribe can play with: the ones Ollama has pulled, minus any that cannot generate text (an embedding model) and any "thinking" model.
+        2026-10-08 (the owner, after a live run on qwen3:4b took a median of 53 seconds a decision, with turns up to 129, against 1.3 seconds for qwen2.5:3b, because a
+        thinking model writes long hidden reasoning before every answer): the sim's turns are one short JSON decision, so thinking models are left out of the list
+        here, which feeds both the setup screen and the fallback when a tribe's model fails."""
         async with httpx.AsyncClient(timeout=5.0) as client:
             try:
                 r = await client.get(f"{self.base_url}/api/tags")
                 r.raise_for_status()
-                return [m["name"] for m in r.json().get("models", [])]
+                entries = r.json().get("models", [])
             except Exception:
                 return []
+            kept = await asyncio.gather(*(self._is_playable(client, m) for m in entries))
+        return [m["name"] for m, ok in zip(entries, kept) if ok]
+
+    async def _is_playable(self, client: httpx.AsyncClient, entry: dict) -> bool:
+        name = entry["name"]
+        key = (name, entry.get("digest"))
+        if key not in _CAPABILITY_CACHE:
+            capabilities = None
+            try:
+                r = await client.post(f"{self.base_url}/api/show", json={"model": name})
+                r.raise_for_status()
+                capabilities = r.json().get("capabilities")
+            except Exception:
+                pass
+            if capabilities is None:  # an older Ollama, or a failed lookup: judge by name
+                capabilities = ["completion"] + (["thinking"] if name.lower().startswith(config.THINKING_MODEL_NAME_PREFIXES) else [])
+            _CAPABILITY_CACHE[key] = capabilities
+        capabilities = _CAPABILITY_CACHE[key]
+        return "completion" in capabilities and "thinking" not in capabilities
 
     async def generate_json(
         self, model: str, prompt: str, temperature: float = 0.7, num_ctx: int = 4096, keep_alive: str = "5m"

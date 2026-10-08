@@ -2944,3 +2944,7 @@ def menu_cap() -> int:
 def nudge_active(tag: str) -> bool:
     import os
     return os.environ.get("NUDGES", NUDGES).strip().lower() != "off" and tag not in DISABLED_NUDGE_TAGS
+
+# Model names that mean a "thinking" model, used only when Ollama does not report capabilities (OllamaClient.list_models). 2026-10-08: such a model writes long hidden
+# reasoning before each answer (qwen3:4b: a median of 53 seconds a decision in a live run, against 1.3 for qwen2.5:3b), so they are not offered to play.
+THINKING_MODEL_NAME_PREFIXES = ("qwen3", "deepseek-r1", "gpt-oss", "magistral", "qwq", "phi4-reasoning", "cogito")
