@@ -437,6 +437,15 @@ def _is_water_secure(tribe) -> bool:
     return tribe.well_built or len(tribe.confirmed_water_sites) >= config.WATER_SECURITY_SITE_THRESHOLD
 
 
+_WATER_REPORT = re.compile(r"^Scouts confirmed fresh water at \((\d+),\s*(\d+)\)\.?$")
+
+
+def _is_known_water_report(text: str, known_water: set) -> bool:
+    """True for a scout's stored water report whose exact site is already one of the tribe's confirmed water sources."""
+    match = _WATER_REPORT.match(text.strip())
+    return bool(match) and (int(match.group(1)), int(match.group(2))) in known_water
+
+
 def locked_building_facts(tribe, world, unlocked_actions) -> list[str]:
     """Plain facts about a building the tribe's era has unlocked but its situation does not yet allow, with what is missing and what it has (2026-10-07, after a
     live run: Flinx held 251 of another tribe's ore and wanted a forge for about 180 cycles, but the forge needs ore from its own mine, which only flows after one
@@ -3848,7 +3857,11 @@ class Simulation:
     def _build_visible_entities(self, tribe: Tribe, biome: str, nearby: list[dict],
                                  memories: list[dict], available_actions: list[str]) -> tuple[list[str], str]:
         visible_entities = [f"structure:{s['type']}@({s['x']},{s['y']})" for s in nearby]
-        visible_entities += [f"memory(cycle {m['cycle']}): {m['text']}" for m in memories]
+        # A scout's water report is stored as a memory (and can graduate to a taboo) and is also listed below as a
+        # confirmed water source; the same coordinates twice or three times only cost prompt length (2026-10-08, 12 KB
+        # prompts), so the memory form is left out when the site is already in that list.
+        known_water = {(x, y) for x, y in tribe.confirmed_water_sites}
+        visible_entities += [f"memory(cycle {m['cycle']}): {m['text']}" for m in memories if not _is_known_water_report(m["text"], known_water)]
 
         # A lightning strike only lasts one cycle (see _advance_weather) -- a real,
         # unscripted event, not a directive about what it means or what to do next.
@@ -3868,7 +3881,7 @@ class Simulation:
         # bug, but recency isn't importance: a genuinely critical early lesson could
         # still lose its slot to newer but lower-stakes ones. top_taboos() ranks by
         # real weight first, recency only as the tiebreak -- see its own docstring.
-        visible_entities += [f"taboo: {t}" for t in tribe.memory.top_taboos(3)]
+        visible_entities += [f"taboo: {t}" for t in tribe.memory.top_taboos(3) if not _is_known_water_report(t, known_water)]
         # Explicit request: "make sure they remember all the important discover
         # sites when they are making decisions. those locations are important
         # to the progress of the Tribe and civilization." These six lists used

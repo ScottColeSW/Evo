@@ -15888,3 +15888,23 @@ def test_hazard_names_are_not_reused_until_every_name_has_been():
     for i in range(len(config.HAZARD_LANDMARK_NAMES)):
         sim._landmark_hazard(tribe, 5 + i * 10, 5, "a volcano")
     assert {lm["name"] for lm in tribe.hazard_landmarks} == set(config.HAZARD_LANDMARK_NAMES)
+
+
+def test_a_scouts_water_report_is_not_repeated_when_the_site_is_already_a_confirmed_water_source():
+    """A prompt carried the same water site up to three times: a stored memory, a taboo and the confirmed-source line.
+    The memory forms are dropped only when the exact site is already listed; everything else stays."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.confirmed_water_sites = [(52, 48)]
+    tribe.memory.taboos = [{"text": "Scouts confirmed fresh water at (52,48).", "weight": 0.9, "cycle": 3},
+                           {"text": "Scouts confirmed fresh water at (10,10).", "weight": 0.8, "cycle": 4}]
+    sim.tribes = {"tribe_0": tribe}
+    memories = [{"cycle": 3, "text": "Scouts confirmed fresh water at (52,48)."},
+                {"cycle": 5, "text": "At (70,47) in river, chose RELOCATE."}]
+
+    entities, _ = sim._build_visible_entities(tribe, "plains", [], memories, ["GATHER_WOOD"])
+
+    assert sum("(52,48)" in e for e in entities) == 1 and "confirmed water source at (52,48)" in entities
+    assert any("chose RELOCATE" in e for e in entities)  # an ordinary memory is untouched
+    assert any("taboo: Scouts confirmed fresh water at (10,10)." == e for e in entities)  # a site not in the list stays
+
