@@ -974,7 +974,7 @@ AFFORDABILITY_CHECKS = {
     # Both a real resource cost AND config.ITEM_STORAGE_CAP_BASE's own ceiling --
     # see _forge_item's matching "item stores are already full" no-op message.
     "FORGE_ITEM": lambda t, w: (
-        len(t.items) < _item_storage_cap(t)
+        t.forge_built and len(t.items) < _item_storage_cap(t)
         and t.wood >= config.FORGE_ITEM_WOOD_COST
         and t.unique_resources.get(t.mine_resource_name, 0) >= config.FORGE_ITEM_ORE_COST
     ),

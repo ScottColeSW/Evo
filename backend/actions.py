@@ -18,6 +18,7 @@ import random
 import re
 
 from . import architect, city_layout, config, lexicon, physics
+from .eras import ERAS
 from .skirmish import skirmish
 from .might import compute_might
 from .world import BIOME_LABELS, biome_at, mark_visited_sector, sector_of
@@ -3762,6 +3763,19 @@ ACTION_REGISTRY = {
 # wherever they stand (just at a lower yield than a river tile gets). This is the same
 # category as the nearest_water fact already given to a founding chief: information the
 # simulation legitimately has, not an instruction about what to pick.
+def _gate_text(does: str, needs: str, costs: str, opens: tuple = (), flag: str | None = None) -> str:
+    """One uniform shape for the chain of buildings an era is built from (2026-10-08): what it does, what it needs and costs, the
+    named actions it opens, and which eras count it. Numbers come from config and the era credit from eras.ERAS, so the text
+    cannot drift from the rules it describes."""
+    parts = [does, f"Needs {needs}; costs {costs}."]
+    if opens:
+        parts.append("Opens " + " and ".join(opens) + ".")
+    eras = [e.label for e in ERAS if flag and flag in e.requires_ready]
+    if eras:
+        parts.append("Required for: " + "; ".join(eras) + ".")
+    return " ".join(parts)
+
+
 ACTION_DESCRIPTIONS = {
     "GATHER_WOOD": "Harvest wood at your current tile -- forest yields the most, plains and river tiles some, mountains and ocean almost none. Yield also drops the more this exact spot has been harvested recently.",
     "GATHER_STONE": "Harvest stone at your current tile -- mountains yield the most by far, every other biome almost none. Yield also drops the more this exact spot has been harvested recently.",
@@ -3773,29 +3787,46 @@ ACTION_DESCRIPTIONS = {
     "CONSTRUCT_WALL": "Work on your wall using stored wood and stone -- a real defensive structure built up over several turns, not finished in one. Automatically does whatever the wall needs next: unlocks a new section if none is currently open, continues an unlocked section's progress (more per turn with more people to put to the work), reinforces a completed section with another tier, or -- once a whole ring is fully built and reinforced -- opens a brand new ring further out. A more complete wall meaningfully improves your odds of defending against a raider attack. Repeatable; does nothing further once maxed out.",
     "BUILD_LONG_HOUSE": "Build a long house at your current tile using stored wood and stone -- real, lasting shelter for the tribe, one house at a time. Repeatable as population grows, up to 5; UPGRADE_LONG_HOUSE takes over from there.",
     "UPGRADE_LONG_HOUSE": "Expand the long houses already standing to support more households -- only worth considering once 5 long houses already stand. No new structure, no placement needed. Repeatable, but each upgrade costs more than the last.",
-    "BUILD_CASTLE": "Build a castle at your current tile using stored wood and stone -- only possible once a fortress stands and enough long houses have been built. A one-time, permanent structure that adds real defense on top of whatever your wall already provides.",
+    "BUILD_CASTLE": _gate_text(
+        f"Build a castle at your current tile. Adds {round(config.CASTLE_DEFENSE_BONUS * 100)} points to your chance of beating off a raider attack, on top of whatever your wall already provides, and another {round(config.MIGHT_TIER_BONUS_PER_TIER * 100)}% to your Might once you have a Battalion.",
+        f"a fortress and {config.CASTLE_LONG_HOUSES_REQUIRED} long houses (built or upgraded)", f"{config.CASTLE_WOOD_COST} wood, {config.CASTLE_STONE_COST} stone", (), "castle_built"),
     "BUILD_ROAD": "Build a road at your current tile using stored wood and stone. A one-time, permanent improvement: every future scouting party, hunting party, or exploration party you send out travels faster from then on.",
     "BUILD_DOCK": "Build a dock at your current tile using stored wood -- only possible once the tribe has settled here and has already learned to fish (a real successful catch). A one-time, permanent structure: every future fish caught here pays out more from then on.",
     "BUILD_FISHERY": "Build a fishery using stored wood and stone -- only possible once a dock already stands. A one-time, permanent structure: the settlement's passive daily fish supply flows in even more steadily from then on.",
     "BUILD_SAWMILL": "Build a sawmill using stored wood and stone -- only possible once wood has actually been gathered here at least once. A one-time, permanent structure at your settlement: every future load of gathered wood is worth six times as much from then on.",
     "BUILD_QUARRY": "Build a quarry using stored wood and stone -- only possible once stone has actually been gathered here at least once. A one-time, permanent structure at your settlement: every future load of harvested stone is worth three times as much from then on.",
-    "BUILD_MINE": "Excavate a mine at a vein your scouts have already found, using stored wood and stone -- only possible once at least one vein is known. A one-time, permanent structure, but its unique resource has to actually be fetched (GATHER_ORE) before it starts flowing in steadily.",
-    "GATHER_ORE": "Fetch the Mine's unique resource -- only possible once a mine has been excavated. The first successful fetch also starts a small, permanent daily supply from then on, the same way fishing works once learned.",
+    "BUILD_MINE": _gate_text(
+        f"Excavate a mine at the newest vein your scouts have found; that vein's ore becomes your mine's ore for good. Once GATHER_ORE has been done once, the mine yields {config.MINE_YIELD_PER_CYCLE} ore every cycle.",
+        "a known vein", f"{config.MINE_WOOD_COST} wood, {config.MINE_STONE_COST} stone", ("GATHER_ORE", "BUILD_FORGE"), "mine_built"),
+    "GATHER_ORE": _gate_text(
+        f"Fetch {config.GATHER_ORE_BASE_YIELD} of the mine's own ore (more with a larger tribe). The first fetch also starts the mine's steady yield of {config.MINE_YIELD_PER_CYCLE} ore every cycle. "
+        f"The forge needs {config.FORGE_ITEM_ORE_COST} of it in stock to be built and uses {config.FORGE_ITEM_ORE_COST} for each item it makes.",
+        "a built mine", "nothing", ("BUILD_FORGE",)),
     "BUILD_TANNERY": "Build a tannery using stored wood and stone -- only possible once a hunt has actually succeeded. A one-time, permanent structure at your settlement: Fur flows in steadily from then on, and every successful hunt yields extra meat from then on.",
     "BUILD_DEER_PEN": "Build a deer pen using stored wood and stone -- only possible once a tannery already stands and several hunts have actually succeeded. A one-time, permanent structure: a small captive herd starts immediately, breeds on its own if fed, and feeds the tannery extra Fur every cycle on top of what it already produces.",
     "BUILD_HATCHERY": "Build a hatchery using stored wood and stone -- only possible once a wild egg has actually been found and hatched. A one-time, permanent structure at your settlement: the flock grows on its own much more reliably from then on.",
     "BUILD_COOP": "Build a coop using stored wood and stone -- only possible once the flock has at least one member. A one-time, permanent structure: paired with a Hatchery, gathered and laid eggs are actually incubated into new flock automatically from then on, instead of the flock only growing by chance.",
     "BUILD_BATH_HOUSE": "Build a bath house using stored wood and stone -- no prerequisite beyond being settled. A one-time, permanent structure at your settlement: the tribe's daily food and water consumption drops from then on.",
-    "BUILD_LIBRARY": "Build a library using stored wood and stone -- only possible once at least one long house stands. A one-time, permanent structure: unlocks RESEARCH, a real way to reach the next era sooner.",
-    "RESEARCH": "Study the tribe's own remembered history at the library, using a little stored wood -- only possible once a library stands. Distills what's been lived through into a permanent Library entry, and permanently shortens the path to the next era a little further. Repeatable.",
+    "BUILD_LIBRARY": _gate_text(
+        "Build a library, where the tribe's own remembered history can be studied and filed.",
+        "at least one long house", f"{config.LIBRARY_WOOD_COST} wood, {config.LIBRARY_STONE_COST} stone", ("RESEARCH",), "library_built"),
+    "RESEARCH": _gate_text(
+        f"Study the tribe's own remembered history at the library and file up to {config.LIBRARY_ENTRY_MEMORY_COUNT} of its most weighty memories as a permanent Library entry. Repeatable.",
+        "a library", f"{config.RESEARCH_WOOD_COST} wood"),
     "BUILD_WELL": "Build a well using stored wood and stone -- no prerequisite beyond being settled. A one-time, permanent structure at your settlement: the tribe's daily passive water supply flows in faster from then on.",
     "BUILD_WAREHOUSE": "Build a warehouse using stored wood and stone. Raises how much of every resource can be stored at once -- gathering more than storage allows is wasted. Repeatable up to 5 warehouses; UPGRADE_WAREHOUSE takes over from there.",
     "UPGRADE_WAREHOUSE": "Reinforce the warehouses already standing to raise storage capacity further -- only worth considering once 5 warehouses already stand. No new structure, no placement needed. Repeatable, but each upgrade costs more than the last.",
-    "BUILD_BARRACKS": "Build a barracks using stored wood and stone -- only possible once a Keep stands. Repeatable up to 5; each one raises how large a Battalion can ever be trained. Real housing for a standing military, the first building of the Military branch.",
+    "BUILD_BARRACKS": _gate_text(
+        f"Build a barracks (repeatable up to {config.BARRACKS_MAX_COUNT}). A Battalion is staffed at once from your own people, up to {config.BATTALION_CAPACITY_PER_BARRACKS} per barracks. Real housing for a standing military, the first building of the Military branch.",
+        "a keep and a kitchen", f"{config.BARRACKS_WOOD_COST} wood, {config.BARRACKS_STONE_COST} stone", ("TRAIN_BATTALION",), "barracks_built"),
     "UPGRADE_BARRACKS": "Reinforce the barracks already standing to raise Battalion capacity further -- only worth considering once 5 barracks already stand. No new structure, no placement needed. Repeatable, but each upgrade costs more than the last.",
     "TRAIN_BATTALION": "Train soldiers for your Battalion -- only possible once a Barracks stands. Costs food, not wood/stone. Built up over several turns like a wall section, not finished in one -- more people trains faster. Repeatable up to your Barracks' own capacity. A Warrior to lead it is named automatically the moment anyone earns a trophy -- no separate action needed.",
-    "BUILD_FORGE": "Build a forge using stored wood and stone -- only possible once a mine stands and at least one unit of its ore is already in stock. A one-time, permanent structure: from then on, ore can be worked into real tools, weapons, and inventions.",
-    "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. No durability to track: each item just carries a flat value, usable later or given away in a trade.",
+    "BUILD_FORGE": _gate_text(
+        f"Build a forge. From then on it makes items on its own, with no action needed: each uses {config.FORGE_ITEM_ORE_COST} ore and {config.FORGE_ITEM_WOOD_COST} wood and is a random tool, weapon or invention, "
+        f"while the item store has room. Weapons arm your Battalion (up to +{round(config.MIGHT_WEAPON_BONUS * 100)}% Might at one per soldier, and they are kept). Every other item adds "
+        f"{round(config.ITEM_EFFECT_MAGNITUDE * 100)}% to one effect: more food, stone, wood, game or water per load, or faster travel, walls or Battalion drills. Items can be traded.",
+        "a built mine and at least one of its ore in stock", f"{config.FORGE_WOOD_COST} wood, {config.FORGE_STONE_COST} stone", (), "forge_built"),
+    "FORGE_ITEM": "Work stored ore and wood into a real item at your forge -- a tool, a weapon, or a small invention, picked at random. Once a forge stands this happens on its own every cycle, so there is nothing to choose.",
     "USE_ITEM": "Redeem your oldest plain crafted item for its stored value, converted into wood and stone. Only an item with no standing effect can be redeemed: a plow or hoe (more food), a whetstone or chisel (more stone), a bow or spearhead (more game), an axe (more wood), a wheel (faster travel), any weapon (it arms the battalion) and the rest keep working for the tribe until a trade hands them over. Does nothing if no item is plain.",
     "BUILD_DMM": "Build the Dream Manifestation Machine (DMM) using stored wood and stone -- a one-time, permanent factory that lets the tribe start making the Chief's dreams real.",
     "CREATE_ITEM": "Design and craft a genuinely new item at the DMM -- a real, permanent effect (a bonus to gathering, combat, defense, celebrations, exploration speed, or an immediate population grant), shaped by whatever the Chief has lately dreamed of, or picked for you otherwise. Only possible once the DMM stands, and it rests 10 days between uses.",
@@ -3806,8 +3837,12 @@ ACTION_DESCRIPTIONS = {
     "BUILD_JOINT_CASTLE": "Contribute wood and stone toward a Joint Castle raised together with a genuinely, mutually allied rival tribe -- a shared monument to the alliance, built up over several turns from either side. Completing it marks both tribes as having reached Castle-state. Only possible once truly allied, not just once one side has declared it.",
     "BUILD_KITCHEN": "Build a kitchen using stored wood and stone -- only possible once cooking is known and a long house stands. A one-time, permanent structure: stacks with cooking for nine times as much food from every future forage, hunt, or catch, instead of only three.",
     "BUILD_MOAT": "Dig a moat using stored wood and stone -- only possible once the wall has been reinforced with a second layer. A one-time, permanent structure, cheaper than another wall layer: a further defense bonus.",
-    "BUILD_KEEP": "Build a keep using stored wood and stone -- only possible once enough long houses stand. A one-time, permanent structure: a further defense bonus for the settlement.",
-    "BUILD_FORTRESS": "Build a fortress using stored wood and stone -- only possible once a keep stands and enough long houses have been built. A one-time, permanent structure: a further defense bonus for the settlement.",
+    "BUILD_KEEP": _gate_text(
+        f"Build a keep. Adds {round(config.KEEP_DEFENSE_BONUS * 100)} points to your chance of beating off a raider attack, and {round(config.MIGHT_TIER_BONUS_PER_TIER * 100)}% to your Might once you have a Battalion.",
+        f"{config.KEEP_LONG_HOUSES_REQUIRED} long houses (built or upgraded)", f"{config.KEEP_WOOD_COST} wood, {config.KEEP_STONE_COST} stone", ("BUILD_BARRACKS", "BUILD_FORTRESS"), "keep_built"),
+    "BUILD_FORTRESS": _gate_text(
+        f"Build a fortress. Adds {round(config.FORTRESS_DEFENSE_BONUS * 100)} points to your chance of beating off a raider attack, and another {round(config.MIGHT_TIER_BONUS_PER_TIER * 100)}% to your Might once you have a Battalion.",
+        f"a keep and {config.FORTRESS_LONG_HOUSES_REQUIRED} long houses (built or upgraded)", f"{config.FORTRESS_WOOD_COST} wood, {config.FORTRESS_STONE_COST} stone", ("BUILD_CASTLE",), "fortress_built"),
     "PLANT_CROP": "Plant a farm plot at your current tile, fenced and set with a scarecrow using stored wood -- only possible once the tribe has settled here. A planted plot grows on its own over the following cycles and yields food automatically once mature; no further action needed to harvest it. Up to a few plots can be tended at once.",
     "GATHER_EGGS": "Search for wild fowl nests near your current tile, spending a little stored wood on the attempt -- only possible once the tribe has settled here and the current egg stockpile is empty. A found egg is set aside and, like the rest of the flock's own eggs, takes a full day to hatch -- most survive to grow the flock, but not every egg makes it.",
     "CATCH_FISH": "Attempt to harvest food by fishing at your current tile, spending a little stored wood on the attempt -- only possible once the tribe has settled here. Pays out food immediately on a catch, and the very first successful catch also starts a small, permanent daily food supply from then on -- fishing, once learned, is never unlearned.",

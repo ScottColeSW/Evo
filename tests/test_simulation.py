@@ -15908,3 +15908,19 @@ def test_a_scouts_water_report_is_not_repeated_when_the_site_is_already_a_confir
     assert any("chose RELOCATE" in e for e in entities)  # an ordinary memory is untouched
     assert any("taboo: Scouts confirmed fresh water at (10,10)." == e for e in entities)  # a site not in the list stays
 
+
+def test_forge_item_is_not_offered_before_a_forge_exists():
+    """It was on the menu with ore and wood in stock but no forge, where choosing it does nothing; once a forge stands it runs by
+    itself every cycle."""
+    from backend import config
+    from backend.simulation import AFFORDABILITY_CHECKS
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.mine_built, tribe.mine_resource_name = True, "Basin Loamstone"
+    tribe.unique_resources = {"Basin Loamstone": config.FORGE_ITEM_ORE_COST}
+    tribe.wood = config.FORGE_ITEM_WOOD_COST
+
+    assert not AFFORDABILITY_CHECKS["FORGE_ITEM"](tribe, sim.world)
+    tribe.forge_built = True
+    assert AFFORDABILITY_CHECKS["FORGE_ITEM"](tribe, sim.world)

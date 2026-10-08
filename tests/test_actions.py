@@ -6284,3 +6284,25 @@ def test_might_keeps_counting_beyond_a_2x_edge_up_to_the_cap():
     assert chance(100, 1000) < chance(100, 200) < 0.5          # and the weak side is penalized by degrees
     assert chance(100000, 1) == 0.5 + config.MIGHT_MODIFIER_MAX
     assert chance(0, 2413) == 0.5 + config.MIGHT_MODIFIER_MIN  # no Battalion at all against a strong one
+
+
+def test_gate_chain_descriptions_state_needs_costs_opens_and_era_credit_from_the_real_rules():
+    """The buildings an era is made of read in one form: what it does, what it needs and costs, the named actions it opens, and the
+    eras that require it. Numbers come from config and era credit from eras.ERAS, so none of it can drift from the rules."""
+    from backend import config
+    from backend.actions import ACTION_DESCRIPTIONS as D
+
+    assert "a keep and a kitchen" in D["BUILD_BARRACKS"]  # the kitchen was missing from the old text
+    assert f"costs {config.KEEP_WOOD_COST} wood, {config.KEEP_STONE_COST} stone" in D["BUILD_KEEP"]
+    assert "Opens BUILD_BARRACKS and BUILD_FORTRESS." in D["BUILD_KEEP"] and "Required for: Monolithic Era." in D["BUILD_KEEP"]
+    assert "Opens GATHER_ORE and BUILD_FORGE." in D["BUILD_MINE"] and "Dream Manifestation Era" in D["BUILD_FORGE"]
+    assert "Opens BUILD_CASTLE." in D["BUILD_FORTRESS"] and "Required for: Beyond the Horizon." in D["BUILD_CASTLE"]
+    assert f"up to +{round(config.MIGHT_WEAPON_BONUS * 100)}% Might" in D["BUILD_FORGE"]  # the forge's indirect effect
+
+
+def test_library_and_research_no_longer_claim_to_shorten_the_path_to_the_next_era():
+    """RESEARCH stopped discounting era requirements on 2026-10-04 (eras became readiness); the text kept saying it did."""
+    from backend.actions import ACTION_DESCRIPTIONS as D
+
+    for key in ("BUILD_LIBRARY", "RESEARCH"):
+        assert "next era" not in D[key] and "sooner" not in D[key] and "shortens" not in D[key]
