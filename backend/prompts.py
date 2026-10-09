@@ -84,10 +84,13 @@ def get_prime_consciousness_prompt(
     """
     glossary_block = ""
     if available_actions:
-        from .actions import ACTION_DESCRIPTIONS
+        from .actions import ACTION_DESCRIPTIONS, action_text
         lines = "\n".join(
-            f"- {name}: {ACTION_DESCRIPTIONS[name]}" for name in available_actions if name in ACTION_DESCRIPTIONS
+            f"- {name}: {action_text(name)}" for name in available_actions if name in ACTION_DESCRIPTIONS
         )
+        if config.prompt_compact() and any(a in available_actions for a in ("SCOUT", "EXPLORATION_PARTY", "HUNTING_PARTY")):
+            from .actions import EXPEDITION_RULES
+            lines += "\n" + EXPEDITION_RULES
         glossary_block = f"\n\nWHAT EACH OF YOUR CURRENT ACTIONS DOES:\n{lines}"
 
     # Explicit request: this used to be one flat line naming the chief and their
@@ -229,6 +232,31 @@ def compile_live_state_prompt(
         )
     else:
         movement_note = "RELOCATE is not available to you right now -- your tribe stays where it stands this cycle."
+    # config.PROMPT_FORMAT = "compact" (the prompt-format A/B): the same two notes in fewer words. Nothing is removed from what they say; the movement note and the
+    # target_vector list are the same facts, and the dynamic RELOCATE note and journey note are placed exactly where they were.
+    if config.prompt_compact():
+        movement_block = (
+            "MOVEMENT: Only RELOCATE moves your tribe; every other action happens wherever you stand and does not move you. SCOUT sends a party out without moving "
+            f"anyone or needing target_vector (its direction is chosen for you) and reports back what it found once it returns. {movement_note}"
+        )
+        target_vector_block = (
+            "target_vector only matters for RELOCATE, RAID, TRADE, DECLARE_ALLIANCE, DECLARE_WAR, SEND_TRADE_EMISSARY, SPY, STRIKE_RAIDER_CAMP and DECLARE_CONQUEST; "
+            "for every other action it is ignored, so set it to null."
+        )
+    else:
+        movement_block = (
+            "MOVEMENT: Only RELOCATE moves your tribe -- every other action (gathering, hunting,\n"
+            "building, idling) happens wherever you currently stand this cycle and does not move you.\n"
+            "SCOUT dispatches a party to explore without moving anyone here or requiring\n"
+            "target_vector -- their direction is chosen for you to cover new ground, reporting back\n"
+            f"what is found once they return. {movement_note}"
+        )
+        target_vector_block = (
+            "target_vector only matters for RELOCATE, RAID, TRADE, DECLARE_ALLIANCE, DECLARE_WAR,\n"
+            "SEND_TRADE_EMISSARY, SPY, STRIKE_RAIDER_CAMP, and DECLARE_CONQUEST -- for every other\n"
+            "action, it is ignored entirely, so set it to null rather than guessing a coordinate that\n"
+            "means nothing."
+        )
     state_injection = f"""
 ========================================================================
 LIVE CORE TELEMETRY: CYCLE {world_state['cycle']}
@@ -244,17 +272,10 @@ METABOLIC STOCKPILES:
 VISUAL RENDER LAYER SCAN:
 Immediate Grid Entity Array: [{', '.join(world_state['visible_entities'])}]
 
-MOVEMENT: Only RELOCATE moves your tribe -- every other action (gathering, hunting,
-building, idling) happens wherever you currently stand this cycle and does not move you.
-SCOUT dispatches a party to explore without moving anyone here or requiring
-target_vector -- their direction is chosen for you to cover new ground, reporting back
-what is found once they return. {movement_note}
+{movement_block}
 {world_state.get('journey_note') or ''}
 
-target_vector only matters for RELOCATE, RAID, TRADE, DECLARE_ALLIANCE, DECLARE_WAR,
-SEND_TRADE_EMISSARY, SPY, STRIKE_RAIDER_CAMP, and DECLARE_CONQUEST -- for every other
-action, it is ignored entirely, so set it to null rather than guessing a coordinate that
-means nothing.
+{target_vector_block}
 
 ========================================================================
 EPISTEMOLOGICAL INHERITANCE LAYER

@@ -4,7 +4,11 @@ Also (2026-10-05, --knob menu_cap): the same harness with the MENU_CAP experimen
 to test whether smaller action sets give better choices. Results go to scripts/ab_test_menu_cap_results.json. Extra numbers recorded for it: the mean
 menu size and the share of decisions that changed nothing, read from the run's own decision log.
 
-Question: when the prompt lines whose job is to steer a tribe (build hints, farm hints, the Historian's "choose something different", the
+Also (2026-10-09, --knob prompt_format): "full" against "compact", the same facts in shorter wording (config.PROMPT_FORMAT, backend/actions.COMPACT_DESCRIPTIONS), with
+NUDGES off as in play. Question: does a shorter prompt keep decisions and outcomes the same, and make a turn faster? Extra numbers recorded for every run: the mean prompt length
+and the mean latency of a turn, read from each tribe's own transcript. --model picks the model both tribes use. Results go to scripts/ab_test_prompt_format_results.json.
+
+Question (the nudge switch): when the prompt lines whose job is to steer a tribe (build hints, farm hints, the Historian's "choose something different", the
 survival-warning text, the growth framing; docs/NUDGE-AUDIT.md) are removed, do tribes still survive, advance and build? Only prompt text
 differs between the arms: menus, gates and mechanics are identical (tests/test_nudge_switch.py).
 
@@ -39,9 +43,9 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
 from backend.simulation import Simulation
 from backend.tribe_fixtures import apply_tribe_fixture, load_fixture
 
-MODEL = "qwen2.5:3b"
+MODEL = "qwen2.5:3b"  # --model overrides
 RESULTS = "scripts/ab_test_nudges_off_results.json"
-KNOBS = {"nudges": ("on", "off"), "menu_cap": ("full", "cap8"), "nodes": ("on", "off")}
+KNOBS = {"nudges": ("on", "off"), "menu_cap": ("full", "cap8"), "nodes": ("on", "off"), "prompt_format": ("full", "compact")}
 FIXTURES = ("mid_game_15k_a", "mid_game_15k_b")
 SAMPLE_CYCLES = (50, 100, 150, 200, 250)
 STRUCTURE_FLAGS = ("long_houses_built", "kitchen_built", "tannery_built", "library_built", "barracks_built", "forge_built",
@@ -69,7 +73,10 @@ def _decision_stats(run_id: str) -> dict:
 
 
 async def run_once(variant: str, seed: int, cycles: int, mode: str, knob: str = "nudges") -> dict:
-    if knob == "menu_cap":
+    if knob == "prompt_format":
+        os.environ["PROMPT_FORMAT"] = variant
+        os.environ["NUDGES"] = "off"
+    elif knob == "menu_cap":
         os.environ["MENU_CAP"] = "8" if variant == "cap8" else "0"
         os.environ["NUDGES"] = "on"
     elif knob == "nodes":
@@ -91,6 +98,9 @@ async def run_once(variant: str, seed: int, cycles: int, mode: str, knob: str = 
     era_first = {tid: {t.era: 0} for tid, t in sim.tribes.items()}
     pop_at = {tid: {} for tid in sim.tribes}
     actions = {tid: collections.Counter() for tid in sim.tribes}
+    prompt_chars = {tid: [] for tid in sim.tribes}
+    latency_ms = {tid: [] for tid in sim.tribes}
+    last_seen = {tid: -1 for tid in sim.tribes}
     started = time.time()
     for _ in range(cycles):
         await sim.step()
@@ -100,6 +110,11 @@ async def run_once(variant: str, seed: int, cycles: int, mode: str, knob: str = 
                 pop_at[tid][sim.cycle] = t.population
             if t.last_action:
                 actions[tid][t.last_action] += 1
+            for entry in t.debug_transcript:  # one entry per turn actually sent to the model: its prompt and how long the answer took
+                if entry["cycle"] > last_seen[tid]:
+                    last_seen[tid] = entry["cycle"]
+                    prompt_chars[tid].append(len(entry["prompt"]))
+                    latency_ms[tid].append(entry["latency_ms"])
         if all(t.extinct for t in sim.tribes.values()):
             break
         if (sim.cycle - start_cycle) % 25 == 0:
@@ -113,8 +128,11 @@ async def run_once(variant: str, seed: int, cycles: int, mode: str, knob: str = 
             "structures": {f: bool(getattr(t, f, False)) for f in STRUCTURE_FLAGS},
             "built_during_run": [f for f in STRUCTURE_FLAGS if getattr(t, f, 0) and not start_flags[tid][f]],
             "action_mix": dict(actions[tid].most_common()),
+            "turns": len(prompt_chars[tid]),
+            "mean_prompt_chars": round(sum(prompt_chars[tid]) / len(prompt_chars[tid])) if prompt_chars[tid] else None,
+            "mean_latency_ms": round(sum(latency_ms[tid]) / len(latency_ms[tid])) if latency_ms[tid] else None,
         }
-    return {"knob": knob, "decision_stats": _decision_stats(sim.run_id), "variant": variant, "seed": seed, "mode": mode, "start_cycle": start_cycle, "cycles": sim.cycle - start_cycle, "seconds": int(time.time() - started),
+    return {"knob": knob, "decision_stats": _decision_stats(sim.run_id), "variant": variant, "seed": seed, "model": MODEL, "mode": mode, "start_cycle": start_cycle, "cycles": sim.cycle - start_cycle, "seconds": int(time.time() - started),
             "run_id": sim.run_id, "tribes": tribes}
 
 
@@ -131,9 +149,14 @@ async def main() -> None:
     parser.add_argument("--seeds", type=int, default=2)
     parser.add_argument("--mode", choices=("early", "mid"), default="early")
     parser.add_argument("--knob", choices=tuple(KNOBS), default="nudges")
+    parser.add_argument("--model", default=None)
     args = parser.parse_args()
-    global RESULTS
-    if args.knob == "menu_cap":
+    global RESULTS, MODEL
+    if args.model:
+        MODEL = args.model
+    if args.knob == "prompt_format":
+        RESULTS = "scripts/ab_test_prompt_format_results.json"
+    elif args.knob == "menu_cap":
         RESULTS = "scripts/ab_test_menu_cap_results.json"
     elif args.knob == "nodes":
         RESULTS = "scripts/ab_test_nodes_results.json"
@@ -144,10 +167,10 @@ async def main() -> None:
         order += [(seed, first), (seed, second)] if i % 2 == 0 else [(seed, second), (seed, first)]
     results = load()
     for seed, variant in order:
-        if any(r["seed"] == seed and r["variant"] == variant and r.get("mode", "early") == args.mode for r in results):
+        if any(r["seed"] == seed and r["variant"] == variant and r.get("mode", "early") == args.mode and r.get("model", "qwen2.5:3b") == MODEL for r in results):
             print(f"skip seed {seed} {variant} (already recorded)")
             continue
-        print(f"=== {args.mode} seed {seed}, {args.knob}={variant}, {args.cycles} cycles ===", flush=True)
+        print(f"=== {args.mode} seed {seed}, {args.knob}={variant}, {MODEL}, {args.cycles} cycles ===", flush=True)
         results.append(await run_once(variant, seed, args.cycles, args.mode, args.knob))
         json.dump(results, open(RESULTS, "w", encoding="utf-8"), indent=1)
         r = results[-1]

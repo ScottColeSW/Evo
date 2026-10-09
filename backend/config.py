@@ -2941,6 +2941,17 @@ def menu_cap() -> int:
         return 0
 
 
+# 2026-10-09: "full" (default) is the prompt as it has always been written; "compact" is the same facts in shorter wording (backend/actions.COMPACT_DESCRIPTIONS and
+# the shorter MOVEMENT notes in backend/prompts.py). The PROMPT_FORMAT environment variable overrides it. It exists for scripts/ab_test_nudges_off.py --knob prompt_format,
+# to find out whether a shorter prompt keeps decisions and outcomes the same and makes a turn faster. Leave at "full" for play until that has an answer.
+PROMPT_FORMAT = "full"
+
+
+def prompt_compact() -> bool:
+    import os
+    return os.environ.get("PROMPT_FORMAT", PROMPT_FORMAT).strip().lower() == "compact"
+
+
 def nudge_active(tag: str) -> bool:
     import os
     return os.environ.get("NUDGES", NUDGES).strip().lower() != "off" and tag not in DISABLED_NUDGE_TAGS

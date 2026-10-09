@@ -3874,3 +3874,109 @@ ACTION_DESCRIPTIONS = {
     "SEND_TRADE_EMISSARY": "Reach out to open trade with whichever rival tribe is nearest target_vector, already in contact (a much longer reach than TRADE's tight radius, but requires the rival to have actually been encountered before -- same requirement as ALLIANCE/DECLARE_WAR). An unaffiliated minor settlement near target_vector can also be traded with, the same as TRADE -- safer than RAIDing it, and it never depletes the way raiding does. Instant: goods exchange immediately if either is found.",
     "SPY": "Send a covert agent toward whichever rival tribe is nearest target_vector, already in contact (same requirement as ALLIANCE/DECLARE_WAR/SEND_TRADE_EMISSARY). Instant, and real risk: about a 1-in-3 chance of being caught, costing the spy's own small carried supplies and telling that rival your tribe exists, whether or not they knew before. If undetected, reveals their real population, era, resources, and key buildings for your own next reflection to weigh. Only possible once a Barracks stands. Does nothing if no rival tribe exists.",
 }
+
+
+def _plain_gate(does: str, needs: str, costs: str, opens: tuple = (), flag: str | None = None) -> str:
+    """The compact (PROMPT_FORMAT = "compact") form of an era-chain building: short subject-verb-object sentences in a fixed order, what it does, what it
+    costs, what it opens, which eras require it. Numbers and era names come from config and eras.ERAS, as in _gate_text. `needs` is not printed: an action on
+    the menu already has what it needs, and one that does not is explained by simulation.locked_building_facts. It stays an argument so each call reads like
+    the full text it replaces."""
+    parts = [does, f"It costs {costs}."]
+    if opens:
+        parts.append("It opens " + " and ".join(opens) + ".")
+    for era in [e.label for e in ERAS if flag and flag in e.requires_ready]:
+        parts.append(f"{'The ' + era if era.endswith('Era') else era} requires it.")
+    return " ".join(parts)
+
+
+# The same facts in shorter wording (config.PROMPT_FORMAT = "compact"), for the prompt-format A/B (scripts/ab_test_nudges_off.py --knob prompt_format). Written by hand
+# for the actions that appear on real menus; the era-chain buildings already read in a short, uniform form (_gate_text) and are shared by both arms, and any action not
+# listed here keeps its full text. Every number, limit, risk and named action in the full text is kept (tests/test_prompt_format.py checks that); what is dropped is
+# wording, and conditions that are already true for an action that is on the menu ("only possible once a Barracks stands").
+COMPACT_DESCRIPTIONS = {
+    "RAID": "You raid a rival tribe near target_vector. A win steals part of their stockpile but costs you people. A loss costs you more people. An unaffiliated minor settlement near target_vector is safer: it has no people, so you always win. You can raid it only a few times before it needs time to recover. If neither is there, nothing happens.",
+    "BREED": "Your chief and a trophy-holder start a family. It costs food and water. If it works, you get one child. It does nothing if you have fewer than two named people (a chief plus one trophy-holder) or too little food and water.",
+    "TRADE": "You open trade with a rival near target_vector. Both sides give a small share of everything they hold and get the same share back. Nobody loses anything. An unaffiliated minor settlement near target_vector also trades: it is smaller and one-sided (you give nothing), and it never runs out. With no rival at target_vector, you trade with a rival you already found, once your first wall ring is finished. If none applies, nothing happens.",
+    "UPGRADE_LONG_HOUSE": "You expand your long houses so more households fit. Think about it once 5 long houses stand. You need no new space. You can repeat it, but each upgrade costs more than the last.",
+    "SEND_TRADE_EMISSARY": "You send an emissary to open trade with the rival nearest target_vector that you already met. It reaches much farther than TRADE. It needs the same contact as ALLIANCE and DECLARE_WAR: you must have met the rival. You can also trade with an unaffiliated minor settlement near target_vector. That is safer than RAIDing it, and it never runs out. Goods change hands at once.",
+    "STRIKE_RAIDER_CAMP": "You attack a raider camp your scouts found. Set target_vector to the exact coordinate from one of your own raider sighting reports. Near is not enough. A win destroys the camp and recovers some food. A loss costs a life and the camp stays.",
+    "SPY": "You send a spy to the rival nearest target_vector that you already met (the same contact as ALLIANCE, DECLARE_WAR and SEND_TRADE_EMISSARY). It happens at once. The spy has about a 1-in-3 chance of getting caught. If caught, you lose its small supplies and that rival learns your tribe exists. If not caught, you learn their real population, era, resources and key buildings for your next reflection. If no rival exists, nothing happens.",
+    "DECLARE_WAR": "You declare a lasting war on the rival nearest target_vector. Both tribes remember it. It does not attack them (use RAID for that). It only sets how the two tribes stand. If no rival exists, or you are already at war with them, nothing happens.",
+    "TRAIN_BATTALION": "You train soldiers for your Battalion, up to your barracks' capacity. It costs food, not wood or stone. It takes several turns, like a wall section, and more people train faster. You can repeat it. The game names a Warrior to lead the Battalion when anyone earns a trophy.",
+    "GATHER_STONE": "You harvest stone at your current tile. Mountains give by far the most. Every other biome gives almost none. Each recent harvest on this exact spot lowers the yield.",
+    "SCOUT": "You send an expedition to explore. The game picks the direction to spread coverage over time, not target_vector. The party travels and camps on its own supply, searches up to a few days, and turns back if it finds nothing. If you choose SCOUT again, you send another party when there is room. At capacity, you get a report on the parties already out.",
+    "HUNT_DEER": "You hunt for food at your current tile. Forest has the most game, plains and river tiles some, mountains and ocean almost none. A wolf pack may kill a hunter (small risk, most likely in forest).",
+    "GATHER_EGGS": "You search for wild fowl nests near your current tile. It costs a little wood. An egg you find is set aside. Like the flock's own eggs, it takes a full day to hatch. Most eggs grow the flock, but not every egg makes it.",
+    "CATCH_FISH": "You fish at your current tile. It costs a little wood. A catch pays out food at once. Your first successful catch also starts a small permanent daily food supply. You never unlearn fishing.",
+    "EXPLORATION_PARTY": "You send a deeper, longer expedition than SCOUT. The game picks the direction, and its sweep is separate from SCOUT's. The party gathers real wood and stone on the way, on top of the food and water any expedition forages. When it carries all it can, it heads home. It finds everything SCOUT finds (water, resource sites, raider camps). It also finds rival settlements and Landmarks: rare places that give a unique treasure the moment you find them.",
+    "CONSTRUCT_WALL": "You work on your wall with stored wood and stone. It takes several turns. The game picks the next job: it opens a new section, advances an open section (more people do more per turn), reinforces a finished section with another tier, or, once a ring is complete, opens a new ring further out. A fuller wall meaningfully improves your odds against a raider attack. You can repeat it until the wall is maxed out.",
+    "PLANT_CROP": "You plant a farm plot at your current tile. It uses stored wood, a fence and a scarecrow. The plot grows on its own over the next cycles. It gives food automatically once mature. You do nothing to harvest it. You can tend up to a few plots at once.",
+    "UPGRADE_BARRACKS": "You reinforce the barracks you have, which raises Battalion capacity. Think about it once 5 barracks stand. You need no new space. You can repeat it, but each upgrade costs more than the last.",
+    "COOK_FOOD": "You learn to cook. It costs a little wood. It is a one-time skill you can use anywhere afterward. Every forage, hunt or catch then brings home three times as much food. Every celebration feast costs less.",
+    "BUILD_ROAD": "You build a road at your current tile with stored wood and stone. It is one-time and permanent. Every scouting, hunting or exploration party you send then travels faster.",
+    "BUILD_BATH_HOUSE": "You build a bath house with stored wood and stone. It is one-time and permanent. Your tribe then uses less food and water each day.",
+    "BUILD_TANNERY": "You build a tannery with stored wood and stone. It is one-time and permanent. Fur then flows in steadily, and every successful hunt yields extra meat.",
+    "BUILD_DOCK": "You build a dock at your current tile with stored wood. It is one-time and permanent. Every fish you catch then pays out more.",
+    "GATHER_FOOD": "You forage for berries, fruit and wild plants at your current tile. Plains give the most, forest some, mountains and ocean almost none. Unlike hunting, it has no hazard, but its yield ceiling is lower. Each recent forage on this spot lowers the yield.",
+    "BUILD_COOP": "You build a coop with stored wood and stone. It is one-time and permanent. With a Hatchery, the coop incubates gathered and laid eggs into new flock automatically, so the flock no longer grows only by chance.",
+    "GATHER_WOOD": "You harvest wood at your current tile. Forest gives the most. Plains and river tiles give some. Mountains and ocean give almost none. Each recent harvest on this exact spot lowers the yield.",
+    "BUILD_MOAT": "You dig a moat with stored wood and stone once your wall has a second layer. It is one-time and permanent. It costs less than another wall layer and gives a further defense bonus.",
+    "BUILD_WAREHOUSE": "You build a warehouse with stored wood and stone. It raises how much of every resource you can store. What you gather beyond storage is wasted. You can build up to 5. Then UPGRADE_WAREHOUSE takes over.",
+    "BUILD_QUARRY": "You build a quarry with stored wood and stone. It is one-time and permanent. Every load of stone you harvest is then worth three times as much.",
+    "BUILD_HATCHERY": "You build a hatchery with stored wood and stone. It is one-time and permanent. The flock then grows on its own much more reliably.",
+    "UPGRADE_WAREHOUSE": "You reinforce your warehouses to raise storage capacity. Think about it once 5 warehouses stand. You need no new space. You can repeat it, but each upgrade costs more than the last.",
+    "BUILD_WELL": "You build a well with stored wood and stone. It is one-time and permanent. Your tribe's daily water supply then flows in faster.",
+    "BUILD_LONG_HOUSE": "You build a long house at your current tile with stored wood and stone. It gives real, lasting shelter, one house at a time. You can build up to 5 as your population grows. Then UPGRADE_LONG_HOUSE takes over.",
+    "DECLARE_ALLIANCE": "You offer a lasting alliance to the rival nearest target_vector. Both tribes remember it. It is not a one-time exchange. A success also ends a war you declared on that rival. Peace is not guaranteed: a tribe in poor physiological condition (hungry, thirsty) has a real chance that the offer backfires into an immediate skirmish and a state of war. A secure tribe is a far safer bet than a desperate one. If no rival exists, nothing happens.",
+    "HUNTING_PARTY": "You send a hunting party toward known game. The game picks the destination: a confirmed wildlife site if one is known, otherwise a rotating search direction. The party hunts on its own supply for up to several days. Each day out it risks the same wolf-pack attack as an instant hunt. It stops when it catches something or gives up.",
+    "BUILD_FISHERY": "You build a fishery with stored wood and stone. It is one-time and permanent. Your settlement's daily fish supply then flows in even more steadily.",
+    "BUILD_SAWMILL": "You build a sawmill with stored wood and stone. It is one-time and permanent. Every load of wood you gather is then worth six times as much.",
+    "GATHER_WATER": "You harvest water at your current tile. It works in any biome, but a river tile gives more. On a river you face a small risk of drowning.",
+    "RELOCATE": "You move your whole tribe several tiles toward target_vector this cycle. A far trip takes several cycles. The tribe produces no resources while it travels. It costs extra food and water.",
+    "EXPEL_RAIDERS_FROM_TERRITORY": "You turn the whole population out to drive off raiders who are approaching. A win seizes real plunder and wins over stragglers, scaled by your population. The raiders are cast off elsewhere, not gone for good. A loss costs people and supplies, and the fight goes on: anger brings an immediate second and third wave. Each wave pays less and costs more lives than the last.",
+    "CLEAR_TERRITORY": "You sweep every raider camp near the territory boundary. That includes camps a little past the line, not only inside it. Until you do, real construction is blocked (walls and every building but a basic fire). That keeps a fresh settlement from building next to a standing threat.",
+    "BUILD_DEER_PEN": "You build a deer pen with stored wood and stone. It is one-time and permanent. A small captive herd starts at once. It breeds on its own if fed. It feeds the tannery extra Fur every cycle on top of what the tannery already makes.",
+    "BUILD_KITCHEN": "You build a kitchen with stored wood and stone. It is one-time and permanent. With cooking, it gives nine times as much food from every forage, hunt or catch, instead of only three.",
+    "BUILD_MINE": _plain_gate(
+        f"You dig a mine at the newest vein your scouts found. That vein's ore becomes your mine's ore for good. After you fetch ore once with GATHER_ORE, the mine yields {config.MINE_YIELD_PER_CYCLE} ore every cycle.",
+        "a known vein", f"{config.MINE_WOOD_COST} wood and {config.MINE_STONE_COST} stone", GATE_OPENS["BUILD_MINE"], "mine_built"),
+    "GATHER_ORE": _plain_gate(
+        f"You fetch {config.GATHER_ORE_BASE_YIELD} of the mine's own ore (more with a larger tribe). Your first fetch also starts the mine's steady yield of {config.MINE_YIELD_PER_CYCLE} ore every cycle. "
+        f"The forge needs {config.FORGE_ITEM_ORE_COST} of this ore in stock to be built, and uses {config.FORGE_ITEM_ORE_COST} for each item it makes.",
+        "a built mine", "nothing", GATE_OPENS["BUILD_MINE"][1:], None),
+    "BUILD_FORGE": _plain_gate(
+        f"You build a forge. It then makes items on its own, using {config.FORGE_ITEM_ORE_COST} ore and {config.FORGE_ITEM_WOOD_COST} wood each, while the item store has room. Each item is a random tool, weapon or invention. "
+        f"Weapons arm your Battalion (up to +{round(config.MIGHT_WEAPON_BONUS * 100)}% Might at one per soldier) and you keep them. "
+        f"Every other item adds {round(config.ITEM_EFFECT_MAGNITUDE * 100)}% to one effect, such as more food, stone, wood, game or water per load, or faster travel, walls or Battalion drills. You can trade items.",
+        f"a built mine and {config.FORGE_ITEM_ORE_COST} of its ore in stock", f"{config.FORGE_WOOD_COST} wood and {config.FORGE_STONE_COST} stone", GATE_OPENS["BUILD_FORGE"], "forge_built"),
+    "BUILD_KEEP": _plain_gate(
+        f"You build a keep. It adds {round(config.KEEP_DEFENSE_BONUS * 100)} points to your chance of beating off a raider attack. It adds {round(config.MIGHT_TIER_BONUS_PER_TIER * 100)}% to your Might once you have a Battalion.",
+        f"{config.KEEP_LONG_HOUSES_REQUIRED} long houses (built or upgraded)", f"{config.KEEP_WOOD_COST} wood and {config.KEEP_STONE_COST} stone", GATE_OPENS["BUILD_KEEP"], "keep_built"),
+    "BUILD_BARRACKS": _plain_gate(
+        f"You build a barracks. You can build up to {config.BARRACKS_MAX_COUNT}. It staffs a Battalion at once from your own people, up to {config.BATTALION_CAPACITY_PER_BARRACKS} per barracks. It is real housing for a standing military, the first building of the Military branch.",
+        "a keep and a kitchen", f"{config.BARRACKS_WOOD_COST} wood and {config.BARRACKS_STONE_COST} stone", GATE_OPENS["BUILD_BARRACKS"], "barracks_built"),
+    "BUILD_LIBRARY": _plain_gate(
+        "You build a library. Your tribe can then study and file its own remembered history.",
+        "at least one long house", f"{config.LIBRARY_WOOD_COST} wood and {config.LIBRARY_STONE_COST} stone", GATE_OPENS["BUILD_LIBRARY"], "library_built"),
+    "RESEARCH": _plain_gate(
+        f"You study your tribe's remembered history at the library. You file up to {config.LIBRARY_ENTRY_MEMORY_COUNT} of its most weighty memories as a permanent Library entry. You can repeat it.",
+        "a library", f"{config.RESEARCH_WOOD_COST} wood", (), None),
+    "BUILD_FORTRESS": _plain_gate(
+        f"You build a fortress. It adds {round(config.FORTRESS_DEFENSE_BONUS * 100)} points to your chance of beating off a raider attack. It adds another {round(config.MIGHT_TIER_BONUS_PER_TIER * 100)}% to your Might once you have a Battalion.",
+        f"a keep and {config.FORTRESS_LONG_HOUSES_REQUIRED} long houses (built or upgraded)", f"{config.FORTRESS_WOOD_COST} wood and {config.FORTRESS_STONE_COST} stone", GATE_OPENS["BUILD_FORTRESS"], "fortress_built"),
+    "BUILD_CASTLE": _plain_gate(
+        f"You build a castle at your current tile. It adds {round(config.CASTLE_DEFENSE_BONUS * 100)} points to your chance of beating off a raider attack, on top of what your wall provides. It adds another {round(config.MIGHT_TIER_BONUS_PER_TIER * 100)}% to your Might once you have a Battalion.",
+        f"a fortress and {config.CASTLE_LONG_HOUSES_REQUIRED} long houses (built or upgraded)", f"{config.CASTLE_WOOD_COST} wood and {config.CASTLE_STONE_COST} stone", GATE_OPENS["BUILD_CASTLE"], "castle_built"),
+}
+
+
+# What SCOUT, EXPLORATION_PARTY and HUNTING_PARTY all share, said once instead of in each (compact format only; printed when any of the three is on the menu).
+EXPEDITION_RULES = ("About expeditions: SCOUT, EXPLORATION_PARTY and HUNTING_PARTY share one capacity. Several parties, in any mix, can be out at once, more as your "
+                    "population grows. You learn what a party found, and you get its food, only when it walks home. Food a hunt has caught but not yet brought home does nothing for hunger now.")
+
+
+def action_text(name: str) -> str | None:
+    """The description of an action as the prompt shows it: the compact wording under config.PROMPT_FORMAT = "compact" where one exists, otherwise the full text."""
+    if config.prompt_compact() and name in COMPACT_DESCRIPTIONS:
+        return COMPACT_DESCRIPTIONS[name]
+    return ACTION_DESCRIPTIONS.get(name)

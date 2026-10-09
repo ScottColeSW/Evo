@@ -446,6 +446,53 @@ def _is_known_water_report(text: str, known_water: set) -> bool:
     return bool(match) and (int(match.group(1)), int(match.group(2))) in known_water
 
 
+_GROUPS = (
+    # (pattern, how a group is introduced, how a member reads); every pattern captures the coordinate pair last
+    (re.compile(r"^confirmed water source at \((\d+),(\d+)\)$"), "Water sources: ", None),
+    (re.compile(r"^confirmed lumber-rich area at \((\d+),(\d+)\)$"), "Timber groves: ", None),
+    (re.compile(r"^confirmed stone-rich area at \((\d+),(\d+)\)$"), "Stone sites: ", None),
+    (re.compile(r"^a vein of (.+?) was found at \((\d+),(\d+)\)$"), "Veins: ", 1),
+    (re.compile(r"^raiders reported near \((\d+),(\d+)\)$"), "Raiders reported near: ", None),
+    (re.compile(r"^Aiming target_vector exactly at \((\d+),(\d+)\) would strike that known raider camp right now\.$"),
+     "Raider camps you can strike (aim target_vector exactly at one): ", None),
+)
+_DANGER = re.compile(r"^(.+?) at \((\d+),(\d+)\) is a known danger -- (.+?)\.$")
+_GAME = re.compile(r"^a ([A-Z][A-Za-z' ]+?) was found at \((\d+),(\d+)\)$")
+
+
+def compact_entities(items: list[str]) -> list[str]:
+    """The entity list with each kind of repeated site line written once (config.PROMPT_FORMAT = "compact"). Every coordinate and name survives; what goes is the
+    sentence frame repeated for each one ("confirmed lumber-rich area at (76,13)", "...at (78,22)", ...). A group sits where its first member was; anything
+    that matches no group is left exactly as it was."""
+    placed: dict = {}
+    out: list = []
+    for item in items:
+        key = label = member = None
+        for pattern, intro, name_group in _GROUPS:
+            m = pattern.match(item)
+            if m:
+                key, label = intro, intro
+                x, y = m.group(m.lastindex - 1), m.group(m.lastindex)
+                member = f"{m.group(name_group)} ({x},{y})" if name_group else f"({x},{y})"
+                break
+        else:
+            m = _DANGER.match(item)
+            if m:
+                key, label, member = ("danger", m.group(4)), f"Known dangers ({m.group(4)}): ", f"{m.group(1)} ({m.group(2)},{m.group(3)})"
+            else:
+                m = _GAME.match(item)
+                if m:
+                    key, label, member = "game", "Game sites: ", f"{m.group(1)} ({m.group(2)},{m.group(3)})"
+        if key is None:
+            out.append(item)
+        elif key in placed:
+            out[placed[key]][1].append(member)
+        else:
+            placed[key] = len(out)
+            out.append([label, [member]])
+    return [x if isinstance(x, str) else x[0] + ", ".join(x[1]) for x in out]
+
+
 def _cost_gaps(tribe, wood: int, stone: int) -> list[str]:
     gaps = []
     if tribe.wood < wood:
@@ -4239,6 +4286,8 @@ class Simulation:
             if gaps:
                 era_gap_note = f"To reach {nxt.label}, still short on: {', '.join(gaps)}."
 
+        if config.prompt_compact():
+            visible_entities = compact_entities(visible_entities)
         if not visible_entities:
             visible_entities = ["none"]
         return visible_entities, era_gap_note
@@ -5361,6 +5410,8 @@ class Simulation:
                 )
         if settled_near_water:
             visible_entities.append(
+                "Your tribe has settled next to real water and no longer considers relocating. Water now flows in on its own each cycle, so you do not need to gather it."
+                if config.prompt_compact() else
                 "The tribe has settled here, next to real water, and is no longer considering relocating. "
                 "Water now flows in on its own each cycle -- manually gathering more here is no longer necessary."
             )
@@ -5582,23 +5633,35 @@ class Simulation:
                     "spread over a few turns -- cheap next to what it unlocks: a Long House, then a Kitchen "
                     "(nine times as much food from every future forage, hunt, or catch, instead of only three)"
                 )
+                if config.prompt_compact():
+                    wall_cost_note = (
+                        f"about {config.WALL_WOOD_COST_TOTAL} wood and {config.WALL_STONE_COST_TOTAL} stone over a few turns. That is cheap next to what it unlocks: "
+                        "a Long House, then a Kitchen (nine times as much food from every forage, hunt or catch, instead of three)"
+                    )
                 if unlocked_count < real_total and built >= unlocked_count:
                     if unlocked_count == 0:
                         visible_entities.append(
-                            f"The settlement's first wall ring has no section unlocked yet -- CONSTRUCT_WALL "
-                            f"unlocks the first one automatically{natural_note}. Each section costs "
-                            f"{wall_cost_note}."
+                            (f"Your first wall ring has no section open yet. CONSTRUCT_WALL opens the first one by itself{natural_note}. Each section costs {wall_cost_note}."
+                             if config.prompt_compact() else
+                             f"The settlement's first wall ring has no section unlocked yet -- CONSTRUCT_WALL "
+                             f"unlocks the first one automatically{natural_note}. Each section costs "
+                             f"{wall_cost_note}.")
                         )
                     else:
                         visible_entities.append(
-                            f"The settlement's first wall ring has {built}/{real_total} real sections built, and "
-                            f"every unlocked section is complete -- CONSTRUCT_WALL unlocks the next "
-                            f"one automatically{natural_note}. Each section costs {wall_cost_note}."
+                            (f"Your first wall ring has {built}/{real_total} real sections built, and every open section is complete. CONSTRUCT_WALL opens the next one by itself{natural_note}. "
+                             f"Each section costs {wall_cost_note}."
+                             if config.prompt_compact() else
+                             f"The settlement's first wall ring has {built}/{real_total} real sections built, and "
+                             f"every unlocked section is complete -- CONSTRUCT_WALL unlocks the next "
+                             f"one automatically{natural_note}. Each section costs {wall_cost_note}.")
                         )
                 else:
                     visible_entities.append(
-                        f"The settlement's first wall ring has {built}/{real_total} real sections built"
-                        f"{natural_note} -- finishing the section already unlocked costs {wall_cost_note}."
+                        (f"Your first wall ring has {built}/{real_total} real sections built{natural_note}. Finishing the section already open costs {wall_cost_note}."
+                         if config.prompt_compact() else
+                         f"The settlement's first wall ring has {built}/{real_total} real sections built"
+                         f"{natural_note} -- finishing the section already unlocked costs {wall_cost_note}.")
                     )
             elif not ring0_reinforced:
                 if tribe.long_houses_built == 0:
@@ -6043,6 +6106,8 @@ class Simulation:
 
         if tribe.fishing_learned:
             visible_entities.append(
+                "Fishing is mastered here: food now flows in on its own each cycle, on top of what you catch by hand."
+                if config.prompt_compact() else
                 "Fishing has been mastered here -- food now flows in on its own each cycle, on top of "
                 "anything caught by hand."
             )
