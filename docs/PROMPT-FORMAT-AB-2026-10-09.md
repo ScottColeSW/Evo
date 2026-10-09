@@ -133,6 +133,18 @@ question was whether it would help here.
 - **None of the problems found here is a memory problem:** cut-off replies, repeat loops, the model failover, the first-era food trap, the unchosen gate
   buildings and the compact format's shift on one action are all model or prompt behavior. Palimpsest's own README says what is not yet measured is whether having
   the memory improves an agent's answers at all.
+- **Where an expansion could be tested, in order (proposed 2026-10-09, nothing run):**
+  1. **The journal read-back, already built and never compared** (`docs/CHIEF-EVIDENCE-MEMORY-DESIGN.md`, Step 2; `JOURNAL_READBACK`, off by default). It tells the
+     chief plain facts such as "In your last 10 choices you picked GATHER_STONE 6 times: stone +600; nothing was built." That is the observed problem (gemma2:2b
+     gathering food at 1.8 per gather for 250 cycles, gemma3:4b repeating TRADE and RAID with a keep on the menu). Run it off and on with the harness on gemma2:2b
+     and gemma3:4b and count repeats and gate-building adoption. This is also the question Palimpsest's own README lists as unmeasured: does stored material change a
+     judgment compared with its absence.
+  2. **Only if that moves anything:** Palimpsest judging a chief's stated philosophy or decree against the journal's evidence, so a mismatch ("diversify resources"
+     while 12 of the last 12 choices were stone) is a visible collision the chief can see. Palimpsest's judge exists for claim against evidence; Evo does not yet
+     use it that way (a proposed decree is written without being judged against the philosophy).
+  3. **A fidelity check for prompt compaction:** Palimpsest's CPU NLI (`NLI.compare`) can test whether a compact description still implies each sentence of the full
+     one, which covers what the number and name check in `tests/test_prompt_format.py` cannot.
+  The project's own finding (four instances so far) is that a fact in the prompt does not move small models, so 1 may well show nothing; that would be a result.
 - **Conclusion:** no evidence from this work that more Palimpsest would help. Where it was designed to (reflection reinforcement) it is installed and rarely
   fires. If its effect is to be measured, it needs runs long enough for reflections to recur, and with three reinforcements in 58 judgments the expected
   effect on play is small.
@@ -178,6 +190,7 @@ Early game, phi4-mini:3.8b, 250 cycles (latency affected by extra resident model
 - Early-game batch: one valid run missing (seed 1001, full arm), and phi4-mini loops on JSON need counting per arm.
 - Three more mid-game seeds per arm to see whether the Dream Manifestation Machine gap holds; if it does, test the descriptions, the entity grouping and the
   notes separately.
+- The journal read-back off and on, on gemma2:2b and gemma3:4b (see the Palimpsest section); needs a `journal_readback` knob in the harness.
 - The one-line "available now, needs X" format for every action (the near-miss lines for the era chain are done).
 - Reflection findings still open: decrees written as commands, the repeating philosophy text, and the placeholder chief name "Elder of Tribe 1" that appears
   when a succession gets no usable reply.
