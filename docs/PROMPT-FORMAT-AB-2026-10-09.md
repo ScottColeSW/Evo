@@ -110,7 +110,7 @@ Decision (2026-10-08): these are honest results about each model, not something 
 
 | Model | First-era food (PLANT_CROP, COOK_FOOD, CATCH_FISH) |
 |---|---|
-| gemma2:2b | never chose any in 323 turns, all offered 307 times; stayed at 15 to 30 people on a foraging ceiling of 1.8 food per gather |
+| gemma2:2b | one tribe never chose any in 323 turns (all offered 307 times) and stayed at 15 to 30 people on a foraging ceiling of 1.8 food per gather; in the later read-back batch 3 of 4 tribe-runs farmed by cycle 110 to 220 and 1 of 4 (seed 1001, Tribe 2) never did in 250 cycles |
 | hermes3:3b | 1-food gathers for about 150 cycles; cooked at cycle 158, first crop at 216 |
 | phi4-mini:3.8b | first crop at cycle 141, cooked at 153, fished at 155, then grew past 15,000 |
 | qwen2.5:3b, llama3.2, gemma3:4b | farmed early and grew fast |
@@ -142,7 +142,7 @@ question was whether it would help here.
   gemma2:2b, a forced-combat scenario) scored 40.0 with memory off and 36.1 on (95% range -9.2 to +1.9; better in 4 pairs, worse in 8). The write-up says memory stays
   off by default; since 2026-10-07 the code and README default it on, and no later trial exists. For Evo that is a base rate: the same small models, a well-built memory,
   no detectable gain.
-- **Where an expansion could be tested, in order (proposed 2026-10-09, nothing run):**
+- **Where an expansion could be tested, in order (proposed 2026-10-09; step 1 has since been run and was null, see its result below):**
   1. **The journal read-back, already built and never compared** (`docs/CHIEF-EVIDENCE-MEMORY-DESIGN.md`, Step 2; `JOURNAL_READBACK`, off by default). It tells the
      chief plain facts such as "In your last 10 choices you picked GATHER_STONE 6 times: stone +600; nothing was built." That is the observed problem (gemma2:2b
      gathering food at 1.8 per gather for 250 cycles, gemma3:4b repeating TRADE and RAID with a keep on the menu). Run it off and on with the harness on gemma2:2b
@@ -181,6 +181,29 @@ Run: gemma2:2b, early game, 250 cycles, seeds 1000 and 1001, read-back off again
 - **Limits:** 2 seeds with 2 tribes each can only detect a large effect, and a null does not prove there is no effect. Anything in the anomaly list (a failover, loop aborts, an arm that did
   not differ) is reported first and can make a run invalid.
 
+### Result of the journal read-back run (2026-10-09): null, by the rule above
+
+4 valid runs (seeds 1000 and 1001, both arms), gemma2:2b, 250 cycles, 8 tribe-runs. No invalid runs, no failover. Anomalies recorded and minor: 4 repeat retries across the batch, and 2 decisions with no
+usable action fields in each seed-1001 run (both arms). The read-back worked as built: 0 lines shown with it off, 62 per tribe on average with it on, plain numbers ("In your last 10 choices you picked
+GATHER_FOOD 5 times: food +11; nothing was built.").
+
+| | off | on |
+|---|---|---|
+| tribe-runs choosing PLANT_CROP / COOK_FOOD / CATCH_FISH at least once | 3 / 2 / 3 of 4 | 3 / 3 / 3 of 4 |
+| first PLANT_CROP (mean cycle) | 152 | 136 |
+| mean longest repeat of one action | 5.8 | 5.2 (10% lower) |
+| mean top-action share | 0.28 | 0.26 |
+| final population (mean, min) | 6,775 (42) | 5,923 (40) |
+| keep / mine / forge ever chosen (tribe-runs) | 2 / 2 / 2 | 3 / 2 / 1 |
+
+- **Signal rule:** not met. The off arm already took the one-time food actions in 3 of 4 tribe-runs (so the premise that gemma2:2b never does was not true here), and the longest repeat fell 10%, not 30%.
+- **The case it was meant for:** seed 1001, Tribe 2 stayed at 40 to 42 people and never chose any of the one-time actions in 250 cycles, in both arms. With the read-back on it was shown a repeat line 82 times and kept
+  choosing GATHER_FOOD (38% of its choices) and GATHER_STONE. The fact reached it and changed nothing.
+- **Outcome under the rule:** leave the read-back off, treat the memory line of work for small models as closed on this evidence, and do not expand Palimpsest in Evo for this. The differences in eras and buildings
+  are small, run in both directions, and rest on 4 tribe-runs per arm; they are not a finding. Limits as stated: this can only detect a large effect.
+- **A correction it forces:** gemma2:2b taking none of the food actions in 323 turns (the earlier table) was one tribe, not the model. Here 3 of 4 tribe-runs farmed between cycles 110 and 220 and 1 of 4 never did. The split
+  is per tribe-run, not per model.
+
 ## Appendix: every valid run
 
 The raw results (`scripts/ab_test_prompt_format_results.json`, `scripts/ab_test_prompt_format_results_v1_first_compact.json`) and the batch logs stay local, as the
@@ -212,7 +235,7 @@ Early game, phi4-mini:3.8b, 250 cycles (latency affected by extra resident model
 - Early-game batch: one valid run missing (seed 1001, full arm), and phi4-mini loops on JSON need counting per arm.
 - Three more mid-game seeds per arm to see whether the Dream Manifestation Machine gap holds; if it does, test the descriptions, the entity grouping and the
   notes separately.
-- The journal read-back off and on, on gemma2:2b and gemma3:4b (see the Palimpsest section); needs a `journal_readback` knob in the harness.
+- (Done, null: the journal read-back off and on on gemma2:2b, see its result above. Not run on gemma3:4b; the pre-registered rule makes that conditional on a signal.)
 - The one-line "available now, needs X" format for every action (the near-miss lines for the era chain are done).
 - Reflection findings still open: decrees written as commands, the repeating philosophy text, and the placeholder chief name "Elder of Tribe 1" that appears
   when a succession gets no usable reply.
