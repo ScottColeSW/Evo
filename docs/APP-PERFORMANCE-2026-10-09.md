@@ -44,6 +44,19 @@ Median / 95th percentile / worst, milliseconds per tick, default settings:
 - **With a pretend 3.0 s model delay** a cycle took 3.62 s by default and 3.28 s with logging and checking off: about **0.34 s (9%) is the app's logging and checking**. The loop was blocked
   about 190 ms a cycle in total (up to 0.5 s at once) in the lean run and 400 ms in the default one.
 
+## The page itself (measured in the browser pane, 2026-10-09)
+
+Two real consecutive late-game snapshots from run 130534 (cycles 299 and 300, 139 KB and 142 KB) were loaded into the page. Receiving and drawing are cheap on this machine:
+
+| | median | 95th percentile |
+|---|---|---|
+| `JSON.parse` of one update | 0.3 to 0.4 ms | |
+| `updateSidebar` | 2.8 ms | 4.7 ms |
+| `drawFrame` on the 625 x 625 board | 2.8 ms | 4.2 ms |
+
+So the page is not slow, and a 140 KB message every few seconds is not a problem. The freezing is the glide design and the server cadence above, not rendering. A frame rate was not measured: the pane throttles an
+unfocused tab to about 1 to 2 requestAnimationFrame calls a second, which is an artifact of the pane and not of the page.
+
 ## Measured effect of the changes (mid-game, 100 cycles, no model delay)
 
 | | step median / p95 / worst | tick total median | event-loop lag over 100 ms | wall time |
@@ -83,4 +96,4 @@ change what the models' answers do rather than record anything.
 
 The stubbed runs use random action choices, so the game states differ a little between runs and the step spikes depend on which actions were chosen; the medians are steady across runs, the
 worst cases less so. The board-history write was measured on the H: drive where the project's `logs/` lives; another disk will differ. The real cadence comes from two runs of two models each.
-A browser-side measurement (frame rate and main-thread time per update) has not been made yet.
+The browser-side numbers are for one machine and one pane; the frame rate itself was not measurable there.
