@@ -31,6 +31,8 @@ class RunEventLog:
         self.current_cycle = 0
 
     def record(self, tribe_name: str, message: str) -> None:
+        if config.lean_run():  # LEAN_RUN: no chronicle mirror (see config.LEAN_RUN)
+            return
         line = json.dumps({
             "cycle": self.current_cycle,
             "tribe": tribe_name,
@@ -47,7 +49,7 @@ class RunEventLog:
 
         Switchable (2026-10-04): config.RUN_DATA_LOG, or the RUN_DATA_LOG environment variable, "on" (default) or "off". Off writes none of
         these analysis records; the plain chronicle lines from record() are not affected."""
-        if os.environ.get("RUN_DATA_LOG", config.RUN_DATA_LOG).lower() == "off":
+        if os.environ.get("RUN_DATA_LOG", config.RUN_DATA_LOG).lower() == "off" or config.lean_run():
             return
         line = json.dumps({
             "cycle": self.current_cycle,

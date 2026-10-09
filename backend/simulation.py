@@ -2645,7 +2645,7 @@ class Simulation:
         # Step 2 of docs/CHIEF-EVIDENCE-MEMORY-DESIGN.md: "on", "off", or None (None: the JOURNAL_READBACK environment variable,
         # then config.CHIEF_JOURNAL_READBACK). The home page's checkbox sends "on" or "off".
         import os as _os
-        self.journal_readback = (journal_readback or _os.environ.get("JOURNAL_READBACK", config.CHIEF_JOURNAL_READBACK)) == "on"
+        self.journal_readback = (journal_readback or _os.environ.get("JOURNAL_READBACK", config.CHIEF_JOURNAL_READBACK)) == "on" and not config.lean_run()
         self.client = OllamaClient(ollama_url)
         self.scheduler = ModelBatchScheduler(self.client)
         self.world = Landscape(config.GRID_SIZE)
@@ -3176,7 +3176,7 @@ class Simulation:
         if not hasattr(self, "_reflection_judge_cache"):
             import os
             from .reflection_judge import build_judge
-            mode = self.reflection_judge_mode or os.environ.get("REFLECTION_JUDGE", config.REFLECTION_JUDGE)
+            mode = "off" if config.lean_run() else (self.reflection_judge_mode or os.environ.get("REFLECTION_JUDGE", config.REFLECTION_JUDGE))
             self._reflection_judge_cache = await asyncio.to_thread(build_judge, mode) if mode == "nli" else None
             if mode == "nli":
                 self.reflection_judge_status = "on" if self._reflection_judge_cache is not None else "unavailable"
@@ -3636,12 +3636,13 @@ class Simulation:
             # (see Tribe.debug_transcript's own comment) -- captured here, right
             # where the request/response pair actually meet, rather than
             # threaded through _apply_turn just to reach a second call site.
-            tribe.debug_transcript.append({
-                "cycle": self.cycle,
-                "prompt": prompts_by_tid[tid],
-                "raw_response": outcome.get("raw_response", ""),
-                "latency_ms": outcome["latency_ms"],
-            })
+            if not config.lean_run():  # the raw-reply transcript is for the debug page only
+                tribe.debug_transcript.append({
+                    "cycle": self.cycle,
+                    "prompt": prompts_by_tid[tid],
+                    "raw_response": outcome.get("raw_response", ""),
+                    "latency_ms": outcome["latency_ms"],
+                })
             self._apply_turn(tribe, outcome["intent"], outcome["latency_ms"], contexts[tid])
             if tribe.consecutive_unresolved_turns >= config.MODEL_FAILURE_STREAK_THRESHOLD:
                 await self._handle_model_failure(tribe)
@@ -6505,7 +6506,7 @@ class Simulation:
             tribe.last_target = None
         pos_before = (tribe.x, tribe.y)
 
-        journal_before = self._journal_snapshot(tribe) if config.DECISION_JOURNAL == "on" else None
+        journal_before = self._journal_snapshot(tribe) if config.DECISION_JOURNAL == "on" and not config.lean_run() else None
         tribe.current_broadcast = broadcast
         hazard_note = self._apply_action(tribe, action, ctx["biome"], target)
         if journal_before is not None:
@@ -7281,7 +7282,7 @@ class Simulation:
         candidate would have had (new, reinforces, collides, compatible). Runs only when the judge is on (the home-page checkbox).
         The real Library is untouched. A repeat (reinforces) is not added to the shadow shelf, as the spec's filing would not."""
         pending, tribe.library_shadow_pending = tribe.library_shadow_pending, []
-        if not pending:
+        if not pending or config.lean_run():
             return
         try:
             judge = await self._reflection_judge()

@@ -2941,6 +2941,19 @@ def menu_cap() -> int:
         return 0
 
 
+# 2026-10-09 (the owner: "turn off all the logging and double checking. I'm trying to measure the app instead of the models"): "off" (the default) or "on". On turns off everything
+# that exists to record or to double-check, so the app's own speed can be measured and the browser run is as light as it can be: the run-data records and the chronicle file
+# mirror (backend/event_log.py), the board-history write to SQLite (backend/board_history.py), the decision journal and its read-back, the reflection judge and the Library
+# shadow judging (the Palimpsest checks), and the raw model transcript kept for the debug page. Gameplay, the prompt and every mechanic are untouched. The LEAN_RUN environment
+# variable overrides it. Measured cost of what it switches off (docs/APP-PERFORMANCE-2026-10-09.md): about 0.34 s of a 3.6 s cycle, most of it the board-history write.
+LEAN_RUN = "off"
+
+
+def lean_run() -> bool:
+    import os
+    return os.environ.get("LEAN_RUN", LEAN_RUN).strip().lower() == "on"
+
+
 # 2026-10-09: "full" (default) is the prompt as it has always been written; "compact" is the same facts in shorter wording (backend/actions.COMPACT_DESCRIPTIONS and
 # the shorter MOVEMENT notes in backend/prompts.py). The PROMPT_FORMAT environment variable overrides it. It exists for scripts/ab_test_nudges_off.py --knob prompt_format,
 # to find out whether a shorter prompt keeps decisions and outcomes the same and makes a turn faster. Leave at "full" for play until that has an answer.

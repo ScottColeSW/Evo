@@ -354,6 +354,8 @@ async def on_startup(app: web.Application) -> None:
     # See ws_handler's OBSERVE command -- the debug page attaches to whichever
     # session was most recently started, rather than owning its own sim.
     app["latest_sim"] = None
+    if config.lean_run():
+        print("[lean run] LEAN_RUN is on: logging and the optional checks are off (run data, chronicle file, board history, decision journal, reflection judge, shadow judging, raw transcript)")
     await _unload_stale_models()
     app["bg_task"] = asyncio.create_task(broadcast_loop(app))
 

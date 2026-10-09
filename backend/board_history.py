@@ -39,7 +39,11 @@ def _connect(path: str | None = None) -> sqlite3.Connection:
 
 def record_board_state(run_id: str, cycle: int, snapshot: dict, path: str | None = None) -> None:
     """Idempotent per (run_id, cycle) -- a re-sent snapshot for a cycle already
-    recorded (e.g. a duplicate tick) overwrites rather than duplicating."""
+    recorded (e.g. a duplicate tick) overwrites rather than duplicating. Does nothing in a lean run (config.LEAN_RUN): the write costs about 120 ms of file flushing
+    a cycle, on the thread that serves the page."""
+    from . import config
+    if config.lean_run():
+        return
     conn = _connect(path)
     with conn:
         conn.execute(
