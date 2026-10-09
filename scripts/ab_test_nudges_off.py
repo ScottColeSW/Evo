@@ -101,6 +101,7 @@ async def run_once(variant: str, seed: int, cycles: int, mode: str, knob: str = 
     prompt_chars = {tid: [] for tid in sim.tribes}
     latency_ms = {tid: [] for tid in sim.tribes}
     last_seen = {tid: -1 for tid in sim.tribes}
+    invalid = None
     started = time.time()
     for _ in range(cycles):
         await sim.step()
@@ -117,6 +118,15 @@ async def run_once(variant: str, seed: int, cycles: int, mode: str, knob: str = 
                     latency_ms[tid].append(entry["latency_ms"])
         if all(t.extinct for t in sim.tribes.values()):
             break
+        # 2026-10-09: a tribe whose model keeps failing is switched to another local model after 10 unusable turns in a row (Simulation._handle_model_failure), and
+        # from then on the run is no longer a test of MODEL (a live batch silently ran two tribes on hermes3:3b and an odd digest-named model). Stop such a run at
+        # once and mark it invalid, rather than let it run for an hour and be averaged in; 5 unusable turns in a row is the early warning.
+        if any(t.model != MODEL for t in sim.tribes.values()):
+            invalid = "a tribe's model was switched by the failover: " + ", ".join(f"{t.name}={t.model}" for t in sim.tribes.values())
+            break
+        if any(t.consecutive_unresolved_turns >= 5 for t in sim.tribes.values()):
+            invalid = "a tribe had 5 unusable turns in a row (the model is failing, the failover would switch it next)"
+            break
         if (sim.cycle - start_cycle) % 25 == 0:
             print(f"    [{variant} seed {seed}] cycle {sim.cycle}, {int(time.time() - started)}s: "
                   + " | ".join(f"{t.name} pop={t.population} era={t.era}" for t in sim.tribes.values()), flush=True)
@@ -132,7 +142,10 @@ async def run_once(variant: str, seed: int, cycles: int, mode: str, knob: str = 
             "mean_prompt_chars": round(sum(prompt_chars[tid]) / len(prompt_chars[tid])) if prompt_chars[tid] else None,
             "mean_latency_ms": round(sum(latency_ms[tid]) / len(latency_ms[tid])) if latency_ms[tid] else None,
         }
-    return {"knob": knob, "decision_stats": _decision_stats(sim.run_id), "variant": variant, "seed": seed, "model": MODEL, "mode": mode, "start_cycle": start_cycle, "cycles": sim.cycle - start_cycle, "seconds": int(time.time() - started),
+    return {"knob": knob, "decision_stats": _decision_stats(sim.run_id), "variant": variant, "seed": seed, "model": MODEL, "invalid": invalid,
+            "client_counters": {"repeat_retries": dict(sim.client.repeat_retries), "truncated_replies": dict(sim.client.truncated_replies),
+                                "empty_reply_retries": dict(sim.client.empty_reply_retries)},
+            "mode": mode, "start_cycle": start_cycle, "cycles": sim.cycle - start_cycle, "seconds": int(time.time() - started),
             "run_id": sim.run_id, "tribes": tribes}
 
 
@@ -167,13 +180,15 @@ async def main() -> None:
         order += [(seed, first), (seed, second)] if i % 2 == 0 else [(seed, second), (seed, first)]
     results = load()
     for seed, variant in order:
-        if any(r["seed"] == seed and r["variant"] == variant and r.get("mode", "early") == args.mode and r.get("model", "qwen2.5:3b") == MODEL for r in results):
+        if any(r["seed"] == seed and r["variant"] == variant and r.get("mode", "early") == args.mode and r.get("model", "qwen2.5:3b") == MODEL and not r.get("invalid") for r in results):
             print(f"skip seed {seed} {variant} (already recorded)")
             continue
         print(f"=== {args.mode} seed {seed}, {args.knob}={variant}, {MODEL}, {args.cycles} cycles ===", flush=True)
         results.append(await run_once(variant, seed, args.cycles, args.mode, args.knob))
         json.dump(results, open(RESULTS, "w", encoding="utf-8"), indent=1)
         r = results[-1]
+        if r.get("invalid"):
+            print(f"=== INVALID RUN, not counted: {r['invalid']}", flush=True)
         print(f"=== done: {r['cycles']} cycles in {r['seconds']}s, "
               + "; ".join(f"{n}: {t['final_era']} pop {t['final_population']}{' EXTINCT' if t['extinct'] else ''}" for n, t in r["tribes"].items()),
               flush=True)
