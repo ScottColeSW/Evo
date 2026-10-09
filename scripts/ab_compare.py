@@ -5,13 +5,20 @@ import sys
 
 path = sys.argv[1]
 mode = sys.argv[2] if len(sys.argv) > 2 else None
-R = [r for r in json.load(open(path, encoding="utf-8")) if (mode is None or r.get("mode") == mode) and not r.get("invalid")]
+ALL = [r for r in json.load(open(path, encoding="utf-8")) if mode is None or r.get("mode") == mode]
+R = [r for r in ALL if not r.get("invalid")]
+flagged = [(r, note) for r in ALL for note in ([("INVALID: " + r["invalid"])] if r.get("invalid") else []) + list(r.get("anomalies") or [])]
+print("ANOMALIES AND INVALID RUNS:" if flagged else "no anomalies recorded, no invalid runs")
+for r, note in flagged:
+    print(f"  seed {r['seed']} {r['variant']:8s} {note[:260]}")
+print()
 print(f"{path} mode={mode}: {len(R)} runs, per arm {dict(collections.Counter(r['variant'] for r in R))}")
 by = collections.defaultdict(list)
 for r in R:
     for name, t in r["tribes"].items():
         by[r["variant"]].append((r["seed"], name, t))
-for v in ("full", "compact"):
+ARMS = sorted({r["variant"] for r in R}, key=lambda v: (v not in ("full", "off"), v))
+for v in ARMS:
     rows = by[v]
     if not rows:
         continue
@@ -34,6 +41,14 @@ for v in ("full", "compact"):
         for era, c in t["era_first_cycle"].items():
             firsts[era].append(c)
     print("  era first-entry cycle (mean, n):", {e: (round(st.mean(c)), len(c)) for e, c in firsts.items()})
+print("\nbehavior (from the run logs), mean over tribe-runs:")
+for v in ARMS:
+    rows = [t for r in R if r["variant"] == v for t in (r.get("behavior") or {}).values()]
+    if not rows:
+        continue
+    firsts = {a: [x["first_chosen"][a] for x in rows if x["first_chosen"].get(a) is not None] for a in rows[0]["first_chosen"]}
+    print(f"  {v:8s} longest repeat {st.mean(x['longest_repeat'] for x in rows):.1f} | top-action share {st.mean(x['top_share'] for x in rows):.2f} | read-back lines shown {st.mean(x['readback_lines'] for x in rows):.1f}")
+    print("           first chosen (n tribe-runs that ever chose it, mean cycle):", {a: (len(c), round(st.mean(c))) if c else (0, None) for a, c in firsts.items()})
 print("\nper run:")
 for r in sorted(R, key=lambda r: (r["seed"], r["variant"])):
     lat = [t["mean_latency_ms"] for t in r["tribes"].values()]

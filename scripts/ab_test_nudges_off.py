@@ -8,6 +8,12 @@ Also (2026-10-09, --knob prompt_format): "full" against "compact", the same fact
 NUDGES off as in play. Question: does a shorter prompt keep decisions and outcomes the same, and make a turn faster? Extra numbers recorded for every run: the mean prompt length
 and the mean latency of a turn, read from each tribe's own transcript. --model picks the model both tribes use. Results go to scripts/ab_test_prompt_format_results.json.
 
+Also (2026-10-09, --knob journal_readback): the chief's journal read-back (docs/CHIEF-EVIDENCE-MEMORY-DESIGN.md, Step 2; JOURNAL_READBACK) off against on, with the prompt
+at its defaults (NUDGES off, PROMPT_FORMAT full). Built on 2026-10-03 and never compared. Question: when the chief is told plainly what its recent repeated choices produced
+("In your last 10 choices you picked GATHER_FOOD 8 times: food +14; nothing was built."), does the tribe repeat less, and take the one-time actions (farm, cook, fish, keep, mine,
+forge) it otherwise skips? Extra numbers recorded for every run, read from the run's own log: per tribe the longest run of one action, the top action's share, the first cycle each
+of those actions was chosen, and how many read-back lines were shown. Results go to scripts/ab_test_journal_readback_results.json.
+
 Question (the nudge switch): when the prompt lines whose job is to steer a tribe (build hints, farm hints, the Historian's "choose something different", the
 survival-warning text, the growth framing; docs/NUDGE-AUDIT.md) are removed, do tribes still survive, advance and build? Only prompt text
 differs between the arms: menus, gates and mechanics are identical (tests/test_nudge_switch.py).
@@ -45,7 +51,7 @@ from backend.tribe_fixtures import apply_tribe_fixture, load_fixture
 
 MODEL = "qwen2.5:3b"  # --model overrides
 RESULTS = "scripts/ab_test_nudges_off_results.json"
-KNOBS = {"nudges": ("on", "off"), "menu_cap": ("full", "cap8"), "nodes": ("on", "off"), "prompt_format": ("full", "compact")}
+KNOBS = {"nudges": ("on", "off"), "menu_cap": ("full", "cap8"), "nodes": ("on", "off"), "prompt_format": ("full", "compact"), "journal_readback": ("off", "on")}
 FIXTURES = ("mid_game_15k_a", "mid_game_15k_b")
 SAMPLE_CYCLES = (50, 100, 150, 200, 250)
 STRUCTURE_FLAGS = ("long_houses_built", "kitchen_built", "tannery_built", "library_built", "barracks_built", "forge_built",
@@ -72,8 +78,91 @@ def _decision_stats(run_id: str) -> dict:
             "max_menu_size": max(sizes) if sizes else None, "no_effect_share": round(no_effect / total, 3) if total else None}
 
 
+FIRST_ACTIONS = ("PLANT_CROP", "COOK_FOOD", "CATCH_FISH", "BUILD_LONG_HOUSE", "BUILD_KEEP", "BUILD_MINE", "BUILD_FORGE")
+
+
+def _behavior_stats(run_id: str) -> dict:
+    """Per tribe, from the run's decision log: the longest run of one action in a row, the top action and its share of all choices, the first cycle each of FIRST_ACTIONS
+    was chosen (None if never), and how many journal read-back lines were shown."""
+    chosen, readback = {}, {}
+    try:
+        for line in open(f"logs/{run_id}.jsonl", encoding="utf-8", errors="replace"):
+            record = json.loads(line)
+            if record.get("kind") == "decision":
+                chosen.setdefault(record["tribe"], []).append((record["cycle"], record["data"]["action"]))
+            elif record.get("kind") == "journal_readback":
+                readback[record["tribe"]] = readback.get(record["tribe"], 0) + len(record["data"].get("lines", []))
+    except OSError:
+        pass
+    stats = {}
+    for tribe, rows in chosen.items():
+        actions = [a for _, a in rows]
+        streak = best = 0
+        previous = None
+        for a in actions:
+            streak = streak + 1 if a == previous else 1
+            best = max(best, streak)
+            previous = a
+        top, top_n = collections.Counter(actions).most_common(1)[0]
+        stats[tribe] = {"decisions": len(actions), "longest_repeat": best, "top_action": top, "top_share": round(top_n / len(actions), 3),
+                        "first_chosen": {a: next((c for c, x in rows if x == a), None) for a in FIRST_ACTIONS}, "readback_lines": readback.get(tribe, 0)}
+    return stats
+
+
+def _anomalies(run_id: str, knob: str, variant: str, client_counters: dict) -> list:
+    """Everything in a finished run that was not expected, as plain sentences, so a batch is never averaged over something odd (2026-10-09). Read from the run's own log:
+    decisions the game could not read as a choice (unrecognized text, or no action fields at all), a pick that was not on the menu it was offered, an action the game does not
+    know, a tribe that went quiet, loop aborts and truncated replies counted by the client, and an arm that did not really differ from the other (read-back on that never showed a
+    line, or off that did)."""
+    from backend.actions import ACTION_REGISTRY
+    found, counts = [], collections.Counter()
+    readback_lines = 0
+    try:
+        for line in open(f"logs/{run_id}.jsonl", encoding="utf-8", errors="replace"):
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                counts["unreadable log line"] += 1
+                continue
+            message = record.get("message", "")
+            if "unrecognized decision text" in message:
+                counts["decision with unrecognized text"] += 1
+            if "didn't come through clearly" in message:
+                counts["decision with no usable action fields"] += 1
+            if "falls silent mid-thought" in message:
+                counts["failover switched a tribe's model"] += 1
+            if "Traceback" in message or record.get("kind") == "error":
+                counts["error record in the log"] += 1
+            if record.get("kind") == "journal_readback":
+                readback_lines += len(record["data"].get("lines", []))
+            if record.get("kind") == "decision":
+                data = record["data"]
+                action, menu = data.get("action"), data.get("menu") or []
+                if action not in ACTION_REGISTRY:
+                    counts[f"action the game does not know: {action}"] += 1
+                if menu and action not in menu:
+                    counts["pick that was not on the menu offered"] += 1
+    except OSError:
+        counts["run log missing"] += 1
+    found += [f"{n} x {what}" for what, n in counts.items()]
+    for kind, per_model in client_counters.items():
+        for model, n in per_model.items():
+            if n:
+                found.append(f"{n} x {kind.replace('_', ' ')} on {model}")
+    if knob == "journal_readback":
+        if variant == "on" and readback_lines == 0:
+            found.append("read-back was ON but showed no line, so this arm did not differ from off")
+        if variant == "off" and readback_lines:
+            found.append(f"read-back was OFF but {readback_lines} lines were shown")
+    return found
+
+
 async def run_once(variant: str, seed: int, cycles: int, mode: str, knob: str = "nudges") -> dict:
-    if knob == "prompt_format":
+    if knob == "journal_readback":
+        os.environ["JOURNAL_READBACK"] = variant
+        os.environ["NUDGES"] = "off"
+        os.environ["PROMPT_FORMAT"] = "full"
+    elif knob == "prompt_format":
         os.environ["PROMPT_FORMAT"] = variant
         os.environ["NUDGES"] = "off"
     elif knob == "menu_cap":
@@ -142,7 +231,9 @@ async def run_once(variant: str, seed: int, cycles: int, mode: str, knob: str = 
             "mean_prompt_chars": round(sum(prompt_chars[tid]) / len(prompt_chars[tid])) if prompt_chars[tid] else None,
             "mean_latency_ms": round(sum(latency_ms[tid]) / len(latency_ms[tid])) if latency_ms[tid] else None,
         }
-    return {"knob": knob, "decision_stats": _decision_stats(sim.run_id), "variant": variant, "seed": seed, "model": MODEL, "invalid": invalid,
+    return {"knob": knob, "decision_stats": _decision_stats(sim.run_id), "behavior": _behavior_stats(sim.run_id),
+            "anomalies": _anomalies(sim.run_id, knob, variant, {"repeat_retries": dict(sim.client.repeat_retries), "truncated_replies": dict(sim.client.truncated_replies),
+                                                                 "empty_reply_retries": dict(sim.client.empty_reply_retries)}), "variant": variant, "seed": seed, "model": MODEL, "invalid": invalid,
             "client_counters": {"repeat_retries": dict(sim.client.repeat_retries), "truncated_replies": dict(sim.client.truncated_replies),
                                 "empty_reply_retries": dict(sim.client.empty_reply_retries)},
             "mode": mode, "start_cycle": start_cycle, "cycles": sim.cycle - start_cycle, "seconds": int(time.time() - started),
@@ -167,7 +258,9 @@ async def main() -> None:
     global RESULTS, MODEL
     if args.model:
         MODEL = args.model
-    if args.knob == "prompt_format":
+    if args.knob == "journal_readback":
+        RESULTS = "scripts/ab_test_journal_readback_results.json"
+    elif args.knob == "prompt_format":
         RESULTS = "scripts/ab_test_prompt_format_results.json"
     elif args.knob == "menu_cap":
         RESULTS = "scripts/ab_test_menu_cap_results.json"
@@ -184,11 +277,18 @@ async def main() -> None:
             print(f"skip seed {seed} {variant} (already recorded)")
             continue
         print(f"=== {args.mode} seed {seed}, {args.knob}={variant}, {MODEL}, {args.cycles} cycles ===", flush=True)
-        results.append(await run_once(variant, seed, args.cycles, args.mode, args.knob))
+        try:
+            results.append(await run_once(variant, seed, args.cycles, args.mode, args.knob))
+        except Exception as error:  # noqa: BLE001 -- recorded as an invalid run, then the batch continues
+            import traceback
+            results.append({"knob": args.knob, "variant": variant, "seed": seed, "model": MODEL, "mode": args.mode, "cycles": 0, "seconds": 0, "run_id": None, "tribes": {},
+                            "decision_stats": {}, "behavior": {}, "anomalies": [], "invalid": "the run crashed: " + traceback.format_exc()[-1500:]})
         json.dump(results, open(RESULTS, "w", encoding="utf-8"), indent=1)
         r = results[-1]
         if r.get("invalid"):
             print(f"=== INVALID RUN, not counted: {r['invalid']}", flush=True)
+        for note in r.get("anomalies", []):
+            print(f"=== ANOMALY: {note}", flush=True)
         print(f"=== done: {r['cycles']} cycles in {r['seconds']}s, "
               + "; ".join(f"{n}: {t['final_era']} pop {t['final_population']}{' EXTINCT' if t['extinct'] else ''}" for n, t in r["tribes"].items()),
               flush=True)
