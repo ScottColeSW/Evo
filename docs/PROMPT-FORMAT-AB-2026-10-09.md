@@ -168,6 +168,19 @@ question was whether it would help here.
 - I told you the extra model on the GPU was probably your game. It was my own failover (above).
 - I wrote "no era I read requires" a castle; Beyond the Horizon does.
 
+## Pre-registered decision rule for the journal read-back run (written 2026-10-09, before any result)
+
+Run: gemma2:2b, early game, 250 cycles, seeds 1000 and 1001, read-back off against on, `--knob journal_readback`. Expectation stated first: **a null result is more likely than not**
+(four earlier instances of facts not moving small models, and Void Marauders' memory showed no gain). The point of the run is to settle the question, not to find an effect.
+
+- **Counts as a signal worth acting on:** in the on arm, in both seeds at least one tribe chooses PLANT_CROP, COOK_FOOD or CATCH_FISH while no tribe in either off-arm seed does
+  (gemma2:2b chose none of them in 323 turns before), or the mean longest repeat of one action is at least 30% lower with the top-action share also lower.
+- **If a signal:** replicate with more seeds, and test gemma3:4b mid-game for forge adoption, before any default changes. Only then consider Palimpsest judging a philosophy or
+  decree against the journal.
+- **Otherwise (null):** record it, leave the read-back off, and treat the memory line of work for small models as closed on this evidence: do not expand Palimpsest in Evo for this.
+- **Limits:** 2 seeds with 2 tribes each can only detect a large effect, and a null does not prove there is no effect. Anything in the anomaly list (a failover, loop aborts, an arm that did
+  not differ) is reported first and can make a run invalid.
+
 ## Appendix: every valid run
 
 The raw results (`scripts/ab_test_prompt_format_results.json`, `scripts/ab_test_prompt_format_results_v1_first_compact.json`) and the batch logs stay local, as the
