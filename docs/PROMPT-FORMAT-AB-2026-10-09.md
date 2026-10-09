@@ -133,6 +133,15 @@ question was whether it would help here.
 - **None of the problems found here is a memory problem:** cut-off replies, repeat loops, the model failover, the first-era food trap, the unchosen gate
   buildings and the compact format's shift on one action are all model or prompt behavior. Palimpsest's own README says what is not yet measured is whether having
   the memory improves an agent's answers at all.
+- **What Void Marauders shows (`H:\pet_projects\void-marauders`, read 2026-10-09).** Its memory is the best-wired use of Palimpsest here. Each colonist has its own
+  store with beliefs keyed to what they are about (a crewmate, a sector), and `memory.recall` hands the prompt only what applies to the present moment: the
+  strongest read on each crewmate who is nearby with its confidence, a line when two reads disagree, the threat read on the current sector, and the few
+  personal-log lines most relevant to the situation. Evo does the opposite for sites: its entity list carries every known site (13 timber groves in one late
+  turn) whatever the tribe is doing. That pattern, relevant to now and not everything known, is what transfers, and it needs no Palimpsest for static sites
+  (Evo already caps hazards to the 5 nearest). **Its measured effect is none:** the paired test in `docs/memory-ab-swarm-pressure.md` (12 pairs, qwen2.5:3b and
+  gemma2:2b, a forced-combat scenario) scored 40.0 with memory off and 36.1 on (95% range -9.2 to +1.9; better in 4 pairs, worse in 8). The write-up says memory stays
+  off by default; since 2026-10-07 the code and README default it on, and no later trial exists. For Evo that is a base rate: the same small models, a well-built memory,
+  no detectable gain.
 - **Where an expansion could be tested, in order (proposed 2026-10-09, nothing run):**
   1. **The journal read-back, already built and never compared** (`docs/CHIEF-EVIDENCE-MEMORY-DESIGN.md`, Step 2; `JOURNAL_READBACK`, off by default). It tells the
      chief plain facts such as "In your last 10 choices you picked GATHER_STONE 6 times: stone +600; nothing was built." That is the observed problem (gemma2:2b
