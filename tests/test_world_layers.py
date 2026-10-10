@@ -90,3 +90,21 @@ def test_the_served_page_is_not_cached_and_carries_the_grid():
 
     status, cache, text = asyncio.run(fetch())
     assert status == 200 and cache == "no-cache" and world.terrain_grid()[0] in text
+
+
+def test_the_third_injected_tribe_starts_near_the_volcano_on_plains_with_water_at_hand():
+    """2026-10-10 (the owner: 'they should be near the volcano more'): the third spawn point was (50,55) in the middle of the map; it is (28,28), about 17 tiles from the volcano,
+    on plains 3 tiles from the river and far from the first two tribes."""
+    import math
+
+    from backend.simulation import SPAWN_POINTS
+    from backend.world import biome_at, is_inland
+
+    assert SPAWN_POINTS[2] == (28, 28)
+    x, y = SPAWN_POINTS[2]
+    assert biome_at(x, y) == "plains" and is_inland(x, y, 100)
+    volcano = [(vx, vy) for vx in range(100) for vy in range(100) if biome_at(vx, vy) == "volcano"]
+    assert 10 < min(math.hypot(x - vx, y - vy) for vx, vy in volcano) < 25                       # near enough to meet it, not on it
+    water = [(wx, wy) for wx in range(100) for wy in range(100) if biome_at(wx, wy) in ("river", "lake")]
+    assert min(math.hypot(x - wx, y - wy) for wx, wy in water) < 5
+    assert all(math.hypot(x - ox, y - oy) > 40 for ox, oy in SPAWN_POINTS[:2])                   # nowhere near the first two tribes

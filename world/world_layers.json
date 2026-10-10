@@ -5,7 +5,7 @@
   "layers": {
     "metadata": {
       "about": "Hidden tags that are not drawn: where tribes may start.",
-      "spawn_points": [[76,17],[65,76],[50,55],[40,37]]
+      "spawn_points": [[76,17],[65,76],[28,28],[40,37]]
     },
     "terrain": {
       "about": "Water and ground laid over the computed base. river is drawn first (it cuts through the coastal band to the sea), then lake, then field.",
