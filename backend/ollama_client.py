@@ -72,6 +72,8 @@ class OllamaClient:
         self.timeout = timeout
         self.truncated_replies: dict[str, int] = {}  # model -> replies that stopped partway and were salvaged (see _salvage_truncated_json)
         self.empty_reply_retries: dict[str, int] = {}  # model -> replies with nothing usable that were asked for again once
+        # 2026-10-10: model -> how many calls were made to it and with which context ("model@num_ctx"), so a log can say which model a run really used (an unexpected resident model was seen in `ollama ps`).
+        self.call_counts: dict[str, int] = {}
         self.last_truncation: dict = {}  # the latest one: model, Ollama's done_reason and the reply length, to find why generation stopped
         self.repeat_retries: dict[str, int] = {}  # model -> how many "token repeat limit" aborts were retried (see generate_json_with_raw)
 
@@ -90,6 +92,7 @@ class OllamaClient:
         Simulation._safe_llm_result's own protection -- it can't raise out
         into a resolve_* call in the first place."""
         payload = {"model": model, "prompt": text}
+        self.call_counts[model] = self.call_counts.get(model, 0) + 1
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 r = await client.post(f"{self.base_url}/api/embeddings", json=payload)
@@ -156,6 +159,7 @@ class OllamaClient:
             "options": {"temperature": temperature, "num_ctx": num_ctx},
             "keep_alive": keep_alive,
         }
+        self.call_counts[f"{model}@{num_ctx}"] = self.call_counts.get(f"{model}@{num_ctx}", 0) + 1
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             r = await client.post(f"{self.base_url}/api/generate", json=payload)
             if r.status_code == 500 and "token repeat limit" in r.text:
@@ -215,6 +219,7 @@ class OllamaClient:
             "options": {"temperature": temperature},
             "keep_alive": keep_alive,
         }
+        self.call_counts[f"{model}@text"] = self.call_counts.get(f"{model}@text", 0) + 1
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             r = await client.post(f"{self.base_url}/api/generate", json=payload)
             _raise_with_body(r, model)

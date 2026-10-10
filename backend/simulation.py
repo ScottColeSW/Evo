@@ -7456,7 +7456,8 @@ class Simulation:
                     "food": tribe.food, "water": tribe.water, "farm_plots": tribe.farm_plots, "fishing_learned": tribe.fishing_learned,
                     # 2026-10-10: how often a model's reply had to be retried or rescued so far this run (Ollama's "token repeat limit" abort, an empty reply, a reply cut short). Console-only before.
                     "model_retries": {"repeat_aborts": dict(self.client.repeat_retries), "empty_replies": dict(self.client.empty_reply_retries),
-                                      "truncated_replies": dict(self.client.truncated_replies)}}
+                                      "truncated_replies": dict(self.client.truncated_replies)},
+                    "model_calls": dict(self.client.call_counts)}
             if tribe.library_built:
                 picks = research_candidates_with_source(tribe)
                 data.update({"research_offered": bool(picks) and tribe.wood >= config.RESEARCH_WOOD_COST,

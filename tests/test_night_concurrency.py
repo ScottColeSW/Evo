@@ -169,3 +169,25 @@ async def test_the_night_watch_record_carries_the_models_retry_counts():
     records = [json.loads(line) for line in sim.event_log.path.read_text(encoding="utf-8").splitlines() if line.strip().startswith("{")]
     watch = [r for r in records if r.get("kind") == "night_watch"][0]["data"]
     assert watch["model_retries"]["repeat_aborts"] == {"qwen2.5:3b": 3} and watch["model_retries"]["empty_replies"] == {"qwen2.5:3b": 1}
+
+
+@run_async
+async def test_the_night_watch_record_says_which_models_were_called_and_at_what_context():
+    """2026-10-10: `ollama ps` showed gemma2:2b at context 4096 in a run set to REFLECTION_MODEL=tribe and the log could not say which models a run actually called."""
+    import json
+
+    sim = _two_tribes()
+    sim.client.call_counts.update({"qwen2.5:3b@4096": 40, "nomic-embed-text": 6})
+    sim._night_watch(sim.tribes["tribe_0"])
+    records = [json.loads(line) for line in sim.event_log.path.read_text(encoding="utf-8").splitlines() if line.strip().startswith("{")]
+    assert [r for r in records if r.get("kind") == "night_watch"][0]["data"]["model_calls"] == {"qwen2.5:3b@4096": 40, "nomic-embed-text": 6}
+
+
+def test_the_ollama_client_counts_calls_by_model_and_context():
+    from backend.ollama_client import OllamaClient
+
+    client = OllamaClient("http://127.0.0.1:9")
+    assert client.call_counts == {}  # the counters are filled by generate_json, generate_text and embed (an unreachable URL still counts the attempt)
+    import asyncio
+    asyncio.run(client.embed("x", model="nomic-embed-text"))
+    assert client.call_counts == {"nomic-embed-text": 1}
