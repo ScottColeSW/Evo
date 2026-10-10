@@ -85,3 +85,30 @@ def test_a_wolf_pack_has_a_card_without_odds():
         ACTION_REGISTRY["HUNT_DEER"](sim, tribe, "forest", _NO_TARGET)
     card = _card(sim)
     assert card["attacker"] == "Wolf pack" and card["attacker_chance"] is None and card["defender_lost"] >= 1
+
+
+def test_expedition_ambushes_and_hazard_deaths_carry_a_card():
+    """2026-10-10 (the owner: 'a faint flashing circle around an area but no skirmish card'): 48 ambushes and 103 hazard deaths in six runs had a marker and no card."""
+    from backend import config
+
+    for rolls, loser_lost in (([0.0, 0.0], 0), ([0.0, 0.99], config.EXPEDITION_RAIDER_AMBUSH_POPULATION_LOSS)):  # the party beats the raiders off; the party is ambushed
+        sim = _bare_simulation()
+        tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+        tribe.has_ever_settled = True
+        tribe.population = 10
+        with mock.patch("backend.simulation.random.random", side_effect=rolls + [0.5] * 20):
+            assert sim._expedition_raider_ambush(tribe, {"lead_scout": "Test Scout"}, 60, 60) is True
+        card = _card(sim)
+        assert card["attacker"] == "Raiders" and card["defender"] == "Forest Tribe"
+        assert card["defender_lost"] == loser_lost and card["attacker_won"] is bool(loser_lost)
+
+    for hazard, source in (("_volcano_hazard", "The volcano"), ("_cliffs_hazard", "The cliffs"), ("_shoals_hazard", "The shoals"), ("_ocean_hazard", "The open sea")):
+        sim = _bare_simulation()
+        tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+        tribe.population = 10
+        sim.cycle = 100
+        with mock.patch("backend.simulation.random.random", return_value=0.0), mock.patch("backend.simulation.biome_at", return_value={"_volcano_hazard": "volcano", "_cliffs_hazard": "cliffs", "_shoals_hazard": "shoals", "_ocean_hazard": "ocean"}[hazard]):
+            died = getattr(sim, hazard)(tribe, 60, 60)
+        assert died
+        card = _card(sim)
+        assert card["attacker"] == source and card["defender"] == "Forest Tribe" and card["defender_lost"] >= 1

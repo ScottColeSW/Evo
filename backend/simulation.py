@@ -8406,6 +8406,7 @@ class Simulation:
         )
         self.recent_encounters.append({
             "x": x, "y": y, "kind": "hazard_death", "label": "Lost to the volcano", "outcome": "struck",
+            "skirmish": skirmish("The volcano claims a life", "The volcano", tribe.name, True, defender_lost=config.VOLCANO_HAZARD_POPULATION_LOSS, outcome="The survivors flee home to report it"),
         })
         return True
 
@@ -8432,6 +8433,7 @@ class Simulation:
         )
         self.recent_encounters.append({
             "x": x, "y": y, "kind": "hazard_death", "label": "Lost to the cliffs", "outcome": "struck",
+            "skirmish": skirmish("The cliffs claims a life", "The cliffs", tribe.name, True, defender_lost=config.CLIFFS_HAZARD_POPULATION_LOSS, outcome="The survivors flee home to report it"),
         })
         return True
 
@@ -8456,6 +8458,7 @@ class Simulation:
         )
         self.recent_encounters.append({
             "x": x, "y": y, "kind": "hazard_death", "label": "Lost to the shoals", "outcome": "struck",
+            "skirmish": skirmish("The shoals claims a life", "The shoals", tribe.name, True, defender_lost=config.SHOALS_HAZARD_POPULATION_LOSS, outcome="The survivors flee home to report it"),
         })
         return True
 
@@ -8479,6 +8482,7 @@ class Simulation:
         )
         self.recent_encounters.append({
             "x": x, "y": y, "kind": "hazard_death", "label": "Lost to the sea", "outcome": "struck",
+            "skirmish": skirmish("The sea claims a life", "The open sea", tribe.name, True, defender_lost=config.OCEAN_HAZARD_POPULATION_LOSS, outcome="The survivors flee home to report it"),
         })
         return True
 
@@ -8591,6 +8595,7 @@ class Simulation:
             )
             self.recent_encounters.append({
                 "x": x, "y": y, "kind": "raider_attack", "label": "Raiders routed by boat", "outcome": "repelled",
+                "skirmish": skirmish(f"{exp['lead_scout']}'s boat meets raiders on the water", tribe.name, "Raiders", True, outcome="The raiders are routed on the water and the boat takes their loot"),
             })
             _record_combat(tribe, "Ambush", "won")
             self._relocate_raider_sighting_after_ambush(tribe, x, y)
@@ -8621,6 +8626,8 @@ class Simulation:
             )
             self.recent_encounters.append({
                 "x": x, "y": y, "kind": "raider_attack", "label": "Ambush repelled", "outcome": "repelled",
+                "skirmish": skirmish(f"Raiders ambush {exp['lead_scout']}'s party", "Raiders", tribe.name, False, attacker_chance=1.0 - defense_chance,
+                                     outcome="The party fights the raiders off and takes their loot"),
             })
             _record_combat(tribe, "Ambush", "won")
             self._relocate_raider_sighting_after_ambush(tribe, x, y)
@@ -8653,6 +8660,8 @@ class Simulation:
         # life lost, not a clash the tribe can be proud of.
         self.recent_encounters.append({
             "x": x, "y": y, "kind": "hazard_death", "label": "Lost to raiders", "outcome": "struck",
+            "skirmish": skirmish(f"Raiders ambush {exp['lead_scout']}'s party", "Raiders", tribe.name, True, defender_lost=config.EXPEDITION_RAIDER_AMBUSH_POPULATION_LOSS,
+                                 outcome="The party is ambushed and flees home, losing most of what it carried"),
         })
         _record_combat(tribe, "Ambush", "lost")
         return True
