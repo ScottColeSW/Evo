@@ -14,7 +14,7 @@ from .actions import (
     military_intel_text, research_candidates, research_candidates_with_source,
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _battalion_capacity, _conquest_ready, _created_object_bonus, _dmm_ready, _eligible_breeding_pair, _expedition_speed_bonus,
-    _food_multiplier, _forge_item, _plant_crop_cost, cycles_until_forage_recovers, forage_recovery_target, forage_yield_now,
+    _food_multiplier, _forge_item, _plant_crop_cost, cycles_until_forage_recovers, forage_recovery_target, forage_yield_now, trade_grievance_active,
     _generate_raider_name, _has_room_to_grow, _is_departure_dream, _item_storage_cap, _labor_multiplier,
     _long_house_fur_discount, _might_adjusted_win_chance, _mutual_ally_at_top_era, _raider_might_modifier, _push_past_visited_ground, _record_combat, _redeemable_items,
     _storage_cap, _sustainable_population, _territory_has_nearby_threats, _warehouse_upgrade_ready,
@@ -1422,6 +1422,9 @@ class Tribe:
         self.raids_won = 0
         self.raids_lost = 0
         self.raid_ledger: dict[str, dict] = {}  # rival tribe id -> the raids between the two (see actions._note_raid)
+        self.raid_cooldown_until_cycle = 0  # RAID and RAID_RIVAL are not offered before this cycle (set when this tribe's own raid was repelled)
+        self.alliance_cooldown_until_cycle = 0  # DECLARE_ALLIANCE is not offered before this cycle (set when this tribe's peace overture backfired)
+        self.trade_refusals: dict[str, list[int]] = {}  # rival tribe id -> the cycles it refused this tribe's trade over a raid (see actions._trade_grievance_refusal)
         self.raids_defended = 0
         self.spy_missions_run = 0
         self.spy_missions_caught = 0
@@ -4281,6 +4284,12 @@ class Simulation:
                         visible_entities.append(sentence[0].upper() + sentence[1:] + f" (last at cycle {ledger['last_cycle']}).")
                     if ledger["made"]:
                         visible_entities.append(f"Your raids on {other.name}: {ledger['won']} won, {ledger['repelled']} repelled (last at cycle {ledger['last_cycle']}).")
+                    if trade_grievance_active(self, tribe, other):
+                        until = other.raid_ledger[tribe.id]["last_success_cycle"] + config.TRADE_GRIEVANCE_WINDOW_CYCLES
+                        refused = len([c for c in tribe.trade_refusals.get(other.id, []) if self.cycle - c <= config.TRADE_GRIEVANCE_WINDOW_CYCLES])
+                        visible_entities.append(
+                            f"{other.name} remembers your raid and will refuse to trade with you until about cycle {until}"
+                            + (f" (it has refused {refused} time(s) already; at {config.TRADE_REFUSALS_FOR_WAR} refusals you go to war)." if refused else "; being refused twice would mean war."))
                 spied = tribe.rival_intel.get(other.id)
                 if spied and spied.get("military"):
                     visible_entities.append(
@@ -5307,6 +5316,17 @@ class Simulation:
 
         # 2026-10-10 (explicit request: hide the depleted GATHER_FOOD, see config.FORAGE_DEPLETED_YIELD_MAX): a forage that pays next to nothing is not offered while another food source is.
         # Fail-open: with no other food source on the menu it stays, so food is never taken away entirely.
+        # 2026-10-10: a day to recover after a failure (see config.RAID_COOLDOWN_AFTER_REPELLED_CYCLES). Fail-open: never taken if it would leave the menu empty.
+        cooled = []
+        if self.cycle < tribe.raid_cooldown_until_cycle:
+            cooled += [a for a in ("RAID", "RAID_RIVAL") if a in available_actions]
+        if self.cycle < tribe.alliance_cooldown_until_cycle and "DECLARE_ALLIANCE" in available_actions:
+            cooled.append("DECLARE_ALLIANCE")
+        if cooled and len(available_actions) > len(cooled):
+            available_actions = [a for a in available_actions if a not in cooled]
+        else:
+            cooled = []
+
         # The ground rests (fallow) once worn out, until one forage would pay config.FORAGE_RECOVERED_FRACTION of its full yield again, so it does not come back at 3 food a few cycles later and get picked clean again.
         forage_hidden = None
         if "GATHER_FOOD" in available_actions:
@@ -5367,6 +5387,13 @@ class Simulation:
             available_actions = [a for a in available_actions if a in _EVERGREEN_GATHER_ACTIONS or a in keep]
 
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
+        if cooled:
+            waits = []
+            if any(a in cooled for a in ("RAID", "RAID_RIVAL")):
+                waits.append(f"your forces are still recovering from the failed raid, so RAID is not offered until about cycle {tribe.raid_cooldown_until_cycle}")
+            if "DECLARE_ALLIANCE" in cooled:
+                waits.append(f"your last offer of peace backfired, so DECLARE_ALLIANCE is not offered until about cycle {tribe.alliance_cooldown_until_cycle}")
+            visible_entities.append(("; ".join(waits))[0].upper() + ("; ".join(waits))[1:] + ".")
         if forage_hidden:
             visible_entities.append(
                 f"This ground has been foraged bare and is resting: one GATHER_FOOD would now bring in only {forage_hidden[0]} food, so it is not offered, and it will bear again in about "

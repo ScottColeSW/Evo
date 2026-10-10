@@ -2835,14 +2835,15 @@ def _raid(sim, tribe, biome, target):
 def _note_raid(sim, attacker, defender, won: bool, people: int) -> None:
     """2026-10-10: a plain ledger of who raided whom, kept on both sides and shown to each chief as facts (see Simulation._prepare_turn). `people` is who changed hands: the survivors the winner
     absorbed (from the defender when the raid won, from the attacker when it was repelled)."""
-    mine = attacker.raid_ledger.setdefault(defender.id, {"made": 0, "won": 0, "repelled": 0, "suffered": 0, "held_off": 0, "people_lost": 0, "last_cycle": 0})
-    theirs = defender.raid_ledger.setdefault(attacker.id, {"made": 0, "won": 0, "repelled": 0, "suffered": 0, "held_off": 0, "people_lost": 0, "last_cycle": 0})
+    mine = attacker.raid_ledger.setdefault(defender.id, {"made": 0, "won": 0, "repelled": 0, "suffered": 0, "held_off": 0, "people_lost": 0, "last_cycle": 0, "last_success_cycle": 0})
+    theirs = defender.raid_ledger.setdefault(attacker.id, {"made": 0, "won": 0, "repelled": 0, "suffered": 0, "held_off": 0, "people_lost": 0, "last_cycle": 0, "last_success_cycle": 0})
     mine["made"] += 1
     mine["last_cycle"] = theirs["last_cycle"] = sim.cycle
     if won:
         mine["won"] += 1
         theirs["suffered"] += 1
         theirs["people_lost"] += people
+        mine["last_success_cycle"] = theirs["last_success_cycle"] = sim.cycle
         if theirs["suffered"] >= config.WAR_AFTER_SUCCESSFUL_RAIDS and defender.stance_toward.get(attacker.id) != "WAR":
             defender.stance_toward[attacker.id] = "WAR"
             attacker.stance_toward[defender.id] = "WAR"
@@ -2929,6 +2930,7 @@ def _raid_defender(sim, tribe, defender, win_bonus: float = 0.0):
         # off through _merge_tribes. Never both in the same pass -- an
         # already-extinct tribe has nothing left to absorb.
         tribe.raids_lost += 1
+        tribe.raid_cooldown_until_cycle = sim.cycle + config.RAID_COOLDOWN_AFTER_REPELLED_CYCLES  # a day to recover (2026-10-10)
         defender.raids_defended += 1
         _record_combat(tribe, "Raiding", "lost")
         _record_combat(defender, "Raid Defense", "won")
@@ -3245,6 +3247,35 @@ def _record_combat(tribe, kind: str, outcome: str) -> None:
     note_conflict(tribe, kind, outcome)
 
 
+def trade_grievance_active(sim, tribe, partner) -> bool:
+    """True while `partner` still holds a grievance against `tribe`: `tribe` raided it successfully within config.TRADE_GRIEVANCE_WINDOW_CYCLES cycles."""
+    entry = partner.raid_ledger.get(tribe.id)
+    return bool(entry and entry.get("suffered") and entry.get("last_success_cycle")
+                and getattr(sim, "cycle", 0) - entry["last_success_cycle"] <= config.TRADE_GRIEVANCE_WINDOW_CYCLES)
+
+
+def _trade_grievance_refusal(sim, tribe, partner) -> str | None:
+    """2026-10-10 (explicit request: "when trade fails, they should be mad and go to war"): a tribe will not trade with one that raided it recently. The refused tribe is counted (tribe.trade_refusals),
+    and the config.TRADE_REFUSALS_FOR_WAR-th refusal inside the window is taken as an insult: both tribes are at war. Returns the result line, or None when the trade may go ahead."""
+    if not trade_grievance_active(sim, tribe, partner):
+        return None
+    cycle = getattr(sim, "cycle", 0)
+    recent = [c for c in tribe.trade_refusals.get(partner.id, []) if cycle - c <= config.TRADE_GRIEVANCE_WINDOW_CYCLES]
+    recent.append(cycle)
+    tribe.trade_refusals[partner.id] = recent
+    line = f"{partner.name} refuses to trade with {tribe.name}: it has not forgotten the raid on its people"
+    if len(recent) >= config.TRADE_REFUSALS_FOR_WAR and tribe.stance_toward.get(partner.id) != "WAR":
+        tribe.stance_toward[partner.id] = "WAR"
+        partner.stance_toward[tribe.id] = "WAR"
+        tribe.history.append(f"⚔️ {partner.name} has refused {tribe.name}'s trade {len(recent)} times; {tribe.name} takes the insult and declares war")
+        partner.history.append(f"{tribe.name} declares war on {partner.name} after being refused trade {len(recent)} times")
+        if getattr(sim, "event_log", None) is not None:
+            sim.event_log.record_data(tribe.name, "war_from_refused_trade", {"refused_by": partner.name, "refusals": len(recent)},
+                                      message=f"[war] {tribe.name} declares war on {partner.name} after {len(recent)} refused trades")
+        line += f" -- {tribe.name} takes the insult and declares war"
+    return line
+
+
 def _execute_trade(sim, tribe, partner) -> str:
     """The actual exchange, shared by instant TRADE and SEND_TRADE_EMISSARY once
     either has found a real partner -- both sides give up the same fraction of what
@@ -3252,6 +3283,9 @@ def _execute_trade(sim, tribe, partner) -> str:
     once initiated (like RAID, this doesn't ask the other side's permission)."""
     if tribe.stance_toward.get(partner.id) == "WAR" or partner.stance_toward.get(tribe.id) == "WAR":
         return f"{partner.name} will not trade while the two tribes are at war"  # 2026-10-10: war closes trade until peace
+    refusal = _trade_grievance_refusal(sim, tribe, partner)
+    if refusal:
+        return refusal
     # Code-quality pass: each side's received gift used to be folded straight into
     # the same setattr as its own given gift, uncapped -- same bug class as the
     # rest of this file/simulation.py. Give (a plain subtraction, no cap concern)
@@ -3487,6 +3521,7 @@ def _alliance_backfire_skirmish(sim, tribe, rival, was_already_at_war: bool) -> 
     can fire as soon as a Barracks exists, long before that scale."""
     tribe.stance_toward[rival.id] = "WAR"
     rival.stance_toward[tribe.id] = "WAR"
+    tribe.alliance_cooldown_until_cycle = sim.cycle + config.ALLIANCE_COOLDOWN_AFTER_BACKFIRE_CYCLES  # the overture failed: a day before the next (2026-10-10)
 
     attacker_start_population = tribe.population
     defender_start_population = rival.population

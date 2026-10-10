@@ -6570,3 +6570,77 @@ def test_each_barracks_built_or_upgraded_costs_readiness_so_a_training_burst_buy
     assert done == expected and done <= 4  # about three upgrades per burst of drilling, not fifty
     tribe.battalion_readiness = 1.0
     assert AFFORDABILITY_CHECKS["UPGRADE_BARRACKS"](tribe, sim.world) is True  # drilled again: more are allowed
+
+
+def _after_a_successful_raid(cycle=10):
+    from unittest import mock
+
+    sim, bully, victim = _raider_and_victim()
+    sim.cycle = cycle
+    bully.wood = victim.wood = 1000
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        ACTION_REGISTRY["RAID"](sim, bully, "plains", (51, 51))
+    return sim, bully, victim
+
+
+def test_a_tribe_will_not_trade_with_one_that_raided_it_recently_and_nothing_moves():
+    """2026-10-10 (explicit request: 'when trade fails, they should be mad and go to war')."""
+    from backend.actions import _execute_trade
+
+    sim, bully, victim = _after_a_successful_raid(10)
+    sim.cycle = 20
+    wood = (bully.wood, victim.wood)
+    note = _execute_trade(sim, bully, victim)
+    assert "refuses to trade" in note and "has not forgotten the raid" in note
+    assert (bully.wood, victim.wood) == wood
+    assert bully.stance_toward.get(victim.id) is None  # one refusal is not enough for war
+
+
+def test_the_victim_may_still_offer_trade_to_its_raider_and_the_grievance_fades_after_the_window():
+    from backend import config
+    from backend.actions import _execute_trade
+
+    sim, bully, victim = _after_a_successful_raid(10)
+    sim.cycle = 20
+    assert "refuses" not in _execute_trade(sim, victim, bully)                   # the grievance is the victim's to hold, not the raider's
+    sim.cycle = 10 + config.TRADE_GRIEVANCE_WINDOW_CYCLES + 1
+    assert "refuses" not in _execute_trade(sim, bully, victim)                   # forgiven
+
+
+def test_the_second_refusal_inside_the_window_is_an_insult_and_means_war_but_old_refusals_do_not_count():
+    from backend import config
+    from backend.actions import _execute_trade
+
+    sim, bully, victim = _after_a_successful_raid(10)
+    sim.cycle = 12
+    _execute_trade(sim, bully, victim)
+    sim.cycle = 15
+    note = _execute_trade(sim, bully, victim)
+    assert "takes the insult and declares war" in note
+    assert bully.stance_toward[victim.id] == "WAR" and victim.stance_toward[bully.id] == "WAR"
+    assert any("takes the insult" in line for line in bully.history)
+
+    sim2, bully2, victim2 = _after_a_successful_raid(10)
+    sim2.cycle = 12
+    _execute_trade(sim2, bully2, victim2)                                         # refused once at cycle 12
+    sim2.cycle = 12 + config.TRADE_GRIEVANCE_WINDOW_CYCLES + 1                    # the first refusal is now older than the window
+    victim2.raid_ledger[bully2.id]["last_success_cycle"] = sim2.cycle - 1         # but the victim has a fresh grievance (another raid)
+    _execute_trade(sim2, bully2, victim2)
+    assert bully2.stance_toward.get(victim2.id) is None                           # one refusal inside the window: not war
+
+
+def test_a_repelled_raid_starts_the_raiders_cooldown_and_a_won_raid_does_not():
+    from unittest import mock
+
+    from backend import config
+
+    sim, bully, victim = _raider_and_victim()
+    bully.population = 500
+    sim.cycle = 30
+    with mock.patch("backend.actions.random.random", return_value=0.99):  # repelled
+        ACTION_REGISTRY["RAID"](sim, bully, "plains", (51, 51))
+    assert bully.raid_cooldown_until_cycle == 30 + config.RAID_COOLDOWN_AFTER_REPELLED_CYCLES
+    sim2, bully2, victim2 = _raider_and_victim()
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # won
+        ACTION_REGISTRY["RAID"](sim2, bully2, "plains", (51, 51))
+    assert bully2.raid_cooldown_until_cycle == 0

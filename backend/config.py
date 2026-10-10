@@ -1552,6 +1552,15 @@ RAID_RIVAL_INTEL_WIN_BONUS = 0.15
 # closed until peace (DECLARE_ALLIANCE sues for peace).
 WAR_AFTER_SUCCESSFUL_RAIDS = 2
 WAR_DEFENDER_RAID_BONUS = 0.10
+# 2026-10-10 (explicit request: "when trade fails, they should be mad and go to war"): a tribe will not trade with one that raided it successfully in the last TRADE_GRIEVANCE_WINDOW_CYCLES cycles. A tribe
+# that is refused this many times within the same window takes it as an insult and goes to war (both ways, as a raid war does). Before this a trade only ever failed by missing its target.
+TRADE_GRIEVANCE_WINDOW_CYCLES = 40
+TRADE_REFUSALS_FOR_WAR = 2
+# 2026-10-10 (the owner: "the cooldown is a good idea"): a tribe that has just failed gets a day to recover before it can do the same again. In run_20261010_144843 HiThere raided a larger YoYo on cycles
+# 180, 181, 192 and 196 (losing 2,264, 1,846, 1,335 and 1,253 people) and its peace overtures backfired on cycles 168, 178 and 208 (2,761, 2,717 and 963 people). RAID and RAID_RIVAL are not offered for
+# this many cycles after the tribe's own raid was repelled, and DECLARE_ALLIANCE for this many after its overture backfired.
+RAID_COOLDOWN_AFTER_REPELLED_CYCLES = 20
+ALLIANCE_COOLDOWN_AFTER_BACKFIRE_CYCLES = 20
 RAID_STEAL_FRACTION = 0.3
 RAID_ATTACKER_POPULATION_LOSS_ON_WIN = 1
 RAID_ATTACKER_POPULATION_LOSS_ON_LOSS = 2

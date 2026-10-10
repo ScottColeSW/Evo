@@ -16241,3 +16241,44 @@ def test_a_war_line_in_the_prompt_says_trade_is_closed():
     small.stance_toward[big.id] = "WAR"
     request, _ctx = sim._prepare_turn(small)
     assert "Currently war with Big. Trade with them is closed while at war" in request["prompt"]
+
+
+def test_raid_and_raid_rival_are_not_offered_for_a_day_after_the_tribes_own_raid_was_repelled():
+    from backend import config
+
+    sim, small, big = _two_contact_tribes(110, 1100)
+    _req, ctx = sim._prepare_turn(small)
+    assert "RAID" in ctx["available_actions"]
+    small.raid_cooldown_until_cycle = sim.cycle + config.RAID_COOLDOWN_AFTER_REPELLED_CYCLES
+    request, ctx = sim._prepare_turn(small)
+    assert "RAID" not in ctx["available_actions"] and "RAID_RIVAL" not in ctx["available_actions"]
+    assert "still recovering from the failed raid" in request["prompt"] and f"about cycle {small.raid_cooldown_until_cycle}" in request["prompt"]
+    sim.cycle = small.raid_cooldown_until_cycle
+    _req, ctx = sim._prepare_turn(small)
+    assert "RAID" in ctx["available_actions"]
+
+
+def test_declare_alliance_is_not_offered_for_a_day_after_a_peace_overture_backfired():
+    from backend import config
+
+    sim, tribe = _final_era_pair(vessel_built=True)
+    tribe.wood = tribe.stone = 1000
+    _req, ctx = sim._prepare_turn(tribe)
+    assert "DECLARE_ALLIANCE" in ctx["available_actions"]
+    tribe.alliance_cooldown_until_cycle = sim.cycle + config.ALLIANCE_COOLDOWN_AFTER_BACKFIRE_CYCLES
+    request, ctx = sim._prepare_turn(tribe)
+    assert "DECLARE_ALLIANCE" not in ctx["available_actions"] and ctx["available_actions"]
+    assert "offer of peace backfired" in request["prompt"]
+
+
+def test_the_chief_is_told_who_will_refuse_to_trade_and_until_when():
+    from unittest import mock
+
+    from backend.actions import ACTION_REGISTRY
+
+    sim, small, big = _two_contact_tribes(1100, 110)  # the big tribe raids and wins
+    sim.cycle = 50
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        ACTION_REGISTRY["RAID"](sim, small, "plains", (big.x, big.y))
+    request, _ctx = sim._prepare_turn(small)
+    assert "remembers your raid and will refuse to trade with you until about cycle 90" in request["prompt"]
