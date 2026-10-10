@@ -3196,7 +3196,42 @@ class Simulation:
         (small model, real user call). The piece from the original design transcript
         that gives a tribe's own accumulated experience a chance to compound into
         wisdom over time, distinct from breed()/breed_individuals' cross-tribe/
-        cross-individual crossover."""
+        cross-individual crossover.
+
+        2026-10-10: three pieces, so every tribe's model call can run at the same time (see _run_night_cycles): _night_prepare (the quick steps and the inputs), _night_model_work (the reflection and
+        its embedding; touches no tribe state) and _night_apply (what the reflection changes). This method is the one-tribe path and does them in order."""
+        prepared = await self._night_prepare(tribe)
+        work = await self._night_model_work(tribe, prepared)
+        await self._night_apply(tribe, prepared, work)
+
+    async def _run_night_cycles(self, tribes: list) -> None:
+        """The night for every tribe in the list: the quick steps and the inputs for all of them first, then every tribe's model work at the same time, then each result applied in tribe order.
+        What a tribe receives is the same as doing them one after another (the quick steps use no randomness, and each tribe's reflection reads only its own state), but the waits overlap when Ollama
+        allows it. Ollama runs requests for one model one at a time unless OLLAMA_NUM_PARALLEL is raised, so with the default of 1 two tribes on the same reflection model still queue behind each other."""
+        prepared = []
+        for tribe in tribes:
+            prepared.append((tribe, await self._night_prepare(tribe)))
+        works = await asyncio.gather(*(self._night_model_work(tribe, inputs) for tribe, inputs in prepared))
+        for (tribe, inputs), work in zip(prepared, works):
+            if tribe.extinct:
+                continue
+            await self._night_apply(tribe, inputs, work)
+
+    @staticmethod
+    def _reflection_setting() -> str:
+        import os
+        return os.environ.get("REFLECTION_MODEL", config.REFLECTION_MODEL).strip()
+
+    def _reflection_uses_tribe_model(self) -> bool:
+        """True when config.REFLECTION_MODEL (or the REFLECTION_MODEL environment variable) is "tribe" or "self". Decided by the setting, never by whether the model names happen to match."""
+        return self._reflection_setting().lower() in ("tribe", "self")
+
+    def _reflection_model_for(self, tribe: "Tribe") -> str:
+        """The model that reviews this tribe's night: the setting, or the tribe's own model when the setting is "tribe" or "self"."""
+        return tribe.model if self._reflection_uses_tribe_model() else self._reflection_setting()
+
+    async def _night_prepare(self, tribe: "Tribe") -> dict:
+        """The quick steps of a tribe's night, and a copy of everything its reflection reads."""
         # 2026-10-03 (owner's request): the one big culling for the Chief to reflect on. It lands first, so its chronicle line is the
         # freshest entry in the window the reflection reads below.
         self._advance_population_pressure(tribe, night=True)
@@ -3235,14 +3270,43 @@ class Simulation:
             tribe.era == "departure_era" and tribe.dmm_built
             and len(tribe.created_objects) >= config.DMM_WARMUP_CREATIONS_REQUIRED
         )
-        result = await self._safe_llm_result(
-            reflect_on_history(
-                self.client, config.REFLECTION_MODEL, tribe.name,
-                tribe.chief_philosophy, recent_events, inventory,
-                tribe.chief_decree, tribe.dmm_built, departure_eligible,
-            ),
-            "reflect_on_history",
-        )
+        return {
+            "recent_events": recent_events, "inventory": inventory, "departure_eligible": departure_eligible,
+            "philosophy": tribe.chief_philosophy, "decree": tribe.chief_decree, "dmm_built": tribe.dmm_built,
+        }
+
+    async def _night_model_work(self, tribe: "Tribe", prepared: dict):
+        """The only part of the night that needs a model: the reflection and the embedding of its private thought. Reads only what _night_prepare copied and changes nothing on the tribe, so
+        every tribe's can run at the same time. Limited to config.NIGHT_REFLECTION_TIMEOUT_SECONDS; past it the reflection is skipped for the night (an empty result) and the day goes on.
+        Returns (result, embedding)."""
+        model = self._reflection_model_for(tribe)
+        # the context is passed only when it is not the usual 8192 (the tribe's own model, at the 4096 its turns use), so the default call is exactly what it always was
+        extra = {"num_ctx": config.REFLECTION_CONTEXT_OWN_MODEL} if self._reflection_uses_tribe_model() else {}
+
+        async def work():
+            result = await self._safe_llm_result(
+                reflect_on_history(
+                    self.client, model, tribe.name,
+                    prepared["philosophy"], prepared["recent_events"], prepared["inventory"],
+                    prepared["decree"], prepared["dmm_built"], prepared["departure_eligible"], **extra,
+                ),
+                "reflect_on_history",
+            )
+            private_thoughts = result.get("private_thoughts") or ""
+            embedding = await self.client.embed(private_thoughts, model=config.REFLECTION_EMBEDDING_MODEL) if private_thoughts else None
+            return result, embedding
+
+        try:
+            return await asyncio.wait_for(work(), timeout=config.NIGHT_REFLECTION_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            self.event_log.record_data(tribe.name, "night_reflection_timeout", {"seconds": config.NIGHT_REFLECTION_TIMEOUT_SECONDS, "model": model},
+                                       message=f"[night reflection] no answer from {model} in {config.NIGHT_REFLECTION_TIMEOUT_SECONDS:.0f} s; skipped for tonight")
+            return {}, None
+
+    async def _night_apply(self, tribe: "Tribe", prepared: dict, work) -> None:
+        """What the reflection changes about the tribe: its counters, memory, decree, philosophy, awards, dream and the chance of a family."""
+        result, embedding = work
+        departure_eligible = prepared["departure_eligible"]
         # Explicit request, 2026-09-18: "I'm not sure we are measuring [reflection]
         # much." Two plain counts, not a scored quality judgment (there's no real
         # ground truth for "was this a good reflection") -- how often the night
@@ -3271,7 +3335,7 @@ class Simulation:
             # embedding call just falls back to remember_reflection's own
             # token-overlap path, exactly today's behavior -- no extra
             # protection needed here.
-            embedding = await self.client.embed(private_thoughts, model=config.REFLECTION_EMBEDDING_MODEL)
+            # (the embedding was computed with the model call, in _night_model_work)
             judge = await self._reflection_judge()
             tribe.memory.judge = judge
             if judge is not None:
@@ -3741,9 +3805,7 @@ class Simulation:
                 await self._install_chief(tribe)
 
         if self.cycle % config.NIGHT_CYCLE_EVERY_N_CYCLES == 0:
-            for tribe in self.tribes.values():
-                if not tribe.extinct and tribe.chief_name:
-                    await self._run_night_cycle(tribe)
+            await self._run_night_cycles([t for t in self.tribes.values() if not t.extinct and t.chief_name])
 
         # Explicit request: "when a tribe dies off are we unloading the model" --
         # previously only the ALL-tribes-extinct game-over case (_trigger_game_over)

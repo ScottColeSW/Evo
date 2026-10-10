@@ -175,6 +175,10 @@ MEMORY_CONSOLIDATE_EVERY_N_CYCLES = 40
 # and nothing else needs the GPU, is free to use a bigger/different model with none of
 # that risk.
 NIGHT_CYCLE_EVERY_N_CYCLES = 30
+
+# 2026-10-10: the most a night's model work (a tribe's reflection and its embedding) may take. Past it the reflection is skipped for that night (an empty result, as when a call fails) and the day goes on,
+# so a hung or very slow call cannot freeze the whole game. The client's own timeout is 120 s; a normal reflection takes 3 to 8 s.
+NIGHT_REFLECTION_TIMEOUT_SECONDS = 45.0
 NIGHT_CYCLE_HISTORY_WINDOW = 20
 
 # Reversed back, 2026-09-18, explicit request: "I wanted to use gemma since it
@@ -188,6 +192,9 @@ NIGHT_CYCLE_HISTORY_WINDOW = 20
 # reviewing itself. Simulation._run_night_cycle passes this instead of
 # tribe.model now.
 REFLECTION_MODEL = "gemma2:2b"
+# "tribe" (or the REFLECTION_MODEL environment variable) makes each tribe's own model do its night reflection: no second model is loaded, which removes the load at the first night and the memory
+# pressure of a third model, at the cost of the dedicated reviewer that pushes back (the 2026-09-18 choice). The reflection then uses the 4096 context the tribe's turns use (REFLECTION_CONTEXT_OWN_MODEL),
+# because a request with a different context makes Ollama reload the model. Not the default; to be tried and compared.
 
 # Explicit request, 2026-09-18: "I like the flavor but it doesn't help them
 # really does it" -- a recalled private thought was pure ambient text, no
@@ -217,6 +224,7 @@ REFLECTION_STABILIZED_REINFORCEMENT_COUNT = 2
 # THRESHOLD, backend/memory.py) lives next to its own token-overlap sibling
 # rather than here -- memory.py stays deliberately free of any config.py
 # import, same as every constant it already owns.
+REFLECTION_CONTEXT_OWN_MODEL = 4096
 REFLECTION_EMBEDDING_MODEL = "nomic-embed-text"
 # Phase 1 of docs/PALIMPSEST-REFLECTIONS-DESIGN.md (2026-10-03). "off" (the default: reflections reinforce exactly as before) or
 # "nli": Palimpsest's judge decides whether a new reflection restates, contradicts, or is separate from a held one. Needs the

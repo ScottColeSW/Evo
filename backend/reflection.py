@@ -37,7 +37,7 @@ async def reflect_on_history(
     client: OllamaClient, reviewer_model: str, tribe_name: str,
     current_philosophy: str, recent_events: list[str], inventory: str = "",
     current_decree: str = "", dmm_built: bool = False,
-    departure_eligible: bool = False,
+    departure_eligible: bool = False, num_ctx: int = 8192,
 ) -> dict:
     events_block = "\n".join(f"- {e}" for e in recent_events) or "(nothing notable recorded)"
     categories_list = ", ".join(AWARD_CATEGORIES)
@@ -155,7 +155,7 @@ Reply with ONLY JSON:
   "proposed_decree": "a short, concrete standing duty, in your own words" or null,
   "proposed_dream": "a short description of a real, grounded dream, in your own words" or null
 }}"""
-    result = await client.generate_json(reviewer_model, prompt, temperature=0.7, num_ctx=8192)
+    result = await client.generate_json(reviewer_model, prompt, temperature=0.7, num_ctx=num_ctx)
     if not result or not result.get("revised_philosophy"):
         return {
             "private_thoughts": (result or {}).get("private_thoughts", ""),
