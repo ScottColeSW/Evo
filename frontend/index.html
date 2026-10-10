@@ -703,7 +703,7 @@ let tribeCount = 0;
 let socket = null;
 let latestState = null;
 // Explicit follow-up, 2026-09-12: "I'd like the visual aspect of the game to
-// become smooth (not a ticking game)." See interpolatedTilePos below -- these
+// become smooth (not a ticking game)." See followTilePos below -- these
 // three track the previous snapshot and real arrival timing needed to glide
 // a moving entity's drawn position between two known states, instead of
 // snapping the instant a new one arrives.
@@ -711,15 +711,20 @@ let previousState = null;
 let lastStateArrivedAt = 0;
 let stateIntervalMs = 500;
 // 2026-10-10 (docs/APP-PERFORMANCE-2026-10-09.md): real updates arrive every ~5 s and sometimes 40 s apart (a night cycle, an election). Replaying two real runs' timing: 81 to 88% of the time the page
-// stood still came from waits over 15 s, which no glide can cover, and the rest from ordinary late updates. So: the gap is a smoothed estimate (one long wait no longer sets the next glide to crawl and
-// then hop), the glide lasts GLIDE_MARGIN times that estimate so it is rarely finished before the next update, and a ring pulses on each settlement while the page is waiting so a pause reads as waiting.
-const GLIDE_MARGIN = 1.3;
+// stood still came from waits over 15 s, which no glide can cover. And restarting a glide from the previous state at every update makes a thing hop whenever the last glide had not finished: replaying
+// a real run, a thing jumped at 39% of updates (mean 0.77 tile, worst 28) with the old rule and at 66% (mean 1.8 tiles) with a longer glide. So nothing glides between two states any more: each moving
+// thing is a smooth FOLLOWER of its latest known position (a critically damped spring with a velocity of its own), so its drawn position and speed never jump when an update arrives or is late. In the
+// same replay: 0 jumps, worst 0.04 tile, never standing still while it still has somewhere to go. The follower's time constant is the smoothed gap between updates divided by FOLLOW_K.
+// A ring pulses on each settlement while the page is waiting so a long pause reads as waiting.
+const FOLLOW_K = 3.0;
 let stateGapsSeen = 0;
+const followState = new Map();   // key -> {x, y, vx, vy, t, frame}
 
 function clampGapMs(ms) { return Math.min(8000, Math.max(200, ms)); }
 
-// Called once as each update arrives, with performance.now(); folds the gap since the last one into stateIntervalMs.
+// Called once as each update arrives, with performance.now(); folds the gap since the last one into stateIntervalMs, and forgets things not seen for a minute.
 function noteStateGap(now) {
+  followState.forEach((st, key) => { if (now - st.t > 60000) followState.delete(key); });
   if (!lastStateArrivedAt) return;
   const gap = now - lastStateArrivedAt;
   stateIntervalMs = stateGapsSeen === 0
@@ -728,9 +733,47 @@ function noteStateGap(now) {
   stateGapsSeen++;
 }
 
-function glideMs() { return Math.min(12000, Math.max(800, stateIntervalMs * GLIDE_MARGIN)); }
+function followTauSeconds() { return Math.max(0.25, stateIntervalMs / 1000 / FOLLOW_K); }
 
-// True while the page is waiting longer than usual for the next update (a slow model, a night cycle) and nothing says the run is paused or over.
+// One critically damped spring step toward `target` for one axis (semi-implicit Euler); returns [position, velocity].
+function springAxis(pos, vel, target, w, dt) {
+  const acc = w * w * (target - pos) - 2 * w * vel;
+  const v = vel + acc * dt;
+  return [pos + v * dt, v];
+}
+
+// The drawn position of a moving thing: a smooth follower of curXY, keyed by what it is. Advances once per frame however many times it is asked (animFrame). A jump of more than MAX_INTERPOLATE_TILES
+// (a founding, an injected state) or a long gap since the last frame (a hidden tab) snaps to the target instead of sweeping across the map.
+function followTilePos(key, curXY, now = performance.now()) {
+  let st = followState.get(key);
+  if (!st) { st = {x: curXY[0], y: curXY[1], vx: 0, vy: 0, t: now, frame: animFrame}; followState.set(key, st); return [st.x, st.y]; }
+  if (st.frame === animFrame) return [st.x, st.y];
+  const dt = (now - st.t) / 1000;
+  st.frame = animFrame; st.t = now;
+  if (dt > 0.5 || Math.hypot(curXY[0] - st.x, curXY[1] - st.y) > MAX_INTERPOLATE_TILES) {
+    st.x = curXY[0]; st.y = curXY[1]; st.vx = 0; st.vy = 0;
+    return [st.x, st.y];
+  }
+  const w = 1 / followTauSeconds();
+  [st.x, st.vx] = springAxis(st.x, st.vx, curXY[0], w, Math.min(dt, 0.1));
+  [st.y, st.vy] = springAxis(st.y, st.vy, curXY[1], w, Math.min(dt, 0.1));
+  return [st.x, st.y];
+}
+
+// The same follower for one number, never going backwards (the sim cycle the sun, the moon and the day label are drawn from).
+function followScalar(key, target, now = performance.now()) {
+  let st = followState.get(key);
+  if (!st) { st = {x: target, y: 0, vx: 0, vy: 0, t: now, frame: animFrame}; followState.set(key, st); return st.x; }
+  if (st.frame === animFrame) return st.x;
+  const dt = (now - st.t) / 1000;
+  st.frame = animFrame; st.t = now;
+  if (dt > 0.5 || Math.abs(target - st.x) > 2 * DAY_LENGTH_CYCLES) { st.x = target; st.vx = 0; return st.x; }
+  const [x, v] = springAxis(st.x, st.vx, target, 1 / followTauSeconds(), Math.min(dt, 0.1));
+  st.x = Math.max(st.x, Math.min(x, target));
+  st.vx = Math.max(0, v);
+  return st.x;
+}
+
 function isWaitingOnServer(now = performance.now()) {
   if (!latestState || latestState.paused || latestState.game_over_report || latestState.game_over_reason) return false;
   return now - lastStateArrivedAt > Math.max(2500, stateIntervalMs * 1.6);
@@ -963,6 +1006,7 @@ function startSimulation(tribes, immortalCycles, reflectionJudge = false, journa
   latestState = null;
   previousState = null;
   stateGapsSeen = 0;
+  followState.clear();
   showSpawnSplash();
 
   if (socket) {
@@ -2507,47 +2551,9 @@ function landAnchor(x, y) {
 // synthetic-state jump) snaps instantly instead of a cross-map glide.
 const MAX_INTERPOLATE_TILES = 20;
 
-function interpolatedTilePos(prevXY, curXY) {
-  if (!prevXY) return curXY;
-  const dx = curXY[0] - prevXY[0], dy = curXY[1] - prevXY[1];
-  if (Math.hypot(dx, dy) > MAX_INTERPOLATE_TILES) return curXY;
-  const progress = Math.min(1, (performance.now() - lastStateArrivedAt) / glideMs());
-  return [prevXY[0] + dx * progress, prevXY[1] + dy * progress];
-}
-
-// The four moving-entity lookups interpolatedTilePos needs a "previous"
-// counterpart for -- each keyed by something stable across two snapshots,
-// not list index (an expedition's own index shifts when an earlier one in
-// the list completes and is removed).
-function previousTribePos(tribeId) {
-  const t = previousState && previousState.tribes && previousState.tribes[tribeId];
-  return t ? [t.x, t.y] : null;
-}
-
-function previousExpeditionPos(tribeId, exp) {
-  const t = previousState && previousState.tribes && previousState.tribes[tribeId];
-  if (!t) return null;
-  const match = (t.expeditions || []).find(e => e.lead_scout === exp.lead_scout && e.kind === exp.kind);
-  return match ? match.pos : null;
-}
-
-function previousBattalionPatrolPos(tribeId) {
-  const t = previousState && previousState.tribes && previousState.tribes[tribeId];
-  return t && t.battalion_patrol ? t.battalion_patrol.pos : null;
-}
-
-function previousRaidersApproachingPos(tribeId) {
-  const t = previousState && previousState.tribes && previousState.tribes[tribeId];
-  return t && t.raiders_approaching ? [t.raiders_approaching.x, t.raiders_approaching.y] : null;
-}
-
-function previousStormCloudPos() {
-  return previousState && previousState.storm_cloud ? [previousState.storm_cloud.x, previousState.storm_cloud.y] : null;
-}
-
 // Explicit follow-up, 2026-09-12: "the interpolation works great on the
 // board. can we do the same on the sun and moon? and cloud." Same idea as
-// interpolatedTilePos above, but for a single scalar (the sim cycle number
+// followTilePos above, but for a single scalar (the sim cycle number
 // drawCelestialLighting/drawDayNightOverlay already turn into a smooth arc
 // position via cycle % DAY_LENGTH_CYCLES / DAY_LENGTH_CYCLES) -- the math was
 // already continuous, it was just being fed a discrete integer that only
@@ -2556,8 +2562,7 @@ function previousStormCloudPos() {
 function interpolatedCycle() {
   if (!latestState) return 0;
   if (!previousState || previousState.cycle == null) return latestState.cycle;
-  const progress = Math.min(1, (performance.now() - lastStateArrivedAt) / glideMs());
-  return previousState.cycle + (latestState.cycle - previousState.cycle) * progress;
+  return followScalar("cycle", latestState.cycle);
 }
 
 // Explicit report, 2026-09-13: "the day ticked up before the sun arrived." Root
@@ -2907,7 +2912,7 @@ function drawCelebrationFireworks(centerX, centerY) {
 }
 
 function drawTribeIndividuals(tribeId, t) {
-  const [ix, iy] = interpolatedTilePos(previousTribePos(tribeId), [t.x, t.y]);
+  const [ix, iy] = followTilePos("tribe:" + tribeId, [t.x, t.y]);
   const [landX, landY] = landAnchor(Math.round(ix), Math.round(iy));
   const centerX = landX * TILE + TILE / 2;
   const centerY = landY * TILE + TILE / 2;
@@ -3110,7 +3115,7 @@ const expeditionPathReveal = {};
 const PATH_REVEAL_FRAMES = 24;
 
 function drawExpedition(t, tribeId, exp, expIndex) {
-  const [ix, iy] = interpolatedTilePos(previousExpeditionPos(tribeId, exp), exp.pos);
+  const [ix, iy] = followTilePos("exp:" + tribeId + ":" + exp.lead_scout + ":" + exp.kind, exp.pos);
   const fx = ix * TILE + TILE / 2, fy = iy * TILE + TILE / 2;
   const path = exp.path || [];
   const revealKey = `${tribeId}:${expIndex}`;
@@ -3232,7 +3237,7 @@ function drawExpedition(t, tribeId, exp, expIndex) {
 // "returning" vs. actively closing on a raider camp is legible without opening the
 // sidebar.
 function drawBattalionPatrol(t, tribeId, patrol) {
-  const [ix, iy] = interpolatedTilePos(previousBattalionPatrolPos(tribeId), patrol.pos);
+  const [ix, iy] = followTilePos("patrol:" + tribeId, patrol.pos);
   const fx = ix * TILE + TILE / 2, fy = iy * TILE + TILE / 2;
   const seed = stringSeed(`${tribeId}:battalion`);
   const bob = Math.sin(animFrame * 0.05 + hashUnit(seed) * Math.PI * 2) * 3;
@@ -4370,7 +4375,7 @@ function drawWeather() {
     // radius/offset separately, so the puffs' relative layout stays proportional.
     const STORM_SCALE = 3;
     const { x, y } = latestState.storm_cloud;
-    const [ix, iy] = interpolatedTilePos(previousStormCloudPos(), [x, y]);
+    const [ix, iy] = followTilePos("storm", [x, y]);
     const cx = ix * TILE + TILE / 2, cy = iy * TILE + TILE / 2;
     const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, TILE * 4 * STORM_SCALE);
     glow.addColorStop(0, "rgba(120,130,150,0.5)");
@@ -4558,7 +4563,7 @@ function drawFrame() {
     Object.entries(latestState.tribes || {}).forEach(([tribeId, t]) => {
       const approach = t.raiders_approaching;
       if (!approach) return;
-      const [ix, iy] = interpolatedTilePos(previousRaidersApproachingPos(tribeId), [approach.x, approach.y]);
+      const [ix, iy] = followTilePos("raiders:" + tribeId, [approach.x, approach.y]);
       const cx = ix * TILE + TILE / 2;
       const cy = iy * TILE + TILE / 2;
       // Explicit request: "the raider invasion forces should look a lot bigger on
