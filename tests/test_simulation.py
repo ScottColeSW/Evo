@@ -926,6 +926,7 @@ def test_upgrade_barracks_nudge_fires_at_the_build_cap_when_battalion_is_full():
     tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
     tribe.barracks_built = config.BARRACKS_MAX_COUNT
     tribe.battalion_size = config.BARRACKS_MAX_COUNT * config.BATTALION_CAPACITY_PER_BARRACKS
+    tribe.battalion_readiness = 1.0  # UPGRADE_BARRACKS is only offered to a drilled Battalion (2026-10-10)
 
     request, _ctx = sim._prepare_turn(tribe)
 
@@ -11770,6 +11771,86 @@ def test_advance_battalion_patrol_starts_cooldown_once_home():
     assert tribe.battalion_patrol is None
     assert tribe.battalion_cooldown_until_cycle == 200 + config.BATTALION_PATROL_COOLDOWN_DAYS * config.DAY_LENGTH_CYCLES
     assert "returns from patrol" in tribe.history[-1]
+
+
+def test_a_patrol_that_gets_home_adds_to_readiness_and_never_past_full():
+    """2026-10-10: the patrol on the board counts for something (config.BATTALION_PATROL_READINESS_BONUS)."""
+    from backend import config
+
+    sim = _bare_simulation()
+    sim.cycle = 200
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.battalion_size = 20
+    tribe.battalion_readiness = 0.3
+    tribe.battalion_patrol = {"pos": [52, 50], "phase": "returning", "started_cycle": 180, "target": None}
+    with mock.patch("backend.physics.terrain_aware_step", return_value=(50, 50)):
+        sim._advance_battalion_patrol(tribe)
+    assert tribe.battalion_readiness == 0.3 + config.BATTALION_PATROL_READINESS_BONUS
+
+    tribe.battalion_readiness = 0.98
+    tribe.battalion_patrol = {"pos": [52, 50], "phase": "returning", "started_cycle": 180, "target": None}
+    with mock.patch("backend.physics.terrain_aware_step", return_value=(50, 50)):
+        sim._advance_battalion_patrol(tribe)
+    assert tribe.battalion_readiness == 1.0
+
+
+def test_a_patrol_still_out_does_not_add_readiness():
+    sim = _bare_simulation()
+    sim.cycle = 200
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.territory_center = (50, 50)
+    tribe.battalion_size = 20
+    tribe.battalion_readiness = 0.3
+    tribe.battalion_patrol = {"pos": [60, 50], "phase": "returning", "started_cycle": 180, "target": None}
+    with mock.patch("backend.physics.terrain_aware_step", return_value=(58, 50)):
+        sim._advance_battalion_patrol(tribe)
+    assert tribe.battalion_readiness == 0.3
+
+
+def test_more_barracks_are_only_offered_to_a_drilled_battalion_but_the_first_is_not_gated():
+    """2026-10-10: a real run made 80+ UPGRADE_BARRACKS and 1 to 3 TRAIN_BATTALION, readiness at 0.0 while the Battalion reached 1,700."""
+    from backend import config
+    from backend.simulation import AFFORDABILITY_CHECKS
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.wood = tribe.stone = 100000
+    tribe.kitchen_built = tribe.keep_built = True
+    world = mock.Mock()
+
+    with mock.patch("backend.simulation._can_place", return_value=True):
+        tribe.barracks_built = 0
+        assert AFFORDABILITY_CHECKS["BUILD_BARRACKS"](tribe, world) is True        # nothing to drill yet
+        tribe.barracks_built = 2
+        tribe.battalion_readiness = config.BARRACKS_MIN_READINESS - 0.01
+        assert AFFORDABILITY_CHECKS["BUILD_BARRACKS"](tribe, world) is False
+        tribe.battalion_readiness = config.BARRACKS_MIN_READINESS
+        assert AFFORDABILITY_CHECKS["BUILD_BARRACKS"](tribe, world) is True
+
+    tribe.barracks_built = config.BARRACKS_MAX_COUNT
+    tribe.battalion_readiness = 0.0
+    assert not AFFORDABILITY_CHECKS["UPGRADE_BARRACKS"](tribe, world)
+    tribe.battalion_readiness = config.BARRACKS_MIN_READINESS
+    assert AFFORDABILITY_CHECKS["UPGRADE_BARRACKS"](tribe, world)
+
+
+def test_a_full_but_undrilled_battalion_is_told_why_a_larger_barracks_is_not_offered():
+    from backend import config
+
+    sim = Simulation([{"name": "Plains Tribe", "model": "gemma2:2b", "x": 65, "y": 65}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.era = "war_and_world_domination_era"
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.barracks_built = config.BARRACKS_MAX_COUNT
+    tribe.battalion_size = config.BARRACKS_MAX_COUNT * config.BATTALION_CAPACITY_PER_BARRACKS
+    tribe.battalion_readiness = 0.1
+    tribe.food = 1000
+    request, ctx = sim._prepare_turn(tribe)
+    assert "UPGRADE_BARRACKS" not in ctx["available_actions"]
+    assert "only 10% ready" in request["prompt"] and "TRAIN_BATTALION drills it" in request["prompt"]
 
 
 def test_advance_battalion_readiness_upkeep_drains_readiness_over_time():

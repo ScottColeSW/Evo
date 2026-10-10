@@ -1220,6 +1220,14 @@ MAX_CONCURRENT_PATROLS = 1
 # separate and untouched by this.
 BATTALION_PATROL_DURATION_DAYS = 1
 BATTALION_PATROL_COOLDOWN_DAYS = 3
+# 2026-10-10 (explicit request: "each time you build a barracks you have to patrol after... key on readiness too"): a real run had
+# each tribe make 80+ UPGRADE_BARRACKS and only 1 to 3 TRAIN_BATTALION (readiness sat at 0.0 while the Battalion grew to 1,700). Readiness
+# is what a Battalion earns by drilling, so growing it is now gated on it: once a first barracks stands, BUILD_BARRACKS and
+# UPGRADE_BARRACKS are only offered while readiness is at least BARRACKS_MIN_READINESS (two drills). Readiness decays 0.005 a cycle, so a
+# tribe has to keep drilling to keep growing the force, with no hard count. A patrol that gets home adds BATTALION_PATROL_READINESS_BONUS
+# (about a third of a drill), so the patrol on the board counts for something.
+BARRACKS_MIN_READINESS = 0.6
+BATTALION_PATROL_READINESS_BONUS = 0.1
 # Moves every cycle while patrolling, not gated to once-per-day the way a
 # settled expedition's own movement is -- a 1-day patrol duration would only
 # ever take a single step under that gating, nowhere near enough to reach a

@@ -934,11 +934,13 @@ AFFORDABILITY_CHECKS = {
     # just below takes over past that point.
     "BUILD_BARRACKS": lambda t, w: (
         t.kitchen_built and t.keep_built and t.barracks_built < config.BARRACKS_MAX_COUNT
+        and (t.barracks_built == 0 or t.battalion_readiness >= config.BARRACKS_MIN_READINESS)  # 2026-10-10: a drilled Battalion earns the next one
         and t.wood >= config.BARRACKS_WOOD_COST and t.stone >= config.BARRACKS_STONE_COST
         and _can_place(t, w, "barracks")
     ),
     "UPGRADE_BARRACKS": lambda t, w: (
         t.barracks_built >= config.BARRACKS_MAX_COUNT
+        and t.battalion_readiness >= config.BARRACKS_MIN_READINESS
         and t.wood >= round(config.BARRACKS_UPGRADE_WOOD_COST_BASE * (1 + t.barracks_upgrades * config.BARRACKS_UPGRADE_COST_GROWTH))
         and t.stone >= round(config.BARRACKS_UPGRADE_STONE_COST_BASE * (1 + t.barracks_upgrades * config.BARRACKS_UPGRADE_COST_GROWTH))
     ),
@@ -5834,6 +5836,15 @@ class Simulation:
                 f"Barracks are at their built limit ({tribe.barracks_built}) and the battalion is at its "
                 "full capacity -- UPGRADE_BARRACKS is the only way to train a larger one."
             )
+        # 2026-10-10: the fact behind the readiness gate (config.BARRACKS_MIN_READINESS), so a barracks action that left the menu is explained, not silent.
+        if (
+            tribe.barracks_built >= 1 and tribe.battalion_readiness < config.BARRACKS_MIN_READINESS
+            and tribe.battalion_size >= _battalion_capacity(tribe) and "TRAIN_BATTALION" in available_actions
+        ):
+            visible_entities.append(
+                f"The battalion is at its full capacity but only {round(tribe.battalion_readiness * 100)}% ready; "
+                f"a larger barracks is only offered once readiness is {round(config.BARRACKS_MIN_READINESS * 100)}% -- TRAIN_BATTALION drills it."
+            )
 
         if "BUILD_SAWMILL" in available_actions and not tribe.sawmill_built:
             if tribe.wood_ever_gathered:
@@ -9573,6 +9584,7 @@ class Simulation:
             patrol["pos"] = [nx, ny]
             if (nx, ny) == (cx, cy):
                 tribe.battalion_patrol = None
+                tribe.battalion_readiness = min(1.0, tribe.battalion_readiness + config.BATTALION_PATROL_READINESS_BONUS)
                 tribe.battalion_cooldown_until_cycle = (
                     self.cycle + config.BATTALION_PATROL_COOLDOWN_DAYS * config.DAY_LENGTH_CYCLES
                 )
