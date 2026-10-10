@@ -1536,6 +1536,9 @@ RAID_PROXIMITY_RADIUS = 3
 # while PLANT_CROP, GATHER_EGGS, CATCH_FISH and COOK_FOOD sat on its menu 131 times and were chosen 0 times, and it never left the first era. When a forage would pay this much or less, GATHER_FOOD is
 # not offered while another food source is. Food and water gathers are otherwise never removed (survival), so this stays fail-open.
 FORAGE_DEPLETED_YIELD_MAX = 2
+# The same ground then rests (a fallow period) until one forage would pay FORAGE_RECOVERED_FRACTION of what the tile pays at full strength (and more than the depleted floor), so it does not flicker back at
+# 3 food a few cycles later and get picked clean again; the ground regrows DEPLETION_REGEN_PER_CYCLE a cycle, so a floor-worn tile takes about 15 cycles to reach half.
+FORAGE_RECOVERED_FRACTION = 0.5
 # 2026-10-10 (explicit request: a spy's report should be visible and unlock a strike): RAID_RIVAL is offered while a spy's report on a living rival has not yet been used, hits that rival
 # with no coordinates needed, and uses the report up (one strike per report, so a strike needs a fresh spy). What the spy learned improves the odds by this much (a plain RAID's chance is
 # the attacker's share of the two populations, adjusted by Might).

@@ -437,12 +437,31 @@ def _hunt_deer(sim, tribe, biome, target):
     return _with_node_note(_add_capped(sim, tribe, "food", amount, "food"), note)
 
 
-def forage_yield_now(world, tribe, biome) -> int:
-    """What one GATHER_FOOD would pay at this tile right now, with no side effects: the same arithmetic as _forage (the tile's depletion, the biome, labor, items, cooking)."""
+def forage_yield_at(tribe, biome, scarcity: float) -> int:
+    """What one GATHER_FOOD would pay at the given depletion of the tile, with no side effects: the same arithmetic as _forage (the biome, labor, items, cooking)."""
     biome_factor = BIOME_YIELD_MULTIPLIER.get("forage", {}).get(biome, 1.0)
-    scarcity = world.scarcity("forage", tribe.x, tribe.y)
     base = round(10 * biome_factor * _labor_multiplier(tribe.population) * (1 + _item_effect_bonus(tribe, "forage")) * (1 - scarcity))
     return round(base * _food_multiplier(tribe))
+
+
+def forage_yield_now(world, tribe, biome) -> int:
+    """What one GATHER_FOOD would pay at this tile right now."""
+    return forage_yield_at(tribe, biome, world.scarcity("forage", tribe.x, tribe.y))
+
+
+def forage_recovery_target(tribe, biome) -> int:
+    """The yield at which resting ground counts as recovered: config.FORAGE_RECOVERED_FRACTION of what the tile pays unworn, and always more than the depleted floor."""
+    return max(config.FORAGE_DEPLETED_YIELD_MAX + 1, round(config.FORAGE_RECOVERED_FRACTION * forage_yield_at(tribe, biome, 0.0)))
+
+
+def cycles_until_forage_recovers(world, tribe, biome) -> int:
+    """How many cycles of rest, at config.DEPLETION_REGEN_PER_CYCLE, until a forage here would pay the recovery target again (0 if it already does)."""
+    scarcity = world.scarcity("forage", tribe.x, tribe.y)
+    target = forage_recovery_target(tribe, biome)
+    for cycles in range(0, 400):
+        if forage_yield_at(tribe, biome, max(0.0, scarcity - cycles * config.DEPLETION_REGEN_PER_CYCLE)) >= target:
+            return cycles
+    return 400
 
 
 def _forage(sim, tribe, biome, target):

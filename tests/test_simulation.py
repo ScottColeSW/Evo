@@ -16136,7 +16136,43 @@ def test_a_depleted_forage_is_not_offered_while_another_food_source_is():
     others = [a for a in ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "HUNT_DEER", "HUNTING_PARTY") if a in ctx["available_actions"]]
     assert others, "the test tribe needs another food source on its menu"
     assert "GATHER_FOOD" not in ctx["available_actions"]
-    assert "Foraging this ground has worn out" in request["prompt"] and others[0] in request["prompt"]
+    assert "foraged bare and is resting" in request["prompt"] and "will bear again in about" in request["prompt"] and others[0] in request["prompt"]
+
+
+def test_the_worn_ground_rests_until_it_has_really_recovered_and_does_not_flicker_back():
+    """2026-10-10 (the fallow version): the first rule brought GATHER_FOOD back as soon as a forage paid 3, which a few cycles of regrowth gives, so it was picked clean again."""
+    from backend import config
+    from backend.actions import cycles_until_forage_recovers, forage_recovery_target, forage_yield_now
+
+    sim, tribe = _forager_with_food_options()
+    key = ("forage", tribe.x, tribe.y)
+    sim.world.depletion[key] = 0.95
+    _req, ctx = sim._prepare_turn(tribe)
+    assert "GATHER_FOOD" not in ctx["available_actions"] and tribe.forage_resting_tile == (tribe.x, tribe.y)
+
+    # a little regrowth: it pays more than the depleted floor but not yet the recovered yield; still resting
+    for scarcity in (0.8, 0.75, 0.7):
+        sim.world.depletion[key] = scarcity
+        yield_now = forage_yield_now(sim.world, tribe, ctx["biome"])
+        if config.FORAGE_DEPLETED_YIELD_MAX < yield_now < forage_recovery_target(tribe, ctx["biome"]):
+            _req, ctx2 = sim._prepare_turn(tribe)
+            assert "GATHER_FOOD" not in ctx2["available_actions"], f"flickered back at a yield of {yield_now}"
+    assert cycles_until_forage_recovers(sim.world, tribe, ctx["biome"]) > 0
+
+    sim.world.depletion[key] = 0.2  # recovered
+    _req, ctx3 = sim._prepare_turn(tribe)
+    assert "GATHER_FOOD" in ctx3["available_actions"] and tribe.forage_resting_tile is None
+    assert cycles_until_forage_recovers(sim.world, tribe, ctx3["biome"]) == 0
+
+
+def test_a_resting_ground_moves_with_the_tribe_and_is_per_tile():
+    sim, tribe = _forager_with_food_options()
+    sim.world.depletion[("forage", tribe.x, tribe.y)] = 0.95
+    sim._prepare_turn(tribe)
+    assert tribe.forage_resting_tile == (tribe.x, tribe.y)
+    tribe.x, tribe.y = tribe.x + 9, tribe.y  # fresh ground elsewhere is not resting
+    _req, ctx = sim._prepare_turn(tribe)
+    assert tribe.forage_resting_tile != (tribe.x, tribe.y)
 
 
 def test_a_depleted_forage_stays_when_nothing_else_can_feed_the_tribe():
