@@ -9324,7 +9324,15 @@ class Simulation:
         expedition's own scoped memory (kept off exp["path"], which is capped
         for wire/storage size and would silently stop tracking on a very long
         trip) -- a fresh expedition starts with none, and a genuinely later,
-        separate trip (even by the same scout) wears normally again."""
+        separate trip (even by the same scout) wears normally again.
+
+        2026-10-10: the tile the camp itself stands on is never worn by its own scouts. Every
+        scout that comes home lands on it, so by cycle 19 of a real run (10 trips) the start tile
+        had 6 crossings and was a toll road; the tribe's first RELOCATE then moved at 5x speed and
+        crossed 26 tiles in one cycle (the earlier runs moved about 10 a cycle). A route wears
+        along the way, not at the door."""
+        if (x, y) == (tribe.x, tribe.y):
+            return
         worn = exp.setdefault("worn_tiles", set())
         key = (x, y)
         if key in worn:

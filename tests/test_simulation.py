@@ -6398,6 +6398,21 @@ def test_wear_trail_for_expedition_does_not_double_count_a_tile_it_already_cross
     assert sim.world.trails[(12, 34)]["crossings"] == 1
 
 
+def test_wear_trail_for_expedition_never_wears_the_camp_tile_so_scouts_cannot_turn_it_into_a_toll_road():
+    """Live run 2026-10-10: ten scout trips home made the tribe's start tile a toll road (6 crossings
+    > ROAD_EVOLVE_CROSSINGS), and its first RELOCATE then crossed 26 tiles in one cycle at 5x speed."""
+    from backend import config
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    for _ in range(config.ROAD_EVOLVE_CROSSINGS + 3):
+        trip = {"path": [], "worn_tiles": set()}
+        sim._wear_trail_for_expedition(trip, tribe, 50, 50)   # a scout arriving home
+        sim._wear_trail_for_expedition(trip, tribe, 51, 50)   # and the ground beside it
+    assert (50, 50) not in sim.world.trails
+    assert not sim.world.is_toll_road(50, 50)
+    assert sim.world.trails[(51, 50)]["crossings"] == config.ROAD_EVOLVE_CROSSINGS + 3  # a route is still worn
+
+
 def test_wear_trail_for_expedition_still_wears_a_genuinely_new_tile():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
