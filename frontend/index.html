@@ -4652,13 +4652,13 @@ function drawFrame() {
     // used to draw before trails, so a toll road painted right over them. Drawn
     // after everything else instead -- labels always stay on top, full stack from
     // bottom to top is terrain -> individuals -> trails -> buildings/walls -> labels.
-    // Chief thought/speech bubbles are part of that same top "labels" tier now too
-    // (see pendingSpeechBubbles' own comment) -- flushed here, before drawLandmarks,
-    // so a bubble never again renders underneath a building or landmark icon.
-    pendingSpeechBubbles.forEach(draw => draw());
     drawLandmarks();
     drawMinorSettlements();
     if (latestState.joint_castle) drawJointCastle(latestState.joint_castle);
+    // Chief thought/speech bubbles are the very top of the "labels" tier (see pendingSpeechBubbles' own comment). 2026-10-10 (explicit request: "I'd like to see the dialog boxes over the
+    // resources when they pop up"): they were flushed BEFORE drawLandmarks, whose resource icons and labels (Timber, Quarry, Wolf Den...) then painted over the bubble text. Flushed last, after
+    // landmarks, minor settlements and the joint castle, so a bubble is never underneath a resource, a building or a landmark.
+    pendingSpeechBubbles.forEach(draw => draw());
     // The day/night tint goes over literally everything (tribes, trails, structures
     // included) so night actually reads as night across the whole scene, not just an
     // absent sun icon up top.
