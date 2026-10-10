@@ -699,3 +699,32 @@ def test_nearest_water_matches_brute_force_reference():
         expected, expected_dist = brute_force(*spawn)
         result_dist = (result[0] - spawn[0]) ** 2 + (result[1] - spawn[1]) ** 2
         assert result_dist == expected_dist, f"{spawn}: got {result} ({result_dist}), expected {expected} ({expected_dist})"
+
+
+def test_the_cached_biome_gives_the_same_answer_as_working_it_out_for_every_tile_on_and_around_the_map():
+    """biome_at is cached because it is a pure function of the tile; the cache must never change an answer (2026-10-10)."""
+    from backend import world
+
+    uncached = world.biome_at.__wrapped__
+    for x in range(-5, 106):
+        for y in range(-5, 106):
+            assert world.biome_at(x, y) == uncached(x, y), (x, y)
+
+
+def test_a_changed_terrain_input_is_seen_once_the_cache_is_cleared(monkeypatch):
+    from backend import world, world_layers
+
+    # a tile that is naturally forest, mountains or desert becomes plain land if it is written into the field layer
+    x, y = next((x, y) for x in range(10, 90) for y in range(10, 90)
+                if world.biome_at(x, y) in ("forest", "mountains", "desert") and (x, y) not in world_layers.FIELD_TILES)
+    before = world.biome_at(x, y)
+    monkeypatch.setattr(world_layers, "FIELD_TILES", frozenset(set(world_layers.FIELD_TILES) | {(x, y)}))
+    assert world.biome_at(x, y) == before  # still the cached answer
+    world.biome_at.cache_clear()
+    assert world.biome_at(x, y) == "plains"
+
+
+def test_the_biome_cache_is_bounded():
+    from backend import world
+
+    assert world.biome_at.cache_info().maxsize is not None

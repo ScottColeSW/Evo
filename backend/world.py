@@ -267,6 +267,11 @@ def _desert_north_boundary(x: float) -> float:
     return config.DESERT_NORTH_BOUNDARY_BASE + 5 * math.sin(x * 0.06) + 2 * math.sin(x * 0.17 + 0.6)
 
 
+# 2026-10-10: a pure function of the tile (the layers it reads are fixed at import), called millions of times in a run: building a tribe's menu asks "is there room to build this" by
+# scanning tiles, and each tile cost several sine-wave evaluations (2.5 million calls and 45 million math.sin calls in 200 mid-game turns, 65% of all the app's time; see
+# docs/APP-PERFORMANCE-2026-10-09.md). Cached, a tile is worked out once. The bound is generous (the map is 100 x 100) and keeps a stray float or out-of-map coordinate from growing it forever.
+# A test that changes the terrain inputs at run time must call biome_at.cache_clear(); tests/conftest.py clears it around every test.
+@functools.lru_cache(maxsize=131072)
 def biome_at(x: int, y: int) -> str:
     # River is checked before the coast texture so its mouth cuts straight through to
     # the sea rather than being interrupted by a cliff/shoal band -- real river mouths

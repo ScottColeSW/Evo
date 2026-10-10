@@ -15,6 +15,15 @@ def isolate_event_log(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def fresh_terrain_cache():
+    """world.biome_at is cached (a pure function of the tile); a test that changes the terrain inputs must not see an answer cached by another test."""
+    from backend import world
+    world.biome_at.cache_clear()
+    yield
+    world.biome_at.cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def nudges_on_for_the_suite(monkeypatch):
     """The shipped default is NUDGES off (2026-10-07). The prompt tests that assert a nudge's text exist to check that text, so the suite runs with the switch on;
     tests of the default itself delenv it first (tests/test_nudge_switch.py)."""
