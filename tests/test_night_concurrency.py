@@ -152,7 +152,20 @@ async def test_a_night_records_how_long_each_stage_took():
         await sim._run_night_cycles(list(sim.tribes.values()))
     records = [json.loads(line) for line in sim.event_log.path.read_text(encoding="utf-8").splitlines() if line.strip().startswith("{")]
     per_tribe = [r for r in records if r.get("kind") == "night_timing"]
-    assert len(per_tribe) == 2 and all(r["data"]["reflect_s"] >= 0.05 and "embed_s" in r["data"] for r in per_tribe)
+    assert len(per_tribe) == 2 and all(r["data"]["reflect_s"] >= 0.03 and "embed_s" in r["data"] for r in per_tribe)  # a 0.05 s sleep can read 0.049 on a coarse Windows timer
     whole = [r for r in records if r.get("kind") == "night_phase_timing"]
     assert len(whole) == 1 and whole[0]["data"]["model_phase_s"] < 0.5 * 2  # the two 0.05 s calls overlapped
     assert set(whole[0]["data"]["apply_s"]) == {"Alpha", "Beta"}
+
+
+@run_async
+async def test_the_night_watch_record_carries_the_models_retry_counts():
+    import json
+
+    sim = _two_tribes()
+    sim.client.repeat_retries["qwen2.5:3b"] = 3
+    sim.client.empty_reply_retries["qwen2.5:3b"] = 1
+    sim._night_watch(sim.tribes["tribe_0"])
+    records = [json.loads(line) for line in sim.event_log.path.read_text(encoding="utf-8").splitlines() if line.strip().startswith("{")]
+    watch = [r for r in records if r.get("kind") == "night_watch"][0]["data"]
+    assert watch["model_retries"]["repeat_aborts"] == {"qwen2.5:3b": 3} and watch["model_retries"]["empty_replies"] == {"qwen2.5:3b": 1}
