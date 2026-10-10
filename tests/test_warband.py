@@ -177,3 +177,14 @@ def test_the_chief_is_told_who_the_raiders_are_and_how_they_stand():
     tribe.warband = {"name": "Grim Raiders", "size": 50, "wins": 0, "attacks": 0}
     request, _ctx = sim._prepare_turn(tribe)
     assert "have attacked you" not in request["prompt"]
+
+
+def test_a_takeover_is_recorded_on_the_tribe_and_sent_to_the_page():
+    sim, tribe = _tribe(200)
+    tribe.warband = {"name": "Ruthless Gnashdrex", "size": 2000, "wins": 4, "attacks": 4}
+    sim.cycle = 210
+    with _raiders_win():
+        sim._resolve_raider_attack(tribe, force=2000)
+    assert tribe.takeover == {"leader": "Ruthless Gnashdrex", "cycle": 210, "force": 2000, "tribe_before": 200, "survivors": 1, "joined": 2000 - round(2000 * config.WARBAND_WINNER_LOSS_FRACTION)}
+    sent = tribe.to_dict()
+    assert sent["takeover"]["leader"] == "Ruthless Gnashdrex" and sent["warband"] is None

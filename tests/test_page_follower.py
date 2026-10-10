@@ -147,3 +147,22 @@ def test_a_met_rival_with_no_stance_set_reads_neutral_and_no_one_met_lists_nothi
     tribes = {"t0": {"name": "Big"}, "t1": {"name": "Small"}}
     assert _relations_rows({"id": "t1", "discovered_rivals": ["t0"]}, tribes) == [{"id": "t0", "name": "Big", "stance": "NEUTRAL", "detail": ""}]
     assert _relations_rows({"id": "t1"}, tribes) == []
+
+def _warband_lines(tribe):
+    text = PAGE.read_text(encoding="utf-8")
+    start = text.index("function warbandLines(")
+    end = text.index("function relationsPanel(")
+    program = text[start:end] + f"\nconsole.log(JSON.stringify(warbandLines({json.dumps(tribe)})));"
+    done = subprocess.run(["node", "-e", program], capture_output=True, text=True, encoding="utf-8", timeout=60)  # the lines carry emoji
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
+def test_the_sidebar_shows_the_warbands_standing_and_a_takeover():
+    """2026-10-10: nothing on the sidebar said a warband had taken a tribe over."""
+    standing = _warband_lines({"warband": {"name": "Grim", "attacks": 3, "wins": 2, "size": 120}})
+    assert standing == ["🏴 Grim Raiders: 3 attacks, 2 wins ahead, about 120 strong"]
+    assert _warband_lines({"warband": {"name": "Grim", "attacks": 0, "wins": 0, "size": 50}}) == ["🏴 Grim Raiders have not struck yet"]
+    taken = _warband_lines({"warband": None, "takeover": {"leader": "Ruthless Gnashdrex", "cycle": 210, "tribe_before": 200, "survivors": 1, "joined": 1900}})
+    assert len(taken) == 1 and "Taken over by the Ruthless Gnashdrex Raiders at cycle 210" in taken[0] and "1 of 200 left standing, 1900 raiders joined" in taken[0]
+    assert _warband_lines({}) == []

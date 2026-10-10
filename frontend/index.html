@@ -4943,13 +4943,25 @@ function relationsRows(t, tribes) {
     });
 }
 
+// 2026-10-10: the raiders' standing against this tribe, and the mark a takeover leaves. Pure, so it can be tested without the page.
+function warbandLines(t) {
+  const lines = [];
+  const w = t.warband;
+  if (w && w.attacks > 0) lines.push(`🏴 ${w.name} Raiders: ${w.attacks} attack${w.attacks === 1 ? "" : "s"}, ${w.wins} win${w.wins === 1 ? "" : "s"} ahead, about ${w.size} strong`);
+  else if (w) lines.push(`🏴 ${w.name} Raiders have not struck yet`);
+  const k = t.takeover;
+  if (k) lines.push(`⚔️ Taken over by the ${k.leader} Raiders at cycle ${k.cycle} (${k.survivors} of ${k.tribe_before} left standing, ${k.joined} raiders joined); ${k.leader} is chief`);
+  return lines;
+}
+
 function relationsPanel(t, tribes) {
   const rows = relationsRows(t, tribes);
-  if (!rows.length) return "";
-  const lines = rows.map(r => {
+  const extra = warbandLines(t);
+  if (!rows.length && !extra.length) return "";
+  const lines = extra.map(line => `<span class="relations-detail">${escapeHtml(line)}</span>`).concat(rows.map(r => {
     const badge = STANCE_BADGES[r.stance] || STANCE_BADGES.NEUTRAL;
     return `<span style="color:${badge.color}">${badge.icon} ${badge.label}</span> with ${escapeHtml(r.name)}` + (r.detail ? `<br><span class="relations-detail">${escapeHtml(r.detail)}</span>` : "");
-  });
+  }));
   return `<div class="relations-panel"><span class="relations-title">\u{1F310} Relations</span><br>${lines.join("<br>")}</div>`;
 }
 
@@ -5528,7 +5540,7 @@ function updateSidebar(state) {
             🪵 ${t.wood} &nbsp;🪨 ${t.stone} &nbsp;🍖 ${foodDisplay(t)} &nbsp;💧 ${waterDisplay(t)}
             ${oreLine(t)}
             ${furLine(t)}
-            ${t.chief_name ? `<br><span class="chief-line">👑 ${t.chief_name}${t.library_built ? "" : ` — ${t.chief_philosophy}`}</span>` : ""}
+            ${t.chief_name ? `<br><span class="chief-line">👑 ${t.chief_name}${t.takeover && t.takeover.leader === t.chief_name ? " (a raider chief)" : ""}${t.library_built ? "" : ` — ${t.chief_philosophy}`}</span>` : ""}
             ${expeditionSummaryLine(t)}
             ${(t.trophies && t.trophies.length) ? `<br><span class="chief-line">🏆 ${t.trophies.map(tr => tr.name).join(", ")}</span>` : ""}
             <br><span class="intel-line">${settlementLine(t)}${landmarkCounts(t)}</span>

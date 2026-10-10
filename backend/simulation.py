@@ -1581,6 +1581,7 @@ class Tribe:
         # election it's informing isn't indistinguishable from an ordinary founding.
         self.pending_chief_context: str = ""
         self.forced_chief_name: str = ""  # a name _install_chief must give the new chief whatever the election says (a warband's leader, see _warband_takeover)
+        self.takeover: dict | None = None  # set when a warband took this tribe over: {"leader", "cycle", "force", "tribe_before", "survivors", "joined"} (see _warband_takeover); shown on the sidebar
         self.warband: dict | None = None  # this tribe's persistent raiders: {"name", "size" (their force now), "wins", "attacks"} (see _check_raider_attack, _warband_after_battle)
         # Empty when no party is out; otherwise a list of {"pos", "origin", "target",
         # "day", "phase" ("outbound"/"returning"), "found", "terrain_report"} dicts --
@@ -2364,6 +2365,7 @@ class Tribe:
             "stance_toward": self.stance_toward,
             "raid_ledger": self.raid_ledger,
             "warband": self.warband,
+            "takeover": self.takeover,
             "trade_given": self.trade_given,
             "trade_received": self.trade_received,
             "combat_record": self.combat_record,
@@ -9190,6 +9192,7 @@ class Simulation:
             f"and {leader} is now the chief. {('Chief ' + fallen) if fallen else 'The old chief'} no longer rules. The new chief decides what this people believes under a raider's rule."
         )
         tribe.warband = None
+        tribe.takeover = {"leader": leader, "cycle": self.cycle, "force": force, "tribe_before": p_before, "survivors": survivors, "joined": joined}
         tribe.history.append(f"\u2694\ufe0f {tribe.name} has fallen to the {leader} Raiders and becomes them -- {survivors} of its people and {joined} raiders are one people now, and {leader} is the chief")
         if getattr(self, "event_log", None) is not None:
             self.event_log.record_data(tribe.name, "warband_takeover", {"leader": leader, "force": force, "tribe_before": p_before, "survivors": survivors, "joined": joined, "old_chief": fallen},
