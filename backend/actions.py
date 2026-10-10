@@ -2979,7 +2979,11 @@ def _strike_raider_camp(sim, tribe, biome, target):
     simulated population to compare against, unlike RAID's ratio-based chance."""
     camp = tuple(target)
     if camp not in tribe.raider_sightings:
-        return "no known raider camp at that location"
+        if not tribe.raider_sightings:
+            return "no known raider camp at that location"
+        # 2026-10-10: 9 of 13 STRIKE_RAIDER_CAMP choices in the last eight runs were aimed where no camp is known (the model has to copy an exact coordinate from up to six). The same fallback RAID and
+        # TRADE got: the nearest camp the tribe knows of to where it aimed.
+        camp = min(tribe.raider_sightings, key=lambda s: (s[0] - camp[0]) ** 2 + (s[1] - camp[1]) ** 2)
 
     win_chance = min(
         config.STRIKE_RAIDER_CAMP_MAX_WIN_CHANCE,

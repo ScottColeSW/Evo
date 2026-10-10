@@ -16282,3 +16282,26 @@ def test_the_chief_is_told_who_will_refuse_to_trade_and_until_when():
         ACTION_REGISTRY["RAID"](sim, small, "plains", (big.x, big.y))
     request, _ctx = sim._prepare_turn(small)
     assert "remembers your raid and will refuse to trade with you until about cycle 90" in request["prompt"]
+
+
+def test_the_prompt_says_where_each_reported_raider_is_against_the_territory():
+    """2026-10-10: the bare 'raiders reported near (x,y)' lines gave no way to tell the camps at the gates from the far ones."""
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    cx, cy = tribe.territory_center
+    inside = (cx + 2, cy)
+    outside = (cx + tribe.territory_radius + 4, cy)
+    far = (cx, cy + tribe.territory_radius + config.TERRITORY_CLEARING_RADIUS_MARGIN + 20)
+    tribe.raider_sightings = [inside, outside, far]
+    request, _ctx = sim._prepare_turn(tribe)
+    assert f"raiders reported near ({inside[0]},{inside[1]})" in request["prompt"]                       # the plain facts are unchanged
+    assert f"({inside[0]},{inside[1]}) is inside your territory" in request["prompt"]
+    assert f"({outside[0]},{outside[1]}) is 4 tiles outside your boundary" in request["prompt"]
+    assert f"({far[0]},{far[1]}) is " in request["prompt"] and "tiles beyond your boundary" in request["prompt"]
+    tribe.raider_sightings = []
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "Where the reported raiders are" not in request["prompt"]

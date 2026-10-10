@@ -6644,3 +6644,19 @@ def test_a_repelled_raid_starts_the_raiders_cooldown_and_a_won_raid_does_not():
     with mock.patch("backend.actions.random.random", return_value=0.0):  # won
         ACTION_REGISTRY["RAID"](sim2, bully2, "plains", (51, 51))
     assert bully2.raid_cooldown_until_cycle == 0
+
+
+def test_a_strike_aimed_where_no_camp_is_known_goes_to_the_nearest_known_camp():
+    """2026-10-10: 9 of 13 STRIKE_RAIDER_CAMP choices in the last eight runs were aimed where no camp is known."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.raider_sightings = [(60, 60), (20, 20)]
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # the strike wins
+        note = ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](sim, tribe, "plains", (22, 21))  # aimed near, not at, the camp at (20,20)
+    assert "(20, 20)" in note and "destroyed" in note
+    assert tribe.raider_sightings == [(60, 60)]  # the camp the strike meant is the one removed
+
+    tribe.raider_sightings = []
+    assert ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](sim, tribe, "plains", (22, 21)) == "no known raider camp at that location"

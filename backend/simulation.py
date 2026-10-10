@@ -4136,6 +4136,19 @@ class Simulation:
             f"a vein of {site['resource']} was found at ({site['x']},{site['y']})" for site in tribe.mine_sites
         ]
         visible_entities += [f"raiders reported near ({x},{y})" for x, y in tribe.raider_sightings]
+        # 2026-10-10 (explicit request): where each remembered sighting is against the territory, so a chief can tell the ones at its gates from the ones far away. In the last eight runs 9 of 13
+        # STRIKE_RAIDER_CAMP choices were aimed where no camp is known; the bare coordinates gave no way to choose between up to six. A separate line, so the exact wording above (which the compact
+        # prompt format parses) is unchanged.
+        if tribe.raider_sightings:
+            places = []
+            for x, y in tribe.raider_sightings:
+                if tribe.territory_center is not None:
+                    edge = math.hypot(x - tribe.territory_center[0], y - tribe.territory_center[1]) - tribe.territory_radius
+                    where = "inside your territory" if edge <= 0 else (f"{round(edge)} tiles outside your boundary" if edge <= config.TERRITORY_CLEARING_RADIUS_MARGIN else f"{round(edge)} tiles beyond your boundary")
+                else:
+                    where = f"{round(math.hypot(x - tribe.x, y - tribe.y))} tiles from your camp"
+                places.append(f"({x},{y}) is {where}")
+            visible_entities.append("Where the reported raiders are: " + "; ".join(places) + ".")
         # NUDGE (2026-09-12, action-legibility audit): the fact above was purely
         # descriptive, same "informed but not told it's actionable" gap the
         # rival-contact nudge above already exists to fix -- never extended here.
