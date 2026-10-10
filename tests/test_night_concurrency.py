@@ -140,3 +140,19 @@ async def test_a_tribe_whose_own_model_equals_the_reflection_model_by_name_still
     with mock.patch("backend.simulation.reflect_on_history", _fake_reflect(log=calls)), mock.patch.object(sim.client, "embed", mock.AsyncMock(return_value=None)):
         await sim._run_night_cycles(list(sim.tribes.values()))
     assert calls and calls[0][3] is None
+
+
+@run_async
+async def test_a_night_records_how_long_each_stage_took():
+    """2026-10-10: a live night took 14 to 15 s with both reflections overlapping and the log could not say whether the reflection call, the embedding or the judge was the slow part."""
+    import json
+
+    sim = _two_tribes()
+    with mock.patch("backend.simulation.reflect_on_history", _fake_reflect(delay=0.05)), mock.patch.object(sim.client, "embed", mock.AsyncMock(return_value=None)):
+        await sim._run_night_cycles(list(sim.tribes.values()))
+    records = [json.loads(line) for line in sim.event_log.path.read_text(encoding="utf-8").splitlines() if line.strip().startswith("{")]
+    per_tribe = [r for r in records if r.get("kind") == "night_timing"]
+    assert len(per_tribe) == 2 and all(r["data"]["reflect_s"] >= 0.05 and "embed_s" in r["data"] for r in per_tribe)
+    whole = [r for r in records if r.get("kind") == "night_phase_timing"]
+    assert len(whole) == 1 and whole[0]["data"]["model_phase_s"] < 0.5 * 2  # the two 0.05 s calls overlapped
+    assert set(whole[0]["data"]["apply_s"]) == {"Alpha", "Beta"}

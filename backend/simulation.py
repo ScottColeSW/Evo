@@ -1,4 +1,5 @@
 import asyncio
+import time
 import difflib
 import importlib
 import json
@@ -3219,11 +3220,19 @@ class Simulation:
         prepared = []
         for tribe in tribes:
             prepared.append((tribe, await self._night_prepare(tribe)))
+        t_model = time.perf_counter()
         works = await asyncio.gather(*(self._night_model_work(tribe, inputs) for tribe, inputs in prepared))
+        model_s = round(time.perf_counter() - t_model, 2)
+        applied = {}
         for (tribe, inputs), work in zip(prepared, works):
             if tribe.extinct:
                 continue
+            t_apply = time.perf_counter()
             await self._night_apply(tribe, inputs, work)
+            applied[tribe.name] = round(time.perf_counter() - t_apply, 2)
+        if prepared:
+            self.event_log.record_data("Run", "night_phase_timing", {"model_phase_s": model_s, "apply_s": applied},
+                                       message=f"[night timing] all model work {model_s} s, applying results {applied}")
 
     @staticmethod
     def _reflection_setting() -> str:
@@ -3291,7 +3300,10 @@ class Simulation:
         # the context is passed only when it is not the usual 8192 (the tribe's own model, at the 4096 its turns use), so the default call is exactly what it always was
         extra = {"num_ctx": config.REFLECTION_CONTEXT_OWN_MODEL} if self._reflection_uses_tribe_model() else {}
 
+        timing = {}
+
         async def work():
+            t0 = time.perf_counter()
             result = await self._safe_llm_result(
                 reflect_on_history(
                     self.client, model, tribe.name,
@@ -3300,12 +3312,19 @@ class Simulation:
                 ),
                 "reflect_on_history",
             )
+            timing["reflect_s"] = round(time.perf_counter() - t0, 2)
             private_thoughts = result.get("private_thoughts") or ""
+            t1 = time.perf_counter()
             embedding = await self.client.embed(private_thoughts, model=config.REFLECTION_EMBEDDING_MODEL) if private_thoughts else None
+            timing["embed_s"] = round(time.perf_counter() - t1, 2)
             return result, embedding
 
         try:
-            return await asyncio.wait_for(work(), timeout=config.NIGHT_REFLECTION_TIMEOUT_SECONDS)
+            outcome = await asyncio.wait_for(work(), timeout=config.NIGHT_REFLECTION_TIMEOUT_SECONDS)
+            # 2026-10-10: a night took 14 to 15 s with both reflections overlapping and the log could not say which stage it was (the reflection call, the embedding, or the judge in _night_apply).
+            self.event_log.record_data(tribe.name, "night_timing", {"model": model, **timing},
+                                       message=f"[night timing] reflection {timing.get('reflect_s')} s on {model}, embedding {timing.get('embed_s')} s")
+            return outcome
         except asyncio.TimeoutError:
             self.event_log.record_data(tribe.name, "night_reflection_timeout", {"seconds": config.NIGHT_REFLECTION_TIMEOUT_SECONDS, "model": model},
                                        message=f"[night reflection] no answer from {model} in {config.NIGHT_REFLECTION_TIMEOUT_SECONDS:.0f} s; skipped for tonight")
