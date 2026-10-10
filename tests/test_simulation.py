@@ -16064,3 +16064,46 @@ def test_forge_item_is_not_offered_before_a_forge_exists():
     assert not AFFORDABILITY_CHECKS["FORGE_ITEM"](tribe, sim.world)
     tribe.forge_built = True
     assert AFFORDABILITY_CHECKS["FORGE_ITEM"](tribe, sim.world)
+
+
+def _settled_scout_tribe(sim, phase="outbound", **exp_overrides):
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.territory_center = (50, 50)
+    exp = {"kind": "scout", "pos": [50, 50], "origin": [50, 50], "target": [90, 50], "day": 1, "phase": phase, "food_gathered": 0, "water_gathered": 0,
+           "lead_scout": "Test Scout", "determination": 0.5, "max_days": 6, "path": [[50, 50]]}
+    exp.update(exp_overrides)
+    tribe.expeditions = [exp]
+    sim.tribes = {tribe.id: tribe}
+    return tribe, exp
+
+
+def test_a_settled_scouts_glide_target_is_exactly_where_its_next_daily_step_lands():
+    """2026-10-10 (make scouts move every cycle): the board shows the once-a-day step as motion toward where it will land, so the prediction has to be the real step."""
+    from unittest import mock
+
+    sim = _bare_simulation()
+    tribe, exp = _settled_scout_tribe(sim)
+    predicted = sim._expedition_glide_target(tribe, exp)
+    assert predicted is not None and predicted != (50, 50)
+    sim.cycle = 20  # a day boundary
+    with mock.patch("backend.simulation.random.random", return_value=0.99):  # no hazard or ambush roll
+        sim._advance_expeditions(tribe)
+    assert tuple(exp["pos"]) == predicted
+
+
+def test_the_snapshot_carries_glide_to_only_for_a_party_that_steps_once_a_day():
+    sim = _bare_simulation()
+    sim.status = "RUNNING"
+    tribe, exp = _settled_scout_tribe(sim)
+    data = sim._tribe_with_glide(tribe)
+    assert data["expeditions"][0]["glide_to"] == list(sim._expedition_glide_target(tribe, exp))
+
+    for overrides, changes in (({"kind": "hunt"}, {}), ({"pushing_onward": True}, {}), ({}, {"has_ever_settled": False})):
+        tribe, exp = _settled_scout_tribe(sim, **overrides)
+        for name, value in changes.items():
+            setattr(tribe, name, value)
+        assert "glide_to" not in sim._tribe_with_glide(tribe)["expeditions"][0]
+
+    tribe, exp = _settled_scout_tribe(sim, phase="returning", pos=[70, 50])
+    assert sim._expedition_glide_target(tribe, exp) is not None and sim._expedition_glide_target(tribe, exp)[0] < 70  # heading home

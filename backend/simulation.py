@@ -3545,7 +3545,7 @@ class Simulation:
             "lightning_strike": list(self.lightning_strike) if self.lightning_strike else None,
             "recent_encounters": self.recent_encounters,
             "joint_castle": self.joint_castle,
-            "tribes": {tid: t.to_dict(is_camped=self._is_camped(t)) for tid, t in self.tribes.items()},
+            "tribes": {tid: self._tribe_with_glide(t) for tid, t in self.tribes.items()},
             "minor_settlements": self.minor_settlements,
             "structures": [{"x": x, "y": y, **info} for (x, y), info in self.world.constructions.items()],
             "trails": [
@@ -7336,6 +7336,33 @@ class Simulation:
             except Exception:  # noqa: BLE001 -- never interrupt a turn
                 pass
         del tribe.party_meeting_reports[:-12]
+
+    def _tribe_with_glide(self, tribe: Tribe) -> dict:
+        """tribe.to_dict() plus, for each expedition that only steps once a day, where its next step will land (see _expedition_glide_target)."""
+        data = tribe.to_dict(is_camped=self._is_camped(tribe))
+        for exp, shown in zip(tribe.expeditions, data.get("expeditions") or []):
+            target = self._expedition_glide_target(tribe, exp)
+            if target is not None:
+                shown["glide_to"] = list(target)
+        return data
+
+    def _expedition_glide_target(self, tribe: Tribe, exp: dict) -> tuple[int, int] | None:
+        """2026-10-10 (explicit request: make scouts move every cycle): a settled tribe's plain scout takes one fast step a day (20 cycles), by design: a slow crawl past a volcano once rolled
+        a hazard every cycle and wiped a tribe (see _advance_one_expedition), and positions are whole tiles, so a real per-cycle step would be double speed or impossible. The board shows it as
+        motion instead: this is where the next daily step will land, computed with the same rule and no side effects, and the page glides the party toward it across the day. None for a party that
+        already moves every cycle (not settled, not a scout, pushing onward) or that is not going anywhere."""
+        if not tribe.has_ever_settled or exp.get("kind") != "scout" or exp.get("pushing_onward"):
+            return None
+        px, py = exp["pos"]
+        tx, ty = exp["target"] if exp["phase"] == "outbound" else exp["origin"]
+        base_speed = (
+            config.EXPEDITION_SPEED + self.world.trail_speed_bonus(px, py, config.MAX_TRAIL_BONUS_SPEED)
+            + (config.ROAD_SPEED_BONUS if tribe.road_built else 0) + _expedition_speed_bonus(tribe)
+        )
+        if self.world.is_toll_road(px, py):
+            base_speed *= config.TOLL_ROAD_SPEED_MULTIPLIER
+        nx, ny = physics.terrain_aware_step(px, py, tx, ty, base_speed=base_speed, has_boat=tribe.boat_built)
+        return None if (nx, ny) == (px, py) else (nx, ny)
 
     def _advance_expeditions(self, tribe: Tribe) -> None:
         """Advances every one of a tribe's in-field parties by one day (see

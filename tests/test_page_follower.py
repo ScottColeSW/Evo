@@ -96,3 +96,18 @@ def test_the_old_restart_glide_is_gone_and_every_moving_thing_uses_the_follower(
     for key in ('followTilePos("tribe:"', 'followTilePos("exp:"', 'followTilePos("patrol:"', 'followTilePos("storm"', 'followTilePos("raiders:"'):
         assert key in text, key
     assert re.search(r'followScalar\("cycle"', text)
+
+
+def test_a_scout_that_steps_once_a_day_walks_all_day_and_rests_one_cycle_at_the_boundary():
+    """2026-10-10: a settled scout sat still for a whole day and then jumped; now it is drawn walking toward where its next step lands for 29 of the stub's 30 cycles and resting on the boundary cycle
+    (the page test harness uses a 30-cycle day)."""
+    out = _run('''
+      const exp = {pos: [10, 20], glide_to: [39, 20]};
+      const at = c => expeditionGlidePos(exp, c);
+      console.log(JSON.stringify({rest: at(60), first: at(61), mid: at(75), last: at(89), arrived: at(90), none: expeditionGlidePos({pos: [3, 4]}, 75), negative: at(-1)}));
+    ''')
+    assert out["rest"] == [10, 20]                       # the boundary cycle: the real step has landed, the party rests
+    assert out["first"][0] > 10 and out["mid"][0] == 25 and out["last"] == [39, 20]   # walking every cycle after, arriving on the last cycle of the day
+    assert out["arrived"] == [10, 20]                    # next day: pos is now where it arrived, glide_to is the next leg
+    assert out["none"] == [3, 4]                         # a party that already moves every cycle is drawn where it is
+    assert out["negative"][0] >= 10 and out["negative"][0] <= 39

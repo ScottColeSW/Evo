@@ -775,6 +775,16 @@ function followScalar(key, target, now = performance.now()) {
   return st.x;
 }
 
+// 2026-10-10 (explicit request: make scouts move every cycle): a settled tribe's plain scout takes one fast step a day (20 cycles), so it sat still for two minutes at a time. The backend now
+// says where its next step will land (exp.glide_to, same rule, no side effects); the party is drawn that far along the way for the part of the day that has passed, so it moves every cycle and
+// arrives where the real step puts it at the day boundary. It walks for all but one cycle of the day and rests on the day-boundary cycle (the owner's idea: "rest once a day for a cycle, not stop
+// for the day"), the same cycle the sim does its daily rolls. A party without glide_to (not settled, not a scout, pushing onward) already moves every cycle and is drawn where it is.
+function expeditionGlidePos(exp, cycle) {
+  if (!exp.glide_to) return exp.pos;
+  const f = Math.min(1, (((cycle % DAY_LENGTH_CYCLES) + DAY_LENGTH_CYCLES) % DAY_LENGTH_CYCLES) / (DAY_LENGTH_CYCLES - 1));
+  return [exp.pos[0] + (exp.glide_to[0] - exp.pos[0]) * f, exp.pos[1] + (exp.glide_to[1] - exp.pos[1]) * f];
+}
+
 function isWaitingOnServer(now = performance.now()) {
   if (!latestState || latestState.paused || latestState.game_over_report || latestState.game_over_reason) return false;
   return now - lastStateArrivedAt > Math.max(2500, stateIntervalMs * 1.6);
@@ -3118,7 +3128,7 @@ const expeditionPathReveal = {};
 const PATH_REVEAL_FRAMES = 24;
 
 function drawExpedition(t, tribeId, exp, expIndex) {
-  const [ix, iy] = followTilePos("exp:" + tribeId + ":" + exp.lead_scout + ":" + exp.kind, exp.pos);
+  const [ix, iy] = followTilePos("exp:" + tribeId + ":" + exp.lead_scout + ":" + exp.kind, expeditionGlidePos(exp, interpolatedCycle()));
   const fx = ix * TILE + TILE / 2, fy = iy * TILE + TILE / 2;
   const path = exp.path || [];
   const revealKey = `${tribeId}:${expIndex}`;
