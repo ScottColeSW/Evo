@@ -4810,14 +4810,13 @@ def test_relocate_overrides_even_a_real_different_target_before_settling():
     assert (tribe.x, tribe.y) != (80, 38)  # moved toward the real site, not the model's own target
 
 
-def test_relocate_targets_the_closest_of_several_confirmed_water_sites():
-    """The actual "closest one wins" rule: several scouts can each confirm a
-    different water site -- RELOCATE mechanically picks whichever is nearest to
-    where the tribe stands right now, not the most recently discovered one."""
+def test_relocate_targets_the_first_confirmed_water_site_not_the_nearest():
+    """2026-10-10 (explicit request: "they are supposed to go directly to the first water they found"). Before: the nearest
+    confirmed site at the moment of the move. A real run's Tribe 2 waited ten cycles, its scouts confirmed closer water
+    in the middle of the map, and it settled there instead of at the first find."""
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 50, "y": 50}])
     tribe = sim.tribes["tribe_0"]
-    # (55, 50) is closer (distance 5) than (50, 90) (distance 40) or (10, 50)
-    # (distance 40) -- deliberately not list-order-first or list-order-last.
+    # (55, 50) is the closest, (10, 50) the last found; (50, 90) was found first.
     tribe.confirmed_water_sites = [(50, 90), (55, 50), (10, 50)]
     tribe.food = 100
     tribe.water = 100
@@ -4825,7 +4824,24 @@ def test_relocate_targets_the_closest_of_several_confirmed_water_sites():
 
     sim._apply_turn(tribe, {"visual_action": "RELOCATE", "target_vector": [10, 50]}, 10.0, ctx)
 
-    assert tribe.last_target == [55, 50]
+    assert tribe.last_target == [50, 90]
+
+
+def test_the_moment_water_is_confirmed_a_tribe_not_near_it_may_only_relocate():
+    """The survival instinct: no waiting for the model to pick RELOCATE. Real run: RELOCATE was offered from cycle 10 and
+    the model chose SCOUT and GATHER_FOOD until cycle 20."""
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 65, "y": 76}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.confirmed_water_sites = [(31, 64)]
+    _request, ctx = sim._prepare_turn(tribe)
+    assert ctx["available_actions"] == ["RELOCATE"]
+
+
+def test_a_tribe_with_no_confirmed_water_yet_is_not_locked_to_relocate():
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 65, "y": 76}])
+    tribe = sim.tribes["tribe_0"]
+    _request, ctx = sim._prepare_turn(tribe)
+    assert "RELOCATE" not in ctx["available_actions"] and "SCOUT" in ctx["available_actions"]
 
 
 def test_relocate_no_longer_overrides_target_once_a_tribe_has_ever_settled():

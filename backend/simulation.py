@@ -4627,7 +4627,12 @@ class Simulation:
                 # SCOUT first: RELOCATE only becomes a real, informed choice once a
                 # scout has actually confirmed somewhere worth moving toward.
                 available_actions = [a for a in available_actions if a != "RELOCATE"]
-            elif still_journeying:
+            elif (still_journeying or not self._near_confirmed_water(tribe)) and not tribe.settled_permanently_near_water:
+                # 2026-10-10 (explicit request: "make the tribe go to the first water as a HUGE survival
+                # instinct"): the lock no longer waits for the model to choose RELOCATE once. In a real run
+                # RELOCATE was offered from cycle 10 and the model chose SCOUT and GATHER_FOOD until cycle 20,
+                # while its scouts' later finds changed which water was "nearest". The moment water is
+                # confirmed and the tribe is not near any, the only choice is the march to the first site.
                 # Explicit request: "if then start RELOCATING to a place to settle
                 # with Water, then can not issue new commands until they Settle."
                 # Pre-settlement RELOCATE's target is already mechanically forced to
@@ -5539,7 +5544,7 @@ class Simulation:
             # done; SCOUT still has real, separate uses (lumber/wildlife/quarry/
             # mine/raiders), so this doesn't retire it, just closes off the one
             # already-answered reason to use it.
-            wx, wy = tribe.confirmed_water_sites[-1]
+            wx, wy = tribe.confirmed_water_sites[0 if not tribe.has_ever_settled else -1]
             if self._near_confirmed_water(tribe):
                 # Bug report: "it looks like they want to consider relocating
                 # when they are on top of the water discovery site." The old
@@ -6547,11 +6552,13 @@ class Simulation:
             # sites is actually closer. A tribe already standing at the nearest
             # site computes that same site again (distance 0), so this is a
             # harmless no-op once arrived, same as the narrower check it replaces.
+            #
+            # 2026-10-10 (explicit request: "they are supposed to go directly to the first water they found"):
+            # now the FIRST confirmed site, not the nearest at the moment of the move. A real run's tribe
+            # waited until its scouts had confirmed water closer to its start than the first find, and
+            # settled beside the other tribe instead.
             if not tribe.has_ever_settled and tribe.confirmed_water_sites:
-                target = min(
-                    (tuple(site) for site in tribe.confirmed_water_sites),
-                    key=lambda site: (site[0] - tribe.x) ** 2 + (site[1] - tribe.y) ** 2,
-                )
+                target = tuple(tribe.confirmed_water_sites[0])
             tribe.last_target = [target[0], target[1]]
         else:
             # Live bug report: a tribe camped for 229 cycles on good ground,
