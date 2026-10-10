@@ -948,6 +948,7 @@ async function fetchGameConfig() {
     WALL_MAX_LAYERS = cfg.wall_max_layers;
     HAZARD_MARKER_SPACING = cfg.hazard_landmark_min_spacing;
     VESSEL_WOOD_COST = cfg.vessel_wood_cost;
+    TRADE_GRIEVANCE_WINDOW_CYCLES = cfg.trade_grievance_window_cycles;
     VESSEL_STONE_COST = cfg.vessel_stone_cost;
     ERA_ORDER = cfg.era_order;
   } catch (e) { /* server not reachable yet -- keep the hardcoded fallbacks */ }
@@ -2724,15 +2725,18 @@ function hashUnit(seed) {
 // way this frame (see activeBubbleRects), then records its final spot. Horizontal
 // position (bx) is left alone -- two tribes' camps rarely sit at the exact same X, so
 // stacking vertically above the map is enough to resolve the collision cleanly.
-function claimBubbleSlot(bx, by, bw, bh) {
+// 2026-10-10 (the owner: "thought bubble placement is off for Tribe 2"): the chief bubbles are drawn after the landmark tags now, so the tags had already claimed their slots and a bubble dodged
+// every one of them, climbing off the top of the map. `isBubble` slots only avoid other bubbles (they are drawn over a tag) and never leave the canvas; tags still avoid everything.
+function claimBubbleSlot(bx, by, bw, bh, isBubble) {
   for (let attempts = 0; attempts < 20; attempts++) {
     const collision = activeBubbleRects.find(r =>
-      bx < r.x + r.w && bx + bw > r.x && by < r.y + r.h && by + bh > r.y
+      (!isBubble || r.bubble) && bx < r.x + r.w && bx + bw > r.x && by < r.y + r.h && by + bh > r.y
     );
     if (!collision) break;
     by = collision.y - bh - 6;
   }
-  activeBubbleRects.push({ x: bx, y: by, w: bw, h: bh });
+  if (isBubble) by = Math.max(4, by);
+  activeBubbleRects.push({ x: bx, y: by, w: bw, h: bh, bubble: !!isBubble });
   return by;
 }
 
@@ -2790,7 +2794,7 @@ function drawThoughtBubble(t, centerX, bubbleBottomY) {
   // Clamp horizontal position so a tribe camped near the map edge doesn't push most of
   // this much wider bubble off-canvas.
   const bx = Math.max(4, Math.min(canvas.width - bw - 4, centerX - bw / 2));
-  const by = claimBubbleSlot(bx, Math.max(4, bubbleBottomY - bh), bw, bh);
+  const by = claimBubbleSlot(bx, Math.max(4, bubbleBottomY - bh), bw, bh, true);
   const r = 9;
 
   ctx.beginPath();
@@ -3078,7 +3082,7 @@ function drawTribeSpeechBubble(t, centerX, centerY, topClearance, isNight) {
     const bw = contentWidth + padX * 2;
     const bh = lines.length * lineHeight + padY * 2;
     const bx = Math.max(4, Math.min(canvas.width - bw - 4, centerX - bw / 2));
-    const by = claimBubbleSlot(bx, centerY - topClearance - bh, bw, bh);
+    const by = claimBubbleSlot(bx, centerY - topClearance - bh, bw, bh, true);
     const r = 5;
 
     ctx.beginPath();
@@ -4060,6 +4064,43 @@ function findNearbyWaterTile(cx, cy, maxRadius) {
   return null; // no water within range -- boat stays put rather than drift onto land
 }
 
+// 2026-10-10 (the owner: "tribe 1's boat can't get around the water icon"): the boat used to pick a random water tile on the NEAREST ring around itself, so it only ever hopped one tile to a neighbor,
+// and it began on the water tile nearest the camp, where a "Water" marker sits (and the marker was drawn over it). Now it plans a route along connected water: a random reachable water tile at least
+// BOAT_MIN_ROUTE and at most BOAT_MAX_ROUTE steps away, followed tile by tile, so it roams the river or lake instead of wobbling in place. Pure (isWater and rng are passed in) so it can be tested.
+const BOAT_MIN_ROUTE = 4;
+const BOAT_MAX_ROUTE = 14;
+
+function planBoatRoute(isWater, x, y, rng) {
+  const key = (a, b) => a + "," + b;
+  const parent = new Map([[key(x, y), null]]);
+  const depth = new Map([[key(x, y), 0]]);
+  const queue = [[x, y]];
+  const far = [];
+  const near = [];
+  for (let i = 0; i < queue.length; i++) {
+    const [cx, cy] = queue[i];
+    const d = depth.get(key(cx, cy));
+    if (d > 0) (d >= BOAT_MIN_ROUTE ? far : near).push([cx, cy]);
+    if (d >= BOAT_MAX_ROUTE) continue;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (!dx && !dy) continue;
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx > 99 || ny > 99 || parent.has(key(nx, ny)) || !isWater(nx, ny)) continue;
+        parent.set(key(nx, ny), [cx, cy]);
+        depth.set(key(nx, ny), d + 1);
+        queue.push([nx, ny]);
+      }
+    }
+  }
+  const choices = far.length ? far : near;
+  if (!choices.length) return [];
+  const target = choices[Math.floor(rng() * choices.length)];
+  const path = [];
+  for (let at = target; at && !(at[0] === x && at[1] === y); at = parent.get(key(at[0], at[1]))) path.push(at);
+  return path.reverse();
+}
+
 function drawBoat(tribeId, t) {
   if (!t.boat_built) return;
   let state = boatAnimState[tribeId];
@@ -4068,19 +4109,15 @@ function drawBoat(tribeId, t) {
     state = { x: start[0], y: start[1], targetX: start[0], targetY: start[1] };
     boatAnimState[tribeId] = state;
   }
-  const dx = state.targetX - state.x, dy = state.targetY - state.y;
-  const dist = Math.hypot(dx, dy);
-  if (dist < 0.15) {
-    // Reached this leg -- pick the next one relative to where the boat actually
-    // is now, so it keeps roaming outward rather than snapping back to the dock.
-    const next = findNearbyWaterTile(Math.round(state.x), Math.round(state.y), 10);
-    if (next) {
-      state.targetX = next[0];
-      state.targetY = next[1];
-    }
-  } else {
-    state.x += (dx / dist) * BOAT_DRIFT_SPEED;
-    state.y += (dy / dist) * BOAT_DRIFT_SPEED;
+  if (!state.route || !state.route.length) {
+    state.route = planBoatRoute((wx, wy) => { const b = biomeNameAt(wx, wy); return b === "river" || b === "lake"; }, Math.round(state.x), Math.round(state.y), Math.random);
+  }
+  if (state.route.length) {
+    const [wx, wy] = state.route[0];
+    const dx = wx - state.x, dy = wy - state.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 0.15) { state.x = wx; state.y = wy; state.route.shift(); }
+    else { state.x += (dx / dist) * BOAT_DRIFT_SPEED; state.y += (dy / dist) * BOAT_DRIFT_SPEED; }
   }
   const px = state.x * TILE + TILE / 2, py = state.y * TILE + TILE / 2;
   ctx.save();
@@ -4475,6 +4512,63 @@ function drawBattleTheater(e, cx, cy, progress) {
 // a resize, just not burning a whole CPU core doing it.
 let pausedFrameAlreadyDrawn = false;
 
+// 2026-10-10 (the owner: "incoming RAIDERs should not be buried"): the approaching-raider marker used to be drawn before individuals, trails, buildings, landmarks and bubbles, and was buried under
+// them. Drawn last now (see drawFrame), over everything except the day and night tint.
+function drawIncomingRaiders() {
+  // Explicit request: "I do want to see RAIDERs ride in over time" -- a real,
+  // moving marker for the whole multi-cycle approach (Simulation._advance_
+  // raider_approach), not just a flash once it resolves.
+  Object.entries(latestState.tribes || {}).forEach(([tribeId, t]) => {
+    const approach = t.raiders_approaching;
+    if (!approach) return;
+    const [ix, iy] = followTilePos("raiders:" + tribeId, [approach.x, approach.y]);
+    const cx = ix * TILE + TILE / 2;
+    const cy = iy * TILE + TILE / 2;
+    // Explicit request: "the raider invasion forces should look a lot bigger on
+    // the approach (like 1.5x house size)" -- a real, growing threat reads better
+    // as visibly imposing than as a same-size-as-everything-else icon. Raised
+    // further (explicit follow-up: "so maybe we need to make them a lot
+    // bigger as they ride in") -- still not standing out enough against a
+    // busy map at typical window sizes.
+    ctx.font = `${Math.max(24, TILE * 2.2)}px sans-serif`;
+    ctx.textAlign = "center";
+    // Explicit follow-up: "you might use the Raiders icon for the incoming
+    // Raider in addition to the war cries" -- crossed swords, matching
+    // LANDMARK_TYPES' own raider_sightings icon, instead of a generic black
+    // flag that shared no visual language with any other raider marker.
+    // 2026-10-03, owner's request: incoming raiders read as RED. A solid red disc behind the swords (the emoji itself has no
+    // colour to change) and red labels with a dark outline, so the threat is unmistakable on a busy board.
+    const raiderSize = Math.max(24, TILE * 2.2);
+    ctx.beginPath();
+    ctx.arc(cx, cy - raiderSize * 0.33, raiderSize * 0.62, 0, 2 * Math.PI);
+    ctx.fillStyle = "rgba(185,28,28,0.82)";
+    ctx.fill();
+    ctx.strokeStyle = "#fecaca";
+    ctx.lineWidth = Math.max(2, TILE * 0.12);
+    ctx.stroke();
+    ctx.fillText("\u{2694}\u{FE0F}", cx, cy);
+    // Explicit request: "Raiders incoming need a Label, like 'Terrible Knoxit
+    // RAIDS!!!'" -- every approach used to read as the exact same bare icon
+    // and countdown, indistinguishable from any other one a tribe had
+    // ever faced. approach.name is rolled once per raid (backend/actions.py.
+    // _generate_raider_name) and stays fixed for its whole approach.
+    if (approach.name) {
+      ctx.font = `bold ${Math.max(10, TILE * 0.5)}px sans-serif`;
+      ctx.lineWidth = Math.max(2, TILE * 0.14);
+      ctx.strokeStyle = "rgba(15,23,42,0.95)";
+      ctx.strokeText(`${approach.name.toUpperCase()} RAIDS!!!`, cx, cy - TILE * 1.3);
+      ctx.fillStyle = "#ef4444";
+      ctx.fillText(`${approach.name.toUpperCase()} RAIDS!!!`, cx, cy - TILE * 1.3);
+    }
+    ctx.font = `bold ${Math.max(12, TILE * 0.6)}px sans-serif`;
+    ctx.lineWidth = Math.max(2, TILE * 0.14);
+    ctx.strokeStyle = "rgba(15,23,42,0.95)";
+    ctx.strokeText(`${approach.cycles_left}`, cx, cy + TILE * 0.85);
+    ctx.fillStyle = "#ef4444";
+    ctx.fillText(`${approach.cycles_left}`, cx, cy + TILE * 0.85);
+  });
+}
+
 function drawFrame() {
   const isPaused = !!(latestState && latestState.paused);
   if (isPaused && pausedFrameAlreadyDrawn) {
@@ -4573,58 +4667,6 @@ function drawFrame() {
       ctx.fillStyle = "#fecaca";
       ctx.fillText(e.label, cx, cy + TILE * 0.6);
     });
-    // Explicit request: "I do want to see RAIDERs ride in over time" -- a real,
-    // moving marker for the whole multi-cycle approach (Simulation._advance_
-    // raider_approach), not just a flash once it resolves.
-    Object.entries(latestState.tribes || {}).forEach(([tribeId, t]) => {
-      const approach = t.raiders_approaching;
-      if (!approach) return;
-      const [ix, iy] = followTilePos("raiders:" + tribeId, [approach.x, approach.y]);
-      const cx = ix * TILE + TILE / 2;
-      const cy = iy * TILE + TILE / 2;
-      // Explicit request: "the raider invasion forces should look a lot bigger on
-      // the approach (like 1.5x house size)" -- a real, growing threat reads better
-      // as visibly imposing than as a same-size-as-everything-else icon. Raised
-      // further (explicit follow-up: "so maybe we need to make them a lot
-      // bigger as they ride in") -- still not standing out enough against a
-      // busy map at typical window sizes.
-      ctx.font = `${Math.max(24, TILE * 2.2)}px sans-serif`;
-      ctx.textAlign = "center";
-      // Explicit follow-up: "you might use the Raiders icon for the incoming
-      // Raider in addition to the war cries" -- crossed swords, matching
-      // LANDMARK_TYPES' own raider_sightings icon, instead of a generic black
-      // flag that shared no visual language with any other raider marker.
-      // 2026-10-03, owner's request: incoming raiders read as RED. A solid red disc behind the swords (the emoji itself has no
-      // colour to change) and red labels with a dark outline, so the threat is unmistakable on a busy board.
-      const raiderSize = Math.max(24, TILE * 2.2);
-      ctx.beginPath();
-      ctx.arc(cx, cy - raiderSize * 0.33, raiderSize * 0.62, 0, 2 * Math.PI);
-      ctx.fillStyle = "rgba(185,28,28,0.82)";
-      ctx.fill();
-      ctx.strokeStyle = "#fecaca";
-      ctx.lineWidth = Math.max(2, TILE * 0.12);
-      ctx.stroke();
-      ctx.fillText("\u{2694}\u{FE0F}", cx, cy);
-      // Explicit request: "Raiders incoming need a Label, like 'Terrible Knoxit
-      // RAIDS!!!'" -- every approach used to read as the exact same bare icon
-      // and countdown, indistinguishable from any other one a tribe had
-      // ever faced. approach.name is rolled once per raid (backend/actions.py.
-      // _generate_raider_name) and stays fixed for its whole approach.
-      if (approach.name) {
-        ctx.font = `bold ${Math.max(10, TILE * 0.5)}px sans-serif`;
-        ctx.lineWidth = Math.max(2, TILE * 0.14);
-        ctx.strokeStyle = "rgba(15,23,42,0.95)";
-        ctx.strokeText(`${approach.name.toUpperCase()} RAIDS!!!`, cx, cy - TILE * 1.3);
-        ctx.fillStyle = "#ef4444";
-        ctx.fillText(`${approach.name.toUpperCase()} RAIDS!!!`, cx, cy - TILE * 1.3);
-      }
-      ctx.font = `bold ${Math.max(12, TILE * 0.6)}px sans-serif`;
-      ctx.lineWidth = Math.max(2, TILE * 0.14);
-      ctx.strokeStyle = "rgba(15,23,42,0.95)";
-      ctx.strokeText(`${approach.cycles_left}`, cx, cy + TILE * 0.85);
-      ctx.fillStyle = "#ef4444";
-      ctx.fillText(`${approach.cycles_left}`, cx, cy + TILE * 0.85);
-    });
     Object.entries(latestState.tribes || {}).forEach(([id, t]) => drawTribeIndividuals(id, t));
     // A trail at a tribe's own home tile (very common, since journeys start and end
     // there) was getting completely hidden under that tribe's own dot cluster when
@@ -4640,7 +4682,6 @@ function drawFrame() {
       drawSettlementWall(t);
       drawBuildings(t);
       drawFarmPlot(t);
-      drawBoat(id, t);
     });
     // Live report: "the hut/city/townhall icon needs to always be on top" --
     // it used to draw *before* drawBuildings in the same per-tribe pass above,
@@ -4658,10 +4699,13 @@ function drawFrame() {
     drawLandmarks();
     drawMinorSettlements();
     if (latestState.joint_castle) drawJointCastle(latestState.joint_castle);
+    // 2026-10-10: boats are drawn after the landmarks (a "Water" marker sits on the water tile nearest a camp and used to cover its boat) and before the bubbles.
+    Object.entries(latestState.tribes || {}).forEach(([id, t]) => drawBoat(id, t));
     // Chief thought/speech bubbles are the very top of the "labels" tier (see pendingSpeechBubbles' own comment). 2026-10-10 (explicit request: "I'd like to see the dialog boxes over the
     // resources when they pop up"): they were flushed BEFORE drawLandmarks, whose resource icons and labels (Timber, Quarry, Wolf Den...) then painted over the bubble text. Flushed last, after
     // landmarks, minor settlements and the joint castle, so a bubble is never underneath a resource, a building or a landmark.
     pendingSpeechBubbles.forEach(draw => draw());
+    drawIncomingRaiders();
     // The day/night tint goes over literally everything (tribes, trails, structures
     // included) so night actually reads as night across the whole scene, not just an
     // absent sun icon up top.
@@ -4862,6 +4906,7 @@ let BARRACKS_MAX_COUNT = 5;
 let WALL_MAX_LAYERS = 2;
 let VESSEL_WOOD_COST = 2500;  // from /api/config
 let VESSEL_STONE_COST = 2500;
+let TRADE_GRIEVANCE_WINDOW_CYCLES = 40;  // from /api/config
 let HAZARD_MARKER_SPACING = 6;  // tiles; from /api/config (config.HAZARD_LANDMARK_MIN_SPACING)
 
 // Mirrors backend/eras.py's ERAS order exactly -- CONSTRUCT_WALL
@@ -4927,7 +4972,9 @@ function commercePanel(t) {
 // doesn't show a row until it does.
 // 2026-10-10 (explicit request: "add the 'at war' status or whatever status on the sidebar"): where this tribe stands with each rival it has met. The stance and the raid ledger come from the backend
 // (tribe.stance_toward, tribe.raid_ledger); a rival it has not met is not listed. Pure, so it can be tested without the page.
-function relationsRows(t, tribes) {
+// 2026-10-10 (the owner: "still neutral after being raided seems off"): war only starts at the second successful raid, but a tribe raided once refuses to trade with the raider for
+// TRADE_GRIEVANCE_WINDOW_CYCLES, so while that grudge lasts a NEUTRAL stance reads as "Grudge" (the stance itself is unchanged).
+function relationsRows(t, tribes, cycle) {
   const ledger = t.raid_ledger || {};
   const stances = t.stance_toward || {};
   const met = new Set(t.discovered_rivals || []);
@@ -4939,7 +4986,9 @@ function relationsRows(t, tribes) {
       if (l.suffered) parts.push(`raided you ${l.suffered}x, took ${l.people_lost} of your people`);
       if (l.held_off) parts.push(`you held off ${l.held_off}`);
       if (l.made) parts.push(`your raids: ${l.won} won, ${l.repelled} repelled`);
-      return {id, name: other.name, stance: stances[id] || "NEUTRAL", detail: parts.join("; ")};
+      let stance = stances[id] || "NEUTRAL";
+      if (stance === "NEUTRAL" && l.suffered && l.last_success_cycle != null && cycle != null && cycle - l.last_success_cycle <= TRADE_GRIEVANCE_WINDOW_CYCLES) stance = "GRUDGE";
+      return {id, name: other.name, stance, detail: parts.join("; ")};
     });
 }
 
@@ -4954,8 +5003,8 @@ function warbandLines(t) {
   return lines;
 }
 
-function relationsPanel(t, tribes) {
-  const rows = relationsRows(t, tribes);
+function relationsPanel(t, tribes, cycle) {
+  const rows = relationsRows(t, tribes, cycle);
   const extra = warbandLines(t);
   if (!rows.length && !extra.length) return "";
   const lines = extra.map(line => `<span class="relations-detail">${escapeHtml(line)}</span>`).concat(rows.map(r => {
@@ -5357,6 +5406,7 @@ const STANCE_BADGES = {
   ALLIED: { icon: "🤝", label: "Allied", color: "#4ade80" },
   WAR: { icon: "⚔️", label: "At War", color: "#f87171" },
   NEUTRAL: { icon: "🏳️", label: "Neutral", color: "#94a3b8" },
+  GRUDGE: { icon: "😠", label: "Grudge (will not trade)", color: "#fb923c" },
 };
 
 const WELLBEING_TIER_ORDER = ["physiological", "safety", "belonging", "esteem", "self_actualization", "fame"];
@@ -5551,7 +5601,7 @@ function updateSidebar(state) {
           ${farmingPanel(t)}
           ${wellbeingPanel(t)}
           ${commercePanel(t)}
-          ${relationsPanel(t, state.tribes)}
+          ${relationsPanel(t, state.tribes, state.cycle)}
           ${combatPanel(t)}
           ${espionagePanel(t)}
         </div>`;

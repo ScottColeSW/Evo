@@ -122,11 +122,11 @@ def test_chief_bubbles_are_drawn_after_the_landmarks_and_resource_icons():
         assert frame.index(later_must_not_follow) < flush, later_must_not_follow
     assert flush < frame.index("drawDayNightOverlay(interpolatedCycle());")  # the day and night tint still goes over everything
 
-def _relations_rows(tribe, tribes):
+def _relations_rows(tribe, tribes, cycle=None):
     text = PAGE.read_text(encoding="utf-8")
     start = text.index("function relationsRows(")
     end = text.index("function relationsPanel(")
-    program = text[start:end] + f"\nconsole.log(JSON.stringify(relationsRows({json.dumps(tribe)}, {json.dumps(tribes)})));"
+    program = "let TRADE_GRIEVANCE_WINDOW_CYCLES = 40;\n" + text[start:end] + f"\nconsole.log(JSON.stringify(relationsRows({json.dumps(tribe)}, {json.dumps(tribes)}, {json.dumps(cycle)})));"
     done = subprocess.run(["node", "-e", program], capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr
     return json.loads(done.stdout)
@@ -166,3 +166,78 @@ def test_the_sidebar_shows_the_warbands_standing_and_a_takeover():
     taken = _warband_lines({"warband": None, "takeover": {"leader": "Ruthless Gnashdrex", "cycle": 210, "tribe_before": 200, "survivors": 1, "joined": 1900}})
     assert len(taken) == 1 and "Taken over by the Ruthless Gnashdrex Raiders at cycle 210" in taken[0] and "1 of 200 left standing, 1900 raiders joined" in taken[0]
     assert _warband_lines({}) == []
+
+def _plan_boat(grid_rows, start, rng_value=0.5):
+    text = PAGE.read_text(encoding="utf-8")
+    start_at = text.index("const BOAT_MIN_ROUTE")
+    end_at = text.index("function drawBoat(")
+    program = text[start_at:end_at] + (
+        "\nconst rows = " + json.dumps(grid_rows) + ";"
+        "\nconst isWater = (x, y) => (rows[y] || '')[x] === '~';"
+        "\nconsole.log(JSON.stringify(planBoatRoute(isWater, " + str(start[0]) + ", " + str(start[1]) + ", () => " + str(rng_value) + ")));"
+    )
+    done = subprocess.run(["node", "-e", program], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
+def test_the_boat_plans_a_route_along_connected_water_and_roams_far_not_one_tile():
+    """2026-10-10: the boat only ever hopped to a neighboring water tile and sat by the Water marker."""
+    river = ["................",
+             ".~~~~~~~~~~~~~~.",
+             "................"]
+    for roll in (0.0, 0.5, 0.99):
+        route = _plan_boat(river, (2, 1), roll)
+        assert len(route) >= 4, route                                      # a real trip, not a wobble
+        assert all(river[y][x] == "~" for x, y in route)                   # every step is water
+        steps = [(2, 1)] + [tuple(p) for p in route]
+        assert all(max(abs(a[0] - b[0]), abs(a[1] - b[1])) == 1 for a, b in zip(steps, steps[1:]))  # connected, one tile at a time
+
+
+def test_the_boat_does_not_cross_land_to_reach_other_water():
+    two_lakes = ["~~~.....~~~",
+                 "~~~.....~~~"]
+    for roll in (0.0, 0.99):
+        route = _plan_boat(two_lakes, (0, 0), roll)
+        assert all(x <= 2 for x, y in route)                               # the lake across the land is not reachable by water
+
+
+def test_a_boat_in_a_one_tile_pond_has_nowhere_to_go_and_stays():
+    assert _plan_boat(["...", ".~.", "..."], (1, 1)) == []
+
+
+def test_a_neutral_rival_that_raided_us_recently_reads_as_a_grudge_until_the_window_passes():
+    """2026-10-10 (the owner: "still neutral after being raided seems off"): one raid is not yet war, but the raided tribe will not trade with the raider."""
+    tribes = {"t0": {"name": "Big"}, "t1": {"name": "Small"}}
+    me = {"id": "t1", "discovered_rivals": ["t0"], "raid_ledger": {"t0": {"suffered": 1, "people_lost": 4, "last_success_cycle": 100}}}
+    assert _relations_rows(me, tribes, 120)[0]["stance"] == "GRUDGE"
+    assert _relations_rows(me, tribes, 141)[0]["stance"] == "NEUTRAL"        # past the 40-cycle window
+    me["stance_toward"] = {"t0": "WAR"}
+    assert _relations_rows(me, tribes, 120)[0]["stance"] == "WAR"            # a real stance is never overridden
+
+
+def test_a_chief_bubble_dodges_other_bubbles_but_not_name_tags_and_stays_on_the_canvas():
+    """2026-10-10 (the owner: "thought bubble placement is off for Tribe 2"): tags claimed slots first and the bubble climbed past them off the top of the map."""
+    text = PAGE.read_text(encoding="utf-8")
+    start = text.index("function claimBubbleSlot(")
+    end = text.index("function clampTagX(")
+    program = ("let activeBubbleRects = [];\n" + text[start:end] +
+               "\nfor (let i = 0; i < 12; i++) claimBubbleSlot(100, 300 - i * 20, 80, 14);"           # a column of tags above the camp
+               "\nconst alone = claimBubbleSlot(100, 250, 80, 60, true);"
+               "\nconst second = claimBubbleSlot(100, 250, 80, 60, true);"
+               "\nconsole.log(JSON.stringify([alone, second]));")
+    done = subprocess.run(["node", "-e", program], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    alone, second = json.loads(done.stdout)
+    assert alone == 250                      # the tags did not push it
+    assert second == 250 - 60 - 6            # another bubble did
+
+
+def test_incoming_raiders_are_drawn_over_everything_but_the_day_night_tint():
+    """2026-10-10 (the owner: "incoming RAIDERs should not be buried")."""
+    text = PAGE.read_text(encoding="utf-8")
+    frame = text[text.index("function drawFrame("):]
+    raiders = frame.index("drawIncomingRaiders();")
+    for earlier in ("drawTribeIndividuals(id, t)", "drawLandmarks();", "drawMinorSettlements();", "pendingSpeechBubbles.forEach(draw => draw());"):
+        assert frame.index(earlier) < raiders, earlier
+    assert raiders < frame.index("drawDayNightOverlay(interpolatedCycle());")

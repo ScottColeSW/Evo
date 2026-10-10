@@ -93,6 +93,7 @@ async def game_config(request: web.Request) -> web.Response:
         "wall_max_layers": config.WALL_MAX_LAYERS,
         "hazard_landmark_min_spacing": config.HAZARD_LANDMARK_MIN_SPACING,
         "vessel_wood_cost": config.VESSEL_WOOD_COST,
+        "trade_grievance_window_cycles": config.TRADE_GRIEVANCE_WINDOW_CYCLES,
         "vessel_stone_cost": config.VESSEL_STONE_COST,
         "bath_house_upkeep_multiplier": config.BATH_HOUSE_UPKEEP_MULTIPLIER,
         "hatchery_hatch_chance_multiplier": config.HATCHERY_HATCH_CHANCE_MULTIPLIER,
