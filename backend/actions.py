@@ -2841,6 +2841,14 @@ def _note_raid(sim, attacker, defender, won: bool, people: int) -> None:
         mine["won"] += 1
         theirs["suffered"] += 1
         theirs["people_lost"] += people
+        if theirs["suffered"] >= config.WAR_AFTER_SUCCESSFUL_RAIDS and defender.stance_toward.get(attacker.id) != "WAR":
+            defender.stance_toward[attacker.id] = "WAR"
+            attacker.stance_toward[defender.id] = "WAR"
+            defender.history.append(f"⚔️ {defender.name} has been raided {theirs['suffered']} times by {attacker.name} and declares war")
+            attacker.history.append(f"{defender.name} declares war on {attacker.name} after being raided {theirs['suffered']} times")
+            if getattr(sim, "event_log", None) is not None:  # (a bare test Simulation has none)
+                sim.event_log.record_data(defender.name, "war_from_raids", {"attacker": attacker.name, "raids_suffered": theirs["suffered"], "people_lost": theirs["people_lost"]},
+                                          message=f"[war] {defender.name} declares war on {attacker.name} after {theirs['suffered']} successful raids")
     else:
         mine["repelled"] += 1
         mine["people_lost"] += people
@@ -2858,6 +2866,8 @@ def _raid_defender(sim, tribe, defender, win_bonus: float = 0.0):
     attacker_win_chance = _might_adjusted_win_chance(tribe, defender, attacker_win_chance)
     if win_bonus:
         attacker_win_chance = min(config.MIGHT_ADJUSTED_WIN_CHANCE_CEILING, attacker_win_chance + win_bonus)
+    if defender.stance_toward.get(tribe.id) == "WAR":  # a tribe at war with the raider defends harder (config.WAR_DEFENDER_RAID_BONUS)
+        attacker_win_chance = max(config.MIGHT_ADJUSTED_WIN_CHANCE_FLOOR, attacker_win_chance - config.WAR_DEFENDER_RAID_BONUS)
     att_pop0, def_pop0 = tribe.population, defender.population
     if random.random() < attacker_win_chance:
         # Code-quality pass: the attacker's own gain here used to setattr the
@@ -3238,6 +3248,8 @@ def _execute_trade(sim, tribe, partner) -> str:
     either has found a real partner -- both sides give up the same fraction of what
     they're currently holding and receive the same fraction back, unconditional
     once initiated (like RAID, this doesn't ask the other side's permission)."""
+    if tribe.stance_toward.get(partner.id) == "WAR" or partner.stance_toward.get(tribe.id) == "WAR":
+        return f"{partner.name} will not trade while the two tribes are at war"  # 2026-10-10: war closes trade until peace
     # Code-quality pass: each side's received gift used to be folded straight into
     # the same setattr as its own given gift, uncapped -- same bug class as the
     # rest of this file/simulation.py. Give (a plain subtraction, no cap concern)

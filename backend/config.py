@@ -1543,6 +1543,11 @@ FORAGE_RECOVERED_FRACTION = 0.5
 # with no coordinates needed, and uses the report up (one strike per report, so a strike needs a fresh spy). What the spy learned improves the odds by this much (a plain RAID's chance is
 # the attacker's share of the two populations, adjusted by Might).
 RAID_RIVAL_INTEL_WIN_BONUS = 0.15
+# 2026-10-10 (explicit request: "no one likes a bully with no repercussions"): a tribe that has been raided successfully this many times by the same rival is at war with it, whatever its era or Barracks
+# (a declared WAR needs both). War used to be a label; now a tribe at war repels that rival's raids more often (subtracted from the raider's odds: home ground and anger), and trade between the two is
+# closed until peace (DECLARE_ALLIANCE sues for peace).
+WAR_AFTER_SUCCESSFUL_RAIDS = 2
+WAR_DEFENDER_RAID_BONUS = 0.10
 RAID_STEAL_FRACTION = 0.3
 RAID_ATTACKER_POPULATION_LOSS_ON_WIN = 1
 RAID_ATTACKER_POPULATION_LOSS_ON_LOSS = 2

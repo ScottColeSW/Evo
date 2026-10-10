@@ -6477,3 +6477,68 @@ def test_raid_rival_intel_adds_to_the_odds_and_a_dead_rival_wastes_nothing():
     b3.extinct = True
     assert "no unused spy report" in ACTION_REGISTRY["RAID_RIVAL"](sim3, a3, "plains", (0, 0))
     assert a3.rival_intel[b3.id]["used"] is False
+
+
+def _raider_and_victim():
+    sim = _bare_simulation()
+    attacker = Tribe("tribe_0", "Bully", "gemma2:2b", 50, 50, "#c084fc")
+    victim = Tribe("tribe_1", "Victim", "gemma2:2b", 51, 51, "#fb923c")
+    victim.population = 500  # plenty of survivors, no merge
+    sim.tribes = {attacker.id: attacker, victim.id: victim}
+    return sim, attacker, victim
+
+
+def test_the_second_successful_raid_by_the_same_tribe_puts_both_at_war_with_no_era_or_barracks_gate():
+    """2026-10-10 (explicit request): 'if I kept getting attacked, I would declare certain WAR... no one likes a bully with no repercussions.'"""
+    from unittest import mock
+
+    sim, bully, victim = _raider_and_victim()
+    assert victim.barracks_built == 0 and victim.era == "primitive_dawn"
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # raids win
+        ACTION_REGISTRY["RAID"](sim, bully, "plains", (51, 51))
+        assert victim.stance_toward.get(bully.id) is None and bully.stance_toward.get(victim.id) is None  # the first raid is not enough
+        ACTION_REGISTRY["RAID"](sim, bully, "plains", (51, 51))
+    assert victim.stance_toward[bully.id] == "WAR" and bully.stance_toward[victim.id] == "WAR"
+    assert any("declares war" in line for line in victim.history) and any("declares war on Bully" in line for line in bully.history)
+
+
+def test_repelled_raids_do_not_count_toward_the_war_trigger():
+    from unittest import mock
+
+    sim, bully, victim = _raider_and_victim()
+    with mock.patch("backend.actions.random.random", return_value=0.99):  # every raid is repelled
+        for _ in range(4):
+            ACTION_REGISTRY["RAID"](sim, bully, "plains", (51, 51))
+    assert bully.stance_toward.get(victim.id) is None and victim.stance_toward.get(bully.id) is None
+
+
+def test_a_tribe_at_war_with_the_raider_repels_it_more_often():
+    from unittest import mock
+
+    from backend import config
+    from backend.actions import _raid_defender
+
+    seen = []
+    for at_war in (False, True):
+        sim, bully, victim = _raider_and_victim()
+        bully.population = 500  # even odds, clear of the win-chance floor
+        if at_war:
+            victim.stance_toward[bully.id] = "WAR"
+        with mock.patch("backend.actions.skirmish", side_effect=lambda *a, **kw: seen.append(kw["attacker_chance"]) or {}), mock.patch("backend.actions.random.random", return_value=0.0):
+            _raid_defender(sim, bully, victim)
+    assert seen[1] < seen[0] and abs((seen[0] - seen[1]) - config.WAR_DEFENDER_RAID_BONUS) < 0.011
+
+
+def test_trade_between_two_tribes_at_war_is_closed_until_peace():
+    from backend.actions import _execute_trade
+
+    sim, a, b = _raider_and_victim()
+    a.wood = b.wood = 1000
+    a.stance_toward[b.id] = "WAR"
+    b.stance_toward[a.id] = "WAR"
+    note = _execute_trade(sim, a, b)
+    assert "will not trade while the two tribes are at war" in note and a.wood == 1000 and b.wood == 1000
+    a.stance_toward[b.id] = "ALLIED"
+    b.stance_toward[a.id] = "ALLIED"  # peace
+    _execute_trade(sim, a, b)
+    assert a.trade_given.get("wood", 0) > 0 or b.trade_given.get("wood", 0) > 0

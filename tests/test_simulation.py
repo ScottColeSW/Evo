@@ -16234,3 +16234,10 @@ def test_the_raid_ledger_records_both_sides_and_reaches_each_chiefs_prompt():
     assert small.raid_ledger[big.id]["suffered"] == 1 and small.raid_ledger[big.id]["people_lost"] > 0
     request, _ctx = sim._prepare_turn(small)
     assert "raid(s) by Big succeeded against you" in request["prompt"] and "Your raids on Big: 0 won, 1 repelled" in request["prompt"]
+
+
+def test_a_war_line_in_the_prompt_says_trade_is_closed():
+    sim, small, big = _two_contact_tribes(110, 1100)
+    small.stance_toward[big.id] = "WAR"
+    request, _ctx = sim._prepare_turn(small)
+    assert "Currently war with Big. Trade with them is closed while at war" in request["prompt"]

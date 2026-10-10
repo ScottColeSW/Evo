@@ -4377,7 +4377,10 @@ class Simulation:
         for other_id, stance in tribe.stance_toward.items():
             other = self.tribes.get(other_id)
             if other is not None and not other.extinct:
-                visible_entities.append(f"Currently {stance.lower()} with {other.name}.")
+                visible_entities.append(
+                    f"Currently {stance.lower()} with {other.name}."
+                    + (f" Trade with them is closed while at war{', and DECLARE_ALLIANCE would sue for peace' if 'DECLARE_ALLIANCE' in available_actions else ''}." if stance == "WAR" else "")
+                )
         # The spectator UI's own "Path to the Next Era" panel already computes exactly
         # this (Tribe.to_dict's next_era block) -- it just never made it back into the
         # tribe's own reasoning. Naming the *specific* still-short resource(s) is the
