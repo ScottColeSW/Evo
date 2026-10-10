@@ -16194,3 +16194,43 @@ def test_a_depleted_forage_stays_when_nothing_else_can_feed_the_tribe():
     others = [a for a in ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "HUNT_DEER", "HUNTING_PARTY") if a in ctx["available_actions"]]
     if not others:
         assert "GATHER_FOOD" in ctx["available_actions"]  # food is never taken away entirely
+
+
+def _two_contact_tribes(pop_a=110, pop_b=1100):
+    sim = Simulation([{"name": "Small", "model": "gemma2:2b", "x": 40, "y": 37}, {"name": "Big", "model": "gemma2:2b", "x": 70, "y": 70}])
+    small, big = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    small.population, big.population = pop_a, pop_b
+    small.has_ever_settled = True
+    sim._found_territory(small)
+    small.discovered_rivals.add(big.id)
+    big.discovered_rivals.add(small.id)
+    return sim, small, big
+
+
+def test_a_chief_who_knows_a_rival_is_told_roughly_how_the_two_sizes_compare():
+    """2026-10-10: Tribe 2 (about 110 people) raided Tribe 1 (800 to 1,500) three times in five cycles in a live run and was repelled each time."""
+    sim, small, big = _two_contact_tribes(110, 1100)
+    request, _ctx = sim._prepare_turn(small)
+    assert "Big's people look about 10 times as many as yours" in request["prompt"]
+    request, _ctx = sim._prepare_turn(big)
+    assert "You look to outnumber Small's people about 10 to 1" in request["prompt"]
+    small.population = 1000
+    request, _ctx = sim._prepare_turn(small)
+    assert "Big's people look about as many as yours" in request["prompt"]
+
+
+def test_the_raid_ledger_records_both_sides_and_reaches_each_chiefs_prompt():
+    from unittest import mock
+
+    from backend.actions import ACTION_REGISTRY
+
+    sim, small, big = _two_contact_tribes(110, 1100)
+    with mock.patch("backend.actions.random.random", return_value=0.99):  # the raid is repelled
+        ACTION_REGISTRY["RAID"](sim, small, "plains", (big.x, big.y))
+    assert small.raid_ledger[big.id]["made"] == 1 and small.raid_ledger[big.id]["repelled"] == 1
+    assert big.raid_ledger[small.id]["held_off"] == 1 and big.raid_ledger[small.id]["suffered"] == 0
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # a second raid by the big tribe wins
+        ACTION_REGISTRY["RAID"](sim, big, "plains", (small.x, small.y))
+    assert small.raid_ledger[big.id]["suffered"] == 1 and small.raid_ledger[big.id]["people_lost"] > 0
+    request, _ctx = sim._prepare_turn(small)
+    assert "raid(s) by Big succeeded against you" in request["prompt"] and "Your raids on Big: 0 won, 1 repelled" in request["prompt"]

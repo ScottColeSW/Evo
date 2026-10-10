@@ -2830,6 +2830,23 @@ def _raid(sim, tribe, biome, target):
     return _raid_defender(sim, tribe, defender)
 
 
+def _note_raid(sim, attacker, defender, won: bool, people: int) -> None:
+    """2026-10-10: a plain ledger of who raided whom, kept on both sides and shown to each chief as facts (see Simulation._prepare_turn). `people` is who changed hands: the survivors the winner
+    absorbed (from the defender when the raid won, from the attacker when it was repelled)."""
+    mine = attacker.raid_ledger.setdefault(defender.id, {"made": 0, "won": 0, "repelled": 0, "suffered": 0, "held_off": 0, "people_lost": 0, "last_cycle": 0})
+    theirs = defender.raid_ledger.setdefault(attacker.id, {"made": 0, "won": 0, "repelled": 0, "suffered": 0, "held_off": 0, "people_lost": 0, "last_cycle": 0})
+    mine["made"] += 1
+    mine["last_cycle"] = theirs["last_cycle"] = sim.cycle
+    if won:
+        mine["won"] += 1
+        theirs["suffered"] += 1
+        theirs["people_lost"] += people
+    else:
+        mine["repelled"] += 1
+        mine["people_lost"] += people
+        theirs["held_off"] += 1
+
+
 def _raid_defender(sim, tribe, defender, win_bonus: float = 0.0):
     """The raid itself against a chosen rival tribe. win_bonus is added to the attacker's chance (RAID_RIVAL's spy intel)."""
     _war_cry(sim, tribe, defender, "raid")
@@ -2861,6 +2878,7 @@ def _raid_defender(sim, tribe, defender, win_bonus: float = 0.0):
         # absorb the defender entirely (see Simulation._merge_tribes) instead of a
         # flat, repeatable loss with no benefit to the winner beyond stolen goods.
         absorbed = min(defender.population, max(1, round(defender.population * config.RAID_POPULATION_ABSORB_FRACTION)))
+        _note_raid(sim, tribe, defender, True, absorbed)
         defender.population -= absorbed
         tribe.population += absorbed
         tribe.max_population = max(tribe.max_population, tribe.population)
@@ -2923,6 +2941,7 @@ def _raid_defender(sim, tribe, defender, win_bonus: float = 0.0):
             return f"attempted to raid {defender.name} and was wiped out in the failed attempt"
 
         absorbed = min(tribe.population, max(1, round(tribe.population * config.RAID_POPULATION_ABSORB_FRACTION)))
+        _note_raid(sim, tribe, defender, False, absorbed)
         tribe.population -= absorbed
         defender.population += absorbed
         defender.max_population = max(defender.max_population, defender.population)

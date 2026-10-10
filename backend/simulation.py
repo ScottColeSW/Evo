@@ -1421,6 +1421,7 @@ class Tribe:
         self.hunt_successes = 0
         self.raids_won = 0
         self.raids_lost = 0
+        self.raid_ledger: dict[str, dict] = {}  # rival tribe id -> the raids between the two (see actions._note_raid)
         self.raids_defended = 0
         self.spy_missions_run = 0
         self.spy_missions_caught = 0
@@ -4258,6 +4259,27 @@ class Simulation:
                 visible_entities.append(
                     f"{other.name}'s camp is known to be at ({other.x},{other.y}), about {distance:.0f} tiles away"
                 )
+                # 2026-10-10 (explicit request): a coarse size comparison once the camp is known, so a tribe a tenth the size can see what it is raiding. In a live run Tribe 2 (about 110 people)
+                # raided Tribe 1 (800 to 1,500) three times in five cycles and was repelled each time. Coarse on purpose (what scouts and sightings would tell you); a spy report has the exact numbers.
+                ratio = other.population / max(1, tribe.population)
+                if ratio >= 1.5:
+                    visible_entities.append(f"{other.name}'s people look about {round(ratio)} times as many as yours." if ratio >= 2 else f"{other.name}'s people look about half again as many as yours.")
+                elif ratio <= 1 / 1.5:
+                    visible_entities.append(f"You look to outnumber {other.name}'s people about {round(1 / max(ratio, 1e-9))} to 1." if ratio <= 0.5 else f"You look to outnumber {other.name}'s people by about half again.")
+                else:
+                    visible_entities.append(f"{other.name}'s people look about as many as yours.")
+                ledger = tribe.raid_ledger.get(other.id)
+                if ledger:
+                    if ledger["suffered"] or ledger["held_off"]:
+                        parts = []
+                        if ledger["suffered"]:
+                            parts.append(f"{ledger['suffered']} raid(s) by {other.name} succeeded against you, costing {ledger['people_lost']} of your people")
+                        if ledger["held_off"]:
+                            parts.append(f"you held off {ledger['held_off']}")
+                        sentence = "; ".join(parts)
+                        visible_entities.append(sentence[0].upper() + sentence[1:] + f" (last at cycle {ledger['last_cycle']}).")
+                    if ledger["made"]:
+                        visible_entities.append(f"Your raids on {other.name}: {ledger['won']} won, {ledger['repelled']} repelled (last at cycle {ledger['last_cycle']}).")
                 spied = tribe.rival_intel.get(other.id)
                 if spied and spied.get("military"):
                     visible_entities.append(
