@@ -1179,7 +1179,7 @@ def _build_tannery(sim, tribe, biome, target):
     still used opportunistically for Simulation._advance_resource_trails if
     one happens to be scouted. Pays Fur into the same tribe.unique_resources
     dict mines already use, not a second parallel resource system."""
-    if tribe.tannery_built or not tribe.hunt_ever_succeeded:
+    if tribe.tannery_built or not tribe.hunt_ever_succeeded or not tribe.deer_pen_built:  # 2026-10-10: a Tannery only after the Deer Pen that feeds it
         return None
     if _place_building(sim, tribe, "tannery", config.TANNERY_WOOD_COST, config.TANNERY_STONE_COST) is None:
         return None
@@ -1206,7 +1206,7 @@ def _build_deer_pen(sim, tribe, biome, target):
     from. Building the Pen is itself the founding moment (config.
     DEER_PEN_FOUNDING_COUNT): trapping a couple of deer alive during
     construction, the same way GATHER_EGGS already narrates finding a live egg."""
-    if tribe.deer_pen_built or not tribe.tannery_built:
+    if tribe.deer_pen_built:
         return None
     if tribe.hunt_deer_success_count < config.DEER_PEN_HUNT_THRESHOLD:
         return None

@@ -1880,6 +1880,7 @@ def test_build_tannery_requires_a_real_successful_hunt():
     _settle(sim, tribe)
     tribe.wood = config.TANNERY_WOOD_COST
     tribe.stone = config.TANNERY_STONE_COST
+    tribe.deer_pen_built = True  # 2026-10-10: a Tannery needs the Deer Pen that feeds it
 
     assert ACTION_REGISTRY["BUILD_TANNERY"](sim, tribe, "plains", _NO_TARGET) is None
     assert tribe.tannery_built is False
@@ -1901,6 +1902,7 @@ def test_build_tannery_uses_a_scouted_rabbit_warren_opportunistically():
     tribe.wood = config.TANNERY_WOOD_COST
     tribe.stone = config.TANNERY_STONE_COST
     tribe.hunt_ever_succeeded = True
+    tribe.deer_pen_built = True
     # A Deer Stand alone doesn't count -- only a Rabbit Warren produces fur.
     tribe.wildlife_sites.append({"x": 5, "y": 5, "type": "Deer Stand"})
     tribe.wildlife_sites.append({"x": 10, "y": 12, "type": "Rabbit Warren"})
@@ -1910,11 +1912,9 @@ def test_build_tannery_uses_a_scouted_rabbit_warren_opportunistically():
     assert tribe.tannery_site == (10, 12)
 
 
-def test_build_deer_pen_requires_a_tannery_and_enough_successful_hunts():
+def test_build_deer_pen_requires_enough_successful_hunts_and_no_tannery():
     """Explicit follow-up, 2026-09-11: "if they successfully HUNT_DEER 3-5 they
-    can build a DEER_PEN." Gated on tribe.tannery_built (feeding an existing
-    Tannery is the whole point) plus a real hunt-success count, not just
-    Tannery's own single-success hunt_ever_succeeded."""
+    can build a DEER_PEN." 2026-10-10: it no longer needs a Tannery first; the order is 3 hunts, then the Pen, then the Tannery."""
     from backend import config
 
     sim = _bare_simulation()
@@ -1922,15 +1922,8 @@ def test_build_deer_pen_requires_a_tannery_and_enough_successful_hunts():
     _settle(sim, tribe)
     tribe.wood = config.DEER_PEN_WOOD_COST
     tribe.stone = config.DEER_PEN_STONE_COST
-    tribe.hunt_deer_success_count = config.DEER_PEN_HUNT_THRESHOLD
-
-    # No tannery yet -- refused even with enough hunts.
-    assert ACTION_REGISTRY["BUILD_DEER_PEN"](sim, tribe, "plains", _NO_TARGET) is None
-    assert tribe.deer_pen_built is False
-
-    tribe.tannery_built = True
     tribe.hunt_deer_success_count = config.DEER_PEN_HUNT_THRESHOLD - 1
-    # Tannery exists now, but not enough hunts yet.
+    # Not enough hunts yet.
     assert ACTION_REGISTRY["BUILD_DEER_PEN"](sim, tribe, "plains", _NO_TARGET) is None
     assert tribe.deer_pen_built is False
 
@@ -1941,6 +1934,24 @@ def test_build_deer_pen_requires_a_tannery_and_enough_successful_hunts():
     assert tribe.deer == config.DEER_PEN_FOUNDING_COUNT
     assert "deer pen is built" in result
     assert any(t["name"] == "Deer Keeper" for t in tribe.trophies)
+
+
+def test_a_tannery_is_not_offered_or_built_until_the_deer_pen_stands():
+    """2026-10-10: both tribes of a live run built a Tannery by cycle 96 and it made 0 Fur for the rest of the run: its only inputs are hunts and a Deer Pen."""
+    from backend import config
+    from backend.simulation import AFFORDABILITY_CHECKS
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.wood = tribe.stone = 1000
+    tribe.hunt_ever_succeeded = True
+    tribe.hunt_deer_success_count = config.DEER_PEN_HUNT_THRESHOLD
+    assert AFFORDABILITY_CHECKS["BUILD_TANNERY"](tribe, sim.world) is False
+    assert ACTION_REGISTRY["BUILD_TANNERY"](sim, tribe, "plains", _NO_TARGET) is None
+    assert AFFORDABILITY_CHECKS["BUILD_DEER_PEN"](tribe, sim.world) is True
+    ACTION_REGISTRY["BUILD_DEER_PEN"](sim, tribe, "plains", _NO_TARGET)
+    assert tribe.deer_pen_built and AFFORDABILITY_CHECKS["BUILD_TANNERY"](tribe, sim.world) is True
 
 
 def test_build_deer_pen_uses_a_scouted_deer_stand_opportunistically():

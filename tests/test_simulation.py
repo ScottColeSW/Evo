@@ -3483,6 +3483,7 @@ def test_food_security_investment_ranks_ahead_of_construction_which_ranks_ahead_
     tribe.era = "cognitive_horizon"
     tribe.fire_ever_built = True  # COOK_FOOD's own real prerequisite
     tribe.hunt_ever_succeeded = True
+    tribe.hunt_deer_success_count = config.DEER_PEN_HUNT_THRESHOLD  # BUILD_DEER_PEN replaces BUILD_TANNERY here: a Tannery needs the Pen first (2026-10-10)
     tribe.wood_ever_gathered = True  # BUILD_SAWMILL's own real prerequisite
     tribe.wood = tribe.stone = 1000
 
@@ -3491,7 +3492,7 @@ def test_food_security_investment_ranks_ahead_of_construction_which_ranks_ahead_
     actions = ctx["available_actions"]
     for food_security_action in ("COOK_FOOD", "PLANT_CROP", "GATHER_EGGS", "CATCH_FISH"):
         assert food_security_action in actions
-    for construction_action in ("BUILD_LONG_HOUSE", "BUILD_SAWMILL", "BUILD_TANNERY"):
+    for construction_action in ("BUILD_LONG_HOUSE", "BUILD_SAWMILL", "BUILD_DEER_PEN"):
         assert construction_action in actions
     last_food_security_index = max(actions.index(a) for a in _FOOD_SECURITY_INVESTMENT_ACTIONS if a in actions)
     first_construction_index = min(i for i, a in enumerate(actions) if _is_construction_action(a))
@@ -6308,6 +6309,21 @@ def test_hunting_party_arrival_home_accumulates_tannery_fur_when_it_caught_somet
     sim._advance_expeditions(tribe)
 
     assert tribe.tannery_fur_pending_from_hunts == config.TANNERY_FUR_BONUS_PER_HUNT
+
+
+def test_a_hunting_partys_catch_counts_toward_the_deer_pens_successful_hunts():
+    """2026-10-10: only HUNT_DEER counted, so a tribe whose hunters went out as parties never reached the Pen's 3 successful hunts."""
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    for caught, expected in ((25, 1), (0, 1)):  # an empty-handed party adds nothing
+        tribe.expeditions = [{
+            "kind": "hunt", "pos": [50, 50], "origin": [50, 50], "target": [50, 50],
+            "day": 2, "phase": "returning", "food_caught": caught,
+            "food_gathered": 7, "water_gathered": 5,
+            "lead_scout": "Test Hunter", "determination": 0.5, "max_days": 4, "path": [],
+        }]
+        sim._advance_expeditions(tribe)
+        assert tribe.hunt_deer_success_count == expected
 
 
 def test_hunting_party_arrival_home_empty_handed_does_not_accumulate_tannery_fur():

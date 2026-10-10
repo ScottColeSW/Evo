@@ -842,12 +842,14 @@ AFFORDABILITY_CHECKS = {
         t.stone_ever_gathered and t.wood >= config.QUARRY_WOOD_COST and t.stone >= config.QUARRY_STONE_COST
         and _can_place(t, w, "quarry")
     ),
+    # 2026-10-10 (explicit request: "Tannery needs to be gated on Deer Pen, which is gated on 3 successful hunts"): both tribes of a live run built a Tannery by cycle 96 and it made 0 Fur for the rest
+    # of the run, because its only inputs are hunts and a Deer Pen and neither existed (each tribe hunted twice; the pen needed 3 and a Tannery first). The order is now 3 hunts, then the Pen, then the Tannery.
     "BUILD_TANNERY": lambda t, w: (
-        t.hunt_ever_succeeded and t.wood >= config.TANNERY_WOOD_COST and t.stone >= config.TANNERY_STONE_COST
+        t.deer_pen_built and t.hunt_ever_succeeded and t.wood >= config.TANNERY_WOOD_COST and t.stone >= config.TANNERY_STONE_COST
         and _can_place(t, w, "tannery")
     ),
     "BUILD_DEER_PEN": lambda t, w: (
-        t.tannery_built and t.hunt_deer_success_count >= config.DEER_PEN_HUNT_THRESHOLD
+        t.hunt_deer_success_count >= config.DEER_PEN_HUNT_THRESHOLD
         and t.wood >= config.DEER_PEN_WOOD_COST and t.stone >= config.DEER_PEN_STONE_COST
         and _can_place(t, w, "deer_pen")
     ),
@@ -5905,11 +5907,11 @@ class Simulation:
         # existing Tannery, but nothing ever told the chief it had become reachable.
         if (
             "BUILD_DEER_PEN" in available_actions and not tribe.deer_pen_built
-            and tribe.tannery_built and tribe.hunt_deer_success_count >= config.DEER_PEN_HUNT_THRESHOLD
+            and tribe.hunt_deer_success_count >= config.DEER_PEN_HUNT_THRESHOLD
         ):
             _nudge(visible_entities, "build_hint", 
                 "Enough hunts have succeeded -- a deer pen built at the settlement would start a real "
-                "herd, feeding the tannery extra Fur every cycle on top of what it already produces."
+                "herd, and a tannery can only be built once a deer pen stands to feed it."
             )
         if "BUILD_KITCHEN" in available_actions and not tribe.kitchen_built:
             if tribe.cooking_learned and tribe.long_houses_built > 0:
@@ -8691,6 +8693,7 @@ class Simulation:
             caught = self._capped_add(tribe, "food", caught_gained)
             tribe.expeditions_succeeded += 1
             tribe.hunt_successes += 1
+            tribe.hunt_deer_success_count += 1  # 2026-10-10: a hunting party's catch counts toward the Deer Pen's 3 successful hunts, as a HUNT_DEER does
             tribe.hunt_ever_succeeded = True  # see actions.py._cook_food's own prerequisite
             if tribe.hunt_successes == config.MILESTONE_HUNT_SUCCESSES:
                 self._award_trophy(tribe, "Master Hunter", individual=scout)
