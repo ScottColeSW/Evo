@@ -1532,6 +1532,10 @@ EXTINCTION_TRAUMA_RADIUS = 10
 # something. Available from the Stone Age (see eras.py): inter-tribal conflict is at
 # least as old as inter-tribal cooperation, not a later "advanced" capability.
 RAID_PROXIMITY_RADIUS = 3
+# 2026-10-10 (explicit request: a spy's report should be visible and unlock a strike): RAID_RIVAL is offered while a spy's report on a living rival has not yet been used, hits that rival
+# with no coordinates needed, and uses the report up (one strike per report, so a strike needs a fresh spy). What the spy learned improves the odds by this much (a plain RAID's chance is
+# the attacker's share of the two populations, adjusted by Might).
+RAID_RIVAL_INTEL_WIN_BONUS = 0.15
 RAID_STEAL_FRACTION = 0.3
 RAID_ATTACKER_POPULATION_LOSS_ON_WIN = 1
 RAID_ATTACKER_POPULATION_LOSS_ON_LOSS = 2

@@ -6367,7 +6367,7 @@ def test_housing_scales_with_the_tribe_counts_the_battalion_and_a_settled_tribe_
     assert people_per_household(36_000) == 1800
     assert housing_capacity(tribe) == 6 * 1800
     tribe.battalion_size = 3_000
-    assert housing_capacity(tribe) == 6 * 1800 + 3_000  # the Battalion sleeps in its barracks
+    assert housing_capacity(tribe) == 6 * per + 3_000  # the Battalion sleeps in its barracks
     tribe.long_house_upgrades = config.HOUSEHOLDS_FOR_FULL_HOUSING
     assert housed_fraction(tribe) == 1.0 and shelter_growth_factor(tribe) == 1.0
 
@@ -6403,3 +6403,76 @@ def test_upgrade_long_house_is_not_offered_once_everyone_is_housed():
     assert ACTION_REGISTRY["UPGRADE_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET) is None
     tribe.population = 100_000
     assert AFFORDABILITY_CHECKS["UPGRADE_LONG_HOUSE"](tribe, sim.world) is True
+
+
+def _two_tribes_in_contact():
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Raiders", "gemma2:2b", 10, 10, "#c084fc")
+    b = Tribe("tribe_1", "Targets", "gemma2:2b", 70, 70, "#fb923c")
+    sim.tribes = {a.id: a, b.id: b}
+    a.discovered_rivals.add(b.id)
+    for t in (a, b):
+        t.population = 1000
+    return sim, a, b
+
+
+def test_raid_with_no_rival_at_the_target_goes_to_the_nearest_known_rival():
+    """2026-10-10: of the first 9 TRADE/RAID choices of a live run, 6 came back 'found no rival encampment there'."""
+    from unittest import mock
+
+    sim, a, b = _two_tribes_in_contact()
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        note = ACTION_REGISTRY["RAID"](sim, a, "plains", (10, 10))  # the model aimed at its own camp, 85 tiles from the rival
+    assert "found no rival" not in note and a.raids_won == 1
+    a2 = Tribe("tribe_2", "Alone", "gemma2:2b", 10, 10, "#c084fc")
+    sim.tribes = {a2.id: a2}
+    assert ACTION_REGISTRY["RAID"](sim, a2, "plains", (10, 10)) == "found no rival encampment there to raid"  # no known rival: still a no-op
+
+
+def test_a_spy_report_is_concrete_unlocks_raid_rival_and_the_strike_uses_it_up():
+    from unittest import mock
+
+    from backend import config
+    from backend.simulation import AFFORDABILITY_CHECKS
+
+    sim, a, b = _two_tribes_in_contact()
+    a.barracks_built = 1
+    sim.cycle = 50
+    assert AFFORDABILITY_CHECKS["RAID_RIVAL"](a, sim.world) is False  # no report yet
+    assert "no unused spy report" in ACTION_REGISTRY["RAID_RIVAL"](sim, a, "plains", (0, 0))
+    with mock.patch("backend.actions.random.random", return_value=0.99):  # not caught
+        note = ACTION_REGISTRY["SPY"](sim, a, "plains", (70, 70))
+    assert "1,000 people" in note and "RAID_RIVAL can now strike them" in note
+    assert a.rival_intel[b.id]["used"] is False and AFFORDABILITY_CHECKS["RAID_RIVAL"](a, sim.world) is True
+
+    seen = {}
+    real = __import__("backend.actions", fromlist=["_might_adjusted_win_chance"])._might_adjusted_win_chance
+    def spy_on_odds(att, deff, chance):
+        seen["base"] = real(att, deff, chance)
+        return seen["base"]
+    with mock.patch("backend.actions._might_adjusted_win_chance", side_effect=spy_on_odds), mock.patch("backend.actions.random.random", return_value=seen.get("x", 0.0)):
+        result = ACTION_REGISTRY["RAID_RIVAL"](sim, a, "plains", (0, 0))  # no coordinates needed
+    assert a.rival_intel[b.id]["used"] is True and a.raids_won + a.raids_lost == 1
+    assert AFFORDABILITY_CHECKS["RAID_RIVAL"](a, sim.world) is False  # one strike per report
+    assert "no unused spy report" in ACTION_REGISTRY["RAID_RIVAL"](sim, a, "plains", (0, 0))
+
+
+def test_raid_rival_intel_adds_to_the_odds_and_a_dead_rival_wastes_nothing():
+    from unittest import mock
+
+    from backend import config
+    from backend.actions import _raid_defender
+
+    sim, a, b = _two_tribes_in_contact()
+    chances = []
+    with mock.patch("backend.actions.skirmish", side_effect=lambda *args, **kw: chances.append(kw["attacker_chance"]) or {}), mock.patch("backend.actions.random.random", return_value=0.0):
+        _raid_defender(sim, a, b)
+        sim2, a2, b2 = _two_tribes_in_contact()
+        _raid_defender(sim2, a2, b2, win_bonus=config.RAID_RIVAL_INTEL_WIN_BONUS)
+    assert chances[1] > chances[0]
+
+    sim3, a3, b3 = _two_tribes_in_contact()
+    a3.rival_intel[b3.id] = {"used": False}
+    b3.extinct = True
+    assert "no unused spy report" in ACTION_REGISTRY["RAID_RIVAL"](sim3, a3, "plains", (0, 0))
+    assert a3.rival_intel[b3.id]["used"] is False

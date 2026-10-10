@@ -2795,7 +2795,16 @@ def _raid(sim, tribe, biome, target):
             break
 
     if defender is None:
-        return "found no rival encampment there to raid"
+        # 2026-10-10: same fallback TRADE already has. Of the first 9 TRADE/RAID choices of a live run, 6 came back "found no rival encampment there": the model's own target_vector is
+        # rarely within RAID_PROXIMITY_RADIUS of a camp 40 tiles away. A rival the tribe has already found is used instead.
+        defender = _nearest_rival(sim, tribe, tx, ty)
+        if defender is None:
+            return "found no rival encampment there to raid"
+    return _raid_defender(sim, tribe, defender)
+
+
+def _raid_defender(sim, tribe, defender, win_bonus: float = 0.0):
+    """The raid itself against a chosen rival tribe. win_bonus is added to the attacker's chance (RAID_RIVAL's spy intel)."""
     _war_cry(sim, tribe, defender, "raid")
 
     # DMM era's combat_boost effect applies here too, not just
@@ -2803,6 +2812,8 @@ def _raid(sim, tribe, biome, target):
     effective_population = tribe.population * (1 + _created_object_bonus(tribe, "combat_boost"))
     attacker_win_chance = effective_population / max(1, effective_population + defender.population)
     attacker_win_chance = _might_adjusted_win_chance(tribe, defender, attacker_win_chance)
+    if win_bonus:
+        attacker_win_chance = min(config.MIGHT_ADJUSTED_WIN_CHANCE_CEILING, attacker_win_chance + win_bonus)
     att_pop0, def_pop0 = tribe.population, defender.population
     if random.random() < attacker_win_chance:
         # Code-quality pass: the attacker's own gain here used to setattr the
@@ -3125,7 +3136,7 @@ def _record_trade(tribe, resource: str, given: int = 0, received: int = 0) -> No
 CONFLICT_ANSWER_ACTIONS = frozenset({
     "TRAIN_BATTALION", "BUILD_BARRACKS", "UPGRADE_BARRACKS", "CLEAR_TERRITORY", "STRIKE_RAIDER_CAMP",
     "EXPEL_RAIDERS_FROM_TERRITORY", "RAID", "DECLARE_CONQUEST", "DECLARE_WAR", "DECLARE_ALLIANCE",
-    "SEND_TRADE_EMISSARY", "TRADE", "SPY", "SCOUT",
+    "SEND_TRADE_EMISSARY", "TRADE", "SPY", "SCOUT", "RAID_RIVAL",
 })
 
 
@@ -3689,6 +3700,7 @@ def _spy(sim, tribe, biome, target):
         return f"the spy sent toward {rival.name} was caught -- {rival.name} now knows of {tribe.name}"
 
     tribe.rival_intel[rival.id] = {
+        "used": False,  # RAID_RIVAL spends it (2026-10-10)
         "cycle": sim.cycle,
         "population": rival.population,
         "era": rival.era,
@@ -3697,7 +3709,29 @@ def _spy(sim, tribe, biome, target):
         "wall_ring_count": len(rival.wall_rings),
         "military": military_intel(rival),
     }
-    return f"a spy returns from {rival.name}'s camp with fresh intelligence, undetected"
+    report = tribe.rival_intel[rival.id]
+    return (f"a spy returns from {rival.name}'s camp undetected: {report['population']:,} people, {report['era'].replace('_', ' ')}, "
+            f"{report['food']:,} food, {report['wood']:,} wood, {report['stone']:,} stone, {report['long_houses_built']} long houses, "
+            f"{report['wall_ring_count']} wall rings; {military_intel_text(report['military'])} -- RAID_RIVAL can now strike them with this knowledge")
+
+
+def _raid_rival(sim, tribe, biome, target):
+    """2026-10-10: strike a rival tribe the tribe's own spy has just reported on. No coordinates: the rival with an unused report nearest target_vector (usually the only one) is the target.
+    The report is used up, so the next strike needs a fresh spy; what the spy learned adds config.RAID_RIVAL_INTEL_WIN_BONUS to the odds."""
+    tx, ty = target
+    best = None
+    for rival_id, intel in tribe.rival_intel.items():
+        rival = sim.tribes.get(rival_id)
+        if intel.get("used") or rival is None or rival.extinct:
+            continue
+        dist = (rival.x - tx) ** 2 + (rival.y - ty) ** 2
+        if best is None or dist < best[0]:
+            best = (dist, rival, intel)
+    if best is None:
+        return "no unused spy report on a living rival -- a spy has to bring intelligence back first"
+    _dist, rival, intel = best
+    intel["used"] = True
+    return _raid_defender(sim, tribe, rival, win_bonus=config.RAID_RIVAL_INTEL_WIN_BONUS)
 
 
 ACTION_REGISTRY = {
@@ -3763,6 +3797,7 @@ ACTION_REGISTRY = {
     "DECLARE_WAR": _declare_war,
     "SEND_TRADE_EMISSARY": _send_trade_emissary,
     "SPY": _spy,
+    "RAID_RIVAL": _raid_rival,
 }
 
 # Plain mechanical facts about what each verb does, handed to the model in the prompt
@@ -3882,6 +3917,7 @@ ACTION_DESCRIPTIONS = {
     "DECLARE_WAR": "Declare a lasting state of war with whichever rival tribe is nearest target_vector -- a real, persistent stance both tribes will remember. Does not attack them directly (see RAID for that); this only sets how the two tribes now stand. Only possible once a Barracks stands. Does nothing if no rival tribe exists, or if already at war with them.",
     "SEND_TRADE_EMISSARY": "Reach out to open trade with whichever rival tribe is nearest target_vector, already in contact (a much longer reach than TRADE's tight radius, but requires the rival to have actually been encountered before -- same requirement as ALLIANCE/DECLARE_WAR). An unaffiliated minor settlement near target_vector can also be traded with, the same as TRADE -- safer than RAIDing it, and it never depletes the way raiding does. Instant: goods exchange immediately if either is found.",
     "SPY": "Send a covert agent toward whichever rival tribe is nearest target_vector, already in contact (same requirement as ALLIANCE/DECLARE_WAR/SEND_TRADE_EMISSARY). Instant, and real risk: about a 1-in-3 chance of being caught, costing the spy's own small carried supplies and telling that rival your tribe exists, whether or not they knew before. If undetected, reveals their real population, era, resources, and key buildings for your own next reflection to weigh. Only possible once a Barracks stands. Does nothing if no rival tribe exists.",
+    "RAID_RIVAL": "Strike a rival tribe your spy has just reported on, using what the spy learned. No target needed: it hits the rival whose report you have not used yet. The report improves your odds, and it is used up, so the next strike needs a fresh spy. A win steals part of their stockpile and takes captives but still costs you people; a loss costs you more. Only possible while you hold an unused spy report on a living rival.",
 }
 
 
@@ -3910,6 +3946,7 @@ COMPACT_DESCRIPTIONS = {
     "SEND_TRADE_EMISSARY": "You send an emissary to open trade with the rival nearest target_vector that you already met. It reaches much farther than TRADE. It needs the same contact as ALLIANCE and DECLARE_WAR: you must have met the rival. You can also trade with an unaffiliated minor settlement near target_vector. That is safer than RAIDing it, and it never runs out. Goods change hands at once.",
     "STRIKE_RAIDER_CAMP": "You attack a raider camp your scouts found. Set target_vector to the exact coordinate from one of your own raider sighting reports. Near is not enough. A win destroys the camp and recovers some food. A loss costs a life and the camp stays.",
     "SPY": "You send a spy to the rival nearest target_vector that you already met (the same contact as ALLIANCE, DECLARE_WAR and SEND_TRADE_EMISSARY). It happens at once. The spy has about a 1-in-3 chance of getting caught. If caught, you lose its small supplies and that rival learns your tribe exists. If not caught, you learn their real population, era, resources and key buildings for your next reflection. If no rival exists, nothing happens.",
+    "RAID_RIVAL": "You strike a rival your spy just reported on. You need no target. You get better odds from what the spy learned, and the report is used up. A win takes part of their stockpile and captives. A loss costs you more people. It is only possible while you hold an unused spy report.",
     "DECLARE_WAR": "You declare a lasting war on the rival nearest target_vector. Both tribes remember it. It does not attack them (use RAID for that). It only sets how the two tribes stand. If no rival exists, or you are already at war with them, nothing happens.",
     "TRAIN_BATTALION": "You train soldiers for your Battalion, up to your barracks' capacity. It costs food, not wood or stone. It takes several turns, like a wall section, and more people train faster. You can repeat it. The game names a Warrior to lead the Battalion when anyone earns a trophy.",
     "GATHER_STONE": "You harvest stone at your current tile. Mountains give by far the most. Every other biome gives almost none. Each recent harvest on this exact spot lowers the yield.",

@@ -39,7 +39,7 @@ def test_the_report_reaches_the_chief_in_a_live_turn_and_at_night():
     a.rival_intel[b.id] = {"cycle": 12, "population": b.population, "era": b.era, "wood": 1, "stone": 2, "food": 3, "water": 4,
                            "long_houses_built": 0, "wall_ring_count": 0, "military": military_intel(b)}
     request, _ctx = sim._prepare_turn(a)
-    assert "What your spy reported of B's forces (cycle 12): 40 soldiers" in request["prompt"]
+    assert "What your spy reported of B (cycle 12):" in request["prompt"] and "forces: 40 soldiers" in request["prompt"]  # 2026-10-10: the whole report, not only the forces
     assert "Their forces: 40 soldiers" in sim._build_night_inventory(a)
 
 

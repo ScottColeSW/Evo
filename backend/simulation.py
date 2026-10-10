@@ -368,7 +368,7 @@ VESSEL_STANDING_ACTIONS = {"SAIL_TO_NEW_LANDS", "DECLARE_CONQUEST", "DECLARE_ALL
 # extended to a fact only Simulation (not a lone Tribe/Landscape pair) can
 # check.
 RIVAL_DEPENDENT_ACTIONS = (
-    "RAID", "TRADE", "SEND_TRADE_EMISSARY", "DECLARE_ALLIANCE", "DECLARE_WAR", "DECLARE_CONQUEST", "SPY",
+    "RAID", "TRADE", "SEND_TRADE_EMISSARY", "DECLARE_ALLIANCE", "DECLARE_WAR", "DECLARE_CONQUEST", "SPY", "RAID_RIVAL",
 )
 
 # See _prepare_turn's affordability filter. A live run showed a tribe stuck at
@@ -989,6 +989,8 @@ AFFORDABILITY_CHECKS = {
     # intelligence capability, not a scholarly one, and this needs no new
     # prerequisite plumbing beyond what already exists.
     "SPY": lambda t, w: t.barracks_built > 0 and bool(t.discovered_rivals),
+    # 2026-10-10: unlocked by a spy's report that has not been spent yet (see actions._raid_rival); whether the rival is still alive is checked when it is used.
+    "RAID_RIVAL": lambda t, w: any(not intel.get("used") for intel in t.rival_intel.values()),
     # long_houses_built + long_house_upgrades, not long_houses_built alone --
     # explicit request, 2026-09-09: "modify long houses to scale like
     # warehouse." Real builds cap at LONG_HOUSE_MAX_COUNT (5); Fortress/
@@ -4239,8 +4241,14 @@ class Simulation:
                 spied = tribe.rival_intel.get(other.id)
                 if spied and spied.get("military"):
                     visible_entities.append(
-                        f"What your spy reported of {other.name}'s forces (cycle {spied['cycle']}): {military_intel_text(spied['military'])}"
+                        f"What your spy reported of {other.name} (cycle {spied['cycle']}): {spied['population']:,} people, {str(spied['era']).replace('_', ' ')}, "
+                        f"{spied['food']:,} food, {spied['wood']:,} wood, {spied['stone']:,} stone, {spied['long_houses_built']} long houses, "
+                        f"{spied['wall_ring_count']} wall rings; forces: {military_intel_text(spied['military'])}"
                     )
+                    if not spied.get("used") and "RAID_RIVAL" in available_actions:
+                        visible_entities.append(
+                            f"That report is a strike plan: RAID_RIVAL hits {other.name} with it (no coordinates needed, better odds than a plain RAID), and uses the report up."
+                        )
                 # Explicit request, 2026-09-09: "dig into why tribe-to-tribe
                 # contact never gets acted on." Grounded in a real run: both
                 # tribes discovered each other (one with a 98-cycle window
