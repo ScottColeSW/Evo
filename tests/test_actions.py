@@ -6364,8 +6364,9 @@ def test_housing_scales_with_the_tribe_counts_the_battalion_and_a_settled_tribe_
 
     tribe.population = 36_000
     tribe.long_houses_built = 5
-    assert people_per_household(36_000) == 1800
-    assert housing_capacity(tribe) == 6 * 1800
+    per = -(-36_000 // config.HOUSEHOLDS_FOR_FULL_HOUSING)
+    assert people_per_household(36_000) == per
+    assert housing_capacity(tribe) == 6 * per
     tribe.battalion_size = 3_000
     assert housing_capacity(tribe) == 6 * per + 3_000  # the Battalion sleeps in its barracks
     tribe.long_house_upgrades = config.HOUSEHOLDS_FOR_FULL_HOUSING
