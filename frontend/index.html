@@ -315,6 +315,7 @@
   .icon-key-swatch-toll { background: linear-gradient(90deg, #b45309, #fbbf24); }
 
   #sidebar { width: 360px; flex-shrink: 0; background: #1a1a24; border-left: 2px solid #2a2a3a; padding: 14px; display: flex; flex-direction: column; min-height: 0; }
+  #sidebar.pending { visibility: hidden; }  /* 2026-10-10: hidden (not removed, so the board does not shift) while the spawn splash is up and the chiefs are being chosen */
   #sidebar-tabs { display: flex; gap: 4px; margin-bottom: 12px; flex-shrink: 0; }
   .tab-btn { flex: 1; background: #202030; color: #8a8a9a; padding: 8px 4px; font-size: 12px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
   .tab-btn.active { background: #322f6e; color: #c7d2fe; }
@@ -1758,6 +1759,7 @@ function showSpawnSplash() {
   let i = 0;
   text.textContent = SPAWN_FLAVOR[0];
   splash.classList.remove("hidden");
+  document.getElementById("sidebar").classList.add("pending");
   clearInterval(spawnFlavorTimer);
   spawnFlavorTimer = setInterval(() => {
     i = (i + 1) % SPAWN_FLAVOR.length;
@@ -1768,6 +1770,7 @@ function showSpawnSplash() {
 function hideSpawnSplash() {
   clearInterval(spawnFlavorTimer);
   document.getElementById("spawn-splash").classList.add("hidden");
+  document.getElementById("sidebar").classList.remove("pending");
 }
 
 /* ---------- Theater chrome: header, tabs, resize ---------- */
