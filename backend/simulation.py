@@ -3963,7 +3963,7 @@ class Simulation:
                 "menu_cap": config.menu_cap(), "nodes": "on" if config.nodes_active() else "off", "disabled_actions": list(config.DISABLED_ACTIONS),
                 "tribes": [{"id": t.id, "name": t.name, "model": t.model} for t in self.tribes.values()],
                 "immortality_cycles": self.immortality_cycles, "reflection_judge": getattr(self, "reflection_judge_status", "off"),
-                "journal_readback": bool(getattr(self, "journal_readback", False)), "reflection_model": config.REFLECTION_MODEL,
+                "journal_readback": bool(getattr(self, "journal_readback", False)), "reflection_model": self._reflection_setting(),  # the effective setting: the REFLECTION_MODEL environment variable, or the config value ("tribe" = each tribe's own model)
                 "era_min_cycles": config.ERA_MIN_CYCLES, "era_ceiling_grace_cycles": config.ERA_CEILING_GRACE_CYCLES,
                 "fur_per_deer_fed": config.FUR_PER_DEER_FED, "vessel_cost": [config.VESSEL_WOOD_COST, config.VESSEL_STONE_COST],
             }

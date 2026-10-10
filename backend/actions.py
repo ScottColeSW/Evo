@@ -1044,6 +1044,7 @@ def _build_barracks(sim, tribe, biome, target):
     if _place_building(sim, tribe, "barracks", config.BARRACKS_WOOD_COST, config.BARRACKS_STONE_COST) is None:
         return None
     tribe.barracks_built += 1
+    tribe.battalion_readiness = max(0.0, tribe.battalion_readiness - config.BARRACKS_READINESS_COST)  # new recruits are untrained (2026-10-10)
     capacity = _battalion_capacity(tribe)
     old_size = tribe.battalion_size
     tribe.battalion_size = max(old_size, min(capacity, tribe.population))
@@ -1082,6 +1083,7 @@ def _upgrade_barracks(sim, tribe, biome, target):
     tribe.wood -= wood_cost
     tribe.stone -= stone_cost
     tribe.barracks_upgrades += 1
+    tribe.battalion_readiness = max(0.0, tribe.battalion_readiness - config.BARRACKS_READINESS_COST)  # new recruits are untrained (2026-10-10)
     capacity = _battalion_capacity(tribe)
     old_size = tribe.battalion_size
     tribe.battalion_size = max(old_size, min(capacity, tribe.population))

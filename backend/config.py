@@ -1228,6 +1228,10 @@ BATTALION_PATROL_COOLDOWN_DAYS = 3
 # (about a third of a drill), so the patrol on the board counts for something.
 BARRACKS_MIN_READINESS = 0.6
 BATTALION_PATROL_READINESS_BONUS = 0.1
+# 2026-10-10 (explicit request): the gate above only checked readiness, it never spent any. In run_20261010_131911 one training burst (readiness near 1.0, decaying 0.005 a cycle) left the barracks
+# actions on offer every cycle for about 60 cycles, and Tribe 1 made 73 UPGRADE_BARRACKS with 4 TRAIN_BATTALION. Each barracks built or upgraded now costs this much readiness (new recruits are
+# untrained), so a burst of drilling buys about three, and the Battalion has to be drilled again for more.
+BARRACKS_READINESS_COST = 0.15
 # Moves every cycle while patrolling, not gated to once-per-day the way a
 # settled expedition's own movement is -- a 1-day patrol duration would only
 # ever take a single step under that gating, nowhere near enough to reach a

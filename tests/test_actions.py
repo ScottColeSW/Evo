@@ -6542,3 +6542,31 @@ def test_trade_between_two_tribes_at_war_is_closed_until_peace():
     b.stance_toward[a.id] = "ALLIED"  # peace
     _execute_trade(sim, a, b)
     assert a.trade_given.get("wood", 0) > 0 or b.trade_given.get("wood", 0) > 0
+
+
+def test_each_barracks_built_or_upgraded_costs_readiness_so_a_training_burst_buys_only_a_few():
+    """2026-10-10: one training burst left the barracks actions on offer every cycle for about 60 cycles and a live tribe made 73 UPGRADE_BARRACKS with 4 TRAIN_BATTALION."""
+    from backend import config
+    from backend.simulation import AFFORDABILITY_CHECKS
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.barracks_built = config.BARRACKS_MAX_COUNT
+    tribe.population = 100_000
+    tribe.wood = tribe.stone = 1_000_000
+    tribe.battalion_readiness = 1.0
+    done = 0
+    while AFFORDABILITY_CHECKS["UPGRADE_BARRACKS"](tribe, sim.world) and done < 50:
+        before = tribe.battalion_readiness
+        assert ACTION_REGISTRY["UPGRADE_BARRACKS"](sim, tribe, "plains", _NO_TARGET) is not None
+        assert abs((before - tribe.battalion_readiness) - config.BARRACKS_READINESS_COST) < 1e-9 or tribe.battalion_readiness == 0.0
+        done += 1
+    expected = 0
+    r = 1.0
+    while r >= config.BARRACKS_MIN_READINESS:
+        expected += 1
+        r -= config.BARRACKS_READINESS_COST
+    assert done == expected and done <= 4  # about three upgrades per burst of drilling, not fifty
+    tribe.battalion_readiness = 1.0
+    assert AFFORDABILITY_CHECKS["UPGRADE_BARRACKS"](tribe, sim.world) is True  # drilled again: more are allowed
