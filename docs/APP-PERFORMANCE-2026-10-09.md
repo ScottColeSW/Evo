@@ -78,19 +78,39 @@ startup. In a lean run nothing is written to `logs/` (verified: 100 mid-game cyc
 Not switched off, deliberately: the model-reply handling that exists for robustness (salvaging a cut-off reply, one retry of an empty one, the token-repeat retry) and the failover, since those
 change what the models' answers do rather than record anything.
 
-## Recommended next, in order of gain for risk (none applied)
+## Applied 2026-10-10 (items 1, 2 and 4 of the earlier list)
 
-1. **Cache `biome_at`** (a pure function of the tile). Measured above: mid-game step 95th percentile 494 to 75 ms with logging on, 400 to 50 ms lean, and the 100-cycle run 16 to 1.7 s. Risk low;
-   a test that changes terrain at run time would need `biome_at.cache_clear()`.
-2. **Make the page keep moving.** The glide should not finish early and then stop: extend the window past the expected arrival (a smoothed interval with margin) and keep a gentle velocity
-   with easing until the next update, with the sun and moon doing the same. Front-end only. This addresses the 24 to 29% of the time the page stands still, and does not depend on the server getting faster.
-3. **Take the night cycle off the critical path.** About 19 nights of 40 s in one run (roughly 18% of its wall time). Send the state before the reflections start so the page can show the night
-   and keep animating, and let the reflection calls run while the next day's cycles go on, applying their results when they return. Touches the order of the game loop, so it needs care and tests.
-4. **Make the board-history write cheap:** one open connection, `synchronous=NORMAL` under WAL (or write off the event loop), and serialize the snapshot once for both the database and the
-   socket. About 120 ms a cycle returned to the loop, and the history stays available.
+Measured with `scripts/app_profile.py` on the real code, no model delay, median / 95th percentile milliseconds per tick (mid-game unless stated):
+
+| | before | after 1 (terrain cache) | after 1 and 4 (and the cheap write) |
+|---|---|---|---|
+| step | 44 / 494 | 27 / 69 | 30 / 74 |
+| board-history write (default settings) | 128 / 172 | 139 / 175 | **0.9 / 2.0** |
+| whole tick (default settings) | 183 / 634 | 175 / 225 | **33 / 95** |
+| event-loop lag samples over 100 ms | 119 | 100 | 5 |
+| 100 cycles, wall time | 26.4 s | 18.1 s | **5.0 s** |
+| fresh start, whole tick | 151 / 234 | 150 / 195 | 22 / 49 |
+
+With `LEAN_RUN=on` as well, a mid-game tick is about 5 ms. The app's own work is now a small part of a cycle that the models make 3 to 5 seconds long.
+
+1. **`world.biome_at` is cached** (`functools.lru_cache`, bounded at 131,072 tiles). A test checks it gives the same answer as working it out for every tile on and around the map, and `tests/conftest.py` clears it around
+   every test so a test that changes the terrain inputs cannot see a stale answer.
+4. **The board-history write is cheap.** One writer connection stays open per database file (WAL with `synchronous=NORMAL`), `board_history.close_all()` releases them (server shutdown and between tests), the snapshot is
+   serialized once for the page and the history, and the page is sent first so a slow write cannot delay it. The cost is that a power loss can lose the last few cycles of history.
+2. **The page, reshaped by the data.** The planned change (a longer glide that keeps moving past the expected arrival) turned out to address little: replaying the two real runs' timing, **81 to 88% of the standing-still time
+   comes from waits over 15 seconds** (the night cycle, elections, loop-abort retries), which no glide covers, and a longer window cut ordinary standing still only from 29% to about 21% while adding lag. What was built instead is
+   three small things: the gap is a **smoothed estimate** (after a 40 s stall the next glide window is 6.5 s, not 8 s, so one long wait no longer makes the next glide crawl and then hop), the glide lasts **1.3 times that estimate**
+   so ordinary late updates no longer leave things stopped, and a **ring pulses around each living settlement while the page is waiting** (longer than 1.6 times the usual gap, never when paused or over) so a pause reads as waiting.
+   Verified in the page: after a 40 s stall the estimate is 6.5 s and recovers to 5.7 s; at 5 s a 4-tile move is at 3.08 tiles (the old rule would be done); the waiting test is false when paused or over; real late-game states
+   draw with no error, a frame costs 5 ms in either state, and the ring band around a settlement measurably changes color in the waiting state.
+   The long stalls themselves are untouched: that is item 3 below.
+
+## Still open, in order
+
+3. **Take the night cycle off the critical path.** About 19 nights of 40 s in one run (roughly 18% of its wall time), plus elections and naming (about 48 s each). The game loop has no way to hand a reflection off and collect it
+   later (no publish and subscribe), so this needs a real design: start the reflection calls as background tasks, keep stepping the day, and apply each result at a safe point in a later cycle. Not started.
 5. **The other long waits:** a chief's election and a settlement's naming (about 48 s each) and model loop-aborts (about 40 s each) could run in the background or time out.
-6. **Cut the scan itself:** with `biome_at` cached, `find_free_slot` is still about 18 ms a call (3.8 s of 6.9 s of step time in the cached profile); a smaller scan area or caching the result per
-   territory state would remove most of it.
+6. **Cut the scan itself:** with `biome_at` cached, `find_free_slot` is still about 18 ms a call; a smaller scan area or caching the result per territory state would remove most of it.
 
 ## Limits
 
