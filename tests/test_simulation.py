@@ -15930,6 +15930,18 @@ def test_a_final_era_tribe_with_a_living_rival_can_still_build_the_vessel_and_ga
     assert "SCOUT" in ctx["available_actions"]  # the resolution menu itself is still in force (conquest needs more stock than this test gives)
 
 
+def test_build_vessel_is_first_on_the_menu_once_it_is_offered():
+    """2026-10-10: both tribes of a real run could afford the vessel from cycle 371 and chose it 5 and 3 times in about 300 offers,
+    behind UPGRADE_BARRACKS and UPGRADE_LONG_HOUSE; it usually sat 2nd or 3rd."""
+    sim, tribe = _final_era_pair()
+    tribe.territory_radius = 40
+
+    _request, ctx = sim._prepare_turn(tribe)
+
+    assert ctx["available_actions"][0] == "BUILD_VESSEL"
+    assert len(ctx["available_actions"]) == len(set(ctx["available_actions"]))  # moved, not duplicated
+
+
 def test_once_the_vessel_stands_the_menu_narrows_to_depart_conquest_alliance_and_survival():
     from backend.simulation import VESSEL_STANDING_ACTIONS
 

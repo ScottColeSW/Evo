@@ -5248,6 +5248,12 @@ class Simulation:
             ]
             available_actions = food_security + construction + rest + gathers
 
+        # 2026-10-10 (explicit request: "move BUILD_VESSEL to the front once affordable"): in a real run both tribes could afford the vessel from cycle 371 (it was on the
+        # menu) and chose it 5 and 3 times in about 300 offers, spending the turns on UPGRADE_BARRACKS and UPGRADE_LONG_HOUSE; Luke finished it at cycle 680 of 684.
+        # BUILD_VESSEL is only offered when it can add something (see its AFFORDABILITY_CHECKS entry), so being on the menu is "affordable". CLEAR_TERRITORY below still wins.
+        if "BUILD_VESSEL" in available_actions:
+            available_actions = ["BUILD_VESSEL"] + [a for a in available_actions if a != "BUILD_VESSEL"]
+
         # Explicit request, 2026-09-17: "CLEAR_TERRITORY need to pop to the
         # top of the actions if it becomes available." Applied unconditionally,
         # after every tier above -- CLEAR_TERRITORY isn't just another
