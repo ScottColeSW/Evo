@@ -13,6 +13,8 @@ Kept free of any World/Simulation import (wall_fraction is passed in, computed b
 Simulation._wall_fraction) to avoid a circular dependency with simulation.py.
 """
 
+import math
+
 from . import config
 from .eras import ERAS, era_index
 
@@ -33,6 +35,33 @@ TIER_LABELS = {
 # "your people are starving" as focus. See config.FAME_PER_CELEBRATION/
 # _PER_LANDMARK for how tribe.fame accrues.
 FAME_LABEL = "Fame"
+
+
+def household_count(tribe) -> int:
+    """Long houses built plus upgrades (the same count Keep, Fortress and Castle use), plus the Town Hall once the tribe has settled."""
+    return (1 if tribe.has_ever_settled else 0) + tribe.long_houses_built + tribe.long_house_upgrades
+
+
+def people_per_household(population: int) -> int:
+    return max(config.HOUSING_POPULATION_PER_LONG_HOUSE, math.ceil(population / config.HOUSEHOLDS_FOR_FULL_HOUSING))
+
+
+def housing_capacity(tribe) -> int:
+    """People sheltered: every household's share, plus the Battalion in its barracks."""
+    return household_count(tribe) * people_per_household(tribe.population) + tribe.battalion_size
+
+
+def housed_fraction(tribe) -> float:
+    if tribe.population <= 0:
+        return 1.0
+    return min(1.0, housing_capacity(tribe) / tribe.population)
+
+
+def shelter_growth_factor(tribe) -> float:
+    """Growth multiplier from shelter: 1.0 for a tribe that has not settled (nobody builds houses yet) or is fully housed, SHELTER_GROWTH_FLOOR with nobody housed."""
+    if not tribe.has_ever_settled:
+        return 1.0
+    return config.SHELTER_GROWTH_FLOOR + (1.0 - config.SHELTER_GROWTH_FLOOR) * housed_fraction(tribe)
 
 
 def compute_wellbeing(tribe, wall_fraction: float) -> dict:
@@ -64,7 +93,8 @@ def compute_wellbeing(tribe, wall_fraction: float) -> dict:
     if not tribe.has_ever_settled:
         safety = 0.2
     else:
-        safety = min(1.0, 0.3 + 0.4 * wall_fraction + 0.3 * min(1.0, tribe.raids_defended / 3))
+        defended = min(1.0, 0.3 + 0.4 * wall_fraction + 0.3 * min(1.0, tribe.raids_defended / 3))
+        safety = min(1.0, (1 - config.SAFETY_SHELTER_WEIGHT) * defended + config.SAFETY_SHELTER_WEIGHT * housed_fraction(tribe))
 
     # Belonging: contact with other tribes (trade) plus having ever spoken at all
     # (a broadcast is this tribe's own cultural voice, however small a signal).
@@ -124,7 +154,9 @@ def _summary_text(tribe, tiers: dict, focus: str, buffer_cycles: float, wall_fra
             "still nomadic, no fixed camp to defend."
             if not tribe.has_ever_settled
             else f"{'secure' if tiers['safety'] >= TIER_SATISFIED_THRESHOLD else 'exposed'} "
-            f"(wall {round(wall_fraction * 100)}% complete, {tribe.raids_defended} raid(s) repelled)."
+            f"(wall {round(wall_fraction * 100)}% complete, {tribe.raids_defended} raid(s) repelled"
+            + (f"; {max(0, tribe.population - housing_capacity(tribe)):,} of {tribe.population:,} people still sleep without shelter" if housed_fraction(tribe) < 1.0 else "; everyone sheltered")
+            + ")."
         ),
         f"Belonging: {'connected' if tiers['belonging'] >= TIER_SATISFIED_THRESHOLD else 'isolated'} "
         f"({tribe.trades_completed} trade contact(s) made with other tribes).",

@@ -5155,7 +5155,8 @@ function farmingPanel(t) {
     const housingNote = unhoused > 0
       ? `${housed}/${t.population} housed, ${unhoused} still need shelter`
       : "everyone housed comfortably";
-    housing.push(`🏠 Long House — ${t.long_houses_built} standing, ${housingNote}`);
+    const expanded = t.long_house_upgrades > 0 ? ` (+${t.long_house_upgrades} expanded)` : "";
+    housing.push(`🏠 Long House — ${t.long_houses_built} standing${expanded}, ${housingNote}`);
   } else if (ring0 && ring0.sections.every(s => s.natural_barrier || s.progress >= 100)) {
     // Explicit correction: "keep the Long House blocked note hidden until
     // [the wall's done and] they build one" -- this used to also show a

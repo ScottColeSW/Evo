@@ -694,6 +694,9 @@ def _upgrade_long_house(sim, tribe, biome, target):
     become the same infinite-spam problem under a new name -- necessary
     given Fortress/Castle need 40/70 long-house-equivalents, far more than
     any tribe should ever place as literal buildings."""
+    from .wellbeing import housing_capacity
+    if tribe.population <= housing_capacity(tribe):
+        return None  # nobody is unhoused; an upgrade would add nothing (2026-10-10)
     tier = tribe.long_house_upgrades
     wood_cost = round(config.LONG_HOUSE_UPGRADE_WOOD_COST_BASE * (1 + tier * config.LONG_HOUSE_UPGRADE_COST_GROWTH))
     stone_cost = round(config.LONG_HOUSE_UPGRADE_STONE_COST_BASE * (1 + tier * config.LONG_HOUSE_UPGRADE_COST_GROWTH))
@@ -703,7 +706,9 @@ def _upgrade_long_house(sim, tribe, biome, target):
     tribe.stone -= stone_cost
     tribe.long_house_upgrades += 1
     total = tribe.long_houses_built + tribe.long_house_upgrades
-    return f"the standing long houses are expanded -- the settlement now supports {total} household{'s' if total != 1 else ''} worth of shelter"
+    housed = min(tribe.population, housing_capacity(tribe))
+    return (f"the standing long houses are expanded -- the settlement now supports {total} household{'s' if total != 1 else ''} worth of shelter, "
+            f"{housed:,} of {tribe.population:,} people housed")
 
 
 def _build_keep(sim, tribe, biome, target):

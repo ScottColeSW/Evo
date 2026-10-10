@@ -30,7 +30,7 @@ from .scoreboard import record_tribe_result
 from .skirmish import skirmish
 from .instincts import survival_bias_string
 from .threat import threat_assessment_string
-from .wellbeing import compute_wellbeing
+from .wellbeing import compute_wellbeing, housing_capacity, shelter_growth_factor
 from .leadership import elect_chief, name_settlement
 from .memory import TribeMemory
 from .might import compute_might
@@ -823,6 +823,7 @@ AFFORDABILITY_CHECKS = {
     "BUILD_LONG_HOUSE": _can_afford_build_long_house,
     "UPGRADE_LONG_HOUSE": lambda t, w: (
         t.long_houses_built >= config.LONG_HOUSE_MAX_COUNT
+        and t.population > housing_capacity(t)  # 2026-10-10: only while someone is unhoused, so it can never be spent on nothing
         and t.wood >= round(config.LONG_HOUSE_UPGRADE_WOOD_COST_BASE * (1 + t.long_house_upgrades * config.LONG_HOUSE_UPGRADE_COST_GROWTH))
         and t.stone >= round(config.LONG_HOUSE_UPGRADE_STONE_COST_BASE * (1 + t.long_house_upgrades * config.LONG_HOUSE_UPGRADE_COST_GROWTH))
     ),
@@ -2237,7 +2238,7 @@ class Tribe:
             # housed comfortably." Computed here (not left for the frontend to
             # duplicate) from the same HOUSING_POPULATION_PER_LONG_HOUSE
             # _build_long_house's own repeat-gate already uses.
-            "housing_capacity": self.long_houses_built * config.HOUSING_POPULATION_PER_LONG_HOUSE,
+            "housing_capacity": housing_capacity(self),
             "keep_built": self.keep_built,
             "fortress_built": self.fortress_built,
             "castle_built": self.castle_built,
@@ -9111,7 +9112,7 @@ class Simulation:
             carrying_capacity_fraction = max(0.0, 1 - tribe.population / _sustainable_population(tribe))
             growth = round(
                 base_growth * physiological * config.POPULATION_GROWTH_WELLBEING_MAX_MULTIPLIER
-                * carrying_capacity_fraction
+                * carrying_capacity_fraction * shelter_growth_factor(tribe)
             )
             if growth > 0:
                 tribe.population += growth

@@ -1848,6 +1848,14 @@ LONG_HOUSE_STONE_COST = 20
 # most") -- a real, human-scale capacity per building rather than a small number
 # that mostly just controlled how fast Long Houses accumulated.
 HOUSING_POPULATION_PER_LONG_HOUSE = 30
+# 2026-10-10 (explicit request: a household's size scales with the tribe, unhoused people hurt Well-Being, the Battalion is housed in its barracks): a real run's tribes had 36,000
+# to 56,000 people and "150 housed", because upgrades never raised housing and a flat 30 a house cannot house a civilization. Each household (a long house built or upgraded, plus the Town Hall
+# once settled) now shelters max(HOUSING_POPULATION_PER_LONG_HOUSE, population / HOUSEHOLDS_FOR_FULL_HOUSING) people, so HOUSEHOLDS_FOR_FULL_HOUSING households house everyone at any size,
+# and the Battalion sleeps in its barracks. Unhoused people slow growth (SHELTER_GROWTH_FLOOR is the growth multiplier at zero housed, 1.0 at fully housed) and weigh on the Safety tier
+# (SAFETY_SHELTER_WEIGHT of it). Starting values, not tuned.
+HOUSEHOLDS_FOR_FULL_HOUSING = 20
+SHELTER_GROWTH_FLOOR = 0.5
+SAFETY_SHELTER_WEIGHT = 0.3
 
 # Explicit request, 2026-09-09: "modify long houses to scale like warehouse."
 # Same shape as WAREHOUSE_MAX_COUNT/UPGRADE_WAREHOUSE (real data showed a

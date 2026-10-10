@@ -1181,10 +1181,11 @@ def test_upgrade_long_house_raises_the_tier_count_and_costs_more_each_time():
 
     tribe.long_houses_built = config.LONG_HOUSE_MAX_COUNT
     tribe.wood = tribe.stone = 10_000
+    tribe.population = 100_000  # an upgrade is only offered while someone is unhoused (2026-10-10)
 
     result = ACTION_REGISTRY["UPGRADE_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET)
     assert tribe.long_house_upgrades == 1
-    assert "expanded" in result
+    assert "expanded" in result and "people housed" in result
     first_wood_spent = 10_000 - tribe.wood
 
     wood_before_second = tribe.wood
@@ -6337,3 +6338,57 @@ def test_library_and_research_no_longer_claim_to_shorten_the_path_to_the_next_er
 
     for key in ("BUILD_LIBRARY", "RESEARCH"):
         assert "next era" not in D[key] and "sooner" not in D[key] and "shortens" not in D[key]
+
+
+def test_housing_scales_with_the_tribe_counts_the_battalion_and_a_settled_tribe_is_not_hurt_early():
+    from backend import config
+    from backend.wellbeing import housed_fraction, housing_capacity, people_per_household, shelter_growth_factor
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 30
+    assert shelter_growth_factor(tribe) == 1.0  # not settled: nobody builds houses yet
+    tribe.has_ever_settled = True
+    assert housing_capacity(tribe) == config.HOUSING_POPULATION_PER_LONG_HOUSE and housed_fraction(tribe) == 1.0  # the Town Hall
+
+    tribe.population = 36_000
+    tribe.long_houses_built = 5
+    assert people_per_household(36_000) == 1800
+    assert housing_capacity(tribe) == 6 * 1800
+    tribe.battalion_size = 3_000
+    assert housing_capacity(tribe) == 6 * 1800 + 3_000  # the Battalion sleeps in its barracks
+    tribe.long_house_upgrades = config.HOUSEHOLDS_FOR_FULL_HOUSING
+    assert housed_fraction(tribe) == 1.0 and shelter_growth_factor(tribe) == 1.0
+
+
+def test_unhoused_people_slow_growth_toward_the_floor_and_weigh_on_safety():
+    from backend import config
+    from backend.wellbeing import compute_wellbeing, shelter_growth_factor
+
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.has_ever_settled = True
+    tribe.population = 10_000
+    tribe.long_houses_built = 0
+    low = shelter_growth_factor(tribe)
+    assert config.SHELTER_GROWTH_FLOOR < low < 1.0
+    safety_unhoused = compute_wellbeing(tribe, 0.5)["tiers"]["safety"]
+    assert "still sleep without shelter" in compute_wellbeing(tribe, 0.5)["summary"]
+    tribe.long_house_upgrades = config.HOUSEHOLDS_FOR_FULL_HOUSING
+    assert compute_wellbeing(tribe, 0.5)["tiers"]["safety"] > safety_unhoused
+    assert "everyone sheltered" in compute_wellbeing(tribe, 0.5)["summary"]
+
+
+def test_upgrade_long_house_is_not_offered_once_everyone_is_housed():
+    from backend import config
+    from backend.simulation import AFFORDABILITY_CHECKS
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    _settle(sim, tribe)
+    tribe.long_houses_built = config.LONG_HOUSE_MAX_COUNT
+    tribe.wood = tribe.stone = 10_000
+    tribe.population = 40
+    assert AFFORDABILITY_CHECKS["UPGRADE_LONG_HOUSE"](tribe, sim.world) is False  # 40 people, 6 households of 30 or more
+    assert ACTION_REGISTRY["UPGRADE_LONG_HOUSE"](sim, tribe, "plains", _NO_TARGET) is None
+    tribe.population = 100_000
+    assert AFFORDABILITY_CHECKS["UPGRADE_LONG_HOUSE"](tribe, sim.world) is True
