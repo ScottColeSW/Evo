@@ -16107,3 +16107,44 @@ def test_the_snapshot_carries_glide_to_only_for_a_party_that_steps_once_a_day():
 
     tribe, exp = _settled_scout_tribe(sim, phase="returning", pos=[70, 50])
     assert sim._expedition_glide_target(tribe, exp) is not None and sim._expedition_glide_target(tribe, exp)[0] < 70  # heading home
+
+
+def _forager_with_food_options(sim_tribe_food_actions=True):
+    from backend import config
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = config.SETTLEMENT_STABILITY_CYCLES
+    tribe.food = 5
+    tribe.foraged_ever_succeeded = tribe.hunt_ever_succeeded = True
+    return sim, tribe
+
+
+def test_a_depleted_forage_is_not_offered_while_another_food_source_is():
+    """2026-10-10: a live tribe chose GATHER_FOOD 53 times for 1.7 food each while PLANT_CROP, eggs, fishing and cooking sat on its menu and were chosen 0 times."""
+    from backend import config
+    from backend.actions import forage_yield_now
+
+    sim, tribe = _forager_with_food_options()
+    _req, ctx = sim._prepare_turn(tribe)
+    assert "GATHER_FOOD" in ctx["available_actions"] and forage_yield_now(sim.world, tribe, ctx["biome"]) > config.FORAGE_DEPLETED_YIELD_MAX
+
+    sim.world.depletion[("forage", tribe.x, tribe.y)] = 0.95  # the ground foraged out
+    request, ctx = sim._prepare_turn(tribe)
+    others = [a for a in ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "HUNT_DEER", "HUNTING_PARTY") if a in ctx["available_actions"]]
+    assert others, "the test tribe needs another food source on its menu"
+    assert "GATHER_FOOD" not in ctx["available_actions"]
+    assert "Foraging this ground has worn out" in request["prompt"] and others[0] in request["prompt"]
+
+
+def test_a_depleted_forage_stays_when_nothing_else_can_feed_the_tribe():
+    sim, tribe = _forager_with_food_options()
+    sim.world.depletion[("forage", tribe.x, tribe.y)] = 0.95
+    tribe.has_ever_settled = False  # the pre-settlement menu has no other food source
+    tribe.hunt_ever_succeeded = False
+    _req, ctx = sim._prepare_turn(tribe)
+    others = [a for a in ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "HUNT_DEER", "HUNTING_PARTY") if a in ctx["available_actions"]]
+    if not others:
+        assert "GATHER_FOOD" in ctx["available_actions"]  # food is never taken away entirely

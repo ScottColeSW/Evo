@@ -437,6 +437,14 @@ def _hunt_deer(sim, tribe, biome, target):
     return _with_node_note(_add_capped(sim, tribe, "food", amount, "food"), note)
 
 
+def forage_yield_now(world, tribe, biome) -> int:
+    """What one GATHER_FOOD would pay at this tile right now, with no side effects: the same arithmetic as _forage (the tile's depletion, the biome, labor, items, cooking)."""
+    biome_factor = BIOME_YIELD_MULTIPLIER.get("forage", {}).get(biome, 1.0)
+    scarcity = world.scarcity("forage", tribe.x, tribe.y)
+    base = round(10 * biome_factor * _labor_multiplier(tribe.population) * (1 + _item_effect_bonus(tribe, "forage")) * (1 - scarcity))
+    return round(base * _food_multiplier(tribe))
+
+
 def _forage(sim, tribe, biome, target):
     """Berries, fruit, and wild plants -- a real low-risk food option, unlike
     HUNT_DEER/HUNTING_PARTY which both carry wolf-pack risk. Lower base yield than

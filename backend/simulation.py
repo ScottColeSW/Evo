@@ -14,7 +14,7 @@ from .actions import (
     military_intel_text, research_candidates, research_candidates_with_source,
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _battalion_capacity, _conquest_ready, _created_object_bonus, _dmm_ready, _eligible_breeding_pair, _expedition_speed_bonus,
-    _food_multiplier, _forge_item, _plant_crop_cost,
+    _food_multiplier, _forge_item, _plant_crop_cost, forage_yield_now,
     _generate_raider_name, _has_room_to_grow, _is_departure_dream, _item_storage_cap, _labor_multiplier,
     _long_house_fur_discount, _might_adjusted_win_chance, _mutual_ally_at_top_era, _raider_might_modifier, _push_past_visited_ground, _record_combat, _redeemable_items,
     _storage_cap, _sustainable_population, _territory_has_nearby_threats, _warehouse_upgrade_ready,
@@ -5278,6 +5278,16 @@ class Simulation:
             ]
             available_actions = food_security + construction + rest + gathers
 
+        # 2026-10-10 (explicit request: hide the depleted GATHER_FOOD, see config.FORAGE_DEPLETED_YIELD_MAX): a forage that pays next to nothing is not offered while another food source is.
+        # Fail-open: with no other food source on the menu it stays, so food is never taken away entirely.
+        forage_hidden = None
+        if "GATHER_FOOD" in available_actions:
+            other_food = [a for a in ("PLANT_CROP", "GATHER_EGGS", "CATCH_FISH", "HUNT_DEER", "HUNTING_PARTY") if a in available_actions]
+            now_yield = forage_yield_now(self.world, tribe, biome)
+            if other_food and now_yield <= config.FORAGE_DEPLETED_YIELD_MAX:
+                available_actions = [a for a in available_actions if a != "GATHER_FOOD"]
+                forage_hidden = (now_yield, other_food)
+
         # 2026-10-10 (explicit request: "move BUILD_VESSEL to the front once affordable"): in a real run both tribes could afford the vessel from cycle 371 (it was on the
         # menu) and chose it 5 and 3 times in about 300 offers, spending the turns on UPGRADE_BARRACKS and UPGRADE_LONG_HOUSE; Luke finished it at cycle 680 of 684.
         # BUILD_VESSEL is only offered when it can add something (see its AFFORDABILITY_CHECKS entry), so being on the menu is "affordable". CLEAR_TERRITORY below still wins.
@@ -5324,6 +5334,11 @@ class Simulation:
             available_actions = [a for a in available_actions if a in _EVERGREEN_GATHER_ACTIONS or a in keep]
 
         visible_entities, era_gap_note = self._build_visible_entities(tribe, biome, nearby, memories, available_actions)
+        if forage_hidden:
+            visible_entities.append(
+                f"Foraging this ground has worn out: one GATHER_FOOD would now bring in only {forage_hidden[0]} food, so it is not offered. "
+                f"{', '.join(forage_hidden[1])} can still feed the tribe."
+            )
         # Explicit request, 2026-09-18: surface a chief's own past private
         # reflection back into its live reasoning, not just the spectator's
         # thought bubble (see _run_night_cycle's own comment on why this is
