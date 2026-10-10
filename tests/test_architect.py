@@ -122,3 +122,42 @@ def test_record_building_appends_expected_fields():
     record_building(tribe, "kitchen", 10, 12, 2, 2, cycle=7)
 
     assert tribe.buildings == [{"type": "kitchen", "x": 10, "y": 12, "w": 2, "h": 2, "cycle_built": 7}]
+
+
+def test_a_remembered_answer_is_the_same_as_a_fresh_scan_and_skips_the_scan():
+    """2026-10-10: _prepare_turn asks for every BUILD_* each turn and a failed scan of a packed territory was 65% of a mid-game tick."""
+    from unittest import mock
+    from backend import architect
+
+    world = Landscape(100)
+    tribe = _tribe_with_territory()
+    fresh = architect._scan_for_free_slot(world, 3, 2, 50, 50, [], 1, tribe.territory_radius + 8)
+    first = find_free_slot(world, tribe, "long_house")
+    with mock.patch.object(architect, "_scan_for_free_slot", side_effect=AssertionError("scanned again")):
+        again = find_free_slot(world, tribe, "long_house")
+    assert first == again
+
+
+def test_a_new_building_or_wall_section_or_different_radius_is_not_answered_from_memory():
+    world = Landscape(100)
+    tribe = _tribe_with_territory()
+    first = find_free_slot(world, tribe, "long_house")
+    record_building(tribe, "long_house", first[0], first[1], 3, 2, cycle=1)
+    second = find_free_slot(world, tribe, "long_house")
+    assert second != first  # the building moved the key; a stale answer would have placed it on top of the first
+
+    tribe.territory_radius = 2
+    packed = _tribe_with_territory(radius=2)
+    for dx in range(-14, 15, 2):
+        for dy in range(-14, 15, 2):
+            record_building(packed, "long_house", 50 + dx, 50 + dy, 3, 2, cycle=1)
+    assert find_free_slot(world, packed, "castle") is None
+    packed.territory_radius = 40
+    assert find_free_slot(world, packed, "castle") is not None  # a wider territory is a different question
+
+
+def test_two_worlds_do_not_share_remembered_answers():
+    tribe_a, tribe_b = _tribe_with_territory(), _tribe_with_territory()
+    world_a, world_b = Landscape(100), Landscape(100)
+    find_free_slot(world_a, tribe_a, "long_house")
+    assert not getattr(world_b, "_free_slot_cache", None)

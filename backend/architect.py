@@ -78,6 +78,28 @@ def find_free_slot(world, tribe, building_type: str) -> tuple[int, int] | None:
     padding = config.BUILDING_PLACEMENT_PADDING
     max_search_radius = tribe.territory_radius + config.WALL_RING_RADIUS_STEP
 
+    # 2026-10-10 (docs/APP-PERFORMANCE-2026-10-09.md): the answer depends only on the footprint, the territory center and radius, the rects already taken and the terrain, and the terrain does
+    # not change. _prepare_turn asks for every BUILD_* each turn; in a packed territory each failed scan costs about 18 ms and was 65% of a mid-game tick. Remembered until anything it depends on
+    # changes (a building or wall section added moves the key), per world so nothing leaks between games.
+    cache = getattr(world, "_free_slot_cache", None)
+    if not isinstance(cache, dict):
+        cache = None
+    key = (building_type, cx, cy, max_search_radius, world.grid_size, tuple(occupied))
+    if cache is not None and key in cache:
+        return cache[key]
+    result = _scan_for_free_slot(world, w, h, cx, cy, occupied, padding, max_search_radius)
+    if cache is None:
+        try:
+            cache = world._free_slot_cache = {}
+        except AttributeError:
+            return result
+    if len(cache) > 2048:
+        cache.clear()
+    cache[key] = result
+    return result
+
+
+def _scan_for_free_slot(world, w, h, cx, cy, occupied, padding, max_search_radius):
     for d in range(0, max_search_radius + 1):
         for dx, dy in _ring_perimeter_offsets(d):
             x = cx + dx - w // 2
