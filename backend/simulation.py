@@ -1580,6 +1580,8 @@ class Tribe:
         # see Simulation._merge_tribes) -- consumed and cleared by _install_chief so an
         # election it's informing isn't indistinguishable from an ordinary founding.
         self.pending_chief_context: str = ""
+        self.forced_chief_name: str = ""  # a name _install_chief must give the new chief whatever the election says (a warband's leader, see _warband_takeover)
+        self.warband: dict | None = None  # this tribe's persistent raiders: {"name", "size" (their force now), "wins", "attacks"} (see _check_raider_attack, _warband_after_battle)
         # Empty when no party is out; otherwise a list of {"pos", "origin", "target",
         # "day", "phase" ("outbound"/"returning"), "found", "terrain_report"} dicts --
         # see actions.py._scout/_hunting_party and Simulation._advance_expeditions. A
@@ -2361,6 +2363,7 @@ class Tribe:
             "raiders_repelled_by_wall": self.raiders_repelled_by_wall,
             "stance_toward": self.stance_toward,
             "raid_ledger": self.raid_ledger,
+            "warband": self.warband,
             "trade_given": self.trade_given,
             "trade_received": self.trade_received,
             "combat_record": self.combat_record,
@@ -2835,6 +2838,9 @@ class Simulation:
             elect_chief(self.client, tribe.model, tribe.name, water_needed, context), "elect_chief"
         )
         tribe.chief_name = result.get("chief_name", "")
+        if tribe.forced_chief_name:  # a warband's leader rules whatever name the election offered; it still decides the philosophy
+            tribe.chief_name = tribe.forced_chief_name
+            tribe.forced_chief_name = ""
         tribe.chief_philosophy = result.get("guiding_philosophy", "")
         victory = result.get("victory_method", "")
         tribe.chief_victory = victory
@@ -4149,6 +4155,9 @@ class Simulation:
                     where = f"{round(math.hypot(x - tribe.x, y - tribe.y))} tiles from your camp"
                 places.append(f"({x},{y}) is {where}")
             visible_entities.append("Where the reported raiders are: " + "; ".join(places) + ".")
+        if tribe.warband and tribe.warband["attacks"] >= 1:  # 2026-10-10: who the raiders are and how they stand against the tribe (config.WARBAND_*)
+            band = tribe.warband
+            visible_entities.append(f"The {band['name']} Raiders have attacked you {band['attacks']} time(s) and are {band['wins']} win(s) ahead; they number about {band['size']} against your {tribe.population:,} people.")
         # NUDGE (2026-09-12, action-legibility audit): the fact above was purely
         # descriptive, same "informed but not told it's actionable" gap the
         # rival-contact nudge above already exists to fix -- never extended here.
@@ -8925,13 +8934,16 @@ class Simulation:
             return
         if tribe.raiders_repelled_by_wall:
             return
-        if self.cycle - tribe.last_raider_attack_cycle < config.RAIDER_HAZARD_COOLDOWN_CYCLES:
+        wins = tribe.warband["wins"] if tribe.warband else 0  # a bolder warband waits less and attacks more often (config.WARBAND_*)
+        cooldown = config.RAIDER_HAZARD_COOLDOWN_CYCLES * max(0.4, 1.0 - config.WARBAND_COOLDOWN_SHRINK_PER_WIN * wins)
+        if self.cycle - tribe.last_raider_attack_cycle < cooldown:
             return
 
         attack_chance = min(
             config.RAIDER_HAZARD_MAX_CHANCE,
             config.RAIDER_HAZARD_MAX_CHANCE * tribe.population / config.RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE,
         )
+        attack_chance = min(0.5, attack_chance * (1.0 + config.WARBAND_ATTACK_CHANCE_BONUS_PER_WIN * wins))
         if random.random() >= attack_chance:
             return
 
@@ -8943,9 +8955,13 @@ class Simulation:
         # RAIDS!!!'" -- named once, here, so the same raid keeps its identity for
         # its whole approach (the frontend map label and every prompt fact below
         # all read this same name, not a fresh roll each cycle).
-        name = _generate_raider_name(tribe.id, self.cycle)
+        if tribe.warband is None:  # the first attack founds this tribe's warband; every later one is the same raiders (2026-10-10)
+            tribe.warband = {"name": _generate_raider_name(tribe.id, self.cycle), "size": 0, "wins": 0, "attacks": 0}
+        name = tribe.warband["name"]
+        force = self._raider_force(tribe)
+        tribe.warband["size"] = force
         tribe.raiders_approaching = {
-            "start_x": sx, "start_y": sy, "x": sx, "y": sy, "name": name,
+            "start_x": sx, "start_y": sy, "x": sx, "y": sy, "name": name, "force": force,
             "cycles_left": config.RAIDER_APPROACH_CYCLES, "total_cycles": config.RAIDER_APPROACH_CYCLES,
         }
         tribe.history.append(
@@ -8970,7 +8986,7 @@ class Simulation:
         approach["cycles_left"] -= 1
         if approach["cycles_left"] <= 0:
             tribe.raiders_approaching = None
-            self._resolve_raider_attack(tribe)
+            self._resolve_raider_attack(tribe, force=approach.get("force"))
             return
         t = 1 - approach["cycles_left"] / approach["total_cycles"]
         dx = tribe.x - approach["start_x"]
@@ -8981,7 +8997,13 @@ class Simulation:
         approach["x"] = round(approach["start_x"] + dx * t + perp_x * wobble)
         approach["y"] = round(approach["start_y"] + dy * t + perp_y * wobble)
 
-    def _resolve_raider_attack(self, tribe: Tribe) -> None:
+    def _raider_force(self, tribe: Tribe) -> int:
+        """How many raiders come: tribe population x config.WARBAND_FORCE_RATIO x config.WARBAND_FORCE_GROWTH_PER_WIN ** wins x a roll, so raiders scale with their target and a warband that keeps winning compounds."""
+        wins = tribe.warband["wins"] if tribe.warband else 0
+        jitter = config.WARBAND_FORCE_JITTER_LOW + (config.WARBAND_FORCE_JITTER_HIGH - config.WARBAND_FORCE_JITTER_LOW) * random.random()
+        return max(1, round(tribe.population * config.WARBAND_FORCE_RATIO * (config.WARBAND_FORCE_GROWTH_PER_WIN ** wins) * jitter))
+
+    def _resolve_raider_attack(self, tribe: Tribe, force: int | None = None) -> None:
         """The actual outcome, once an approach (see _check_raider_attack/
         _advance_raider_approach) finishes counting down.
 
@@ -9009,6 +9031,9 @@ class Simulation:
         wall_fraction = city_layout.wall_defense_fraction(tribe)
         ring0_reinforced = bool(tribe.wall_rings) and city_layout.ring_fully_reinforced(tribe.wall_rings[0])
         raider_strength = min(1.0, tribe.population / config.RAIDER_HAZARD_POPULATION_FOR_MAX_CHANCE)
+        p_before = tribe.population
+        force = force or self._raider_force(tribe)
+        established = p_before >= config.WARBAND_PROTECTED_POPULATION  # young tribes are protected from the warband rules (the owner)
 
         defense_chance = max(0.0, min(
             config.RAIDER_DEFENSE_MAX_CHANCE,
@@ -9035,6 +9060,7 @@ class Simulation:
             # _created_object_bonus.
             + _created_object_bonus(tribe, "defense_boost")
             - config.RAIDER_STRENGTH_DEFENSE_PENALTY_AT_MAX * raider_strength
+            - config.WARBAND_DEFENSE_PENALTY_PER_WIN * (tribe.warband["wins"] if tribe.warband else 0)
             # 2026-10-07: raiders are as strong as the average tribe's Might; this tribe's own Might against that average shifts its defense (see actions._raider_might_modifier).
             + _raider_might_modifier(self, tribe)
         ))
@@ -9064,12 +9090,15 @@ class Simulation:
             loot_note = f" -- {looted['food']} food, {looted['wood']} wood, and {looted['stone']} stone recovered from what they left behind"
             note = f"raiders were spotted approaching camp and repelled{loot_note}"
             tribe.history.append(f"{note} -- the walls held" if wall_fraction > 0 else note)
+            raiders_lost = min(force, round(force * min(1.0, config.WARBAND_CASUALTY_FACTOR * p_before / max(1, force))))
             self.recent_encounters.append({
                 "x": tribe.x, "y": tribe.y, "kind": "raider_attack",
                 "label": "Raiders repelled", "outcome": "repelled",
                 "skirmish": skirmish(f"Raiders strike {tribe.name}", "Raiders", tribe.name, False, attacker_chance=1.0 - defense_chance,
-                                     defender_force=tribe.population, outcome="The raiders are repelled" + (" and the walls held" if wall_fraction > 0 else "")),
+                                     attacker_force=force, defender_force=p_before, attacker_lost=raiders_lost,
+                                     outcome="The raiders are repelled" + (" and the walls held" if wall_fraction > 0 else "")),
             })
+            self._warband_after_battle(tribe, raiders_won=False, force=force, raiders_lost=raiders_lost, p_before=p_before, tribe_lost=0, established=established)
             return
 
         loss = round(
@@ -9080,7 +9109,14 @@ class Simulation:
             stolen = round(getattr(tribe, resource) * config.RAIDER_STEAL_FRACTION)
             setattr(tribe, resource, getattr(tribe, resource) - stolen)
         self.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
-        self._lose_population(tribe, loss, cause="raider_attack")
+        tribe_lost = loss
+        if established:  # an established tribe loses a share of its people that grows with the raiders' force (walls cut it); a young one pays what a raid always cost
+            share = min(1.0, config.WARBAND_CASUALTY_FACTOR * force / max(1, p_before) * (1.0 - 0.5 * wall_fraction))
+            tribe_lost = max(loss, min(p_before, round(p_before * share)))
+        raiders_lost = round(force * config.WARBAND_WINNER_LOSS_FRACTION)
+        falls = established and (p_before - tribe_lost) < config.WARBAND_TURNOVER_FRACTION * p_before and tribe.warband is not None
+        if not falls:
+            self._lose_population(tribe, tribe_lost, cause="raider_attack")
         # Explicit request: a wall that fails to stop a raid doesn't stay standing at
         # whatever progress it had -- the tribe has to do some rebuilding, the same as
         # any other real defensive structure that gets breached. Only removed on an
@@ -9103,10 +9139,61 @@ class Simulation:
             "x": tribe.x, "y": tribe.y, "kind": "raider_attack",
             "label": "Raiders struck", "outcome": "struck",
             "skirmish": skirmish(f"Raiders strike {tribe.name}", "Raiders", tribe.name, True, attacker_chance=1.0 - defense_chance,
-                                 defender_force=tribe.population + loss, defender_lost=loss,
+                                 attacker_force=force, defender_force=p_before, attacker_lost=raiders_lost, defender_lost=tribe_lost,
                                  outcome="The defense fails and supplies are stolen" + (" (a wall section is breached)" if wall_fraction > 0 else "")),
         })
         _record_combat(tribe, "Home Defense", "lost")
+        self._warband_after_battle(tribe, raiders_won=True, force=force, raiders_lost=raiders_lost, p_before=p_before, tribe_lost=tribe_lost, established=established)
+
+    def _warband_after_battle(self, tribe: Tribe, raiders_won: bool, force: int, raiders_lost: int, p_before: int, tribe_lost: int, established: bool) -> None:
+        """What a raid did to the warband and the tribe (config.WARBAND_*). The raiders' win count and force are updated; if the raiders won and an established tribe ended the battle under
+        config.WARBAND_TURNOVER_FRACTION of its people it is taken over; if the tribe held and the raiders ended under that fraction they are broken. Losses are one way, nothing is swapped."""
+        warband = tribe.warband
+        if not warband or tribe.extinct:
+            return
+        warband["attacks"] += 1
+        remaining = max(0, force - raiders_lost)
+        warband["size"] = remaining
+        if raiders_won:
+            warband["wins"] += 1
+            if established and (p_before - tribe_lost) < config.WARBAND_TURNOVER_FRACTION * p_before:
+                self._warband_takeover(tribe, survivors=max(1, p_before - tribe_lost), joined=remaining, p_before=p_before, force=force)
+            return
+        warband["wins"] = max(0, warband["wins"] - 1)
+        if established and remaining < config.WARBAND_TURNOVER_FRACTION * force:
+            tribe.population += remaining
+            tribe.max_population = max(tribe.max_population, tribe.population)
+            tribe.history.append(f"the {warband['name']} Raiders are broken -- the {remaining} who survive join the tribe")
+            tribe.warband = None
+
+    def _warband_defeated(self, tribe: Tribe) -> None:
+        """Raiders driven off by an expulsion (actions._expel_raiders_from_territory): the warband is set back one win. Nothing else changes hands."""
+        if tribe.warband and not tribe.extinct:
+            tribe.warband["attacks"] += 1
+            tribe.warband["wins"] = max(0, tribe.warband["wins"] - 1)
+
+    def _warband_takeover(self, tribe: Tribe, survivors: int, joined: int, p_before: int, force: int) -> None:
+        """The tribe becomes them: what is left of the tribe and the raiders who survived are one people, the warband's leader is the chief (the election is told the story and decides the philosophy; the
+        name is forced, see _install_chief), and the old chief's philosophy and decree are gone. The tribe keeps its own name; so does everything else it has: its buildings, knowledge and settlement name."""
+        warband = tribe.warband
+        leader = warband["name"]
+        fallen = tribe.chief_name
+        tribe.population = survivors + joined
+        tribe.max_population = max(tribe.max_population, tribe.population)
+        tribe.chief_name = ""
+        tribe.forced_chief_name = leader
+        tribe.chief_philosophy = ""
+        tribe.chief_decree = ""
+        tribe.chief_victory = ""
+        tribe.pending_chief_context = (
+            f"The {leader} Raiders, {force} strong, beat this tribe of {p_before}: only {survivors} of its people were left standing, and the people followed the raiders. {joined} raiders joined them, "
+            f"and {leader} is now the chief. {('Chief ' + fallen) if fallen else 'The old chief'} no longer rules. The new chief decides what this people believes under a raider's rule."
+        )
+        tribe.warband = None
+        tribe.history.append(f"\u2694\ufe0f {tribe.name} has fallen to the {leader} Raiders and becomes them -- {survivors} of its people and {joined} raiders are one people now, and {leader} is the chief")
+        if getattr(self, "event_log", None) is not None:
+            self.event_log.record_data(tribe.name, "warband_takeover", {"leader": leader, "force": force, "tribe_before": p_before, "survivors": survivors, "joined": joined, "old_chief": fallen},
+                                       message=f"[warband] {leader} takes over {tribe.name}")
 
     def _lose_population(self, tribe: Tribe, amount: int, cause: str = "unknown") -> None:
         """The single place population ever decreases. A tribe can now actually go

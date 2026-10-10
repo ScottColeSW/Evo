@@ -3073,6 +3073,7 @@ def _expel_raiders_from_territory(sim, tribe, biome, target):
         win_chance = max(config.MIGHT_ADJUSTED_WIN_CHANCE_FLOOR, min(config.MIGHT_ADJUSTED_WIN_CHANCE_CEILING, win_chance + _raider_might_modifier(sim, tribe)))
         if random.random() < win_chance:
             tribe.raiders_approaching = None
+            sim._warband_defeated(tribe)  # expelled raiders set the warband back one win (2026-10-10)
             # Code-quality pass: uncapped tribe.food += -- same bug class as the
             # rest of this file. A large, established tribe's population-scaled
             # loot here can be substantial, easily enough to overrun the cap in

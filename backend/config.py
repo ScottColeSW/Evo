@@ -1785,6 +1785,26 @@ RAIDER_SIGHTING_MAX_REMEMBERED = 6
 # in progress, etc.) rather than a token few-cycle heads-up.
 RAIDER_APPROACH_CYCLES = 10
 RAIDER_APPROACH_START_DISTANCE = 8
+# 2026-10-10 (the owner: "if the Raiders (named) keep winning, the Tribe becomes them! That guy is the new chief"). Each tribe has one persistent WARBAND, founded at its first raider attack (a named
+# leader), not a fresh name every raid. A raid has a real force that scales with its target: tribe population x WARBAND_FORCE_RATIO x WARBAND_FORCE_GROWTH_PER_WIN ** wins x a roll between
+# WARBAND_FORCE_JITTER_LOW and _HIGH, so a warband that keeps winning compounds. The skirmish card shows both forces and both sides' losses. When the raiders win the tribe loses
+# WARBAND_CASUALTY_FACTOR x (raider force / tribe population) of its people (walls reduce it) and the raiders lose WARBAND_WINNER_LOSS_FRACTION of theirs; when the tribe holds, the raiders lose
+# WARBAND_CASUALTY_FACTOR x (tribe population / raider force) of theirs. Losses are one way: the side that loses people simply loses them (no swap). If either side ends the battle under
+# WARBAND_TURNOVER_FRACTION of what it had before: a tribe that falls is TAKEN OVER (the survivors of the raiders join it, the leader becomes its chief, the tribe keeps its own name); raiders that
+# fall are BROKEN (their survivors join the tribe and the warband is gone). The owner does not want young tribes to fall: below WARBAND_PROTECTED_POPULATION people a raid costs what it always did
+# and no takeover is possible. A win also makes the warband bolder (a higher chance of attacking, a shorter wait, WARBAND_DEFENSE_PENALTY_PER_WIN off the tribe's defense); a repelled attack sets it
+# back one win. Starting values, untuned.
+WARBAND_FORCE_RATIO = 0.3
+WARBAND_FORCE_GROWTH_PER_WIN = 1.5
+WARBAND_FORCE_JITTER_LOW = 0.5
+WARBAND_FORCE_JITTER_HIGH = 1.5
+WARBAND_CASUALTY_FACTOR = 0.25
+WARBAND_WINNER_LOSS_FRACTION = 0.05
+WARBAND_TURNOVER_FRACTION = 0.10
+WARBAND_PROTECTED_POPULATION = 100
+WARBAND_DEFENSE_PENALTY_PER_WIN = 0.05
+WARBAND_ATTACK_CHANCE_BONUS_PER_WIN = 0.5
+WARBAND_COOLDOWN_SHRINK_PER_WIN = 0.2
 
 # Explicit request: "It would be interesting to see a Scout encounter a RAIDER
 # group" -- a real, in-the-field ambush during expedition travel, distinct from the
