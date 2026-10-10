@@ -119,6 +119,10 @@ ERAS: tuple[Era, ...] = (
             # would otherwise block every one of those from the very first cycle
             # a tribe could ever reach them.
             "CLEAR_TERRITORY",
+            # 2026-10-10 (the owner: "they totally don't see them coming"): a Primitive Dawn tribe was told raiders were riding in ("real time to prepare") with nothing on its menu to prepare
+            # with: this unlocked in Tribal Synapse and CONSTRUCT_WALL in Cognitive Horizon. Only offered while raiders are actually approaching (see AFFORDABILITY_CHECKS), so it costs a young
+            # tribe's menu nothing the rest of the time.
+            "EXPEL_RAIDERS_FROM_TERRITORY",
         ),
         announcement="{tribe} has awakened at the dawn of the Primitive Age.",
     ),
@@ -191,7 +195,7 @@ ERAS: tuple[Era, ...] = (
         # (LIBRARY/RESEARCH) -- organized defense, diplomacy, and scholarship, not
         # founding-era survival.
         unlocks_actions=(
-            "STRIKE_RAIDER_CAMP", "EXPEL_RAIDERS_FROM_TERRITORY",
+            "STRIKE_RAIDER_CAMP",
             "BUILD_BARRACKS", "UPGRADE_BARRACKS", "TRAIN_BATTALION",
             "DECLARE_ALLIANCE", "DECLARE_WAR", "SPY", "RAID_RIVAL", "BUILD_MOAT", "BUILD_KEEP",
             "BUILD_LIBRARY", "RESEARCH",

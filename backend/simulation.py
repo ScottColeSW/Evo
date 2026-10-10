@@ -4227,6 +4227,7 @@ class Simulation:
                 visible_entities.append(
                     f"The {name} Raiders are riding in, currently near ({ax},{ay}) -- {cycles_left} cycles "
                     "until they reach camp. This is real time to prepare, not a surprise."
+                    + (" EXPEL_RAIDERS_FROM_TERRITORY can drive them off before they arrive." if "EXPEL_RAIDERS_FROM_TERRITORY" in available_actions else "")
                 )
         if tribe.gathering_brief:
             visible_entities.append(f"this morning's gathering: {tribe.gathering_brief}")
@@ -5368,6 +5369,10 @@ class Simulation:
         # 2026-10-10 (explicit request: "move BUILD_VESSEL to the front once affordable"): in a real run both tribes could afford the vessel from cycle 371 (it was on the
         # menu) and chose it 5 and 3 times in about 300 offers, spending the turns on UPGRADE_BARRACKS and UPGRADE_LONG_HOUSE; Luke finished it at cycle 680 of 684.
         # BUILD_VESSEL is only offered when it can add something (see its AFFORDABILITY_CHECKS entry), so being on the menu is "affordable". CLEAR_TERRITORY below still wins.
+        # 2026-10-10 (the owner: "they totally don't see them coming"): while raiders are riding in, the answer to them is the first thing on the menu (it is only offered then, see AFFORDABILITY_CHECKS).
+        # A mechanic, not another line in the prompt: a hint that EXPEL was the real answer was already there in a past run and a tribe still picked HUNT_DEER one cycle before the attack.
+        if "EXPEL_RAIDERS_FROM_TERRITORY" in available_actions:
+            available_actions = ["EXPEL_RAIDERS_FROM_TERRITORY"] + [a for a in available_actions if a != "EXPEL_RAIDERS_FROM_TERRITORY"]
         if "BUILD_VESSEL" in available_actions:
             available_actions = ["BUILD_VESSEL"] + [a for a in available_actions if a != "BUILD_VESSEL"]
 

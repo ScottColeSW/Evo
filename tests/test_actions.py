@@ -5093,10 +5093,11 @@ def test_expel_raiders_extinction_mid_frenzy_ends_the_action_cleanly():
     assert tribe.extinct is True
 
 
-def test_expel_raiders_unlocked_only_from_tribal_synapse():
+def test_expel_raiders_is_unlocked_from_the_first_era():
+    """2026-10-10 (the owner: 'they totally don't see them coming'): it used to unlock in Tribal Synapse, so a young tribe was told raiders were riding in with nothing to prepare with."""
     from backend.eras import unlocked_actions_through
 
-    assert "EXPEL_RAIDERS_FROM_TERRITORY" not in unlocked_actions_through("primitive_dawn")
+    assert "EXPEL_RAIDERS_FROM_TERRITORY" in unlocked_actions_through("primitive_dawn")
     assert "EXPEL_RAIDERS_FROM_TERRITORY" in unlocked_actions_through("tribal_synapse")
 
 
@@ -6715,3 +6716,20 @@ def test_part_of_what_the_loser_of_a_backfired_peace_offer_lost_stays_with_the_w
     captives = round(loser_loss * config.CAPTIVE_FRACTION_OF_BACKFIRE_LOSS)
     assert rival.population == start[1] - loser_loss
     assert tribe.population == start[0] - winner_loss + captives and captives > 0
+
+
+def test_a_young_tribe_with_raiders_riding_in_is_offered_the_expulsion_first_and_told_so():
+    sim = Simulation([{"name": "Young", "model": "gemma2:2b", "x": 50, "y": 50}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.has_ever_settled = True
+    sim._found_territory(tribe)
+    tribe.cycles_since_relocate = __import__("backend.config", fromlist=["config"]).SETTLEMENT_STABILITY_CYCLES
+    assert tribe.era == "primitive_dawn"
+    _request, ctx = sim._prepare_turn(tribe)
+    assert "EXPEL_RAIDERS_FROM_TERRITORY" not in ctx["available_actions"]            # nothing riding in: nothing to expel
+
+    tribe.raiders_approaching = {"x": 70, "y": 50, "start_x": 80, "start_y": 50, "name": "Grim", "cycles_left": 7, "total_cycles": 10, "force": 8}
+    request, ctx = sim._prepare_turn(tribe)
+    assert ctx["available_actions"][0] == "EXPEL_RAIDERS_FROM_TERRITORY"
+    assert "EXPEL_RAIDERS_FROM_TERRITORY can drive them off before they arrive" in request["prompt"]
+    assert len(ctx["available_actions"]) == len(set(ctx["available_actions"])) and len(ctx["available_actions"]) > 3  # moved to the front, the rest of the menu is still there

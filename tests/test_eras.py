@@ -108,7 +108,7 @@ def test_tribal_synapse_now_holds_only_military_diplomacy_and_knowledge():
     formal knowledge institutions."""
     tribal_synapse = next(e for e in ERAS if e.key == "tribal_synapse")
     assert set(tribal_synapse.unlocks_actions) == {
-        "STRIKE_RAIDER_CAMP", "EXPEL_RAIDERS_FROM_TERRITORY",
+        "STRIKE_RAIDER_CAMP",  # EXPEL_RAIDERS_FROM_TERRITORY moved to the first era on 2026-10-10
         "BUILD_BARRACKS", "UPGRADE_BARRACKS", "TRAIN_BATTALION",
         "DECLARE_ALLIANCE", "DECLARE_WAR", "SPY", "RAID_RIVAL", "BUILD_MOAT", "BUILD_KEEP",
         "BUILD_LIBRARY", "RESEARCH",
