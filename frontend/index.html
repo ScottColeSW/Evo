@@ -710,6 +710,31 @@ let latestState = null;
 let previousState = null;
 let lastStateArrivedAt = 0;
 let stateIntervalMs = 500;
+// 2026-10-10 (docs/APP-PERFORMANCE-2026-10-09.md): real updates arrive every ~5 s and sometimes 40 s apart (a night cycle, an election). Replaying two real runs' timing: 81 to 88% of the time the page
+// stood still came from waits over 15 s, which no glide can cover, and the rest from ordinary late updates. So: the gap is a smoothed estimate (one long wait no longer sets the next glide to crawl and
+// then hop), the glide lasts GLIDE_MARGIN times that estimate so it is rarely finished before the next update, and a ring pulses on each settlement while the page is waiting so a pause reads as waiting.
+const GLIDE_MARGIN = 1.3;
+let stateGapsSeen = 0;
+
+function clampGapMs(ms) { return Math.min(8000, Math.max(200, ms)); }
+
+// Called once as each update arrives, with performance.now(); folds the gap since the last one into stateIntervalMs.
+function noteStateGap(now) {
+  if (!lastStateArrivedAt) return;
+  const gap = now - lastStateArrivedAt;
+  stateIntervalMs = stateGapsSeen === 0
+    ? clampGapMs(gap)
+    : clampGapMs(0.7 * stateIntervalMs + 0.3 * Math.min(gap, 2 * stateIntervalMs));
+  stateGapsSeen++;
+}
+
+function glideMs() { return Math.min(12000, Math.max(800, stateIntervalMs * GLIDE_MARGIN)); }
+
+// True while the page is waiting longer than usual for the next update (a slow model, a night cycle) and nothing says the run is paused or over.
+function isWaitingOnServer(now = performance.now()) {
+  if (!latestState || latestState.paused || latestState.game_over_report || latestState.game_over_reason) return false;
+  return now - lastStateArrivedAt > Math.max(2500, stateIntervalMs * 1.6);
+}
 let animFrame = 0;
 
 // Explicit follow-up, 2026-09-12: "we should catch the unexpected tab close
@@ -937,6 +962,7 @@ function startSimulation(tribes, immortalCycles, reflectionJudge = false, journa
   // loop never stops running, so a stale latestState left in place keeps drawing.
   latestState = null;
   previousState = null;
+  stateGapsSeen = 0;
   showSpawnSplash();
 
   if (socket) {
@@ -976,9 +1002,7 @@ function startSimulation(tribes, immortalCycles, reflectionJudge = false, journa
     // constant. Clamped so one freak fast/slow gap (a pause, a reconnect)
     // doesn't produce a jarringly fast or slow glide next time.
     const now = performance.now();
-    if (latestState && lastStateArrivedAt) {
-      stateIntervalMs = Math.min(8000, Math.max(200, now - lastStateArrivedAt));
-    }
+    if (latestState) noteStateGap(now);
     previousState = latestState;
     lastStateArrivedAt = now;
     latestState = state;
@@ -2487,7 +2511,7 @@ function interpolatedTilePos(prevXY, curXY) {
   if (!prevXY) return curXY;
   const dx = curXY[0] - prevXY[0], dy = curXY[1] - prevXY[1];
   if (Math.hypot(dx, dy) > MAX_INTERPOLATE_TILES) return curXY;
-  const progress = Math.min(1, (performance.now() - lastStateArrivedAt) / stateIntervalMs);
+  const progress = Math.min(1, (performance.now() - lastStateArrivedAt) / glideMs());
   return [prevXY[0] + dx * progress, prevXY[1] + dy * progress];
 }
 
@@ -2532,7 +2556,7 @@ function previousStormCloudPos() {
 function interpolatedCycle() {
   if (!latestState) return 0;
   if (!previousState || previousState.cycle == null) return latestState.cycle;
-  const progress = Math.min(1, (performance.now() - lastStateArrivedAt) / stateIntervalMs);
+  const progress = Math.min(1, (performance.now() - lastStateArrivedAt) / glideMs());
   return previousState.cycle + (latestState.cycle - previousState.cycle) * progress;
 }
 
@@ -2925,6 +2949,19 @@ function drawTribeIndividuals(tribeId, t) {
     ctx.beginPath();
     ctx.arc(centerX + dx, centerY + dy, dotRadius, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  // Waiting on the server (see isWaitingOnServer): a slow ring around the camp, so a long pause (a model thinking, the night cycle) reads as waiting and the page never looks frozen.
+  if (isWaitingOnServer()) {
+    const pulse = (Math.sin(performance.now() / 450) + 1) / 2;
+    ctx.save();
+    ctx.strokeStyle = t.color;
+    ctx.globalAlpha = 0.25 + 0.35 * pulse;
+    ctx.lineWidth = Math.max(1, TILE * 0.15);
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, clusterRadius + 4 + pulse * 3, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
   }
 
   // A celebration (Simulation._check_for_celebration) used to only ever show up as a
