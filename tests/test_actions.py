@@ -6660,3 +6660,58 @@ def test_a_strike_aimed_where_no_camp_is_known_goes_to_the_nearest_known_camp():
 
     tribe.raider_sightings = []
     assert ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](sim, tribe, "plains", (22, 21)) == "no known raider camp at that location"
+
+
+def test_a_caught_spy_stays_with_the_rival_which_learns_about_the_spying_tribe():
+    """2026-10-10 (captives): a caught spy was only a lost person; now it stays with the rival and talks."""
+    from unittest import mock
+
+    from backend import config
+    from backend.simulation import AFFORDABILITY_CHECKS
+
+    sim, spying, rival = _two_tribes_in_contact()
+    sim.cycle = 100
+    spying.barracks_built = 1
+    before = (spying.population, rival.population)
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # caught
+        note = ACTION_REGISTRY["SPY"](sim, spying, "plains", (rival.x, rival.y))
+    assert "caught and talked" in note
+    assert spying.population == before[0] - config.SPY_CAUGHT_POPULATION_LOSS and rival.population == before[1] + config.SPY_CAUGHT_POPULATION_LOSS
+    report = rival.rival_intel[spying.id]
+    assert report["used"] is False and report["population"] == spying.population and "military" in report
+    assert AFFORDABILITY_CHECKS["RAID_RIVAL"](rival, sim.world) is True            # the rival now holds a strike plan against the spying tribe
+    assert any("held by" in line for line in spying.history) and any("stay with" in line for line in rival.history)
+
+
+def test_the_raiders_of_a_destroyed_camp_partly_lay_down_their_arms_and_join_the_striking_tribe():
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    tribe.population = 1000
+    tribe.raider_sightings = [(60, 60)]
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # the strike wins
+        note = ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](sim, tribe, "plains", (60, 60))
+    recruits = max(1, round(1000 * config.STRIKE_CAMP_RECRUIT_FRACTION))
+    assert tribe.population == 1000 + recruits and f"{recruits} of its raiders join the tribe" in note
+
+
+def test_part_of_what_the_loser_of_a_backfired_peace_offer_lost_stays_with_the_winner():
+    from unittest import mock
+
+    from backend import config
+    from backend.actions import _alliance_backfire_skirmish
+
+    sim, tribe, rival = _two_tribes_in_contact()
+    sim.cycle = 100
+    tribe.barracks_built = rival.barracks_built = 1
+    start = (tribe.population, rival.population)
+    with mock.patch("backend.actions.random.random", return_value=0.0):  # the offering tribe wins the clash
+        _alliance_backfire_skirmish(sim, tribe, rival, False)
+    loser_loss = round(start[1] * config.ALLIANCE_BACKFIRE_LOSER_POPULATION_LOSS_FRACTION)
+    winner_loss = round(start[0] * config.ALLIANCE_BACKFIRE_WINNER_POPULATION_LOSS_FRACTION)
+    captives = round(loser_loss * config.CAPTIVE_FRACTION_OF_BACKFIRE_LOSS)
+    assert rival.population == start[1] - loser_loss
+    assert tribe.population == start[0] - winner_loss + captives and captives > 0

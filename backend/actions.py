@@ -199,6 +199,7 @@ def _node_contest(sim, tribe, node_type: str, node):
         rival.history.append(f"{tribe.name} came to the {label} at ({node[0]},{node[1]}) and took it from us")
         return None
     sim._lose_population(tribe, lost, cause="node_contest")
+    _take_captives(sim, rival, tribe, lost, f"lost at the {label}")
     tribe.history.append(f"met {rival.name} at the {label} at ({node[0]},{node[1]}) and was driven off")
     rival.history.append(f"drove {tribe.name} off the {label} at ({node[0]},{node[1]})")
     return f"{rival.name} was already working the {label} at ({node[0]},{node[1]}) and drove the party off"
@@ -2832,6 +2833,27 @@ def _raid(sim, tribe, biome, target):
     return _raid_defender(sim, tribe, defender)
 
 
+def _take_captives(sim, winner, loser, count: int, reason: str) -> int:
+    """2026-10-10: `count` of the people `loser` just lost stay with `winner` (one way, never a swap), and each side's chronicle says so. Returns how many changed sides."""
+    count = int(count)
+    if count <= 0 or winner.extinct:
+        return 0
+    winner.population += count
+    winner.max_population = max(winner.max_population, winner.population)
+    winner.history.append(f"{count} of {loser.name}'s people ({reason}) stay with {winner.name}")
+    loser.history.append(f"{count} of our people ({reason}) are held by {winner.name}")
+    return count
+
+
+def _intel_report(sim, target) -> dict:
+    """What a spy (or a captive who talks) learns about `target` right now; `used` is False until RAID_RIVAL spends it."""
+    return {
+        "used": False, "cycle": sim.cycle, "population": target.population, "era": target.era,
+        "wood": target.wood, "stone": target.stone, "food": target.food, "water": target.water,
+        "long_houses_built": target.long_houses_built, "wall_ring_count": len(target.wall_rings), "military": military_intel(target),
+    }
+
+
 def _note_raid(sim, attacker, defender, won: bool, people: int) -> None:
     """2026-10-10: a plain ledger of who raided whom, kept on both sides and shown to each chief as facts (see Simulation._prepare_turn). `people` is who changed hands: the survivors the winner
     absorbed (from the defender when the raid won, from the attacker when it was repelled)."""
@@ -3013,7 +3035,12 @@ def _strike_raider_camp(sim, tribe, biome, target):
                                  attacker_force=tribe.population, outcome=f"The camp is destroyed and {haul}"),
         })
         _record_combat(tribe, "Raider Camp Strike", "won")
-        return f"the raider camp at {camp} is destroyed -- {haul}"
+        # 2026-10-10: some of the camp's raiders lay down their arms and join the tribe (one way; the camp is gone)
+        recruits = max(1, round(tribe.population * config.STRIKE_CAMP_RECRUIT_FRACTION))
+        tribe.population += recruits
+        tribe.max_population = max(tribe.max_population, tribe.population)
+        tribe.history.append(f"{recruits} of the raiders from the camp at {camp} lay down their arms and join {tribe.name}")
+        return f"the raider camp at {camp} is destroyed -- {haul}; {recruits} of its raiders join the tribe"
 
     sim._lose_population(tribe, config.STRIKE_RAIDER_CAMP_POPULATION_LOSS_ON_FAILURE, cause="failed_raider_strike")
     sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
@@ -3539,6 +3566,8 @@ def _alliance_backfire_skirmish(sim, tribe, rival, was_already_at_war: bool) -> 
     winner_loss = round(winner.population * config.ALLIANCE_BACKFIRE_WINNER_POPULATION_LOSS_FRACTION)
     sim._lose_population(loser, loser_loss, cause="alliance_backfire")
     sim._lose_population(winner, winner_loss, cause="alliance_backfire")
+    if not loser.extinct:  # 2026-10-10: some of what the loser lost stays with the winner (one way)
+        _take_captives(sim, winner, loser, round(loser_loss * config.CAPTIVE_FRACTION_OF_BACKFIRE_LOSS), "a failed peace offer")
     _record_combat(tribe, "Alliance Backfire", "won" if tribe_won else "lost")
     _record_combat(rival, "Alliance Backfire", "lost" if tribe_won else "won")
     sim.trauma.radiate_event_wave(rival.x, rival.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
@@ -3795,20 +3824,14 @@ def _spy(sim, tribe, biome, target):
             "label": f"{tribe.name}'s spy caught by {rival.name}", "outcome": "lost",
         })
         rival.history.append(f"a spy from {tribe.name} was caught snooping near camp")
+        # 2026-10-10: the caught spy stays with the rival and talks: it now holds an intel report on the spying tribe (and may spend it with RAID_RIVAL)
+        _take_captives(sim, rival, tribe, config.SPY_CAUGHT_POPULATION_LOSS, "a spy caught")
+        rival.rival_intel[tribe.id] = _intel_report(sim, tribe)
         if tribe.extinct:
             return f"the spy sent toward {rival.name} was caught and did not survive"
-        return f"the spy sent toward {rival.name} was caught -- {rival.name} now knows of {tribe.name}"
+        return f"the spy sent toward {rival.name} was caught and talked -- {rival.name} now knows of {tribe.name} and what it has"
 
-    tribe.rival_intel[rival.id] = {
-        "used": False,  # RAID_RIVAL spends it (2026-10-10)
-        "cycle": sim.cycle,
-        "population": rival.population,
-        "era": rival.era,
-        "wood": rival.wood, "stone": rival.stone, "food": rival.food, "water": rival.water,
-        "long_houses_built": rival.long_houses_built,
-        "wall_ring_count": len(rival.wall_rings),
-        "military": military_intel(rival),
-    }
+    tribe.rival_intel[rival.id] = _intel_report(sim, rival)
     report = tribe.rival_intel[rival.id]
     return (f"a spy returns from {rival.name}'s camp undetected: {report['population']:,} people, {report['era'].replace('_', ' ')}, "
             f"{report['food']:,} food, {report['wood']:,} wood, {report['stone']:,} stone, {report['long_houses_built']} long houses, "

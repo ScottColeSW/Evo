@@ -1552,6 +1552,12 @@ RAID_RIVAL_INTEL_WIN_BONUS = 0.15
 # closed until peace (DECLARE_ALLIANCE sues for peace).
 WAR_AFTER_SUCCESSFUL_RAIDS = 2
 WAR_DEFENDER_RAID_BONUS = 0.10
+# 2026-10-10 (the owner: "where there's no transfer today, implement what you think the cousins would want"): CAPTIVES. A loss that costs one side people now hands some of them to the winner, one way
+# and never a swap (actions._take_captives): a caught spy stays with the rival it was sent to and tells it about the spying tribe (the rival gets an intel report on it); a raider camp that loses
+# to a strike leaves STRIKE_CAMP_RECRUIT_FRACTION of the striking tribe's size as raiders who lay down their arms and join; the tribe that loses a fight over a resource node leaves its lost people with
+# the tribe that held it; and when a peace offer backfires into a clash, CAPTIVE_FRACTION_OF_BACKFIRE_LOSS of what the loser lost stays with the winner. Starting values.
+STRIKE_CAMP_RECRUIT_FRACTION = 0.005
+CAPTIVE_FRACTION_OF_BACKFIRE_LOSS = 0.2
 # 2026-10-10 (explicit request: "when trade fails, they should be mad and go to war"): a tribe will not trade with one that raided it successfully in the last TRADE_GRIEVANCE_WINDOW_CYCLES cycles. A tribe
 # that is refused this many times within the same window takes it as an insult and goes to war (both ways, as a raid war does). Before this a trade only ever failed by missing its target.
 TRADE_GRIEVANCE_WINDOW_CYCLES = 40

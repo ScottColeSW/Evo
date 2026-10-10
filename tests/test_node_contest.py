@@ -60,3 +60,12 @@ def test_no_contest_once_the_window_has_passed_or_against_yourself():
     sim2.world.site_last_draw[("lumber", *sites2[0])] = ("tribe_0", sim2.cycle)
     _gather(sim2, tribe2, 0.999)
     assert tribe2.wood > 50 and not sim2.recent_encounters
+
+
+def test_the_people_a_tribe_loses_at_a_contested_node_stay_with_the_tribe_that_held_it():
+    """2026-10-10 (captives): one way, the winner of the fight keeps them."""
+    sim, tribe, rival, sites = _two_tribes_at_one_grove()
+    before = rival.population
+    _gather(sim, tribe, 0.999)
+    assert rival.population == before + config.NODE_CONTEST_LOSS_POPULATION
+    assert any("stay with" in str(h) for h in rival.history) and any("are held by" in str(h) for h in tribe.history)
