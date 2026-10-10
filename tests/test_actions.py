@@ -3115,7 +3115,7 @@ def test_depart_requires_the_vessel_first():
     sim = _bare_simulation()
     tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
 
-    result = ACTION_REGISTRY["DEPART"](sim, tribe, "plains", _NO_TARGET)
+    result = ACTION_REGISTRY["SAIL_TO_NEW_LANDS"](sim, tribe, "plains", _NO_TARGET)
 
     assert tribe.departed is False
     assert result is None
@@ -3127,7 +3127,7 @@ def test_depart_sets_departed_and_names_the_chief():
     tribe.vessel_built = True
     tribe.chief_name = "Kira"
 
-    result = ACTION_REGISTRY["DEPART"](sim, tribe, "plains", _NO_TARGET)
+    result = ACTION_REGISTRY["SAIL_TO_NEW_LANDS"](sim, tribe, "plains", _NO_TARGET)
 
     assert tribe.departed is True
     assert "Kira" in result
@@ -3140,7 +3140,7 @@ def test_depart_is_one_time():
     tribe.vessel_built = True
     tribe.departed = True
 
-    assert ACTION_REGISTRY["DEPART"](sim, tribe, "plains", _NO_TARGET) is None
+    assert ACTION_REGISTRY["SAIL_TO_NEW_LANDS"](sim, tribe, "plains", _NO_TARGET) is None
 
 
 def test_is_departure_dream_matches_known_vocabulary():
@@ -4861,7 +4861,38 @@ def test_strike_raider_camp_loot_is_capped_by_storage():
         note = ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](sim, tribe, "plains", (60, 60))
 
     assert tribe.food == config.STORAGE_CAP_BASE
-    assert "0 food recovered" in note
+    assert "food stores already full" in note and "0 food" in note  # honest about why, not a bare "0 food recovered"
+    assert tribe.wood > 0 and tribe.stone > 0  # the camp's wood and stone still come home
+
+
+def test_a_destroyed_camp_pays_its_own_stash_whatever_the_tribe_holds():
+    """2026-10-10: a patrol strike paid 0 food five times in a real run (food at the cap each cycle). The stash is a fraction of the storage
+    cap, not of the tribe's own stock, so a tribe holding nothing is paid the same as one holding plenty."""
+    from unittest import mock
+    from backend import config
+    from backend.actions import _storage_cap
+
+    sim = _bare_simulation()
+    for held in (0, 100):
+        tribe = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+        tribe.raider_sightings = [(60, 60)]
+        tribe.food = tribe.wood = tribe.stone = held
+        stash = round(_storage_cap(tribe) * config.STRIKE_RAIDER_CAMP_STASH_FRACTION_OF_CAP)
+        with mock.patch("backend.actions.random.random", return_value=0.0):
+            note = ACTION_REGISTRY["STRIKE_RAIDER_CAMP"](sim, tribe, "plains", (60, 60))
+        assert (tribe.food, tribe.wood, tribe.stone) == (held + stash,) * 3
+        assert f"{stash} food, {stash} wood and {stash} stone recovered" in note and "already full" not in note
+
+
+def test_the_vessel_is_as_big_as_the_castle_and_depart_is_now_called_sail_to_new_lands():
+    from backend import config
+    from backend.actions import ACTION_DESCRIPTIONS
+    from backend.simulation import _resolve_action
+
+    assert config.BUILDING_FOOTPRINTS["vessel"] == config.BUILDING_FOOTPRINTS["castle"]
+    assert "SAIL_TO_NEW_LANDS" in ACTION_REGISTRY and "DEPART" not in ACTION_REGISTRY
+    assert "new lands" in ACTION_DESCRIPTIONS["SAIL_TO_NEW_LANDS"]
+    assert _resolve_action("DEPART", ["SAIL_TO_NEW_LANDS", "SCOUT"]) == ("SAIL_TO_NEW_LANDS", None)  # an old name still resolves
 
 
 def test_strike_raider_camp_failure_costs_population_and_leaves_sighting_intact():

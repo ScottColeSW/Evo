@@ -2920,16 +2920,20 @@ def _strike_raider_camp(sim, tribe, biome, target):
         # stockpile every time this is won. sim._capped_add returns the amount
         # actually added, since this action's own return line needs the real
         # number, not just a message.
-        looted = sim._capped_add(tribe, "food", round(tribe.food * config.STRIKE_RAIDER_CAMP_LOOT_FRACTION))
+        stash = round(_storage_cap(tribe) * config.STRIKE_RAIDER_CAMP_STASH_FRACTION_OF_CAP)
+        looted = {resource: sim._capped_add(tribe, resource, stash) for resource in ("food", "wood", "stone")}
+        full = [resource for resource, amount in looted.items() if amount == 0 and getattr(tribe, resource) >= _storage_cap(tribe)]
+        haul = f"{looted['food']} food, {looted['wood']} wood and {looted['stone']} stone recovered" + (
+            f" ({' and '.join(full)} stores already full)" if full else "")
         sim.trauma.radiate_event_wave(camp[0], camp[1], config.RAID_PRIDE_MAGNITUDE, config.RAID_PRIDE_RADIUS)
         sim.recent_encounters.append({
             "x": camp[0], "y": camp[1], "kind": "raider_camp_strike",
             "label": "Raider camp destroyed", "outcome": "won",
             "skirmish": skirmish(f"{tribe.name} strikes a raider camp", tribe.name, "Raiders", True, attacker_chance=win_chance,
-                                 attacker_force=tribe.population, outcome=f"The camp is destroyed and {looted} food recovered"),
+                                 attacker_force=tribe.population, outcome=f"The camp is destroyed and {haul}"),
         })
         _record_combat(tribe, "Raider Camp Strike", "won")
-        return f"the raider camp at {camp} is destroyed -- {looted} food recovered"
+        return f"the raider camp at {camp} is destroyed -- {haul}"
 
     sim._lose_population(tribe, config.STRIKE_RAIDER_CAMP_POPULATION_LOSS_ON_FAILURE, cause="failed_raider_strike")
     sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
@@ -3731,7 +3735,7 @@ ACTION_REGISTRY = {
     "CREATE_USEFUL_STRUCTURE": _create_useful_structure,
     "DECLARE_CONQUEST": _declare_conquest,
     "BUILD_VESSEL": _build_vessel,
-    "DEPART": _depart,
+    "SAIL_TO_NEW_LANDS": _depart,
     "BUILD_JOINT_CASTLE": _build_joint_castle,
     "BUILD_KITCHEN": _build_kitchen,
     "BUILD_MOAT": _build_moat,
@@ -3846,7 +3850,7 @@ ACTION_DESCRIPTIONS = {
     "CREATE_USEFUL_STRUCTURE": "Design and build a genuinely new structure at the DMM -- same real, permanent effects as CREATE_ITEM, but a building instead of a portable item. Only possible once the DMM stands, and it rests 10 days between uses.",
     "DECLARE_CONQUEST": "An all-in campaign to fully and immediately conquer a rival tribe near target_vector, in one decisive stroke rather than several raids. A win absorbs them completely; a loss costs far more than an ordinary failed raid. Does nothing if no rival is there.",
     "BUILD_VESSEL": "Build a real vessel from stored wood and stone, in stages -- each time puts in what the tribe can spare until the whole cost is paid. A permanent structure meant to carry the tribe beyond the horizon.",
-    "DEPART": "Board the vessel and sail beyond the horizon, for good -- ends the tribe's story here. Only possible once the vessel stands.",
+    "SAIL_TO_NEW_LANDS": "Captain the vessel with the whole tribe aboard and sail to new lands beyond the island, to settle there for good -- the journey this whole story builds toward, and the end of the tribe's time on this island. Only possible once the vessel stands.",
     "BUILD_JOINT_CASTLE": "Contribute wood and stone toward a Joint Castle raised together with a genuinely, mutually allied rival tribe -- a shared monument to the alliance, built up over several turns from either side. Completing it marks both tribes as having reached Castle-state. Only possible once truly allied, not just once one side has declared it.",
     "BUILD_KITCHEN": "Build a kitchen using stored wood and stone -- only possible once cooking is known and a long house stands. A one-time, permanent structure: stacks with cooking for nine times as much food from every future forage, hunt, or catch, instead of only three.",
     "BUILD_MOAT": "Dig a moat using stored wood and stone -- only possible once the wall has been reinforced with a second layer. A one-time, permanent structure, cheaper than another wall layer: a further defense bonus.",

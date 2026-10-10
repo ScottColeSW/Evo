@@ -257,9 +257,9 @@ ERAS: tuple[Era, ...] = (
     # one -- no separate grace-period timer needed anywhere) and turns "the
     # game ran out of conditions" into an earned ending: a tribe that has
     # built everything the island offers chooses to leave it. See plan file
-    # amber-drifting-tern.md for the full design (the Vessel/DEPART actions,
+    # amber-drifting-tern.md for the full design (the Vessel/SAIL_TO_NEW_LANDS actions,
     # the departure-dream gate, the two-sided ending). Reaching this era only
-    # means the possibility exists -- BUILD_VESSEL/DEPART stay functionally
+    # means the possibility exists -- BUILD_VESSEL/SAIL_TO_NEW_LANDS stay functionally
     # gated on tribe.departure_dreamed until the Chief's own dream actually
     # calls for it, the same "available the instant the era unlocks it, but
     # inert until the real condition is met" shape BUILD_JOINT_CASTLE uses.
@@ -270,7 +270,7 @@ ERAS: tuple[Era, ...] = (
                                     # escalation the 800->1500 jump already used
         requires_ready=('castle_built',),
         advancement_cost={"wood": 110, "stone": 110, "water": 110, "Fur": 85},
-        unlocks_actions=("BUILD_VESSEL", "DEPART"),
+        unlocks_actions=("BUILD_VESSEL", "SAIL_TO_NEW_LANDS"),
         announcement="{tribe} looks to the horizon -- there may be a world beyond this island.",
     ),
 )

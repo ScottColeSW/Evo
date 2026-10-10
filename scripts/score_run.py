@@ -208,9 +208,10 @@ def menus(k):
         if group:
             print(f"  menu {label:10}: {len(group):4} decisions, {round(100 * sum(none(r['data']) for r in group) / len(group))}% changed nothing")
     withmenu = [r for r in rows if r["data"].get("menu")]
-    for action in ("BUILD_VESSEL", "DEPART"):
-        offered = [r for r in withmenu if action in r["data"]["menu"]]
-        chosen = [r for r in offered if r["data"]["action"] == action]
+    for action in ("BUILD_VESSEL", "SAIL_TO_NEW_LANDS"):
+        names = (action, "DEPART") if action == "SAIL_TO_NEW_LANDS" else (action,)  # runs logged before 2026-10-10 call it DEPART
+        offered = [r for r in withmenu if any(n in r["data"]["menu"] for n in names)]
+        chosen = [r for r in offered if r["data"]["action"] in names]
         if withmenu:
             print(f"  {action}: offered on {len(offered)} of {len(withmenu)} decisions, chosen on {len(chosen)}")
 

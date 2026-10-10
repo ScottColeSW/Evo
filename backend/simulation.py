@@ -341,7 +341,7 @@ ENDGAME_RESOLUTION_ACTIONS = {
     # 2026-10-04: the last era is departure_era now, not the war era this lock was written for, and the set left out the way off the island. A
     # tribe in the last era with a living rival could not build the vessel, gather the wood and stone it needs, or depart (found when a live
     # trial departed only because it had no rival). The gathers are filtered back out by the usual rule once a build can be paid.
-    "BUILD_VESSEL", "DEPART", "GATHER_WOOD", "GATHER_STONE",
+    "BUILD_VESSEL", "SAIL_TO_NEW_LANDS", "GATHER_WOOD", "GATHER_STONE",
     # 2026-10-07: a raider camp inside the clearing radius strips every BUILD_* action (the territory lock) and leaves CLEAR_TERRITORY as the way past it, and this lock then
     # stripped CLEAR_TERRITORY too. A live run's tribe sat in the departure era with its vessel at 2000/2500, a camp just inside its grown territory, and a menu of
     # TRAIN_BATTALION and DECLARE_CONQUEST: it could not clear the camp or finish the vessel, and ended on conquest.
@@ -349,10 +349,10 @@ ENDGAME_RESOLUTION_ACTIONS = {
 } | SURVIVAL_CRISIS_ACTIONS
 
 # 2026-10-04 (the owner: at this point food, water and shelter are secure and the land is mostly spent; they need to expand, which leads to
-# DEPART, or conquer, or, much weaker, ally and build the joint castle): once the vessel stands, the menu narrows to those and the survival
-# basics. A nudge was not enough: in two live trials a tribe took about 150 cycles to choose DEPART with the "vessel stands ready" line on, and never
+# SAIL_TO_NEW_LANDS, or conquer, or, much weaker, ally and build the joint castle): once the vessel stands, the menu narrows to those and the survival
+# basics. A nudge was not enough: in two live trials a tribe took about 150 cycles to choose SAIL_TO_NEW_LANDS with the "vessel stands ready" line on, and never
 # chose it in 100 cycles with it off. See docs/NUDGE-AUDIT.md and the facts-vs-mechanics notes.
-VESSEL_STANDING_ACTIONS = {"DEPART", "DECLARE_CONQUEST", "DECLARE_ALLIANCE", "BUILD_JOINT_CASTLE"} | SURVIVAL_CRISIS_ACTIONS
+VESSEL_STANDING_ACTIONS = {"SAIL_TO_NEW_LANDS", "DECLARE_CONQUEST", "DECLARE_ALLIANCE", "BUILD_JOINT_CASTLE"} | SURVIVAL_CRISIS_ACTIONS
 
 # Live report, 2026-09-12: "After one Tribe was eliminated, the actions
 # offered still included Conquest, and others that were not relevant any
@@ -1110,7 +1110,7 @@ AFFORDABILITY_CHECKS = {
              or (t.stone > 0 and t.vessel_stone_paid < config.VESSEL_STONE_COST))
         and (t.vessel_wood_paid + t.vessel_stone_paid > 0 or _can_place(t, w, "vessel"))
     ),
-    "DEPART": lambda t, w: t.vessel_built and not t.departed,
+    "SAIL_TO_NEW_LANDS": lambda t, w: t.vessel_built and not t.departed,
     # Live report: "I keep seeing 'send hunting party'" -- confirmed against a
     # real run: SCOUT and HUNTING_PARTY were each chosen and rejected with "no
     # one left to send" roughly three times out of four (SCOUT 305/403,
@@ -1193,6 +1193,7 @@ GRADUATED_ACTION_UPGRADES = {
 # when the real action is on the menu; otherwise the old ladder runs unchanged.
 ACTION_ALIASES = {
     "FORTIFY": "CONSTRUCT_WALL", "FORTIFY_WALL": "CONSTRUCT_WALL", "BUILD_WALL": "CONSTRUCT_WALL", "REINFORCE_WALL": "CONSTRUCT_WALL",
+    "DEPART": "SAIL_TO_NEW_LANDS", "SAIL": "SAIL_TO_NEW_LANDS", "SET_SAIL": "SAIL_TO_NEW_LANDS", "LEAVE_ISLAND": "SAIL_TO_NEW_LANDS",
     "STRENGTHEN_WALL": "CONSTRUCT_WALL", "BUILD_WALLS": "CONSTRUCT_WALL", "FORTIFY_WALLS": "CONSTRUCT_WALL",
 }
 
@@ -3836,7 +3837,7 @@ class Simulation:
             await self._trigger_game_over("extinction")
         # Beyond the Horizon era -- plan file amber-drifting-tern.md. Checked
         # before world_domination/golden_age/era_ceiling below: a deliberate
-        # act the model chose THIS cycle (DEPART) should win over a passively
+        # act the model chose THIS cycle (SAIL_TO_NEW_LANDS) should win over a passively
         # re-evaluated condition. actions._depart only ever sets tribe.departed
         # -- actions mutate state, step() owns win/loss conditions, the same
         # split DECLARE_CONQUEST/_merge_tribes already use for world_domination.
@@ -5190,7 +5191,7 @@ class Simulation:
             ]
             rival = min(nearby_rivals, key=lambda o: math.hypot(o.x - tribe.x, o.y - tribe.y)) if nearby_rivals else None
             if rival is not None and _is_battle_ready(rival):
-                battle_ready_only = [a for a in available_actions if a in ("DECLARE_CONQUEST", "DEPART")]  # DEPART once a vessel stands
+                battle_ready_only = [a for a in available_actions if a in ("DECLARE_CONQUEST", "SAIL_TO_NEW_LANDS")]  # SAIL_TO_NEW_LANDS once a vessel stands
                 # Fail-open guard, same shape as every other menu-lock above --
                 # never cut the menu down to nothing (e.g. DECLARE_CONQUEST
                 # itself is momentarily unaffordable this exact cycle).
@@ -5198,9 +5199,9 @@ class Simulation:
                     available_actions = battle_ready_only
                     battle_ready_locked = True
 
-        # Once the vessel stands the menu narrows (VESSEL_STANDING_ACTIONS). Fail-open: only when DEPART is actually on offer.
+        # Once the vessel stands the menu narrows (VESSEL_STANDING_ACTIONS). Fail-open: only when SAIL_TO_NEW_LANDS is actually on offer.
         vessel_locked = False
-        if tribe.vessel_built and not tribe.departed and "DEPART" in available_actions:
+        if tribe.vessel_built and not tribe.departed and "SAIL_TO_NEW_LANDS" in available_actions:
             available_actions = [a for a in available_actions if a in VESSEL_STANDING_ACTIONS]
             vessel_locked = True
 
@@ -5410,7 +5411,7 @@ class Simulation:
             )
         elif tribe.vessel_built and not tribe.departed:
             _nudge(visible_entities, "endgame_hint", 
-                "The vessel stands ready -- DEPART would carry the tribe beyond the horizon, for good."
+                "The vessel stands ready -- SAIL_TO_NEW_LANDS would carry the tribe beyond the horizon, for good."
             )
         if tribe.throttled_actions:
             # See "should we always keep them in the dark like this?" -- unlike

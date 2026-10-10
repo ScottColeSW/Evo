@@ -4002,11 +4002,11 @@ def test_depart_is_available_only_once_the_vessel_stands():
     tribe.food = tribe.water = 500
 
     _request, ctx = sim._prepare_turn(tribe)
-    assert "DEPART" not in ctx["available_actions"]
+    assert "SAIL_TO_NEW_LANDS" not in ctx["available_actions"]
 
     tribe.vessel_built = True
     _request, ctx = sim._prepare_turn(tribe)
-    assert "DEPART" in ctx["available_actions"]
+    assert "SAIL_TO_NEW_LANDS" in ctx["available_actions"]
 
 
 def test_departure_era_states_the_vessel_progress_as_a_fact_until_it_is_built():
@@ -4023,7 +4023,7 @@ def test_departure_era_states_the_vessel_progress_as_a_fact_until_it_is_built():
     request, _ctx = sim._prepare_turn(tribe)
 
     assert f"700/{config.VESSEL_WOOD_COST} wood and 500/{config.VESSEL_STONE_COST} stone put in so far" in request["prompt"]
-    assert "DEPART would carry the tribe" not in request["prompt"]
+    assert "SAIL_TO_NEW_LANDS would carry the tribe" not in request["prompt"]
 
 
 def test_departure_vessel_nudge_fires_once_built_but_not_yet_departed():
@@ -4037,7 +4037,7 @@ def test_departure_vessel_nudge_fires_once_built_but_not_yet_departed():
 
     request, _ctx = sim._prepare_turn(tribe)
 
-    assert "DEPART would carry the tribe beyond the horizon" in request["prompt"]
+    assert "SAIL_TO_NEW_LANDS would carry the tribe beyond the horizon" in request["prompt"]
     assert "put in so far" not in request["prompt"]
 
 
@@ -4053,7 +4053,7 @@ def test_departure_nudges_silent_before_the_dream_and_after_departing():
     tribe.departed = True
     request, _ctx = sim._prepare_turn(tribe)
     assert "put in so far" not in request["prompt"]
-    assert "DEPART would carry the tribe beyond the horizon" not in request["prompt"]
+    assert "SAIL_TO_NEW_LANDS would carry the tribe beyond the horizon" not in request["prompt"]
 
 
 def test_era_gap_note_lists_what_is_still_unbuilt_and_drops_each_item_once_built():
@@ -14545,7 +14545,7 @@ async def test_step_triggers_departure_game_over_when_a_tribe_departs():
 
 @run_async
 async def test_step_departure_takes_priority_over_world_domination_the_same_cycle():
-    """A deliberate act the model chose THIS cycle (DEPART) should win over a
+    """A deliberate act the model chose THIS cycle (SAIL_TO_NEW_LANDS) should win over a
     passively re-evaluated condition -- checked before world_domination/
     golden_age/era_ceiling in step()'s own elif chain."""
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "qwen2.5:3b"}])
@@ -15939,7 +15939,7 @@ def test_once_the_vessel_stands_the_menu_narrows_to_depart_conquest_alliance_and
     _request, ctx = sim._prepare_turn(tribe)
 
     actions = ctx["available_actions"]
-    assert "DEPART" in actions and "DECLARE_CONQUEST" in actions
+    assert "SAIL_TO_NEW_LANDS" in actions and "DECLARE_CONQUEST" in actions
     assert set(actions) <= VESSEL_STANDING_ACTIONS
     for dropped in ("BUILD_VESSEL", "UPGRADE_BARRACKS", "TRAIN_BATTALION", "BUILD_KEEP", "CONSTRUCT_WALL", "RESEARCH"):
         assert dropped not in actions
@@ -15959,7 +15959,7 @@ def test_a_lone_tribe_with_a_vessel_gets_depart_and_the_survival_basics():
 
     _request, ctx = sim._prepare_turn(tribe)
 
-    assert "DEPART" in ctx["available_actions"]
+    assert "SAIL_TO_NEW_LANDS" in ctx["available_actions"]
     assert "BUILD_VESSEL" not in ctx["available_actions"] and "CONSTRUCT_WALL" not in ctx["available_actions"]
 
 
@@ -15975,8 +15975,8 @@ def test_the_both_battle_ready_lock_keeps_depart_when_a_vessel_stands():
 
     _request, ctx = sim._prepare_turn(tribe)
 
-    assert "DEPART" in ctx["available_actions"]
-    assert set(ctx["available_actions"]) <= {"DECLARE_CONQUEST", "DEPART"}
+    assert "SAIL_TO_NEW_LANDS" in ctx["available_actions"]
+    assert set(ctx["available_actions"]) <= {"DECLARE_CONQUEST", "SAIL_TO_NEW_LANDS"}
 
 
 def test_a_hazard_near_one_already_marked_is_not_marked_again():

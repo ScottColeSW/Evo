@@ -71,7 +71,7 @@ source's filename/run_id and use it to filter the other.
 
 - **`run_config` record** (first line of structured data in the jsonl): the settings the run used (`NUDGES`, `MENU_CAP`, models, judge, read-back,
   code commit). Read it before comparing two runs; env vars set when the server started are otherwise invisible.
-- **`decision` records carry `menu_size` and `menu`**: the actions actually offered on that turn. This is how to answer menu questions (was DEPART
+- **`decision` records carry `menu_size` and `menu`**: the actions actually offered on that turn. This is how to answer menu questions (was SAIL_TO_NEW_LANDS
   on offer, did a smaller menu change behavior) without replaying snapshots.
 - **`logs/report_<run_id>.json`** and a `game_over_report` record: the whole end-of-run timeline (population, stockpiles, era and structure events,
   action counts), the findings and the headline. Written at game over, and at a plain stop (closing the tab) as the timeline so far.

@@ -153,6 +153,6 @@ def test_departure_era_is_a_real_seventh_rung_above_war_and_world_domination():
     anywhere. Plan file amber-drifting-tern.md."""
     assert ERAS[-1].key == "departure_era"
     assert ERAS[-1].label == "Beyond the Horizon"
-    assert set(ERAS[-1].unlocks_actions) == {"BUILD_VESSEL", "DEPART"}
+    assert set(ERAS[-1].unlocks_actions) == {"BUILD_VESSEL", "SAIL_TO_NEW_LANDS"}
     assert next_era("war_and_world_domination_era").key == "departure_era"
     assert next_era("departure_era") is None

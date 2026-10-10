@@ -748,7 +748,7 @@ BUILDING_FOOTPRINTS = {
     "boat": (2, 3), "bath_house": (2, 2), "library": (3, 3), "well": (2, 2),
     "dmm": (3, 3), "created_structure": (2, 2),
     "barracks": (3, 3),
-    "vessel": (6, 3),
+    "vessel": (8, 8),  # 2026-10-10: as big as the Castle, so it reads on the board
 }
 
 # BUILD_FISHERY (backend/actions.py): a new building, unlocked once a Dock already
@@ -2413,7 +2413,7 @@ DEPARTURE_DREAM_KEYWORDS = (
 VESSEL_WOOD_COST = 2500
 VESSEL_STONE_COST = 2500
 VESSEL_MAX_CONTRIBUTION_PER_ACTION = 500
-# DEPART: small and deliberate, no real cost -- this is the moment itself,
+# SAIL_TO_NEW_LANDS: small and deliberate, no real cost -- this is the moment itself,
 # not another resource sink on top of BUILD_VESSEL's own cost.
 
 # Explicit request, 2026-09-09: "I do want a play by play blows, meters
@@ -2501,7 +2501,9 @@ STRIKE_RAIDER_CAMP_BASE_WIN_CHANCE = 0.5
 STRIKE_RAIDER_CAMP_POPULATION_BONUS_PER_10 = 0.03
 STRIKE_RAIDER_CAMP_MAX_WIN_CHANCE = 0.85
 STRIKE_RAIDER_CAMP_POPULATION_LOSS_ON_FAILURE = 1
-STRIKE_RAIDER_CAMP_LOOT_FRACTION = 0.15  # of the tribe's own food, representing recovered supplies
+# 2026-10-10: a destroyed camp holds its own stash of food, wood and stone, a fraction of the tribe's STORAGE CAP, not of what it happens to hold. The old
+# 15% of the tribe's own food paid 0 whenever food was at the cap, which is every cycle for a food-secure tribe at the moment its Battalion patrol strikes.
+STRIKE_RAIDER_CAMP_STASH_FRACTION_OF_CAP = 0.08
 
 # Explicit request: "a full population frenzy repelling all Raiders from the
 # Territory Boundary... bigger population scales up the loot and pop. gained" --
