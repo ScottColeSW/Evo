@@ -2357,6 +2357,7 @@ class Tribe:
             "raiders_approaching": self.raiders_approaching,
             "raiders_repelled_by_wall": self.raiders_repelled_by_wall,
             "stance_toward": self.stance_toward,
+            "raid_ledger": self.raid_ledger,
             "trade_given": self.trade_given,
             "trade_received": self.trade_received,
             "combat_record": self.combat_record,

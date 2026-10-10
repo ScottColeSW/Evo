@@ -111,3 +111,39 @@ def test_a_scout_that_steps_once_a_day_walks_all_day_and_rests_one_cycle_at_the_
     assert out["arrived"] == [10, 20]                    # next day: pos is now where it arrived, glide_to is the next leg
     assert out["none"] == [3, 4]                         # a party that already moves every cycle is drawn where it is
     assert out["negative"][0] >= 10 and out["negative"][0] <= 39
+
+
+def test_chief_bubbles_are_drawn_after_the_landmarks_and_resource_icons():
+    """2026-10-10: a bubble flushed before drawLandmarks() had the resource icons and labels painted over its text."""
+    text = PAGE.read_text(encoding="utf-8")
+    frame = text[text.index("function drawFrame()"):text.index("/* ---------- Chronicle line styling")]
+    flush = frame.index("pendingSpeechBubbles.forEach(draw => draw());")
+    for later_must_not_follow in ("drawLandmarks();", "drawMinorSettlements();", "drawJointCastle(latestState.joint_castle);"):
+        assert frame.index(later_must_not_follow) < flush, later_must_not_follow
+    assert flush < frame.index("drawDayNightOverlay(interpolatedCycle());")  # the day and night tint still goes over everything
+
+def _relations_rows(tribe, tribes):
+    text = PAGE.read_text(encoding="utf-8")
+    start = text.index("function relationsRows(")
+    end = text.index("function relationsPanel(")
+    program = text[start:end] + f"\nconsole.log(JSON.stringify(relationsRows({json.dumps(tribe)}, {json.dumps(tribes)})));"
+    done = subprocess.run(["node", "-e", program], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
+def test_the_sidebar_lists_each_rival_met_with_its_stance_and_the_raid_ledger():
+    """2026-10-10: the stance was only shown in the Consensus tab."""
+    tribes = {"t0": {"name": "Big"}, "t1": {"name": "Small"}, "t2": {"name": "Unmet"}, "t3": {"name": "Gone", "extinct": True}}
+    me = {"id": "t1", "discovered_rivals": ["t0", "t3"], "stance_toward": {"t0": "WAR"},
+          "raid_ledger": {"t0": {"made": 3, "won": 0, "repelled": 3, "suffered": 1, "held_off": 0, "people_lost": 13}}}
+    rows = _relations_rows(me, tribes)
+    assert [r["name"] for r in rows] == ["Big"]                      # the unmet and the extinct are not listed
+    assert rows[0]["stance"] == "WAR"
+    assert "raided you 1x, took 13 of your people" in rows[0]["detail"] and "your raids: 0 won, 3 repelled" in rows[0]["detail"]
+
+
+def test_a_met_rival_with_no_stance_set_reads_neutral_and_no_one_met_lists_nothing():
+    tribes = {"t0": {"name": "Big"}, "t1": {"name": "Small"}}
+    assert _relations_rows({"id": "t1", "discovered_rivals": ["t0"]}, tribes) == [{"id": "t0", "name": "Big", "stance": "NEUTRAL", "detail": ""}]
+    assert _relations_rows({"id": "t1"}, tribes) == []

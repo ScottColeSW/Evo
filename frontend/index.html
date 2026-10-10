@@ -368,6 +368,9 @@
      read as distinct at a glance. */
   .commerce-panel { margin-top: 6px; padding: 6px 8px; background: #2a2410; border: 1px solid #5d4f1f; border-radius: 5px; font-size: 11px; color: #fde68a; }
   .commerce-panel .commerce-title { color: #fbbf24; font-weight: bold; }
+  .relations-panel { margin-top: 6px; padding: 6px 8px; background: #16202a; border: 1px solid #2f4a5d; border-radius: 5px; font-size: 11px; color: #cbd5e1; }
+  .relations-panel .relations-title { color: #7dd3fc; font-weight: bold; }
+  .relations-panel .relations-detail { color: #94a3b8; }
   .combat-panel { margin-top: 6px; padding: 6px 8px; background: #2a1616; border: 1px solid #5d2f2f; border-radius: 5px; font-size: 11px; color: #fecaca; }
   .combat-panel .combat-title { color: #f87171; font-weight: bold; }
   .espionage-panel { margin-top: 6px; padding: 6px 8px; background: #1e1a2e; border: 1px solid #4c3d6d; border-radius: 5px; font-size: 11px; color: #d8b4fe; }
@@ -4922,6 +4925,34 @@ function commercePanel(t) {
 // Elastic like commercePanel above -- a combat kind (Raiding, Raid Defense,
 // Home Defense, Raider Camp Strike, Ambush) this tribe has never faced simply
 // doesn't show a row until it does.
+// 2026-10-10 (explicit request: "add the 'at war' status or whatever status on the sidebar"): where this tribe stands with each rival it has met. The stance and the raid ledger come from the backend
+// (tribe.stance_toward, tribe.raid_ledger); a rival it has not met is not listed. Pure, so it can be tested without the page.
+function relationsRows(t, tribes) {
+  const ledger = t.raid_ledger || {};
+  const stances = t.stance_toward || {};
+  const met = new Set(t.discovered_rivals || []);
+  return Object.entries(tribes || {})
+    .filter(([id, other]) => id !== t.id && !other.extinct && (met.has(id) || stances[id] || ledger[id]))
+    .map(([id, other]) => {
+      const l = ledger[id] || {};
+      const parts = [];
+      if (l.suffered) parts.push(`raided you ${l.suffered}x, took ${l.people_lost} of your people`);
+      if (l.held_off) parts.push(`you held off ${l.held_off}`);
+      if (l.made) parts.push(`your raids: ${l.won} won, ${l.repelled} repelled`);
+      return {id, name: other.name, stance: stances[id] || "NEUTRAL", detail: parts.join("; ")};
+    });
+}
+
+function relationsPanel(t, tribes) {
+  const rows = relationsRows(t, tribes);
+  if (!rows.length) return "";
+  const lines = rows.map(r => {
+    const badge = STANCE_BADGES[r.stance] || STANCE_BADGES.NEUTRAL;
+    return `<span style="color:${badge.color}">${badge.icon} ${badge.label}</span> with ${escapeHtml(r.name)}` + (r.detail ? `<br><span class="relations-detail">${escapeHtml(r.detail)}</span>` : "");
+  });
+  return `<div class="relations-panel"><span class="relations-title">\u{1F310} Relations</span><br>${lines.join("<br>")}</div>`;
+}
+
 function combatPanel(t) {
   // Explicit request, 2026-09-11: Barracks/Battalion/Patrol moved out of this panel
   // into the Establishments panel's own new Military subsection below -- they're
@@ -5508,6 +5539,7 @@ function updateSidebar(state) {
           ${farmingPanel(t)}
           ${wellbeingPanel(t)}
           ${commercePanel(t)}
+          ${relationsPanel(t, state.tribes)}
           ${combatPanel(t)}
           ${espionagePanel(t)}
         </div>`;
