@@ -10,6 +10,7 @@ just appended-to and read back whole like the other two logs.
 """
 import json
 import sqlite3
+import threading
 import time
 from pathlib import Path
 
@@ -37,20 +38,58 @@ def _connect(path: str | None = None) -> sqlite3.Connection:
     return conn
 
 
-def record_board_state(run_id: str, cycle: int, snapshot: dict, path: str | None = None) -> None:
+# 2026-10-10: the writer keeps one connection open per database file instead of opening, setting up and closing one every cycle. Measured (docs/APP-PERFORMANCE-2026-10-09.md): that cost about
+# 120 ms a cycle, nearly all file flushing at commit and close, on the thread that serves the page. WAL with synchronous=NORMAL still never corrupts the file; the one thing it gives up is that the
+# last few cycles may be lost if the machine loses power, which is acceptable for a history. Readers open their own connections as before, and WAL lets them read while this one writes.
+_writers: dict[str, sqlite3.Connection] = {}
+_writers_lock = threading.Lock()
+
+
+def _writer(path: str | None) -> sqlite3.Connection:
+    target = Path(path or DEFAULT_DB_PATH)
+    key = str(target.resolve())
+    with _writers_lock:
+        conn = _writers.get(key)
+        if conn is None:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(target, timeout=30, check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS board_snapshots (run_id TEXT NOT NULL, cycle INTEGER NOT NULL, ts REAL NOT NULL, snapshot_json TEXT NOT NULL, PRIMARY KEY (run_id, cycle))"
+            )
+            conn.commit()
+            _writers[key] = conn
+        return conn
+
+
+def close_all() -> None:
+    """Closes every open writer (server shutdown, and between tests so no database file stays held open)."""
+    with _writers_lock:
+        for conn in _writers.values():
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        _writers.clear()
+
+
+def record_board_state(run_id: str, cycle: int, snapshot: dict, path: str | None = None, snapshot_json: str | None = None) -> None:
     """Idempotent per (run_id, cycle) -- a re-sent snapshot for a cycle already
     recorded (e.g. a duplicate tick) overwrites rather than duplicating. Does nothing in a lean run (config.LEAN_RUN): the write costs about 120 ms of file flushing
     a cycle, on the thread that serves the page."""
     from . import config
     if config.lean_run():
         return
-    conn = _connect(path)
-    with conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO board_snapshots (run_id, cycle, ts, snapshot_json) VALUES (?, ?, ?, ?)",
-            (run_id, cycle, time.time(), json.dumps(snapshot, default=str)),
-        )
-    conn.close()
+    # snapshot_json is the already-serialized snapshot when the caller has one (the server sends the same text to the page), so it is turned into JSON once, not twice.
+    payload = snapshot_json if snapshot_json is not None else json.dumps(snapshot, default=str)
+    conn = _writer(path)
+    with _writers_lock:
+        with conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO board_snapshots (run_id, cycle, ts, snapshot_json) VALUES (?, ?, ?, ?)",
+                (run_id, cycle, time.time(), payload),
+            )
 
 
 def list_runs(path: str | None = None) -> list[str]:

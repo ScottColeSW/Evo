@@ -135,11 +135,11 @@ async def main():
         t1 = time.perf_counter()
         snapshot = sim.snapshot()
         t2 = time.perf_counter()
-        board_history.record_board_state(sim.run_id, sim.cycle, snapshot)  # a no-op in a lean run
+        payload = json.dumps(snapshot, default=str)  # serialized once, as the server does; the page gets this text first
         t3 = time.perf_counter()
-        payload = json.dumps(snapshot)
+        board_history.record_board_state(sim.run_id, sim.cycle, snapshot, snapshot_json=payload)  # a no-op in a lean run
         t4 = time.perf_counter()
-        for key, v in zip(segments, ((t1 - t0), (t2 - t1), (t3 - t2), (t4 - t3), (t4 - t0))):
+        for key, v in zip(segments, ((t1 - t0), (t2 - t1), (t4 - t3), (t3 - t2), (t4 - t0))):
             segments[key].append(v * 1000)
         sizes.append(len(payload))
         per_cycle_blocked.append(sum(x for x in lags[before:] if x > 20))

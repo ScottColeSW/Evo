@@ -7,7 +7,7 @@ from aiohttp import WSMsgType, web
 
 from . import config
 from . import world
-from .board_history import record_board_state
+from .board_history import close_all as close_board_history_writers, record_board_state
 from .eras import ERAS
 from .experiment_log import read_all_experiment_runs, summarize_experiment
 from .ollama_client import OllamaClient
@@ -314,14 +314,16 @@ async def _tick_session(ws: web.WebSocketResponse, session: dict) -> None:
         return
     # The history write is a record, not part of the game: if it fails (a locked database, a full disk) the cycle is still broadcast. It used to share the try above,
     # so one failed write (2026-10-08, "database is locked") also dropped that cycle's snapshot from the browser.
+    # One serialization serves both the page and the history, and the page is sent first so a slow write can never delay it (2026-10-10).
+    payload = json.dumps(snapshot, default=str)
     try:
-        record_board_state(sim.run_id, sim.cycle, snapshot)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[board_history] cycle {sim.cycle} not recorded: {exc}")
-    try:
-        await ws.send_str(json.dumps(snapshot))
+        await ws.send_str(payload)
     except Exception:
         pass  # connection may have dropped between the tick finishing and the send
+    try:
+        record_board_state(sim.run_id, sim.cycle, snapshot, snapshot_json=payload)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[board_history] cycle {sim.cycle} not recorded: {exc}")
 
 
 async def broadcast_loop(app: web.Application) -> None:
@@ -362,6 +364,7 @@ async def on_startup(app: web.Application) -> None:
 
 async def on_cleanup(app: web.Application) -> None:
     app["bg_task"].cancel()
+    close_board_history_writers()
 
 
 def create_app() -> web.Application:

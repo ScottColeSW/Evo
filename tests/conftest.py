@@ -15,6 +15,14 @@ def isolate_event_log(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def release_board_history_writers():
+    """The board-history writer keeps a connection open per database file; close them after each test so no temp database stays held open (Windows cannot delete an open file)."""
+    yield
+    from backend import board_history
+    board_history.close_all()
+
+
+@pytest.fixture(autouse=True)
 def fresh_terrain_cache():
     """world.biome_at is cached (a pure function of the tile); a test that changes the terrain inputs must not see an answer cached by another test."""
     from backend import world

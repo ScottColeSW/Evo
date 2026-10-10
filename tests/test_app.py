@@ -118,7 +118,8 @@ async def test_tick_session_sends_the_snapshot_on_a_normal_tick():
         await _tick_session(ws, {"sim": sim})
 
     sim.step.assert_awaited_once()
-    record.assert_called_once_with("run_x", 5, {"cycle": 5})
+    # the history is given the same already-serialized text the page is sent (one json.dumps a cycle, 2026-10-10)
+    record.assert_called_once_with("run_x", 5, {"cycle": 5}, snapshot_json=json.dumps({"cycle": 5}))
     ws.send_str.assert_awaited_once_with(json.dumps({"cycle": 5}))
 
 

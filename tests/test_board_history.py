@@ -70,3 +70,61 @@ def test_a_snapshot_can_be_written_while_another_connection_is_reading(tmp_path)
     record_board_state("run_a", 2, {"cycle": 2}, path=db)       # would raise 'database is locked' in the default journal mode
     reader.close()
     assert read_cycle("run_a", 2, path=db)["snapshot"] == {"cycle": 2}
+
+
+def test_the_writer_keeps_one_connection_open_between_writes_and_close_all_releases_the_file(tmp_path):
+    """2026-10-10: opening, setting up and closing a connection every cycle cost about 120 ms of file flushing on the thread that serves the page."""
+    import os
+
+    from backend import board_history
+
+    path = str(tmp_path / "board_history.db")
+    record_board_state("run_1", 0, {"cycle": 0}, path=path)
+    first = list(board_history._writers.values())
+    record_board_state("run_1", 1, {"cycle": 1}, path=path)
+    assert len(board_history._writers) == 1 and list(board_history._writers.values()) == first  # the same connection
+
+    assert [r["cycle"] for r in read_run("run_1", path=path)] == [0, 1]  # a reader sees rows while the writer stays open
+    board_history.close_all()
+    assert board_history._writers == {}
+    os.remove(path)  # raises on Windows if the file were still held open
+
+
+def test_a_snapshot_already_serialized_is_stored_as_given(tmp_path):
+    path = str(tmp_path / "board_history.db")
+    record_board_state("run_1", 3, {"cycle": "ignored"}, path=path, snapshot_json='{"cycle": 3, "from": "the caller"}')
+    assert read_cycle("run_1", 3, path=path)["snapshot"] == {"cycle": 3, "from": "the caller"}
+
+
+def test_the_server_tick_sends_the_page_first_and_serializes_the_snapshot_once(monkeypatch):
+    """The text sent to the page is the text stored in the history: one json.dumps a cycle, and a slow write cannot delay the page."""
+    import asyncio
+
+    from backend import app
+
+    order = []
+
+    class FakeSim:
+        paused = False
+        game_over = False
+        cycle = 7
+        run_id = "run_x"
+
+        async def step(self):
+            pass
+
+        def snapshot(self):
+            return {"cycle": 7, "tribes": {}}
+
+    class FakeWs:
+        async def send_str(self, text):
+            order.append(("sent", text))
+
+    def fake_record(run_id, cycle, snapshot, path=None, snapshot_json=None):
+        order.append(("recorded", snapshot_json))
+
+    monkeypatch.setattr(app, "record_board_state", fake_record)
+    asyncio.run(app._tick_session(FakeWs(), {"sim": FakeSim(), "observer": False}))
+
+    assert [kind for kind, _ in order] == ["sent", "recorded"]
+    assert order[0][1] is order[1][1]  # the very same string object
