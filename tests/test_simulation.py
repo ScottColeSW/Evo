@@ -16165,6 +16165,16 @@ def test_the_worn_ground_rests_until_it_has_really_recovered_and_does_not_flicke
     assert cycles_until_forage_recovers(sim.world, tribe, ctx3["biome"]) == 0
 
 
+def test_a_tribe_that_has_learned_to_fish_no_longer_has_gather_food_at_all():
+    """2026-10-10: fishing counts as a food source twice over. Until it is learned CATCH_FISH is one of the alternatives that lets a worn forage rest; once learned the older retirement rule
+    removes GATHER_FOOD for good (a worn forage cannot come back), so the fallow rule never has to treat the passive catch as an alternative."""
+    sim, tribe = _forager_with_food_options()
+    tribe.fishing_learned = True
+    _req, ctx = sim._prepare_turn(tribe)
+    assert "GATHER_FOOD" not in ctx["available_actions"] and tribe.foraging_retired is True
+    assert any("grown beyond simple foraging" in line and "fishing" in line for line in tribe.history)
+
+
 def test_a_resting_ground_moves_with_the_tribe_and_is_per_tile():
     sim, tribe = _forager_with_food_options()
     sim.world.depletion[("forage", tribe.x, tribe.y)] = 0.95
