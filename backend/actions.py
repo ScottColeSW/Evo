@@ -1197,7 +1197,7 @@ def _gather_ore(sim, tribe, biome, target):
     amount = round(config.GATHER_ORE_BASE_YIELD * _labor_multiplier(tribe.population))
     tribe.ore_ever_gathered = True
     sim._capped_unique_add(tribe, tribe.mine_resource_name, amount)
-    return f"{amount} {tribe.mine_resource_name} is fetched from the mine"
+    return f"{amount} {tribe.mine_resource_name} fetched from the mine"
 
 
 def _build_tannery(sim, tribe, biome, target):

@@ -2257,6 +2257,7 @@ def test_gather_ore_requires_a_real_mine():
     assert tribe.ore_ever_gathered is True
     assert tribe.unique_resources["Orosite Ore"] > 0
     assert "Orosite Ore" in result
+    assert result.endswith("Orosite Ore fetched from the mine") and "is fetched" not in result  # 2026-10-11: read as "438 Orosite Ore is fetched" on the banner
 
 
 def test_build_forge_requires_mine_and_at_least_one_ore():
