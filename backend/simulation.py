@@ -9192,11 +9192,13 @@ class Simulation:
             tribe.history.append(f"the {warband['name']} Raiders are broken -- the {remaining} who survive join the tribe")
             tribe.warband = None
 
-    def _warband_defeated(self, tribe: Tribe) -> None:
-        """Raiders driven off by an expulsion (actions._expel_raiders_from_territory): the warband is set back one win. Nothing else changes hands."""
+    def _warband_defeated(self, tribe: Tribe, force: int = 0, joined: int = 0) -> None:
+        """Raiders driven off by an expulsion (actions._expel_raiders_from_territory): the warband is set back one win, and the raiders who joined the tribe (`joined` of the `force` that came) leave it. Nothing else changes hands."""
         if tribe.warband and not tribe.extinct:
             tribe.warband["attacks"] += 1
             tribe.warband["wins"] = max(0, tribe.warband["wins"] - 1)
+            if force:
+                tribe.warband["size"] = max(0, force - joined)
 
     def _warband_takeover(self, tribe: Tribe, survivors: int, joined: int, p_before: int, force: int) -> None:
         """The tribe becomes them: what is left of the tribe and the raiders who survived are one people, the warband's leader is the chief (the election is told the story and decides the philosophy; the

@@ -2600,6 +2600,12 @@ EXPEL_RAIDERS_MAX_WAVES = 3
 EXPEL_RAIDERS_POPULATION_LOSS_PER_FAILED_WAVE = 2
 EXPEL_RAIDERS_REWARD_REDUCTION_PER_WAVE = 0.35
 EXPEL_RAIDERS_MIN_REWARD_MULTIPLIER = 0.2
+# 2026-10-11 (the owner: the incoming raiders "did not scale high enough"): run_20261011_102517 had warbands of 3,501 raiders and every one of them was expelled at 0.90-0.95, because the expulsion
+# odds above depend on the tribe's own size alone. They now also fall with the raiders' real force relative to the tribe's (the force the approach carries, WARBAND_FORCE_RATIO x population at
+# the start, compounding with wins): the win chance loses EXPEL_RAIDERS_FORCE_PENALTY x min(1, force / population). A failed wave costs the tribe EXPEL_RAIDERS_FAILED_WAVE_CASUALTY_FACTOR x the
+# raiders' force in people (never under the old flat figure). On a win, the raiders who join are never more than the warband had, and they leave it. Starting values; tune after a live run.
+EXPEL_RAIDERS_FORCE_PENALTY = 0.5
+EXPEL_RAIDERS_FAILED_WAVE_CASUALTY_FACTOR = 0.25
 
 # CLEAR_TERRITORY (backend/actions.py._clear_territory): explicit request,
 # 2026-09-09: "Territory boundaries must be cleared of threats before they

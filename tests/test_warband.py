@@ -188,3 +188,45 @@ def test_a_takeover_is_recorded_on_the_tribe_and_sent_to_the_page():
     assert tribe.takeover == {"leader": "Ruthless Gnashdrex", "cycle": 210, "force": 2000, "tribe_before": 200, "survivors": 1, "joined": 2000 - round(2000 * config.WARBAND_WINNER_LOSS_FRACTION)}
     sent = tribe.to_dict()
     assert sent["takeover"]["leader"] == "Ruthless Gnashdrex" and sent["warband"] is None
+
+
+def _expel(sim, tribe, roll):
+    from backend.actions import ACTION_REGISTRY
+    with mock.patch("backend.actions.random.random", return_value=roll):
+        return ACTION_REGISTRY["EXPEL_RAIDERS_FROM_TERRITORY"](sim, tribe, "plains", (0, 0))
+
+
+def _riding_in(tribe, force):
+    tribe.raiders_approaching = {"start_x": 60, "start_y": 60, "x": 60, "y": 60, "name": "Grim", "force": force, "cycles_left": 5, "total_cycles": 10}
+    tribe.warband = {"name": "Grim", "size": force, "wins": 0, "attacks": 0}
+
+
+def test_a_big_warband_is_harder_to_expel_than_a_small_one_at_the_same_tribe_size():
+    """2026-10-11 (the owner: incoming raiders "did not scale high enough"): every expulsion in a real run won at 0.90-0.95 whatever the raiders' force."""
+    sim, tribe = _tribe(1000)
+    _riding_in(tribe, 30)
+    _expel(sim, tribe, 0.0)
+    small = [e for e in sim.recent_encounters if e.get("label") == "Raiders expelled"][-1]["skirmish"]["attacker_chance"]
+    sim2, tribe2 = _tribe(1000)
+    _riding_in(tribe2, 1000)
+    _expel(sim2, tribe2, 0.0)
+    big = [e for e in sim2.recent_encounters if e.get("label") == "Raiders expelled"][-1]["skirmish"]["attacker_chance"]
+    assert small - big >= config.EXPEL_RAIDERS_FORCE_PENALTY * (1.0 - 0.03) - 0.01
+
+
+def test_a_failed_expulsion_wave_costs_people_in_proportion_to_the_raiders_force():
+    sim, tribe = _tribe(1000)
+    _riding_in(tribe, 800)
+    _expel(sim, tribe, 0.999)                    # every wave fails
+    assert tribe.population <= 1000 - config.EXPEL_RAIDERS_MAX_WAVES * round(800 * config.EXPEL_RAIDERS_FAILED_WAVE_CASUALTY_FACTOR)
+
+
+def test_raiders_who_join_after_an_expulsion_are_never_more_than_the_warband_and_leave_it():
+    sim, tribe = _tribe(1000)
+    _riding_in(tribe, 5)                          # only five raiders came; 3% of 1000 would be 30
+    _expel(sim, tribe, 0.0)
+    assert tribe.population == 1005 and tribe.warband["size"] == 0
+    sim2, tribe2 = _tribe(1000)
+    _riding_in(tribe2, 400)
+    _expel(sim2, tribe2, 0.0)
+    assert tribe2.population == 1030 and tribe2.warband["size"] == 370

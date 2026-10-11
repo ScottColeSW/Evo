@@ -3091,16 +3091,17 @@ def _expel_raiders_from_territory(sim, tribe, biome, target):
 
     ax, ay = approach["x"], approach["y"]
     reward_multiplier = 1.0
+    force = int(approach.get("force") or 0)  # the raiders' real strength (Simulation._raider_force); an approach made before warbands carries none
     for wave in range(1, config.EXPEL_RAIDERS_MAX_WAVES + 1):
         win_chance = min(
             config.EXPEL_RAIDERS_MAX_WIN_CHANCE,
             config.EXPEL_RAIDERS_BASE_WIN_CHANCE
             + (tribe.population // 10) * config.EXPEL_RAIDERS_WIN_CHANCE_POPULATION_BONUS_PER_10,
         )
+        win_chance -= config.EXPEL_RAIDERS_FORCE_PENALTY * min(1.0, force / max(1, tribe.population))  # 2026-10-11: bigger raiders are harder to drive off
         win_chance = max(config.MIGHT_ADJUSTED_WIN_CHANCE_FLOOR, min(config.MIGHT_ADJUSTED_WIN_CHANCE_CEILING, win_chance + _raider_might_modifier(sim, tribe)))
         if random.random() < win_chance:
             tribe.raiders_approaching = None
-            sim._warband_defeated(tribe)  # expelled raiders set the warband back one win (2026-10-10)
             # Code-quality pass: uncapped tribe.food += -- same bug class as the
             # rest of this file. A large, established tribe's population-scaled
             # loot here can be substantial, easily enough to overrun the cap in
@@ -3110,6 +3111,9 @@ def _expel_raiders_from_territory(sim, tribe, biome, target):
                 max(1, round(tribe.population * config.EXPEL_RAIDERS_LOOT_PER_POPULATION * reward_multiplier)),
             )
             gained_population = max(1, round(tribe.population * config.EXPEL_RAIDERS_POPULATION_GAIN_FRACTION * reward_multiplier))
+            if force:
+                gained_population = min(gained_population, force)  # no more raiders join than there were
+            sim._warband_defeated(tribe, force=force, joined=gained_population)  # expelled raiders set the warband back one win and lose those who joined (2026-10-10, 2026-10-11)
             tribe.population += gained_population
             tribe.max_population = max(tribe.max_population, tribe.population)
             sim._relocate_raider_sighting_after_ambush(tribe, ax, ay)
@@ -3118,7 +3122,7 @@ def _expel_raiders_from_territory(sim, tribe, biome, target):
                 "x": ax, "y": ay, "kind": "raider_attack",
                 "label": "Raiders expelled", "outcome": "repelled",
                 "skirmish": skirmish(f"{tribe.name} drives off the raiders", tribe.name, "Raiders", True, attacker_chance=win_chance,
-                                     attacker_force=tribe.population, outcome=f"Raiders expelled after {wave} wave{'s' if wave != 1 else ''}; {gained_population} join the tribe"),
+                                     attacker_force=tribe.population, defender_force=force or None, defender_lost=gained_population if force else 0, outcome=f"Raiders expelled after {wave} wave{'s' if wave != 1 else ''}; {gained_population} join the tribe"),
             })
             _record_combat(tribe, "Expel Raiders", "won")
             wave_note = "" if wave == 1 else f" after {wave} furious waves of resistance"
@@ -3127,7 +3131,7 @@ def _expel_raiders_from_territory(sim, tribe, biome, target):
                 f"{gained_food} food seized and {gained_population} routed raiders join the tribe"
             )
 
-        sim._lose_population(tribe, config.EXPEL_RAIDERS_POPULATION_LOSS_PER_FAILED_WAVE, cause="expel_raiders_failed")
+        sim._lose_population(tribe, max(config.EXPEL_RAIDERS_POPULATION_LOSS_PER_FAILED_WAVE, round(force * config.EXPEL_RAIDERS_FAILED_WAVE_CASUALTY_FACTOR)), cause="expel_raiders_failed")
         _record_combat(tribe, "Expel Raiders", "lost")
         if tribe.extinct:
             return "the frenzied defense collapses entirely -- nothing left to expel with"
