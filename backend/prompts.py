@@ -146,6 +146,12 @@ Answer only in the JSON format given to you each cycle -- no other text.{leaders
 # same fix, applied one tier up Maslow's hierarchy: growth/expansion only reads as
 # the tribe's defining pressure once survival itself is stable, not something
 # competing for attention with literally starving.
+def _context(world_state: dict, key: str) -> str:
+    """The parenthetical that says what a stockpile means (instincts.stock_context); empty when a caller built a world_state without it."""
+    note = world_state.get(key)
+    return f" ({note})" if note else ""
+
+
 def _growth_pressure_text(era_gap_note: str, survival_critical: bool) -> str:
     if not era_gap_note:
         return "[GROWTH STATE: NO ADVANCEMENT PENDING // FURTHEST ERA REACHED OR ALL THRESHOLDS MET]"
@@ -267,7 +273,7 @@ CURRENT ERA: {world_state['era']}
 
 METABOLIC STOCKPILES:
 - Population Density: {world_state['population']} units
-- Resource Repositories: Wood: {world_state['wood']} | Stone: {world_state['stone']} | Food: {world_state['food']} | Water: {world_state['water']}
+- Resource Repositories: Wood: {world_state['wood']} | Stone: {world_state['stone']} | Food: {world_state['food']}{_context(world_state, 'food_context')} | Water: {world_state['water']}{_context(world_state, 'water_context')}
 
 VISUAL RENDER LAYER SCAN:
 Immediate Grid Entity Array: [{', '.join(world_state['visible_entities'])}]

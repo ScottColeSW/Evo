@@ -10,6 +10,18 @@ food/water actually had upkeep consumption (see Simulation._apply_upkeep).
 from . import config
 
 
+def stock_context(stock: int, upkeep: int, secure: bool) -> str:
+    """2026-10-11 (the owner: "we have to spoon feed the right information at the right time... give the stock levels some relative relevancy"): what a raw stockpile number
+    means to the tribe holding it. A bare "Food: 3427" reads as scarce to a small model whatever the tribe's size; a chief of 24,000 people with a secure food source called food "still a
+    pressing need" (run_20261011_102517 cycle 299), although a secure resource no longer runs down at all (Simulation._apply_upkeep). Facts only: secure, or how many cycles of upkeep the stock covers."""
+    if secure:
+        return "secure: it no longer runs down"
+    cycles = stock / max(1, upkeep)
+    if cycles >= 10:
+        return f"over {int(cycles // 10) * 10} cycles of upkeep"
+    return f"about {cycles:.1f} cycle{'' if round(cycles, 1) == 1.0 else 's'} of upkeep"
+
+
 def survival_bias_string(
     food: int, water: int, population: int,
     fishing_learned: bool = False, cooking_learned: bool = False,

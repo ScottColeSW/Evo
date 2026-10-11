@@ -16305,3 +16305,18 @@ def test_the_prompt_says_where_each_reported_raider_is_against_the_territory():
     tribe.raider_sightings = []
     request, _ctx = sim._prepare_turn(tribe)
     assert "Where the reported raiders are" not in request["prompt"]
+
+
+def test_the_chief_is_told_what_each_stockpile_means_secure_or_cycles_of_upkeep():
+    """2026-10-11 (the owner: "give the stock levels some relative relevancy"): a bare Food: 3427 read as scarce to a chief of 24,000 whose food was secure."""
+    from backend.instincts import stock_context
+    assert stock_context(3427, 2400, secure=True) == "secure: it no longer runs down"
+    assert stock_context(3427, 2400, secure=False) == "about 1.4 cycles of upkeep"
+    assert stock_context(240, 240, secure=False) == "about 1.0 cycle of upkeep"
+    assert stock_context(5000, 100, secure=False) == "over 50 cycles of upkeep"
+    sim = Simulation([{"name": "Home", "model": "gemma2:2b", "x": 50, "y": 50}])
+    tribe = sim.tribes["tribe_0"]
+    tribe.population, tribe.food, tribe.water = 1000, 300, 5000
+    request, _ctx = sim._prepare_turn(tribe)
+    assert "Food: 300 (about 3.0 cycles of upkeep)" in request["prompt"]
+    assert "Water: 5000 (over 50 cycles of upkeep)" in request["prompt"]

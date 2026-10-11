@@ -29,7 +29,7 @@ from .eras import ERAS, READINESS_LABELS, era_index, next_era, ordered_actions_t
 from .event_log import RunEventLog, TribeHistory
 from .scoreboard import record_tribe_result
 from .skirmish import skirmish
-from .instincts import survival_bias_string
+from .instincts import stock_context, survival_bias_string
 from .threat import threat_assessment_string
 from .wellbeing import compute_wellbeing, housing_capacity, shelter_growth_factor
 from .leadership import elect_chief, name_settlement
@@ -395,6 +395,14 @@ RIVAL_DEPENDENT_ACTIONS = (
 # CONSTRUCT_WALL kept getting chosen, the exact same no-op-oscillation bug this
 # whole table exists to close). _wall_next_afford_cost mirrors actions.
 # _construct_wall's own cost computation exactly, without mutating any state.
+def _daily_upkeep(tribe) -> int:
+    """What the tribe's people use of each of food and water per cycle (the one formula Simulation._apply_upkeep charges)."""
+    upkeep = max(1, tribe.population // config.UPKEEP_POPULATION_DIVISOR)
+    if tribe.bath_house_built:
+        upkeep = max(1, round(upkeep * config.BATH_HOUSE_UPKEEP_MULTIPLIER))
+    return upkeep
+
+
 def _is_food_secure(tribe) -> bool:
     """A Kitchen plus a genuinely proven, passive food source (fishing, or at
     least one real harvest ever brought in) -- see Simulation._advance_food_supply's
@@ -6441,6 +6449,8 @@ class Simulation:
             "stone": tribe.stone,
             "food": tribe.food,
             "water": tribe.water,
+            "food_context": stock_context(tribe.food, _daily_upkeep(tribe), _is_food_secure(tribe)),
+            "water_context": stock_context(tribe.water, _daily_upkeep(tribe), _is_water_secure(tribe)),
             "era": tribe.era,
             "available_actions": available_actions,
             "visible_entities": visible_entities,
