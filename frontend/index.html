@@ -1154,6 +1154,7 @@ const GAME_OVER_TITLES = {
   era_ceiling: "SIMULATION COMPLETE",
   manual_quit: "RUN STOPPED",
   departure: "BEYOND THE HORIZON",
+  forfeit: "WON BY DEFAULT",
 };
 
 const GAME_OVER_SUBTITLES = {
@@ -1163,6 +1164,7 @@ const GAME_OVER_SUBTITLES = {
   era_ceiling: "Every surviving population has exhausted the known stages of development",
   manual_quit: "Observation ended by operator request",
   departure: "One people sails on, one inherits the island",
+  forfeit: "A model stopped answering, so the other tribe wins by default",
 };
 
 // A compact icon-only readout for the end-screen cards -- same emoji the
@@ -1205,7 +1207,7 @@ function goVerdictText(state) {
   return match ? match[0] : summary.split("\n")[0] || "";
 }
 
-const GAME_OVER_VERDICT_ICONS = { extinction: "💀", world_domination: "👑", golden_age: "🕊️", era_ceiling: "🏛️", manual_quit: "⏸️", departure: "🌅" };
+const GAME_OVER_VERDICT_ICONS = { extinction: "💀", world_domination: "👑", golden_age: "🕊️", era_ceiling: "🏛️", manual_quit: "⏸️", departure: "🌅", forfeit: "⚠️" };
 
 
 /* ---------- End-of-run report: scene, charts and findings (backend/endgame_report.py builds the data; nothing here changes the game) ---------- */

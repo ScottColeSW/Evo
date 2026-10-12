@@ -59,3 +59,15 @@ async def test_one_failing_request_does_not_take_down_its_batch():
 async def test_empty_batch_returns_empty_results():
     scheduler = ModelBatchScheduler(FakeOllamaClient())
     assert await scheduler.run_batch([]) == {}
+
+
+@run_async
+async def test_a_failed_call_is_returned_with_its_error_so_the_run_can_say_why():
+    """2026-10-11 (the owner): a call that fails or times out is categorically a model or Ollama failure."""
+    scheduler = ModelBatchScheduler(FakeOllamaClient())
+    results = await scheduler.run_batch([
+        {"id": "tribe_0", "model": "broken-model", "prompt": "p", "temperature": 0.5},
+        {"id": "tribe_1", "model": "llama3", "prompt": "p", "temperature": 0.5},
+    ])
+    assert results["tribe_0"]["intent"] == {} and results["tribe_0"]["error"] == "RuntimeError: simulated Ollama failure"
+    assert "error" not in results["tribe_1"]

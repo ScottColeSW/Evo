@@ -2734,6 +2734,7 @@ class Simulation:
         # self.game_over/self.status; game_over_summary is the Overseer-voice
         # retrospective the frontend's end-of-run splash actually displays.
         self.game_over_reason: str | None = None
+        self.model_forfeit: dict | None = None  # set when a tribe's model failed to answer a turn (a timeout or an Ollama error): that tribe forfeits and the other wins by default, see _forfeit_summary
         self.game_over_summary: str = ""
         # A separate, one-time narrative synthesis (backend/reflection.py.
         # generate_endgame_narrative) using config.ENDGAME_SUMMARY_MODEL -- an actual
@@ -3553,6 +3554,7 @@ class Simulation:
         # died -- undoes _trigger_game_over's stop/unload so stepping resumes.
         self.game_over = False
         self.game_over_reason = None
+        self.model_forfeit = None
         self.game_over_summary = ""
         self.game_over_narrative = ""
         self.game_over_report = None
@@ -3755,6 +3757,16 @@ class Simulation:
             if tid not in prompts_by_tid:
                 continue
             outcome = results.get(tid, {"intent": {}, "latency_ms": 0.0})
+            if outcome.get("error"):
+                # 2026-10-11 (the owner): a turn that times out or errors is categorically a model or Ollama failure, not a decision, and must not be fuzzy-matched into an action (run_20261011_161130 opened trade three times
+                # that way). The tribe forfeits and the other wins by default, so the run does not go on as a bad record.
+                if self.model_forfeit is None:
+                    self.model_forfeit = {"tribe_id": tid, "tribe": tribe.name, "model": tribe.model, "error": outcome["error"], "cycle": self.cycle, "seconds": round(outcome["latency_ms"] / 1000, 1)}
+                    try:
+                        self.event_log.record_data(tribe.name, "model_failure_forfeit", self.model_forfeit, message=f"[model failure] {tribe.name}'s {tribe.model} failed a turn ({outcome['error']}); it forfeits")
+                    except Exception:  # noqa: BLE001 -- logging must never interrupt the simulation
+                        pass
+                continue
             # Explicit request, 2026-09-09: raw LLM I/O for the live debug view
             # (see Tribe.debug_transcript's own comment) -- captured here, right
             # where the request/response pair actually meet, rather than
@@ -3889,7 +3901,9 @@ class Simulation:
                     await self.client.unload_model(model)
 
         living_tribes = [t for t in self.tribes.values() if not t.extinct]
-        if self.tribes and not living_tribes:
+        if self.model_forfeit is not None and not self.game_over:
+            await self._trigger_game_over("forfeit")
+        elif self.tribes and not living_tribes:
             await self._trigger_game_over("extinction")
         # Beyond the Horizon era -- plan file amber-drifting-tern.md. Checked
         # before world_domination/golden_age/era_ceiling below: a deliberate
@@ -7008,6 +7022,14 @@ class Simulation:
         except Exception as exc:  # noqa: BLE001 -- the splash falls back to the plain summary
             print(f"[simulation] game over report failed: {exc!r}")
             self.game_over_report = None
+        if reason == "forfeit" and self.game_over_report is not None:
+            self.game_over_report["forfeit"] = self.model_forfeit
+            self.game_over_report["headline"] = {
+                "scene": "quiet", "title": "A model stopped answering",
+                "text": (f"{self.model_forfeit['tribe']}'s model ({self.model_forfeit['model']}) did not answer a turn at cycle {self.model_forfeit['cycle']} "
+                         f"({self.model_forfeit['error']}). The other tribe wins by default; this run is not a fair record of the game."),
+                "shows": self.game_over_report["headline"].get("shows", ""),
+            }
         self._persist_report(reason)
         self.game_over_summary = self._generate_game_over_summary(reason)
         # Awaited before shutdown() below, while every model is still loaded/
@@ -7020,7 +7042,8 @@ class Simulation:
         # already tells this exact story once (a silently-swallowed exception
         # forcing standalone probing to diagnose), same fix applies here.
         try:
-            self.game_over_narrative = await generate_endgame_narrative(
+            # a forfeit is a model or Ollama failure: no further model call is made for the closing narrative (2026-10-11)
+            self.game_over_narrative = "" if reason == "forfeit" else await generate_endgame_narrative(
                 self.client, config.ENDGAME_SUMMARY_MODEL, self.game_over_summary,
             )
         except Exception as exc:
@@ -7068,6 +7091,12 @@ class Simulation:
                 )
             else:
                 lines.append("OVERSEER LOG: Every observed population has ceased to exist.")
+        elif reason == "forfeit":
+            failed = self.model_forfeit or {}
+            lines.append(
+                f"OVERSEER LOG: {failed.get('tribe', 'A tribe')}'s model ({failed.get('model', '?')}) failed to answer a turn at cycle {failed.get('cycle', '?')} "
+                f"after {failed.get('seconds', '?')} s ({failed.get('error', 'no reply')}). That is a model or Ollama failure, not a decision, so the tribe forfeits."
+            )
         elif reason == "world_domination":
             lines.append(
                 "OVERSEER LOG: A single population now accounts for the entire observed civilization. "
@@ -7111,6 +7140,13 @@ class Simulation:
             lines.append(
                 f"Analysis: {victor.name} achieved total domination, conquering {conquered}. "
                 f"Session concluded at cycle {self.cycle}."
+            )
+        elif reason == "forfeit":
+            failed = self.model_forfeit or {}
+            winners = ", ".join(t.name for t in living if t.id != failed.get("tribe_id")) or "no one"
+            lines.append(
+                f"Analysis: {winners} wins by default: {failed.get('tribe', 'a tribe')}'s model ({failed.get('model', '?')}) did not answer at cycle {failed.get('cycle', '?')}. "
+                f"This run is not a fair record of the game."
             )
         elif reason == "golden_age" and living:
             names = " and ".join(t.name for t in living)

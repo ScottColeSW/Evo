@@ -219,3 +219,32 @@ def test_every_model_call_asks_for_the_same_context_so_a_model_has_one_runner():
     for method in (OllamaClient.generate_json, OllamaClient.generate_json_with_raw):
         assert inspect.signature(method).parameters["num_ctx"].default == 8192
     assert config.REFLECTION_CONTEXT_OWN_MODEL == 8192
+
+
+def test_a_turn_that_times_out_makes_that_tribe_forfeit_and_the_other_wins_by_default_with_no_action_applied():
+    """2026-10-11 (the owner: "the other Tribe wins by default, so we don't have bad runs")."""
+    import asyncio
+
+    sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}, {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60}])
+    a, b = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
+    a.chief_name, b.chief_name = "Ashgar", "Brisa"
+    before = list(a.history)
+
+    async def fake_run_batch(requests):
+        return {
+            "tribe_0": {"intent": {}, "latency_ms": 120400.0, "raw_response": "", "error": "ReadTimeout"},
+            "tribe_1": {"intent": {"visual_action": "GATHER_WOOD", "metacognitive_rationale": "wood"}, "latency_ms": 1500.0, "raw_response": "{}"},
+        }
+
+    with (
+        mock.patch.object(sim.scheduler, "run_batch", fake_run_batch),
+        mock.patch.object(sim.client, "unload_model", mock.AsyncMock()),
+        mock.patch.object(sim.client, "list_models", mock.AsyncMock(return_value=[])),
+        mock.patch("backend.simulation.generate_endgame_narrative", mock.AsyncMock(side_effect=AssertionError("no model call after a forfeit"))),
+    ):
+        asyncio.run(sim.step())
+    assert sim.game_over and sim.game_over_reason == "forfeit"
+    assert sim.model_forfeit["tribe"] == "A" and sim.model_forfeit["error"] == "ReadTimeout" and sim.model_forfeit["seconds"] == 120.4
+    assert a.history == before                                                                # no action was fuzzy-matched and run for it
+    assert "B wins by default" in sim.game_over_summary and "A's model (gemma2:2b)" in sim.game_over_summary
+    assert sim.game_over_narrative == "" and sim.game_over_report["headline"]["title"] == "A model stopped answering"

@@ -45,9 +45,15 @@ class ModelBatchScheduler:
             )
             latency_ms = (time.perf_counter() - start) * 1000
             for req, outcome in zip(group, outcomes):
+                error = None
                 if isinstance(outcome, Exception):
                     intent, raw_response = {}, ""
+                    # 2026-10-11 (the owner: a call that fails or times out is categorically a model or Ollama failure): the reason is carried back so the run can say so, not hidden behind an empty answer
+                    error = f"{type(outcome).__name__}: {str(outcome)[:200]}".rstrip(": ")
+                    print(f"[scheduler] {model} failed a turn after {latency_ms / 1000:.0f}s: {error}")
                 else:
                     intent, raw_response = outcome
                 results[req["id"]] = {"intent": intent, "latency_ms": latency_ms, "raw_response": raw_response}
+                if error:
+                    results[req["id"]]["error"] = error
         return results
