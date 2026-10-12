@@ -2734,7 +2734,8 @@ class Simulation:
         # self.game_over/self.status; game_over_summary is the Overseer-voice
         # retrospective the frontend's end-of-run splash actually displays.
         self.game_over_reason: str | None = None
-        self.model_forfeit: dict | None = None  # set when a tribe's model failed to answer a turn (a timeout or an Ollama error): that tribe forfeits and the other wins by default, see _forfeit_summary
+        self.model_failures: list[dict] = []  # turns whose model call failed (a timeout or an Ollama error, after one retry): see config.MODEL_FAILURES_BEFORE_ISLAND_SINKS
+        self.island_sunk: dict | None = None  # set by the failure that reaches the count: the run ends as "island_sinks", with no winner
         self.game_over_summary: str = ""
         # A separate, one-time narrative synthesis (backend/reflection.py.
         # generate_endgame_narrative) using config.ENDGAME_SUMMARY_MODEL -- an actual
@@ -3554,7 +3555,8 @@ class Simulation:
         # died -- undoes _trigger_game_over's stop/unload so stepping resumes.
         self.game_over = False
         self.game_over_reason = None
-        self.model_forfeit = None
+        self.model_failures = []
+        self.island_sunk = None
         self.game_over_summary = ""
         self.game_over_narrative = ""
         self.game_over_report = None
@@ -3757,32 +3759,37 @@ class Simulation:
             if tid not in prompts_by_tid:
                 continue
             outcome = results.get(tid, {"intent": {}, "latency_ms": 0.0})
-            if outcome.get("error"):
-                # 2026-10-11 (the owner): a turn that times out or errors is categorically a model or Ollama failure, not a decision, and must not be fuzzy-matched into an action (run_20261011_161130 opened trade three times
-                # that way). The tribe forfeits and the other wins by default, so the run does not go on as a bad record.
-                if self.model_forfeit is None:
-                    self.model_forfeit = {"tribe_id": tid, "tribe": tribe.name, "model": tribe.model, "error": outcome["error"], "cycle": self.cycle, "seconds": round(outcome["latency_ms"] / 1000, 1)}
-                    try:
-                        self.event_log.record_data(tribe.name, "model_failure_forfeit", self.model_forfeit, message=f"[model failure] {tribe.name}'s {tribe.model} failed a turn ({outcome['error']}); it forfeits")
-                    except Exception:  # noqa: BLE001 -- logging must never interrupt the simulation
-                        pass
-                continue
-            # Explicit request, 2026-09-09: raw LLM I/O for the live debug view
-            # (see Tribe.debug_transcript's own comment) -- captured here, right
-            # where the request/response pair actually meet, rather than
-            # threaded through _apply_turn just to reach a second call site.
-            if not config.lean_run():  # the raw-reply transcript is for the debug page only
-                tribe.debug_transcript.append({
-                    "cycle": self.cycle,
-                    "prompt": prompts_by_tid[tid],
-                    "raw_response": outcome.get("raw_response", ""),
-                    "latency_ms": outcome["latency_ms"],
-                })
-            self._apply_turn(tribe, outcome["intent"], outcome["latency_ms"], contexts[tid])
-            if tribe.consecutive_unresolved_turns >= config.MODEL_FAILURE_STREAK_THRESHOLD:
-                await self._handle_model_failure(tribe)
-                if tribe.extinct:
-                    continue
+            failed_turn = bool(outcome.get("error"))
+            if failed_turn:
+                # 2026-10-11 (the owner): a turn whose call failed (after the scheduler's one retry) is categorically a model or Ollama failure, not a decision, and must not be fuzzy-matched into an action
+                # (run_20261011_161130 opened trade three times that way). Nothing is applied for the tribe this cycle; the run survives a few of these (config.MODEL_FAILURES_BEFORE_ISLAND_SINKS).
+                failure = {"tribe_id": tid, "tribe": tribe.name, "model": tribe.model, "error": outcome["error"], "cycle": self.cycle, "seconds": round(outcome["latency_ms"] / 1000, 1)}
+                self.model_failures.append(failure)
+                tribe.history.append(f"{tribe.name}'s chief falls silent this cycle: no order is given")
+                try:
+                    self.event_log.record_data(tribe.name, "model_failure", {**failure, "count": len(self.model_failures)},
+                                               message=f"[model failure {len(self.model_failures)} of {config.MODEL_FAILURES_BEFORE_ISLAND_SINKS}] {tribe.name}'s {tribe.model}: {outcome['error']}")
+                except Exception:  # noqa: BLE001 -- logging must never interrupt the simulation
+                    pass
+                if len(self.model_failures) >= config.MODEL_FAILURES_BEFORE_ISLAND_SINKS and self.island_sunk is None:
+                    self.island_sunk = {"failures": list(self.model_failures), "cycle": self.cycle}
+            else:
+                # Explicit request, 2026-09-09: raw LLM I/O for the live debug view
+                # (see Tribe.debug_transcript's own comment) -- captured here, right
+                # where the request/response pair actually meet, rather than
+                # threaded through _apply_turn just to reach a second call site.
+                if not config.lean_run():  # the raw-reply transcript is for the debug page only
+                    tribe.debug_transcript.append({
+                        "cycle": self.cycle,
+                        "prompt": prompts_by_tid[tid],
+                        "raw_response": outcome.get("raw_response", ""),
+                        "latency_ms": outcome["latency_ms"],
+                    })
+                self._apply_turn(tribe, outcome["intent"], outcome["latency_ms"], contexts[tid])
+                if tribe.consecutive_unresolved_turns >= config.MODEL_FAILURE_STREAK_THRESHOLD:
+                    await self._handle_model_failure(tribe)
+                    if tribe.extinct:
+                        continue
             self._advance_automatic_fire(tribe)
             self._advance_automatic_boat(tribe)
             self._advance_wall_security(tribe)
@@ -3901,8 +3908,8 @@ class Simulation:
                     await self.client.unload_model(model)
 
         living_tribes = [t for t in self.tribes.values() if not t.extinct]
-        if self.model_forfeit is not None and not self.game_over:
-            await self._trigger_game_over("forfeit")
+        if self.island_sunk is not None and not self.game_over:
+            await self._trigger_game_over("island_sinks")
         elif self.tribes and not living_tribes:
             await self._trigger_game_over("extinction")
         # Beyond the Horizon era -- plan file amber-drifting-tern.md. Checked
@@ -7022,12 +7029,12 @@ class Simulation:
         except Exception as exc:  # noqa: BLE001 -- the splash falls back to the plain summary
             print(f"[simulation] game over report failed: {exc!r}")
             self.game_over_report = None
-        if reason == "forfeit" and self.game_over_report is not None:
-            self.game_over_report["forfeit"] = self.model_forfeit
+        if reason == "island_sinks" and self.game_over_report is not None:
+            self.game_over_report["island_sunk"] = self.island_sunk
             self.game_over_report["headline"] = {
-                "scene": "quiet", "title": "A model stopped answering",
-                "text": (f"{self.model_forfeit['tribe']}'s model ({self.model_forfeit['model']}) did not answer a turn at cycle {self.model_forfeit['cycle']} "
-                         f"({self.model_forfeit['error']}). The other tribe wins by default; this run is not a fair record of the game."),
+                "scene": "quiet", "title": "The island sinks into the ocean",
+                "text": (f"The models failed to answer {len(self.model_failures)} turns by cycle {self.island_sunk['cycle']} (the last: {self.model_failures[-1]['tribe']}'s {self.model_failures[-1]['model']}, "
+                         f"{self.model_failures[-1]['error']}). No tribe wins; this run is not a fair record of the game."),
                 "shows": self.game_over_report["headline"].get("shows", ""),
             }
         self._persist_report(reason)
@@ -7042,8 +7049,8 @@ class Simulation:
         # already tells this exact story once (a silently-swallowed exception
         # forcing standalone probing to diagnose), same fix applies here.
         try:
-            # a forfeit is a model or Ollama failure: no further model call is made for the closing narrative (2026-10-11)
-            self.game_over_narrative = "" if reason == "forfeit" else await generate_endgame_narrative(
+            # the island sinking is a model or Ollama failure: no further model call is made for the closing narrative (2026-10-11)
+            self.game_over_narrative = "" if reason == "island_sinks" else await generate_endgame_narrative(
                 self.client, config.ENDGAME_SUMMARY_MODEL, self.game_over_summary,
             )
         except Exception as exc:
@@ -7091,11 +7098,11 @@ class Simulation:
                 )
             else:
                 lines.append("OVERSEER LOG: Every observed population has ceased to exist.")
-        elif reason == "forfeit":
-            failed = self.model_forfeit or {}
+        elif reason == "island_sinks":
             lines.append(
-                f"OVERSEER LOG: {failed.get('tribe', 'A tribe')}'s model ({failed.get('model', '?')}) failed to answer a turn at cycle {failed.get('cycle', '?')} "
-                f"after {failed.get('seconds', '?')} s ({failed.get('error', 'no reply')}). That is a model or Ollama failure, not a decision, so the tribe forfeits."
+                f"OVERSEER LOG: The models failed to answer {len(self.model_failures)} turns "
+                + "; ".join(f"{f['tribe']} ({f['model']}) at cycle {f['cycle']}, {f['error']}" for f in self.model_failures[-config.MODEL_FAILURES_BEFORE_ISLAND_SINKS:])
+                + ". That is a failure of the observation, not a decision: the island sinks into the ocean."
             )
         elif reason == "world_domination":
             lines.append(
@@ -7141,12 +7148,9 @@ class Simulation:
                 f"Analysis: {victor.name} achieved total domination, conquering {conquered}. "
                 f"Session concluded at cycle {self.cycle}."
             )
-        elif reason == "forfeit":
-            failed = self.model_forfeit or {}
-            winners = ", ".join(t.name for t in living if t.id != failed.get("tribe_id")) or "no one"
+        elif reason == "island_sinks":
             lines.append(
-                f"Analysis: {winners} wins by default: {failed.get('tribe', 'a tribe')}'s model ({failed.get('model', '?')}) did not answer at cycle {failed.get('cycle', '?')}. "
-                f"This run is not a fair record of the game."
+                f"Analysis: The island sinks into the ocean at cycle {self.cycle}: the models failed to answer {len(self.model_failures)} turns. No tribe wins. This run is not a fair record of the game."
             )
         elif reason == "golden_age" and living:
             names = " and ".join(t.name for t in living)

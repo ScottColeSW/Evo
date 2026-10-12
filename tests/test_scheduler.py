@@ -71,3 +71,27 @@ async def test_a_failed_call_is_returned_with_its_error_so_the_run_can_say_why()
     ])
     assert results["tribe_0"]["intent"] == {} and results["tribe_0"]["error"] == "RuntimeError: simulated Ollama failure"
     assert "error" not in results["tribe_1"]
+
+
+class FlakyClient:
+    def __init__(self, failures):
+        self.failures = failures
+        self.calls = 0
+
+    async def generate_json_with_raw(self, model, prompt, temperature=0.7, **kwargs):
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise TimeoutError("simulated timeout")
+        return {"visual_action": "GATHER_WOOD"}, "{}"
+
+
+@run_async
+async def test_a_failed_call_is_tried_once_more_and_only_a_second_failure_is_an_error():
+    """2026-10-11 (the owner: "add the one retry, that's more fair")."""
+    request = [{"id": "tribe_0", "model": "m", "prompt": "p", "temperature": 0.5}]
+    once = FlakyClient(failures=1)
+    results = await ModelBatchScheduler(once).run_batch(request)
+    assert once.calls == 2 and "error" not in results["tribe_0"] and results["tribe_0"]["intent"] == {"visual_action": "GATHER_WOOD"}
+    twice = FlakyClient(failures=2)
+    results = await ModelBatchScheduler(twice).run_batch(request)
+    assert twice.calls == 2 and results["tribe_0"]["error"] == "TimeoutError: simulated timeout"

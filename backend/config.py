@@ -3042,6 +3042,10 @@ ACTION_REPETITION_THROTTLE_COOLDOWN = 7
 # clearing normal one-or-two-turn noise a healthy model already self-corrects from.
 # See Tribe.consecutive_unresolved_turns and Simulation._handle_model_failure.
 MODEL_FAILURE_STREAK_THRESHOLD = 10
+# 2026-10-11 (the owner: "if our infrastructure fails like this, it's more like the Island sinks into the Ocean as opposed to a real forfeit", and "I think it's more fair to allow for 3 failures over time"): a turn
+# whose model call raised (a timeout or an Ollama error, after the scheduler's one retry) is a failure of the observation, not a choice: no action is applied for that tribe that cycle. The run survives
+# MODEL_FAILURES_BEFORE_ISLAND_SINKS - 1 of them; the one that reaches the count ends it as "island_sinks": the island goes under, no tribe wins, and the run is marked as not a fair record.
+MODEL_FAILURES_BEFORE_ISLAND_SINKS = 3
 
 # Explicit request, 2026-09-16: "I'd like to consider turning off our 'nudges'
 # slowly to see where they can and cannot succeed without our guidance." A

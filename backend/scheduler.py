@@ -43,6 +43,15 @@ class ModelBatchScheduler:
                 *(self.client.generate_json_with_raw(model, r["prompt"], r["temperature"]) for r in group),
                 return_exceptions=True,
             )
+            # 2026-10-11 (the owner: "add the one retry, that's more fair"): a call that failed gets one more try before the turn counts as a model failure; a failure on a busy or reloading Ollama often clears on the second.
+            failed = [req for req, outcome in zip(group, outcomes) if isinstance(outcome, Exception)]
+            if failed:
+                for req, outcome in zip(group, outcomes):
+                    if isinstance(outcome, Exception):
+                        print(f"[scheduler] {model} failed a turn ({type(outcome).__name__}) after {(time.perf_counter() - start):.0f}s; trying once more")
+                retries = dict(zip((r["id"] for r in failed), await asyncio.gather(
+                    *(self.client.generate_json_with_raw(model, r["prompt"], r["temperature"]) for r in failed), return_exceptions=True)))
+                outcomes = [retries[req["id"]] if isinstance(outcome, Exception) else outcome for req, outcome in zip(group, outcomes)]
             latency_ms = (time.perf_counter() - start) * 1000
             for req, outcome in zip(group, outcomes):
                 error = None
@@ -50,7 +59,7 @@ class ModelBatchScheduler:
                     intent, raw_response = {}, ""
                     # 2026-10-11 (the owner: a call that fails or times out is categorically a model or Ollama failure): the reason is carried back so the run can say so, not hidden behind an empty answer
                     error = f"{type(outcome).__name__}: {str(outcome)[:200]}".rstrip(": ")
-                    print(f"[scheduler] {model} failed a turn after {latency_ms / 1000:.0f}s: {error}")
+                    print(f"[scheduler] {model} failed a turn twice, {latency_ms / 1000:.0f}s in all: {error}")
                 else:
                     intent, raw_response = outcome
                 results[req["id"]] = {"intent": intent, "latency_ms": latency_ms, "raw_response": raw_response}

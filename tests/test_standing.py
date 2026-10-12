@@ -221,14 +221,15 @@ def test_every_model_call_asks_for_the_same_context_so_a_model_has_one_runner():
     assert config.REFLECTION_CONTEXT_OWN_MODEL == 8192
 
 
-def test_a_turn_that_times_out_makes_that_tribe_forfeit_and_the_other_wins_by_default_with_no_action_applied():
-    """2026-10-11 (the owner: "the other Tribe wins by default, so we don't have bad runs")."""
+def test_failed_turns_apply_no_action_and_the_third_one_sinks_the_island_with_no_winner():
+    """2026-10-11 (the owner: "the Island sinks into the Ocean as opposed to a real forfeit", and "allow for 3 failures over time")."""
     import asyncio
+
+    from backend import config
 
     sim = Simulation([{"name": "A", "model": "gemma2:2b", "x": 40, "y": 37}, {"name": "B", "model": "qwen2.5:3b", "x": 60, "y": 60}])
     a, b = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
     a.chief_name, b.chief_name = "Ashgar", "Brisa"
-    before = list(a.history)
 
     async def fake_run_batch(requests):
         return {
@@ -236,15 +237,22 @@ def test_a_turn_that_times_out_makes_that_tribe_forfeit_and_the_other_wins_by_de
             "tribe_1": {"intent": {"visual_action": "GATHER_WOOD", "metacognitive_rationale": "wood"}, "latency_ms": 1500.0, "raw_response": "{}"},
         }
 
-    with (
-        mock.patch.object(sim.scheduler, "run_batch", fake_run_batch),
-        mock.patch.object(sim.client, "unload_model", mock.AsyncMock()),
-        mock.patch.object(sim.client, "list_models", mock.AsyncMock(return_value=[])),
-        mock.patch("backend.simulation.generate_endgame_narrative", mock.AsyncMock(side_effect=AssertionError("no model call after a forfeit"))),
-    ):
-        asyncio.run(sim.step())
-    assert sim.game_over and sim.game_over_reason == "forfeit"
-    assert sim.model_forfeit["tribe"] == "A" and sim.model_forfeit["error"] == "ReadTimeout" and sim.model_forfeit["seconds"] == 120.4
-    assert a.history == before                                                                # no action was fuzzy-matched and run for it
-    assert "B wins by default" in sim.game_over_summary and "A's model (gemma2:2b)" in sim.game_over_summary
-    assert sim.game_over_narrative == "" and sim.game_over_report["headline"]["title"] == "A model stopped answering"
+    def step():
+        with (
+            mock.patch.object(sim.scheduler, "run_batch", fake_run_batch),
+            mock.patch.object(sim.client, "unload_model", mock.AsyncMock()),
+            mock.patch.object(sim.client, "list_models", mock.AsyncMock(return_value=[])),
+            mock.patch("backend.simulation.generate_endgame_narrative", mock.AsyncMock(side_effect=AssertionError("no model call after the island sinks"))),
+        ):
+            asyncio.run(sim.step())
+
+    for failures in range(1, config.MODEL_FAILURES_BEFORE_ISLAND_SINKS):
+        step()
+        assert not sim.game_over and len(sim.model_failures) == failures
+        assert any("falls silent this cycle: no order is given" in line for line in a.history)
+        assert not any(line.startswith("[") and "ms]" in line and "GATHER" not in line for line in a.history)   # no action was fuzzy-matched for A
+    step()
+    assert sim.game_over and sim.game_over_reason == "island_sinks"
+    assert "The island sinks into the ocean" in sim.game_over_summary and "No tribe wins" in sim.game_over_summary
+    assert sim.game_over_narrative == "" and sim.game_over_report["headline"]["title"] == "The island sinks into the ocean"
+    assert len(sim.game_over_report["island_sunk"]["failures"]) == config.MODEL_FAILURES_BEFORE_ISLAND_SINKS
