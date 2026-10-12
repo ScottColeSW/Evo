@@ -8188,7 +8188,10 @@ def test_declare_alliance_hides_once_already_allied_with_every_living_rival():
     assert "DECLARE_ALLIANCE" not in ctx["available_actions"]
 
 
-def test_declare_alliance_stays_available_while_at_war_to_sue_for_peace():
+def test_war_closes_scout_trade_and_peace_offers_leaves_spy_and_gives_an_envoy_back_after_the_cooldown():
+    """2026-10-11 (the owner): SPY replaces SCOUT/TRADE/SEND_TRADE_EMISSARY at war; after WAR_MIN_CYCLES only SEND_TRADE_EMISSARY comes back."""
+    from backend import config
+    from backend.actions import start_war
     sim = Simulation(
         [
             {"name": "A", "model": "gemma2:2b", "x": 40, "y": 37},
@@ -8201,12 +8204,26 @@ def test_declare_alliance_stays_available_while_at_war_to_sue_for_peace():
     tribe.era = "tribal_synapse"
     tribe.wood = tribe.stone = 1000
     tribe.barracks_built = 1
-    tribe.stance_toward[rival.id] = "WAR"
     tribe.discovered_rivals.add(rival.id)  # a war implies contact; rival actions are offered only after a rival is found
+    for sec in tribe.wall_rings[0]["sections"]:  # SEND_TRADE_EMISSARY needs the first wall ring finished
+        sec["unlocked"], sec["progress"], sec["tier"] = True, 100, 0
+    sim.cycle = 100
+    _, before = sim._prepare_turn(tribe)
+    assert {"SCOUT", "TRADE", "DECLARE_ALLIANCE"} & set(before["available_actions"])      # open before the war (else this test proves nothing)
+    start_war(sim, tribe, rival)
 
-    _, ctx = sim._prepare_turn(tribe)
+    request, ctx = sim._prepare_turn(tribe)
+    for closed in ("SCOUT", "TRADE", "SEND_TRADE_EMISSARY", "DECLARE_ALLIANCE", "DECLARE_WAR"):
+        assert closed not in ctx["available_actions"], closed
+    assert "SPY" in ctx["available_actions"]
+    assert "No envoy can try to end the war for about" in request["prompt"]
 
-    assert "DECLARE_ALLIANCE" in ctx["available_actions"]
+    sim.cycle = 100 + config.WAR_MIN_CYCLES
+    request, ctx = sim._prepare_turn(tribe)
+    assert "SEND_TRADE_EMISSARY" in ctx["available_actions"]
+    for closed in ("SCOUT", "TRADE", "DECLARE_ALLIANCE", "DECLARE_WAR"):
+        assert closed not in ctx["available_actions"], closed
+    assert "SEND_TRADE_EMISSARY can try to end the war now" in request["prompt"]
 
 
 def test_declare_alliance_stays_available_before_any_stance_is_declared():
@@ -16240,7 +16257,7 @@ def test_a_war_line_in_the_prompt_says_trade_is_closed():
     sim, small, big = _two_contact_tribes(110, 1100)
     small.stance_toward[big.id] = "WAR"
     request, _ctx = sim._prepare_turn(small)
-    assert "Currently war with Big. Trade with them is closed while at war" in request["prompt"]
+    assert "Currently war with Big. Trade, scouting and offers of peace are closed while at war; SPY is how to learn what they have." in request["prompt"]
 
 
 def test_raid_and_raid_rival_are_not_offered_for_a_day_after_the_tribes_own_raid_was_repelled():

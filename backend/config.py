@@ -1580,7 +1580,7 @@ RAID_PRIDE_RADIUS = 5
 # defecting survivors, not just casualties. Once enough raids have driven a defender's
 # population to zero this way, Simulation._merge_tribes turns the winner into a new,
 # more advanced entity instead of just leaving a hole where the loser was.
-RAID_POPULATION_ABSORB_FRACTION = 0.2
+RAID_POPULATION_ABSORB_FRACTION = 0.3  # 2026-10-11 (the owner: "the swings need to be more"): was 0.2; a win moves this share of the loser's people to the winner (run_20261011_161130: raids of 4-6k, recovered in ~25 cycles)
 
 # Trade (backend/actions.py._trade): the peaceful counterpart to RAID, and the
 # mechanical outlet for a cooperative/community-minded chief philosophy
@@ -1668,7 +1668,18 @@ ALLIANCE_BACKFIRE_WINNER_POPULATION_LOSS_FRACTION = 0.05
 # violence RAIDER_DEFENSE's own reuse of RAID_TRAUMA_*/RAID_PRIDE_* is (see that
 # constant's own comment for the distinction).
 SPY_DETECTION_CHANCE = 0.35
-SPY_CAUGHT_POPULATION_LOSS = 1
+SPY_CAUGHT_POPULATION_LOSS = 1  # the floor; see SPY_CAUGHT_POPULATION_FRACTION
+# 2026-10-11 (the owner: "we need a bigger kick for a SPY success and SPY failure"): a caught spy party costs the tribe SPY_CAUGHT_POPULATION_FRACTION of its people (never under SPY_CAUGHT_POPULATION_LOSS) and they stay
+# with the rival; a spy that gets through lifts SPY_SUCCESS_STEAL_FRACTION of each of the rival's wood, stone, food and water as well as reporting. Starting values.
+SPY_CAUGHT_POPULATION_FRACTION = 0.005
+SPY_SUCCESS_STEAL_FRACTION = 0.05
+# 2026-10-11 (the owner): war has a cooldown of 3 days (WAR_MIN_CYCLES): while either tribe is at war SCOUT, TRADE, SEND_TRADE_EMISSARY, DECLARE_ALLIANCE and DECLARE_WAR leave the menu (SPY, the raids and the military
+# stay), and once the cooldown is over only SEND_TRADE_EMISSARY returns, to try to reset the relationship: it succeeds with EMISSARY_RESET_WIN_CHANCE (the war ends and the two are strangers again) and otherwise
+# backfires like a peace offer (a clash, the war's clock starts again). An emissary to a tribe not at war backfires with EMISSARY_BACKFIRE_CHANCE. A backfire costs EMISSARY_BACKFIRE_SEVERITY x the losses of an alliance backfire. Starting values.
+WAR_MIN_CYCLES = 3 * DAY_LENGTH_CYCLES
+EMISSARY_RESET_WIN_CHANCE = 0.5
+EMISSARY_BACKFIRE_CHANCE = 0.1
+EMISSARY_BACKFIRE_SEVERITY = 1.5
 SPY_CAUGHT_SUPPLY_FOOD = 5
 SPY_CAUGHT_SUPPLY_WATER = 5
 SPY_CAUGHT_TRAUMA_MAGNITUDE = -0.5

@@ -14,7 +14,7 @@ from .actions import (
     military_intel_text, research_candidates, research_candidates_with_source,
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _battalion_capacity, _conquest_ready, _created_object_bonus, _dmm_ready, _eligible_breeding_pair, _expedition_speed_bonus,
-    _food_multiplier, _forge_item, _plant_crop_cost, cycles_until_forage_recovers, forage_recovery_target, forage_yield_now, trade_grievance_active,
+    at_war, war_remaining, _food_multiplier, _forge_item, _plant_crop_cost, cycles_until_forage_recovers, forage_recovery_target, forage_yield_now, trade_grievance_active,
     _generate_raider_name, _has_room_to_grow, _is_departure_dream, _item_storage_cap, _labor_multiplier,
     _long_house_fur_discount, _might_adjusted_win_chance, _mutual_ally_at_top_era, _raider_might_modifier, _push_past_visited_ground, _record_combat, _redeemable_items,
     _storage_cap, _sustainable_population, _territory_has_nearby_threats, _warehouse_upgrade_ready,
@@ -1431,6 +1431,7 @@ class Tribe:
         self.raids_lost = 0
         self.raid_ledger: dict[str, dict] = {}  # rival tribe id -> the raids between the two (see actions._note_raid)
         self.raid_cooldown_until_cycle = 0  # RAID and RAID_RIVAL are not offered before this cycle (set when this tribe's own raid was repelled)
+        self.war_since: dict[str, int] = {}  # rival tribe id -> the cycle this war began (restarted by a failed envoy); WAR_MIN_CYCLES must pass before SEND_TRADE_EMISSARY may try to end it
         self.alliance_cooldown_until_cycle = 0  # DECLARE_ALLIANCE is not offered before this cycle (set when this tribe's peace overture backfired)
         self.trade_refusals: dict[str, list[int]] = {}  # rival tribe id -> the cycles it refused this tribe's trade over a raid (see actions._trade_grievance_refusal)
         self.raids_defended = 0
@@ -4422,7 +4423,7 @@ class Simulation:
             if other is not None and not other.extinct:
                 visible_entities.append(
                     f"Currently {stance.lower()} with {other.name}."
-                    + (f" Trade with them is closed while at war{', and DECLARE_ALLIANCE would sue for peace' if 'DECLARE_ALLIANCE' in available_actions else ''}." if stance == "WAR" else "")
+                    + (self._war_fact(tribe, other, available_actions) if stance == "WAR" else "")
                 )
         # The spectator UI's own "Path to the Next Era" panel already computes exactly
         # this (Tribe.to_dict's next_era block) -- it just never made it back into the
@@ -4570,6 +4571,13 @@ class Simulation:
         # worth routing through the cap for a heavily-trafficked toll road.
         self._capped_add(owner, "wood", config.TOLL_FEE_WOOD)
         return nx, ny
+
+    def _war_fact(self, tribe: Tribe, other: Tribe, available_actions: list[str]) -> str:
+        """The plain facts of being at war (2026-10-11): trade, scouting and peace offers are closed, spying is the way to learn of them, and when an envoy may try to end it."""
+        left = war_remaining(self, tribe, other)
+        tail = (" SEND_TRADE_EMISSARY can try to end the war now, and it can backfire." if "SEND_TRADE_EMISSARY" in available_actions
+                else f" No envoy can try to end the war for about {left} more cycles.")
+        return " Trade, scouting and offers of peace are closed while at war; SPY is how to learn what they have." + tail
 
     def _prepare_turn(self, tribe: Tribe) -> tuple[dict, dict]:
         self._prune_spent_sites(tribe)
@@ -5349,6 +5357,17 @@ class Simulation:
 
         # 2026-10-10 (explicit request: hide the depleted GATHER_FOOD, see config.FORAGE_DEPLETED_YIELD_MAX): a forage that pays next to nothing is not offered while another food source is.
         # Fail-open: with no other food source on the menu it stays, so food is never taken away entirely.
+        # 2026-10-11 (the owner): while either tribe is at war, scouting and every peaceful channel are closed; SPY and the military stay. After WAR_MIN_CYCLES only SEND_TRADE_EMISSARY returns, to try to reset the relationship.
+        war_rivals = [o for o in self.tribes.values() if o.id != tribe.id and not o.extinct and at_war(tribe, o)]
+        war_closed = []
+        if war_rivals:
+            envoy_ready = any(war_remaining(self, tribe, o) <= 0 for o in war_rivals)
+            war_closed = [a for a in ("SCOUT", "TRADE", "SEND_TRADE_EMISSARY", "DECLARE_ALLIANCE", "DECLARE_WAR")
+                          if a in available_actions and not (a == "SEND_TRADE_EMISSARY" and envoy_ready)]
+            if war_closed and len(available_actions) > len(war_closed):
+                available_actions = [a for a in available_actions if a not in war_closed]
+            else:
+                war_closed = []
         # 2026-10-10: a day to recover after a failure (see config.RAID_COOLDOWN_AFTER_REPELLED_CYCLES). Fail-open: never taken if it would leave the menu empty.
         cooled = []
         if self.cycle < tribe.raid_cooldown_until_cycle:

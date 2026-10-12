@@ -4800,9 +4800,9 @@ def test_raid_loss_gives_the_defender_loot_and_captives():
         note = ACTION_REGISTRY["RAID"](sim, attacker, "plains", (51, 51))
 
     assert "repelled" in note
-    # attacker: 8 pop - 2 (RAID_ATTACKER_POPULATION_LOSS_ON_LOSS) = 6, then -1 absorbed (20% of 6) = 5
-    assert attacker.population == 5
-    assert defender.population == 9  # +1 absorbed
+    # attacker: 8 pop - 2 (RAID_ATTACKER_POPULATION_LOSS_ON_LOSS) = 6, then -2 absorbed (30% of 6, 2026-10-11) = 4
+    assert attacker.population == 4
+    assert defender.population == 10  # +2 absorbed
     # attacker: 50 wood - 15 (30% stolen) = 35; defender: 20 + 15 = 35
     assert attacker.wood == 35
     assert defender.wood == 35
@@ -5300,8 +5300,8 @@ def test_declare_alliance_backfires_into_war_when_starving():
     assert not any(e["kind"] == "tribe_conquest_battle" for e in sim.recent_encounters)
 
 
-def test_a_second_peace_offer_at_war_still_fires_another_clash():
-    """2026-10-07 (the owner asked for a guard against this, then withdrew the request): the repeat offer at war stays as designed."""
+def test_a_peace_offer_at_war_is_refused_and_only_an_envoy_after_the_cooldown_can_try_to_end_it():
+    """2026-10-11 (the owner): war closes DECLARE_ALLIANCE; once WAR_MIN_CYCLES have passed an envoy may try, and a failed one backfires harder than a peace offer and restarts the war's clock."""
     from unittest import mock
 
     sim = _bare_simulation()
@@ -5311,11 +5311,21 @@ def test_a_second_peace_offer_at_war_still_fires_another_clash():
     a.barracks_built = 1
     a.population = b.population = 100
     a.wellbeing = {"tiers": {"physiological": 0.0}}
-    a.stance_toward["tribe_1"] = b.stance_toward["tribe_0"] = "WAR"
+    a.wall_rings = [{"sections": []}]
+    sim.cycle = 100
     sim.tribes = {"tribe_0": a, "tribe_1": b}
+    from backend import config
+    from backend.actions import start_war, war_remaining
+    start_war(sim, a, b)
     with mock.patch("backend.actions.random.random", return_value=0.0):
-        ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
+        refused = ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
+    assert "only an envoy" in refused and sim.recent_encounters == []
+    sim.cycle = 100 + config.WAR_MIN_CYCLES
+    assert war_remaining(sim, a, b) == 0
+    with mock.patch("backend.actions.city_layout.ring_fully_built", return_value=True), mock.patch("backend.actions.random.random", return_value=0.999):  # the envoy fails
+        ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, a, "plains", (51, 51))
     assert [e["kind"] for e in sim.recent_encounters] == ["alliance_backfire"]
+    assert war_remaining(sim, a, b) == config.WAR_MIN_CYCLES                 # the clock started again
 
 
 def test_alliance_backfire_costs_population_but_never_merges_either_tribe():
@@ -5408,22 +5418,32 @@ def test_declare_war_is_a_no_op_if_already_at_war():
     assert "already at war" in result
 
 
-def test_declare_alliance_ends_a_previously_declared_war():
+def test_an_envoy_after_the_cooldown_ends_a_war_and_the_two_start_over_as_strangers():
+    """2026-10-11 (the owner): DECLARE_ALLIANCE no longer sues for peace; an envoy resets the relationship (EMISSARY_RESET_WIN_CHANCE), neither allied nor at war."""
+    from unittest import mock
+
+    from backend import config
+    from backend.actions import start_war
+
     sim = _bare_simulation()
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
     a.discovered_rivals.add("tribe_1")
     a.barracks_built = 1
-    a.stance_toward["tribe_1"] = "WAR"
-    b.stance_toward["tribe_0"] = "WAR"
+    a.wall_rings = [{"sections": []}]
+    sim.cycle = 100
     sim.tribes = {"tribe_0": a, "tribe_1": b}
+    start_war(sim, a, b)
 
-    result = ACTION_REGISTRY["DECLARE_ALLIANCE"](sim, a, "plains", (51, 51))
+    sim.cycle = 110                                                            # too soon
+    with mock.patch("backend.actions.city_layout.ring_fully_built", return_value=True):
+        assert "too fresh" in ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, a, "plains", (51, 51))
+    sim.cycle = 100 + config.WAR_MIN_CYCLES
+    with mock.patch("backend.actions.city_layout.ring_fully_built", return_value=True), mock.patch("backend.actions.random.random", return_value=0.0):
+        result = ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, a, "plains", (51, 51))
 
-    assert a.stance_toward["tribe_1"] == "ALLIED"
-    assert b.stance_toward["tribe_0"] == "ALLIED"
-    assert "sues for peace" in result
-    assert a.pending_cultural_crossover == "tribe_1"  # a war ending into alliance is also new
+    assert "tribe_1" not in a.stance_toward and "tribe_0" not in b.stance_toward and a.war_since == {} and b.war_since == {}
+    assert "the war with Mountain Tribe ends" in result
 
 
 def test_declare_alliance_with_no_rival_tribe():
@@ -6181,7 +6201,8 @@ def test_spy_undetected_reveals_real_rival_facts_and_costs_nothing():
     assert tribe.spy_missions_run == 1
     assert tribe.spy_missions_caught == 0
     assert tribe.population == 20  # no cost on success
-    assert tribe.food == 40 and tribe.water == 40  # no cost on success
+    assert tribe.food == 42 and tribe.water == 42  # no cost on success, and (2026-10-11) 5% of the rival's stores come back with the spy: round(30 x 0.05) and round(40 x 0.05)
+    assert rival.food == 28 and rival.water == 38
     intel = tribe.rival_intel["tribe_1"]
     assert intel["population"] == 55
     assert intel["era"] == "tribal_synapse"
@@ -6678,7 +6699,8 @@ def test_a_caught_spy_stays_with_the_rival_which_learns_about_the_spying_tribe()
     with mock.patch("backend.actions.random.random", return_value=0.0):  # caught
         note = ACTION_REGISTRY["SPY"](sim, spying, "plains", (rival.x, rival.y))
     assert "caught and talked" in note
-    assert spying.population == before[0] - config.SPY_CAUGHT_POPULATION_LOSS and rival.population == before[1] + config.SPY_CAUGHT_POPULATION_LOSS
+    caught = max(config.SPY_CAUGHT_POPULATION_LOSS, round(before[0] * config.SPY_CAUGHT_POPULATION_FRACTION))   # 2026-10-11: a share of the tribe, not one person
+    assert spying.population == before[0] - caught and rival.population == before[1] + caught
     report = rival.rival_intel[spying.id]
     assert report["used"] is False and report["population"] == spying.population and "military" in report
     assert AFFORDABILITY_CHECKS["RAID_RIVAL"](rival, sim.world) is True            # the rival now holds a strike plan against the spying tribe
@@ -6734,3 +6756,25 @@ def test_a_young_tribe_with_raiders_riding_in_is_offered_the_expulsion_first_and
     assert ctx["available_actions"][0] == "EXPEL_RAIDERS_FROM_TERRITORY"
     assert "EXPEL_RAIDERS_FROM_TERRITORY can drive them off before they arrive" in request["prompt"]
     assert len(ctx["available_actions"]) == len(set(ctx["available_actions"])) and len(ctx["available_actions"]) > 3  # moved to the front, the rest of the menu is still there
+
+
+def test_an_envoy_to_a_tribe_not_at_war_can_backfire_harder_than_a_peace_offer():
+    """2026-10-11 (the owner: "the emissary backfire should be similar, if not a larger effect, to the backfire on Trade")."""
+    from unittest import mock
+
+    from backend import config
+
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.discovered_rivals.add("tribe_1")
+    a.wall_rings = [{"sections": []}]
+    a.population = b.population = 1000
+    sim.cycle = 100
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+    with mock.patch("backend.actions.city_layout.ring_fully_built", return_value=True), mock.patch("backend.actions.random.random", return_value=0.0):
+        ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, a, "plains", (51, 51))                  # a roll of 0 is under EMISSARY_BACKFIRE_CHANCE
+    assert [e["kind"] for e in sim.recent_encounters] == ["alliance_backfire"]
+    assert a.stance_toward["tribe_1"] == "WAR" and a.war_since["tribe_1"] == 100
+    loser_share = config.ALLIANCE_BACKFIRE_LOSER_POPULATION_LOSS_FRACTION * config.EMISSARY_BACKFIRE_SEVERITY
+    assert 1000 - min(a.population, b.population) >= round(1000 * loser_share) - 1

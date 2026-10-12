@@ -2833,6 +2833,31 @@ def _raid(sim, tribe, biome, target):
     return _raid_defender(sim, tribe, defender)
 
 
+def at_war(a, b) -> bool:
+    """War is a state either side can hold (2026-10-11): trade, scouting and peace offers are closed to both while either holds it."""
+    return a.stance_toward.get(b.id) == "WAR" or b.stance_toward.get(a.id) == "WAR"
+
+
+def start_war(sim, a, b, restart: bool = False) -> None:
+    """Both tribes are at war with each other from this cycle. `restart` begins the cooldown (config.WAR_MIN_CYCLES) again for a war already under way (a failed envoy)."""
+    for x, y in ((a, b), (b, a)):
+        x.stance_toward[y.id] = "WAR"
+        if restart or y.id not in x.war_since:
+            x.war_since[y.id] = sim.cycle
+
+
+def end_war(a, b) -> None:
+    for x, y in ((a, b), (b, a)):
+        x.stance_toward.pop(y.id, None)
+        x.war_since.pop(y.id, None)
+
+
+def war_remaining(sim, a, b) -> int:
+    """Cycles until an envoy may try to end the war between the two (0 once WAR_MIN_CYCLES have passed, or when no start was recorded)."""
+    since = max(a.war_since.get(b.id, -10**9), b.war_since.get(a.id, -10**9))
+    return max(0, since + config.WAR_MIN_CYCLES - sim.cycle) if since > -10**9 else 0
+
+
 def _take_captives(sim, winner, loser, count: int, reason: str) -> int:
     """2026-10-10: `count` of the people `loser` just lost stay with `winner` (one way, never a swap), and each side's chronicle says so. Returns how many changed sides."""
     count = int(count)
@@ -2867,8 +2892,7 @@ def _note_raid(sim, attacker, defender, won: bool, people: int) -> None:
         theirs["people_lost"] += people
         mine["last_success_cycle"] = theirs["last_success_cycle"] = sim.cycle
         if theirs["suffered"] >= config.WAR_AFTER_SUCCESSFUL_RAIDS and defender.stance_toward.get(attacker.id) != "WAR":
-            defender.stance_toward[attacker.id] = "WAR"
-            attacker.stance_toward[defender.id] = "WAR"
+            start_war(sim, defender, attacker)
             defender.history.append(f"⚔️ {defender.name} has been raided {theirs['suffered']} times by {attacker.name} and declares war")
             attacker.history.append(f"{defender.name} declares war on {attacker.name} after being raided {theirs['suffered']} times")
             if getattr(sim, "event_log", None) is not None:  # (a bare test Simulation has none)
@@ -3301,8 +3325,7 @@ def _trade_grievance_refusal(sim, tribe, partner) -> str | None:
     tribe.trade_refusals[partner.id] = recent
     line = f"{partner.name} refuses to trade with {tribe.name}: it has not forgotten the raid on its people"
     if len(recent) >= config.TRADE_REFUSALS_FOR_WAR and tribe.stance_toward.get(partner.id) != "WAR":
-        tribe.stance_toward[partner.id] = "WAR"
-        partner.stance_toward[tribe.id] = "WAR"
+        start_war(sim, tribe, partner)
         tribe.history.append(f"⚔️ {partner.name} has refused {tribe.name}'s trade {len(recent)} times; {tribe.name} takes the insult and declares war")
         partner.history.append(f"{tribe.name} declares war on {partner.name} after being refused trade {len(recent)} times")
         if getattr(sim, "event_log", None) is not None:
@@ -3522,6 +3545,8 @@ def _declare_alliance(sim, tribe, biome, target):
     if rival is None:
         return "no rival tribe has been encountered nearby yet to declare a stance toward"
     was_war = tribe.stance_toward.get(rival.id) == "WAR"
+    if at_war(tribe, rival):
+        return f"{rival.name} will not hear an offer of peace while the war lasts -- only an envoy can try to end it"  # 2026-10-11
     already_allied = tribe.stance_toward.get(rival.id) == "ALLIED"
 
     if not already_allied:
@@ -3544,7 +3569,7 @@ def _declare_alliance(sim, tribe, biome, target):
     return f"{tribe.name} declares an alliance with {rival.name}"
 
 
-def _alliance_backfire_skirmish(sim, tribe, rival, was_already_at_war: bool) -> str:
+def _alliance_backfire_skirmish(sim, tribe, rival, was_already_at_war: bool, severity: float = 1.0) -> str:
     """Explicit request, 2026-09-16: a peace overture that backfires escalates
     straight to WAR (if not already there) and fires one real, decisive
     clash on the spot -- the same population-share/Might-adjusted win-chance
@@ -3555,8 +3580,7 @@ def _alliance_backfire_skirmish(sim, tribe, rival, was_already_at_war: bool) -> 
     deliberate war campaign an economy was actually built for (DECLARE_
     CONQUEST is that, and stays War and World Domination era-gated) -- this
     can fire as soon as a Barracks exists, long before that scale."""
-    tribe.stance_toward[rival.id] = "WAR"
-    rival.stance_toward[tribe.id] = "WAR"
+    start_war(sim, tribe, rival, restart=True)
     tribe.alliance_cooldown_until_cycle = sim.cycle + config.ALLIANCE_COOLDOWN_AFTER_BACKFIRE_CYCLES  # the overture failed: a day before the next (2026-10-10)
 
     attacker_start_population = tribe.population
@@ -3566,8 +3590,8 @@ def _alliance_backfire_skirmish(sim, tribe, rival, was_already_at_war: bool) -> 
     win_chance = _might_adjusted_win_chance(tribe, rival, win_chance)
     tribe_won = random.random() < win_chance
     winner, loser = (tribe, rival) if tribe_won else (rival, tribe)
-    loser_loss = round(loser.population * config.ALLIANCE_BACKFIRE_LOSER_POPULATION_LOSS_FRACTION)
-    winner_loss = round(winner.population * config.ALLIANCE_BACKFIRE_WINNER_POPULATION_LOSS_FRACTION)
+    loser_loss = round(loser.population * config.ALLIANCE_BACKFIRE_LOSER_POPULATION_LOSS_FRACTION * severity)
+    winner_loss = round(winner.population * config.ALLIANCE_BACKFIRE_WINNER_POPULATION_LOSS_FRACTION * severity)
     sim._lose_population(loser, loser_loss, cause="alliance_backfire")
     sim._lose_population(winner, winner_loss, cause="alliance_backfire")
     if not loser.extinct:  # 2026-10-10: some of what the loser lost stays with the winner (one way)
@@ -3700,8 +3724,7 @@ def _declare_war(sim, tribe, biome, target):
         return "no rival tribe has been encountered nearby yet to declare a stance toward"
     if tribe.stance_toward.get(rival.id) == "WAR":
         return f"{tribe.name} is already at war with {rival.name}"
-    tribe.stance_toward[rival.id] = "WAR"
-    rival.stance_toward[tribe.id] = "WAR"
+    start_war(sim, tribe, rival)
     sim.trauma.radiate_event_wave(rival.x, rival.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
     note_conflict(tribe, "War Declared")
     note_conflict(rival, "War Declared Against")
@@ -3747,7 +3770,26 @@ def _send_trade_emissary(sim, tribe, biome, target):
     rival = _nearest_rival(sim, tribe, tx, ty)
     if rival is None:
         return "no rival tribe has been encountered nearby yet to send an emissary to"
+    if at_war(tribe, rival):
+        return _emissary_for_peace(sim, tribe, rival)
+    if random.random() < config.EMISSARY_BACKFIRE_CHANCE:
+        return _alliance_backfire_skirmish(sim, tribe, rival, False, severity=config.EMISSARY_BACKFIRE_SEVERITY)  # 2026-10-11: an envoy can be taken as an insult
     return _execute_trade(sim, tribe, rival)
+
+
+def _emissary_for_peace(sim, tribe, rival) -> str:
+    """2026-10-11 (the owner): once a war is older than config.WAR_MIN_CYCLES an envoy may try to reset the relationship. A success ends the war (the two are strangers again, neither trusting yet); a failure backfires
+    like a peace offer, only harder (config.EMISSARY_BACKFIRE_SEVERITY), and the war's clock starts again."""
+    left = war_remaining(sim, tribe, rival)
+    if left > 0:
+        return f"the war with {rival.name} is too fresh for an envoy to be heard -- about {left} more cycles"
+    if random.random() < config.EMISSARY_RESET_WIN_CHANCE:
+        end_war(tribe, rival)
+        sim._peace_gate_note_peace(tribe, "emissary")
+        tribe.history.append(f"an envoy from {tribe.name} is heard: the war with {rival.name} ends, and the two tribes are strangers again")
+        rival.history.append(f"an envoy from {tribe.name} is heard: the war ends, and the two tribes are strangers again")
+        return f"the envoy is heard -- the war with {rival.name} ends and the two start over as strangers"
+    return _alliance_backfire_skirmish(sim, tribe, rival, True, severity=config.EMISSARY_BACKFIRE_SEVERITY)
 
 
 def military_intel(rival) -> dict:
@@ -3817,7 +3859,8 @@ def _spy(sim, tribe, biome, target):
     tribe.spy_missions_run += 1
     if random.random() < config.SPY_DETECTION_CHANCE:
         tribe.spy_missions_caught += 1
-        sim._lose_population(tribe, config.SPY_CAUGHT_POPULATION_LOSS, cause="spy_caught")
+        caught = max(config.SPY_CAUGHT_POPULATION_LOSS, round(tribe.population * config.SPY_CAUGHT_POPULATION_FRACTION))
+        sim._lose_population(tribe, caught, cause="spy_caught")
         tribe.food -= min(tribe.food, config.SPY_CAUGHT_SUPPLY_FOOD)
         tribe.water -= min(tribe.water, config.SPY_CAUGHT_SUPPLY_WATER)
         rival.discovered_rivals.add(tribe.id)
@@ -3829,7 +3872,7 @@ def _spy(sim, tribe, biome, target):
         })
         rival.history.append(f"a spy from {tribe.name} was caught snooping near camp")
         # 2026-10-10: the caught spy stays with the rival and talks: it now holds an intel report on the spying tribe (and may spend it with RAID_RIVAL)
-        _take_captives(sim, rival, tribe, config.SPY_CAUGHT_POPULATION_LOSS, "a spy caught")
+        _take_captives(sim, rival, tribe, caught, "a spy party caught")
         rival.rival_intel[tribe.id] = _intel_report(sim, tribe)
         if tribe.extinct:
             return f"the spy sent toward {rival.name} was caught and did not survive"
@@ -3837,7 +3880,9 @@ def _spy(sim, tribe, biome, target):
 
     tribe.rival_intel[rival.id] = _intel_report(sim, rival)
     report = tribe.rival_intel[rival.id]
-    return (f"a spy returns from {rival.name}'s camp undetected: {report['population']:,} people, {report['era'].replace('_', ' ')}, "
+    lifted = _transfer_stolen_resources(sim, rival, ("wood", "stone", "food", "water"), config.SPY_SUCCESS_STEAL_FRACTION, dest=tribe)  # 2026-10-11: a spy that gets through takes something with it
+    rival.history.append(f"a spy from {tribe.name} got in and out of camp unseen; {sum(lifted.values()):,} measures of supplies are missing")
+    return (f"a spy returns from {rival.name}'s camp undetected, with {lifted['wood']:,} wood, {lifted['stone']:,} stone, {lifted['food']:,} food and {lifted['water']:,} water lifted from its stores: {report['population']:,} people, {report['era'].replace('_', ' ')}, "
             f"{report['food']:,} food, {report['wood']:,} wood, {report['stone']:,} stone, {report['long_houses_built']} long houses, "
             f"{report['wall_ring_count']} wall rings; {military_intel_text(report['military'])} -- RAID_RIVAL can now strike them with this knowledge")
 
