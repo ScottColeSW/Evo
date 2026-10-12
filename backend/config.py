@@ -1699,6 +1699,10 @@ TRADE_UNFAIR_TOLERANCE = 0.25
 TRADE_UNFAIR_STANDING_DROP = 1.0
 SPY_CAUGHT_STANDING_DROP = 2.0
 SPY_SUCCESS_STANDING_DROP = 1.0
+# 2026-10-11 (the owner: "a spy should tell you the relationship status of the spied upon. a mismatch can cause conflict or incite more partnership"): a spy that gets through also reports how the target sees every
+# other tribe, the spying one included. Where the target's view of the spying tribe differs from the spying tribe's view of the target, the spying chief's view moves SPY_MISMATCH_STANDING_PER_RANK per band of
+# difference toward theirs: warmer if they think better of us than we of them (a partnership is invited), colder if they think worse (conflict). Starting value.
+SPY_MISMATCH_STANDING_PER_RANK = 1.0
 SPIES_CAUGHT_FOR_ENEMY = 3
 RAID_VICTIM_STANDING_DROP = 3.0
 RAID_ATTACKER_STANDING_DROP = 1.0

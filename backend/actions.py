@@ -2881,6 +2881,9 @@ def _intel_report(sim, target) -> dict:
         "used": False, "cycle": sim.cycle, "population": target.population, "era": target.era,
         "wood": target.wood, "stone": target.stone, "food": target.food, "water": target.water,
         "long_houses_built": target.long_houses_built, "wall_ring_count": len(target.wall_rings), "military": military_intel(target),
+        # 2026-10-11: how the target sees every other tribe (its band and its stance), what a spy is sent to find out about its relationships
+        "views": {other.id: {"band": ladder.band(target, other.id), "stance": target.stance_toward.get(other.id)}
+                  for other in sim.tribes.values() if other.id != target.id and not other.extinct},
     }
 
 
@@ -3962,9 +3965,18 @@ def _spy(sim, tribe, biome, target):
     rival.history.append(f"a spy from {tribe.name} got in and out of camp unseen; {sum(lifted.values()):,} measures of supplies are missing")
     ladder.adjust(tribe, rival.id, -config.SPY_SUCCESS_STANDING_DROP)  # the spying chief thinks less of the target: contempt if it is weaker, resentment if it is stronger
     reason = "they are weaker, and not worth respecting" if report["population"] < tribe.population else "they are stronger, and it stings"
+    # 2026-10-11: and the spy learns how the target sees us. A mismatch moves our own view toward theirs: warmer if they think better of us (partnership invited), colder if worse (conflict).
+    their_band = ladder.band(rival, tribe.id)
+    gap = ladder.rank(their_band) - ladder.rank(ladder.band(tribe, rival.id))
+    ladder.adjust(tribe, rival.id, gap * config.SPY_MISMATCH_STANDING_PER_RANK)
+    views = {sim.tribes[i].name: v for i, v in report["views"].items() if i in sim.tribes}
+    others = ", ".join(f"{name}: {ladder.LABELS[v['band']].lower()}" + (f", {v['stance'].lower()}" if v["stance"] else "") for name, v in views.items() if name != tribe.name)
+    mismatch = (f"; they think better of {tribe.name} than {tribe.name} does of them, and the chief warms to them" if gap > 0
+                else f"; they think worse of {tribe.name} than {tribe.name} does of them, and the chief hardens" if gap < 0 else "")
+    relations = f"; they see {tribe.name} as {ladder.LABELS[their_band].lower()}" + (f" (and {others})" if others else "") + mismatch
     return (f"a spy returns from {rival.name}'s camp undetected, with {lifted['wood']:,} wood, {lifted['stone']:,} stone, {lifted['food']:,} food and {lifted['water']:,} water lifted from its stores: {report['population']:,} people, {report['era'].replace('_', ' ')}, "
             f"{report['food']:,} food, {report['wood']:,} wood, {report['stone']:,} stone, {report['long_houses_built']} long houses, "
-            f"{report['wall_ring_count']} wall rings; {military_intel_text(report['military'])} -- RAID_RIVAL can now strike them with this knowledge; the chief thinks less of {rival.name} for it ({reason})")
+            f"{report['wall_ring_count']} wall rings; {military_intel_text(report['military'])} -- RAID_RIVAL can now strike them with this knowledge; the chief thinks less of {rival.name} for it ({reason}){relations}")
 
 
 def _raid_rival(sim, tribe, biome, target):

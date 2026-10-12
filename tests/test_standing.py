@@ -147,3 +147,22 @@ def test_a_war_declared_out_of_the_blue_makes_the_target_an_enemy_of_the_declare
         for _ in range(3):
             ACTION_REGISTRY["SPY"](sim, b, "plains", (a.x, a.y))
     assert not standing.is_enemy(b, a.id)                                    # the spying tribe was caught at it: no grievance of its own
+
+
+def test_a_spy_reports_how_the_target_sees_us_and_a_mismatch_moves_our_view_toward_theirs():
+    """2026-10-11 (the owner: "a mismatch can cause conflict or incite more partnership")."""
+    sim, a, b = _two()
+    a.population = b.population = 1000
+    b.standing[a.id] = 7.0                                                  # B trusts A as a Trusted Trade Partner; A has not warmed to B (Untrusted)
+    with mock.patch("backend.actions.random.random", return_value=0.99):
+        note = ACTION_REGISTRY["SPY"](sim, a, "plains", (b.x, b.y))
+    assert "they see A as trusted trade partner" in note and "the chief warms to them" in note
+    assert a.rival_intel[b.id]["views"][a.id]["band"] == standing.TRUSTED
+    gap = standing.rank(standing.TRUSTED) - standing.rank(standing.UNTRUSTED)
+    assert a.standing[b.id] == -config.SPY_SUCCESS_STANDING_DROP + gap * config.SPY_MISMATCH_STANDING_PER_RANK     # partnership invited
+    sim, a, b = _two()
+    a.standing[b.id] = 7.0                                                  # A trusts B; B thinks little of A
+    b.standing[a.id] = -4.0
+    with mock.patch("backend.actions.random.random", return_value=0.99):
+        note = ACTION_REGISTRY["SPY"](sim, a, "plains", (b.x, b.y))
+    assert "the chief hardens" in note and a.standing[b.id] == 7.0 - config.SPY_SUCCESS_STANDING_DROP - 3 * config.SPY_MISMATCH_STANDING_PER_RANK   # conflict: three bands apart (Trusted vs Untrustworthy)
