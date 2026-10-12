@@ -191,3 +191,14 @@ def test_the_ollama_client_counts_calls_by_model_and_context():
     import asyncio
     asyncio.run(client.embed("x", model="nomic-embed-text"))
     assert client.call_counts == {"nomic-embed-text": 1}
+
+
+def test_the_shipped_default_is_each_tribes_own_model_for_the_reflection():
+    """2026-10-11 (the owner): the suite pins the dedicated reviewer (conftest), so the real default is read from a fresh copy of config.py."""
+    import importlib.util
+    import pathlib
+
+    spec = importlib.util.spec_from_file_location("fresh_config", pathlib.Path(config.__file__))
+    fresh = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fresh)
+    assert fresh.REFLECTION_MODEL == "tribe" and fresh.REFLECTION_CONTEXT_OWN_MODEL == 8192

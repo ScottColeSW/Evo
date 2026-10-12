@@ -191,10 +191,10 @@ NIGHT_CYCLE_HISTORY_WINDOW = 20
 # outside voice -- "friction to bounce off" -- instead of a tribe only ever
 # reviewing itself. Simulation._run_night_cycle passes this instead of
 # tribe.model now.
-REFLECTION_MODEL = "gemma2:2b"
+REFLECTION_MODEL = "tribe"  # 2026-10-11 (the owner): each tribe's own model reflects. Was "gemma2:2b", a dedicated reviewer that asked for a different context and so held a second runner of the same model (32 loads in run_20261011_161130)
 # "tribe" (or the REFLECTION_MODEL environment variable) makes each tribe's own model do its night reflection: no second model is loaded, which removes the load at the first night and the memory
 # pressure of a third model, at the cost of the dedicated reviewer that pushes back (the 2026-09-18 choice). The reflection then uses the 4096 context the tribe's turns use (REFLECTION_CONTEXT_OWN_MODEL),
-# because a request with a different context makes Ollama reload the model. Not the default; to be tried and compared.
+# because a request with a different context makes Ollama reload the model. Now the default (2026-10-11); set REFLECTION_MODEL=gemma2:2b (or another model name) for the dedicated reviewer.
 
 # Explicit request, 2026-09-18: "I like the flavor but it doesn't help them
 # really does it" -- a recalled private thought was pure ambient text, no

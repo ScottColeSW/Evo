@@ -56,3 +56,11 @@ def run_async(fn):
         asyncio.run(fn(*args, **kwargs))
 
     return wrapper
+
+
+@pytest.fixture(autouse=True)
+def dedicated_reviewer_for_the_suite(monkeypatch):
+    """The shipped default is REFLECTION_MODEL "tribe" (2026-10-11). Most night tests were written against the dedicated reviewer, so the suite runs with it; the shipped default itself is checked by
+    tests/test_night_concurrency.py, which reads config.py fresh."""
+    from backend import config
+    monkeypatch.setattr(config, "REFLECTION_MODEL", "gemma2:2b")
