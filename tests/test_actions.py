@@ -1,5 +1,6 @@
 from backend.actions import ACTION_REGISTRY, _execute_trade
 from backend.ancestral_matrix import AncestralTraumaMatrix
+from backend.actions import at_war as actions_at_war
 from backend.simulation import Simulation, Tribe
 from backend.world import Landscape
 
@@ -5380,8 +5381,9 @@ def test_declare_war_sets_symmetric_stance():
     result = ACTION_REGISTRY["DECLARE_WAR"](sim, a, "plains", (51, 51))
 
     assert a.stance_toward["tribe_1"] == "WAR"
-    assert b.stance_toward["tribe_0"] == "WAR"
-    assert "declares war" in result
+    assert "tribe_0" not in b.stance_toward                       # 2026-10-11: one side can call the war; the other is not at war until it declares back
+    assert "declares war on Mountain Tribe and strikes at once" in result
+    assert [e["kind"] for e in sim.recent_encounters] == ["war_declared"]
 
 
 def test_declare_war_requires_the_rival_to_have_been_discovered():
@@ -5519,6 +5521,7 @@ def test_trade_exchanges_resources_both_ways_with_no_loss_of_population():
     a.wood, a.stone, a.food, a.water = 100, 0, 0, 0
     b.wood, b.stone, b.food, b.water = 0, 100, 0, 0
     sim.tribes = {"tribe_0": a, "tribe_1": b}
+    a.standing[b.id] = b.standing[a.id] = 2.0  # Neutral: TRADE needs it (standing.py)
 
     note = ACTION_REGISTRY["TRADE"](sim, a, "plains", (51, 51))
 
@@ -5536,6 +5539,7 @@ def test_trade_increments_both_sides_trade_counter():
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
     sim.tribes = {"tribe_0": a, "tribe_1": b}
+    a.standing[b.id] = b.standing[a.id] = 2.0  # Neutral: TRADE needs it (standing.py)
 
     ACTION_REGISTRY["TRADE"](sim, a, "plains", (51, 51))
 
@@ -5548,6 +5552,7 @@ def test_trade_awards_first_contact_trophy_to_both_sides_on_first_trade():
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
     sim.tribes = {"tribe_0": a, "tribe_1": b}
+    a.standing[b.id] = b.standing[a.id] = 2.0  # Neutral: TRADE needs it (standing.py)
 
     ACTION_REGISTRY["TRADE"](sim, a, "plains", (51, 51))
 
@@ -5560,6 +5565,7 @@ def test_trade_does_not_re_award_first_contact_on_a_later_trade():
     a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
     b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
     sim.tribes = {"tribe_0": a, "tribe_1": b}
+    a.standing[b.id] = b.standing[a.id] = 2.0  # Neutral: TRADE needs it (standing.py)
 
     ACTION_REGISTRY["TRADE"](sim, a, "plains", (51, 51))
     ACTION_REGISTRY["TRADE"](sim, a, "plains", (51, 51))
@@ -5574,6 +5580,7 @@ def test_trade_grants_a_chief_proposed_trading_award_to_both_sides():
     a.custom_awards = [{"name": "Merchant's Mark", "category": "trading", "cycle": 1}]
     b.custom_awards = [{"name": "Silver Tongue", "category": "trading", "cycle": 1}]
     sim.tribes = {"tribe_0": a, "tribe_1": b}
+    a.standing[b.id] = b.standing[a.id] = 2.0  # Neutral: TRADE needs it (standing.py)
 
     ACTION_REGISTRY["TRADE"](sim, a, "plains", (51, 51))
 
@@ -6122,7 +6129,9 @@ def test_send_trade_emissary_trades_instantly_with_a_known_rival():
     tribe.wood, rival.wood = 100, 200
     sim.tribes["tribe_1"] = rival
 
-    note = ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, tribe, "plains", (rx, tribe.y))
+    from unittest import mock
+    with mock.patch("backend.actions.random.random", return_value=0.99):  # no backfire (EMISSARY_BACKFIRE_BY_BAND)
+        note = ACTION_REGISTRY["SEND_TRADE_EMISSARY"](sim, tribe, "plains", (rx, tribe.y))
 
     assert "opened trade" in note
     assert tribe.wood != 100 and rival.wood != 200  # goods actually moved
@@ -6268,6 +6277,7 @@ def test_execute_trade_is_reused_identically_by_instant_trade_and_the_emissary()
     partner = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
     tribe.wood, partner.wood = 100, 200
     sim.tribes = {"tribe_0": tribe, "tribe_1": partner}
+    tribe.standing[partner.id] = partner.standing[tribe.id] = 2.0  # Neutral: TRADE needs it (standing.py)
 
     note = ACTION_REGISTRY["TRADE"](sim, tribe, "plains", (51, 51))
 
@@ -6521,7 +6531,8 @@ def test_the_second_successful_raid_by_the_same_tribe_puts_both_at_war_with_no_e
         ACTION_REGISTRY["RAID"](sim, bully, "plains", (51, 51))
         assert victim.stance_toward.get(bully.id) is None and bully.stance_toward.get(victim.id) is None  # the first raid is not enough
         ACTION_REGISTRY["RAID"](sim, bully, "plains", (51, 51))
-    assert victim.stance_toward[bully.id] == "WAR" and bully.stance_toward[victim.id] == "WAR"
+    assert victim.stance_toward[bully.id] == "WAR" and bully.stance_toward.get(victim.id) is None   # 2026-10-11: the victim declares; the bully is not at war until it declares back
+    assert actions_at_war(victim, bully)
     assert any("declares war" in line for line in victim.history) and any("declares war on Bully" in line for line in bully.history)
 
 
@@ -6556,11 +6567,11 @@ def test_trade_between_two_tribes_at_war_is_closed_until_peace():
     from backend.actions import _execute_trade
 
     sim, a, b = _raider_and_victim()
-    a.wood = b.wood = 1000
+    a.wood = b.wood = 100  # under the storage cap, so a trade can land (what a full store cannot take goes back to the giver, 2026-10-11)
     a.stance_toward[b.id] = "WAR"
     b.stance_toward[a.id] = "WAR"
     note = _execute_trade(sim, a, b)
-    assert "will not trade while the two tribes are at war" in note and a.wood == 1000 and b.wood == 1000
+    assert "will not trade while the two tribes are at war" in note and a.wood == 100 and b.wood == 100
     a.stance_toward[b.id] = "ALLIED"
     b.stance_toward[a.id] = "ALLIED"  # peace
     _execute_trade(sim, a, b)
@@ -6640,7 +6651,7 @@ def test_the_second_refusal_inside_the_window_is_an_insult_and_means_war_but_old
     sim.cycle = 15
     note = _execute_trade(sim, bully, victim)
     assert "takes the insult and declares war" in note
-    assert bully.stance_toward[victim.id] == "WAR" and victim.stance_toward[bully.id] == "WAR"
+    assert bully.stance_toward[victim.id] == "WAR" and victim.stance_toward.get(bully.id) is None   # the refused tribe declares; the other is not at war until it declares back
     assert any("takes the insult" in line for line in bully.history)
 
     sim2, bully2, victim2 = _after_a_successful_raid(10)
@@ -6778,3 +6789,43 @@ def test_an_envoy_to_a_tribe_not_at_war_can_backfire_harder_than_a_peace_offer()
     assert a.stance_toward["tribe_1"] == "WAR" and a.war_since["tribe_1"] == 100
     loser_share = config.ALLIANCE_BACKFIRE_LOSER_POPULATION_LOSS_FRACTION * config.EMISSARY_BACKFIRE_SEVERITY
     assert 1000 - min(a.population, b.population) >= round(1000 * loser_share) - 1
+
+
+def _trusting_pair(a_stock, b_stock):
+    sim = _bare_simulation()
+    a = Tribe("tribe_0", "Forest Tribe", "gemma2:2b", 50, 50, "#c084fc")
+    b = Tribe("tribe_1", "Mountain Tribe", "gemma2:2b", 51, 51, "#fb923c")
+    a.wood, a.stone, a.food, a.water = a_stock
+    b.wood, b.stone, b.food, b.water = b_stock
+    a.standing[b.id] = b.standing[a.id] = 2.0
+    sim.tribes = {"tribe_0": a, "tribe_1": b}
+    return sim, a, b
+
+
+def test_a_trade_that_leaves_one_side_much_poorer_makes_that_chief_angry_and_a_fair_one_builds_trust():
+    """2026-10-11 (the owner: "If I was on the bad end of that deal and found out, I would be very mad")."""
+    from backend import config
+    from backend.actions import _execute_trade
+    from backend.standing import UNTRUSTED
+
+    sim, rich, poor = _trusting_pair((1000, 1000, 1000, 1000), (10, 10, 10, 10))
+    _execute_trade(sim, rich, poor)
+    assert rich.standing["tribe_1"] == 2.0 - config.TRADE_UNFAIR_STANDING_DROP and any("lopsided" in line for line in rich.history)
+    assert poor.standing["tribe_0"] == 2.0 + config.TRADE_STANDING_GAIN
+    sim, a, b = _trusting_pair((100, 100, 100, 100), (100, 100, 100, 100))
+    _execute_trade(sim, a, b)
+    assert a.standing["tribe_1"] == 2.0 + config.TRADE_STANDING_GAIN and b.standing["tribe_0"] == 2.0 + config.TRADE_STANDING_GAIN
+    assert not any("lopsided" in line for line in a.history)
+
+
+def test_goods_the_other_side_has_no_room_for_go_back_to_the_giver_instead_of_vanishing():
+    from backend import config
+    from backend.actions import _execute_trade, _storage_cap
+
+    sim, a, b = _trusting_pair((0, 0, 0, 0), (0, 0, 0, 0))
+    a.warehouses_built = 5                                      # a can hold more than b can
+    a.wood, b.wood = _storage_cap(a), _storage_cap(b)           # both full
+    assert round(a.wood * config.TRADE_GIFT_FRACTION) > round(b.wood * config.TRADE_GIFT_FRACTION)   # a offers more than b's freed room can take
+    total_before = a.wood + b.wood
+    _execute_trade(sim, a, b)
+    assert a.wood + b.wood == total_before                      # nothing was destroyed at the cap

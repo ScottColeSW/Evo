@@ -7,6 +7,7 @@ def _sim(walled=True, discovered=True):
     sim = Simulation([{"name": "A", "model": "gemma2:2b"}, {"name": "B", "model": "gemma2:2b"}])
     a, b = sim.tribes["tribe_0"], sim.tribes["tribe_1"]
     a.x, a.y, b.x, b.y = 20, 20, 58, 20  # 38 apart, like the recorded runs
+    a.standing[b.id] = b.standing[a.id] = 2.0  # Neutral: TRADE needs it (standing.py)
     if discovered:
         a.discovered_rivals.add(b.id)
     if walled:

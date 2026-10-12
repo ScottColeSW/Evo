@@ -122,11 +122,11 @@ def test_chief_bubbles_are_drawn_after_the_landmarks_and_resource_icons():
         assert frame.index(later_must_not_follow) < flush, later_must_not_follow
     assert flush < frame.index("drawDayNightOverlay(interpolatedCycle());")  # the day and night tint still goes over everything
 
-def _relations_rows(tribe, tribes, cycle=None):
+def _relations_rows(tribe, tribes):
     text = PAGE.read_text(encoding="utf-8")
     start = text.index("function relationsRows(")
     end = text.index("function relationsPanel(")
-    program = "let TRADE_GRIEVANCE_WINDOW_CYCLES = 40;\n" + text[start:end] + f"\nconsole.log(JSON.stringify(relationsRows({json.dumps(tribe)}, {json.dumps(tribes)}, {json.dumps(cycle)})));"
+    program = text[start:end] + f"\nconsole.log(JSON.stringify(relationsRows({json.dumps(tribe)}, {json.dumps(tribes)})));"
     done = subprocess.run(["node", "-e", program], capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr
     return json.loads(done.stdout)
@@ -145,7 +145,7 @@ def test_the_sidebar_lists_each_rival_met_with_its_stance_and_the_raid_ledger():
 
 def test_a_met_rival_with_no_stance_set_reads_neutral_and_no_one_met_lists_nothing():
     tribes = {"t0": {"name": "Big"}, "t1": {"name": "Small"}}
-    assert _relations_rows({"id": "t1", "discovered_rivals": ["t0"]}, tribes) == [{"id": "t0", "name": "Big", "stance": "NEUTRAL", "detail": ""}]
+    assert _relations_rows({"id": "t1", "discovered_rivals": ["t0"]}, tribes) == [{"id": "t0", "name": "Big", "stance": "UNTRUSTED", "detail": ""}]
     assert _relations_rows({"id": "t1"}, tribes) == []
 
 def _warband_lines(tribe):
@@ -206,14 +206,23 @@ def test_a_boat_in_a_one_tile_pond_has_nowhere_to_go_and_stays():
     assert _plan_boat(["...", ".~.", "..."], (1, 1)) == []
 
 
-def test_a_neutral_rival_that_raided_us_recently_reads_as_a_grudge_until_the_window_passes():
-    """2026-10-10 (the owner: "still neutral after being raided seems off"): one raid is not yet war, but the raided tribe will not trade with the raider."""
-    tribes = {"t0": {"name": "Big"}, "t1": {"name": "Small"}}
-    me = {"id": "t1", "discovered_rivals": ["t0"], "raid_ledger": {"t0": {"suffered": 1, "people_lost": 4, "last_success_cycle": 100}}}
-    assert _relations_rows(me, tribes, 120)[0]["stance"] == "GRUDGE"
-    assert _relations_rows(me, tribes, 141)[0]["stance"] == "NEUTRAL"        # past the 40-cycle window
-    me["stance_toward"] = {"t0": "WAR"}
-    assert _relations_rows(me, tribes, 120)[0]["stance"] == "WAR"            # a real stance is never overridden
+def test_a_rival_shows_its_band_on_the_ladder_a_declared_war_shows_as_war_and_raiders_get_an_attitude():
+    """2026-10-11 (the owner: the relationship ladder, with 'still neutral after being raided seems off' behind it)."""
+    tribes = {"t0": {"name": "Big", "stance_toward": {}}, "t1": {"name": "Small"}}
+    me = {"id": "t1", "discovered_rivals": ["t0"], "standing": {"t0": {"score": -4, "band": "UNTRUSTWORTHY"}}}
+    assert _relations_rows(me, tribes)[0]["stance"] == "UNTRUSTWORTHY"
+    me["standing"] = {"t0": {"score": 7, "band": "TRUSTED_TRADE_PARTNER"}}
+    assert _relations_rows(me, tribes)[0]["stance"] == "TRUSTED_TRADE_PARTNER"
+    me["stance_toward"] = {"t0": "ALLIED"}
+    assert _relations_rows(me, tribes)[0]["stance"] == "ALLIED"
+    tribes["t0"]["stance_toward"] = {"t1": "WAR"}                      # Big declared war on Small; Small has not declared back
+    me["stance_toward"] = {}
+    row = _relations_rows(me, tribes)[0]
+    assert row["stance"] == "WAR" and "Big declared war on you" in row["detail"]
+    text = PAGE.read_text(encoding="utf-8")
+    program = text[text.index("function raiderAttitude("):text.index("function relationsPanel(")] + "\nconsole.log(JSON.stringify([-8, -4, -2, 0, 3, 7].map(raiderAttitude)));"
+    done = subprocess.run(["node", "-e", program], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert json.loads(done.stdout) == ["Loathed", "Hated", "Resented", "Wary", "Respected", "Admired"]
 
 
 def test_a_chief_bubble_dodges_other_bubbles_but_not_name_tags_and_stays_on_the_canvas():

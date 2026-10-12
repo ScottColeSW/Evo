@@ -948,7 +948,6 @@ async function fetchGameConfig() {
     WALL_MAX_LAYERS = cfg.wall_max_layers;
     HAZARD_MARKER_SPACING = cfg.hazard_landmark_min_spacing;
     VESSEL_WOOD_COST = cfg.vessel_wood_cost;
-    TRADE_GRIEVANCE_WINDOW_CYCLES = cfg.trade_grievance_window_cycles;
     VESSEL_STONE_COST = cfg.vessel_stone_cost;
     ERA_ORDER = cfg.era_order;
   } catch (e) { /* server not reachable yet -- keep the hardcoded fallbacks */ }
@@ -4906,7 +4905,6 @@ let BARRACKS_MAX_COUNT = 5;
 let WALL_MAX_LAYERS = 2;
 let VESSEL_WOOD_COST = 2500;  // from /api/config
 let VESSEL_STONE_COST = 2500;
-let TRADE_GRIEVANCE_WINDOW_CYCLES = 40;  // from /api/config
 let HAZARD_MARKER_SPACING = 6;  // tiles; from /api/config (config.HAZARD_LANDMARK_MIN_SPACING)
 
 // Mirrors backend/eras.py's ERAS order exactly -- CONSTRUCT_WALL
@@ -4972,9 +4970,9 @@ function commercePanel(t) {
 // doesn't show a row until it does.
 // 2026-10-10 (explicit request: "add the 'at war' status or whatever status on the sidebar"): where this tribe stands with each rival it has met. The stance and the raid ledger come from the backend
 // (tribe.stance_toward, tribe.raid_ledger); a rival it has not met is not listed. Pure, so it can be tested without the page.
-// 2026-10-10 (the owner: "still neutral after being raided seems off"): war only starts at the second successful raid, but a tribe raided once refuses to trade with the raider for
-// TRADE_GRIEVANCE_WINDOW_CYCLES, so while that grudge lasts a NEUTRAL stance reads as "Grudge" (the stance itself is unchanged).
-function relationsRows(t, tribes, cycle) {
+// 2026-10-11 (the owner: the relationship ladder, backend/standing.py): a rival that is neither at war nor allied shows where it stands in this chief's eyes, Enemy < Untrustworthy < Untrusted < Neutral <
+// Trusted Trade Partner (t.standing[id].band). A war the OTHER tribe declared shows as war too, with a note.
+function relationsRows(t, tribes) {
   const ledger = t.raid_ledger || {};
   const stances = t.stance_toward || {};
   const met = new Set(t.discovered_rivals || []);
@@ -4986,8 +4984,10 @@ function relationsRows(t, tribes, cycle) {
       if (l.suffered) parts.push(`raided you ${l.suffered}x, took ${l.people_lost} of your people`);
       if (l.held_off) parts.push(`you held off ${l.held_off}`);
       if (l.made) parts.push(`your raids: ${l.won} won, ${l.repelled} repelled`);
-      let stance = stances[id] || "NEUTRAL";
-      if (stance === "NEUTRAL" && l.suffered && l.last_success_cycle != null && cycle != null && cycle - l.last_success_cycle <= TRADE_GRIEVANCE_WINDOW_CYCLES) stance = "GRUDGE";
+      const declaredOnUs = (other.stance_toward || {})[t.id] === "WAR" && stances[id] !== "WAR";
+      if (declaredOnUs) parts.unshift(`${other.name} declared war on you`);
+      const band = ((t.standing || {})[id] || {}).band;
+      const stance = declaredOnUs ? "WAR" : (stances[id] || band || "UNTRUSTED");
       return {id, name: other.name, stance, detail: parts.join("; ")};
     });
 }
@@ -4998,13 +4998,25 @@ function warbandLines(t) {
   const w = t.warband;
   if (w && w.attacks > 0) lines.push(`🏴 ${w.name} Raiders: ${w.attacks} attack${w.attacks === 1 ? "" : "s"}, ${w.wins} win${w.wins === 1 ? "" : "s"} ahead, about ${w.size} strong`);
   else if (w) lines.push(`🏴 ${w.name} Raiders have not struck yet`);
+  const feeling = (t.standing || {}).raiders;
+  if (feeling) lines.push(`🏴 Your people's feeling toward the raiders: ${raiderAttitude(feeling.score)}`);
   const k = t.takeover;
   if (k) lines.push(`⚔️ Taken over by the ${k.leader} Raiders at cycle ${k.cycle} (${k.survivors} of ${k.tribe_before} left standing, ${k.joined} raiders joined); ${k.leader} is chief`);
   return lines;
 }
 
-function relationsPanel(t, tribes, cycle) {
-  const rows = relationsRows(t, tribes, cycle);
+// 2026-10-11: how a tribe feels about the raiders, from the same score scale as a rival's standing (more negative with each attack that lands or is repelled; up when a broken warband joins).
+function raiderAttitude(score) {
+  if (score <= -6) return "Loathed";
+  if (score <= -3) return "Hated";
+  if (score <= -1) return "Resented";
+  if (score < 2) return "Wary";
+  if (score < 6) return "Respected";
+  return "Admired";
+}
+
+function relationsPanel(t, tribes) {
+  const rows = relationsRows(t, tribes);
   const extra = warbandLines(t);
   if (!rows.length && !extra.length) return "";
   const lines = extra.map(line => `<span class="relations-detail">${escapeHtml(line)}</span>`).concat(rows.map(r => {
@@ -5406,7 +5418,10 @@ const STANCE_BADGES = {
   ALLIED: { icon: "🤝", label: "Allied", color: "#4ade80" },
   WAR: { icon: "⚔️", label: "At War", color: "#f87171" },
   NEUTRAL: { icon: "🏳️", label: "Neutral", color: "#94a3b8" },
-  GRUDGE: { icon: "😠", label: "Grudge (will not trade)", color: "#fb923c" },
+  ENEMY: { icon: "⛔", label: "Enemy (never trusts)", color: "#ef4444" },
+  UNTRUSTWORTHY: { icon: "🚫", label: "Untrustworthy", color: "#fb923c" },
+  UNTRUSTED: { icon: "❔", label: "Untrusted", color: "#a8a29e" },
+  TRUSTED_TRADE_PARTNER: { icon: "💱", label: "Trusted Trade Partner", color: "#4ade80" },
 };
 
 const WELLBEING_TIER_ORDER = ["physiological", "safety", "belonging", "esteem", "self_actualization", "fame"];
@@ -5601,7 +5616,7 @@ function updateSidebar(state) {
           ${farmingPanel(t)}
           ${wellbeingPanel(t)}
           ${commercePanel(t)}
-          ${relationsPanel(t, state.tribes, state.cycle)}
+          ${relationsPanel(t, state.tribes)}
           ${combatPanel(t)}
           ${espionagePanel(t)}
         </div>`;

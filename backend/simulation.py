@@ -10,6 +10,7 @@ import random
 from collections import Counter, deque
 
 from . import architect, city_layout, config, lexicon, peace_gate, physics, world_layers
+from . import standing as ladder
 from .actions import (
     military_intel_text, research_candidates, research_candidates_with_source,
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
@@ -1431,6 +1432,9 @@ class Tribe:
         self.raids_lost = 0
         self.raid_ledger: dict[str, dict] = {}  # rival tribe id -> the raids between the two (see actions._note_raid)
         self.raid_cooldown_until_cycle = 0  # RAID and RAID_RIVAL are not offered before this cycle (set when this tribe's own raid was repelled)
+        self.standing: dict[str, float] = {}  # rival id (or "raiders") -> this chief's view of them, see standing.py
+        self.standing_locked: set[str] = set()  # rivals this tribe will never trust again (3 spies caught)
+        self.spies_caught_of: dict[str, int] = {}  # rival id -> how many of its spies this tribe has caught
         self.war_since: dict[str, int] = {}  # rival tribe id -> the cycle this war began (restarted by a failed envoy); WAR_MIN_CYCLES must pass before SEND_TRADE_EMISSARY may try to end it
         self.alliance_cooldown_until_cycle = 0  # DECLARE_ALLIANCE is not offered before this cycle (set when this tribe's peace overture backfired)
         self.trade_refusals: dict[str, list[int]] = {}  # rival tribe id -> the cycles it refused this tribe's trade over a raid (see actions._trade_grievance_refusal)
@@ -2372,6 +2376,7 @@ class Tribe:
             "raiders_approaching": self.raiders_approaching,
             "raiders_repelled_by_wall": self.raiders_repelled_by_wall,
             "stance_toward": self.stance_toward,
+            "standing": ladder.summary(self),
             "raid_ledger": self.raid_ledger,
             "warband": self.warband,
             "takeover": self.takeover,
@@ -3684,6 +3689,7 @@ class Simulation:
         if self.cycle % config.DAY_LENGTH_CYCLES == 0:
             for tribe in self.tribes.values():
                 if not tribe.extinct:
+                    ladder.decay_day(tribe)  # 2026-10-11: trust fades and grudges soften a little each day
                     self._hold_tribal_gathering(tribe)
 
         if self.cycle % config.DAY_LENGTH_CYCLES == config.DAY_LENGTH_CYCLES // 2:
@@ -4425,6 +4431,14 @@ class Simulation:
                     f"Currently {stance.lower()} with {other.name}."
                     + (self._war_fact(tribe, other, available_actions) if stance == "WAR" else "")
                 )
+        # 2026-10-11: a war the other side declared on this tribe is a fact too, and so is where each rival stands in this chief's eyes (standing.py).
+        for other in self.tribes.values():
+            if other.id != tribe.id and not other.extinct and other.stance_toward.get(tribe.id) == "WAR" and tribe.stance_toward.get(other.id) != "WAR":
+                visible_entities.append(f"{other.name} has declared war on you." + self._war_fact(tribe, other, available_actions))
+        for other_id in sorted(tribe.discovered_rivals):
+            other = self.tribes.get(other_id)
+            if other is not None and not other.extinct and tribe.stance_toward.get(other_id) not in ("WAR", "ALLIED") and not other.stance_toward.get(tribe.id) == "WAR":
+                visible_entities.append(f"Your people's standing with {other.name}: {ladder.LABELS[ladder.band(tribe, other_id)]}.")
         # The spectator UI's own "Path to the Next Era" panel already computes exactly
         # this (Tribe.to_dict's next_era block) -- it just never made it back into the
         # tribe's own reasoning. Naming the *specific* still-short resource(s) is the
@@ -4575,6 +4589,8 @@ class Simulation:
     def _war_fact(self, tribe: Tribe, other: Tribe, available_actions: list[str]) -> str:
         """The plain facts of being at war (2026-10-11): trade, scouting and peace offers are closed, spying is the way to learn of them, and when an envoy may try to end it."""
         left = war_remaining(self, tribe, other)
+        if ladder.is_enemy(tribe, other.id) or ladder.is_enemy(other, tribe.id):
+            return " Trade, scouting and offers of peace are closed for good: the trust is gone and no envoy can end this war."
         tail = (" SEND_TRADE_EMISSARY can try to end the war now, and it can backfire." if "SEND_TRADE_EMISSARY" in available_actions
                 else f" No envoy can try to end the war for about {left} more cycles.")
         return " Trade, scouting and offers of peace are closed while at war; SPY is how to learn what they have." + tail
@@ -5368,6 +5384,14 @@ class Simulation:
                 available_actions = [a for a in available_actions if a not in war_closed]
             else:
                 war_closed = []
+        # 2026-10-11 (the owner): TRADE needs Neutral or better on both sides. Kept while a minor settlement can still be traded with (that needs no trust); the envoy is how trust is built from below.
+        trade_hidden = False
+        if "TRADE" in available_actions and not war_closed:
+            can_trade = any(ms["raids_remaining"] > 0 for ms in self.minor_settlements) or any(
+                ladder.trusts_enough_to_trade(tribe, o) for o in self.tribes.values() if o.id != tribe.id and not o.extinct and o.id in tribe.discovered_rivals)
+            if not can_trade and len(available_actions) > 1:
+                available_actions = [a for a in available_actions if a != "TRADE"]
+                trade_hidden = True
         # 2026-10-10: a day to recover after a failure (see config.RAID_COOLDOWN_AFTER_REPELLED_CYCLES). Fail-open: never taken if it would leave the menu empty.
         cooled = []
         if self.cycle < tribe.raid_cooldown_until_cycle:
@@ -5450,6 +5474,8 @@ class Simulation:
             if "DECLARE_ALLIANCE" in cooled:
                 waits.append(f"your last offer of peace backfired, so DECLARE_ALLIANCE is not offered until about cycle {tribe.alliance_cooldown_until_cycle}")
             visible_entities.append(("; ".join(waits))[0].upper() + ("; ".join(waits))[1:] + ".")
+        if trade_hidden:
+            visible_entities.append("TRADE is not offered: no rival you know trusts you, and you do not trust them, enough (Neutral or better). SEND_TRADE_EMISSARY is how trust is built; it can backfire.")
         if forage_hidden:
             visible_entities.append(
                 f"This ground has been foraged bare and is resting: one GATHER_FOOD would now bring in only {forage_hidden[0]} food, so it is not offered, and it will bear again in about "
@@ -9196,6 +9222,7 @@ class Simulation:
         warband = tribe.warband
         if not warband or tribe.extinct:
             return
+        ladder.adjust(tribe, ladder.RAIDERS, -(config.RAIDERS_LANDED_DROP if raiders_won else config.RAIDERS_REPELLED_DROP))  # 2026-10-11: how the tribe feels about the raiders
         warband["attacks"] += 1
         remaining = max(0, force - raiders_lost)
         warband["size"] = remaining
@@ -9208,6 +9235,7 @@ class Simulation:
         if established and remaining < config.WARBAND_TURNOVER_FRACTION * force:
             tribe.population += remaining
             tribe.max_population = max(tribe.max_population, tribe.population)
+            ladder.adjust(tribe, ladder.RAIDERS, config.RAIDERS_JOINED_GAIN)
             tribe.history.append(f"the {warband['name']} Raiders are broken -- the {remaining} who survive join the tribe")
             tribe.warband = None
 
@@ -9216,6 +9244,7 @@ class Simulation:
         if tribe.warband and not tribe.extinct:
             tribe.warband["attacks"] += 1
             tribe.warband["wins"] = max(0, tribe.warband["wins"] - 1)
+            ladder.adjust(tribe, ladder.RAIDERS, -config.RAIDERS_REPELLED_DROP)
             if force:
                 tribe.warband["size"] = max(0, force - joined)
 

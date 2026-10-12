@@ -1678,7 +1678,35 @@ SPY_SUCCESS_STEAL_FRACTION = 0.05
 # backfires like a peace offer (a clash, the war's clock starts again). An emissary to a tribe not at war backfires with EMISSARY_BACKFIRE_CHANCE. A backfire costs EMISSARY_BACKFIRE_SEVERITY x the losses of an alliance backfire. Starting values.
 WAR_MIN_CYCLES = 3 * DAY_LENGTH_CYCLES
 EMISSARY_RESET_WIN_CHANCE = 0.5
-EMISSARY_BACKFIRE_CHANCE = 0.1
+EMISSARY_BACKFIRE_CHANCE = 0.1  # superseded by EMISSARY_BACKFIRE_BY_BAND (standing.py) for a tribe with a standing; kept as the fallback
+# 2026-10-11 (the owner): the relationship ladder (backend/standing.py). One score per chief per rival, moved by events, back toward zero by STANDING_DECAY_PER_DAY every day. Bands: UNTRUSTWORTHY at or under
+# STANDING_UNTRUSTWORTHY_AT, NEUTRAL from STANDING_NEUTRAL_AT, TRUSTED_TRADE_PARTNER from STANDING_TRUSTED_AT, UNTRUSTED between (where a rival just met starts). TRADE needs Neutral or better on both sides; SEND_TRADE_EMISSARY
+# is how trust is built from below that. A successful trade or envoy exchange is worth TRADE_STANDING_GAIN to both; a caught spy takes SPY_CAUGHT_STANDING_DROP off the catcher's view of the spying tribe, and the
+# SPIES_CAUGHT_FOR_ENEMY-th makes it an Enemy for good (war at once, never trusted again); a spy that gets through takes SPY_SUCCESS_STANDING_DROP off the spying chief's own view of the target (contempt if weaker,
+# resentment if stronger); a raid that lands costs the victim RAID_VICTIM_STANDING_DROP, and any raid costs the raider RAID_ATTACKER_STANDING_DROP. The raiders' own standing (key "raiders") falls with each attack
+# that lands (RAIDERS_LANDED_DROP) or is repelled (RAIDERS_REPELLED_DROP) and rises when a broken warband joins (RAIDERS_JOINED_GAIN). Starting values.
+STANDING_MIN = -10.0
+STANDING_MAX = 10.0
+STANDING_UNTRUSTWORTHY_AT = -3.0
+STANDING_NEUTRAL_AT = 2.0
+STANDING_TRUSTED_AT = 6.0
+STANDING_DECAY_PER_DAY = 0.25
+TRADE_STANDING_GAIN = 1.0
+# 2026-10-11 (the owner: "uneven trades happen all the time. If I was on the bad end of that deal and found out, I would be very mad"): run_20261011_161130 had one tribe give 116k and receive 96k, the rest
+# vanishing at the other side's storage cap. What the other side has no room for now goes back to the giver. A side that ends a trade having received less than (1 - TRADE_UNFAIR_TOLERANCE) of what it gave takes
+# it as a cheat: its view of the partner falls by TRADE_UNFAIR_STANDING_DROP instead of rising. Starting values.
+TRADE_UNFAIR_TOLERANCE = 0.25
+TRADE_UNFAIR_STANDING_DROP = 1.0
+SPY_CAUGHT_STANDING_DROP = 2.0
+SPY_SUCCESS_STANDING_DROP = 1.0
+SPIES_CAUGHT_FOR_ENEMY = 3
+RAID_VICTIM_STANDING_DROP = 3.0
+RAID_ATTACKER_STANDING_DROP = 1.0
+RAIDERS_LANDED_DROP = 3.0
+WAR_DECLARED_STANDING_DROP = 4.0  # 2026-10-11 (the owner: "if I got attacked out of the blue, I would feel both hurt and angry"): the tribe a war is declared on, and struck at once, thinks far less of the declarer
+RAIDERS_REPELLED_DROP = 1.0
+RAIDERS_JOINED_GAIN = 2.0
+EMISSARY_BACKFIRE_BY_BAND = {"UNTRUSTWORTHY": 0.35, "UNTRUSTED": 0.2, "NEUTRAL": 0.1, "TRUSTED_TRADE_PARTNER": 0.03}
 EMISSARY_BACKFIRE_SEVERITY = 1.5
 SPY_CAUGHT_SUPPLY_FOOD = 5
 SPY_CAUGHT_SUPPLY_WATER = 5
