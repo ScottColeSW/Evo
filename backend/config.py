@@ -224,7 +224,7 @@ REFLECTION_STABILIZED_REINFORCEMENT_COUNT = 2
 # THRESHOLD, backend/memory.py) lives next to its own token-overlap sibling
 # rather than here -- memory.py stays deliberately free of any config.py
 # import, same as every constant it already owns.
-REFLECTION_CONTEXT_OWN_MODEL = 4096
+REFLECTION_CONTEXT_OWN_MODEL = 8192  # 2026-10-11: the same size every other call uses (ollama_client's default), so a model that is both a tribe's and its reflector has one runner, not two that evict each other
 REFLECTION_EMBEDDING_MODEL = "nomic-embed-text"
 # Phase 1 of docs/PALIMPSEST-REFLECTIONS-DESIGN.md (2026-10-03). "off" (the default: reflections reinforce exactly as before) or
 # "nli": Palimpsest's judge decides whether a new reflection restates, contradicts, or is separate from a held one. Needs the
@@ -1699,6 +1699,13 @@ TRADE_UNFAIR_TOLERANCE = 0.25
 TRADE_UNFAIR_STANDING_DROP = 1.0
 SPY_CAUGHT_STANDING_DROP = 2.0
 SPY_SUCCESS_STANDING_DROP = 1.0
+# 2026-10-11 (the owner: "cooldown spy, reset after 5 actions of war and war in cooldown, if they still stand"): SPY is not offered for SPY_COOLDOWN_CYCLES after a mission, and for SPY_CAUGHT_COOLDOWN_CYCLES after a
+# caught one (in run_20261011_161130 the models sent a spy every 4 cycles at war and 9 of 19 were caught, which would have made an Enemy of Tribe 1 by cycle 304). An Enemy lock, and a war that sits on one, also
+# lets go: once WAR_ACTIONS_FOR_RESET hard exchanges (raids, spies, a declaration or conquest) have been made between the two since it began, the war's own cooldown (WAR_MIN_CYCLES) is over, and both tribes still
+# stand, each lets go of the other as an Enemy (back to Untrusted, spies caught forgotten), so an envoy may try to end the war. Starting values.
+SPY_COOLDOWN_CYCLES = 10
+SPY_CAUGHT_COOLDOWN_CYCLES = 20
+WAR_ACTIONS_FOR_RESET = 5
 # 2026-10-11 (the owner: "a spy should tell you the relationship status of the spied upon. a mismatch can cause conflict or incite more partnership"): a spy that gets through also reports how the target sees every
 # other tribe, the spying one included. Where the target's view of the spying tribe differs from the spying tribe's view of the target, the spying chief's view moves SPY_MISMATCH_STANDING_PER_RANK per band of
 # difference toward theirs: warmer if they think better of us than we of them (a partnership is invited), colder if they think worse (conflict). Starting value.

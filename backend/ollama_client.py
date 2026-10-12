@@ -135,13 +135,15 @@ class OllamaClient:
         return "completion" in capabilities and "thinking" not in capabilities
 
     async def generate_json(
-        self, model: str, prompt: str, temperature: float = 0.7, num_ctx: int = 4096, keep_alive: str = "5m"
+        self, model: str, prompt: str, temperature: float = 0.7, num_ctx: int = 8192, keep_alive: str = "5m"
     ) -> dict:
         parsed, _raw = await self.generate_json_with_raw(model, prompt, temperature, num_ctx, keep_alive)
         return parsed
 
+    # 2026-10-11: the default context was 4096; with OLLAMA_NUM_PARALLEL=2 each request gets half of it, and a ~4,100-token prompt was cut to ~2,050 (224 truncations in run_20261011_161130). Every call now asks for
+    # the one size, so a model has one runner and not two that evict each other.
     async def generate_json_with_raw(
-        self, model: str, prompt: str, temperature: float = 0.7, num_ctx: int = 4096, keep_alive: str = "5m"
+        self, model: str, prompt: str, temperature: float = 0.7, num_ctx: int = 8192, keep_alive: str = "5m"
     ) -> tuple[dict, str]:
         """Same call as generate_json, but also returns the raw, unparsed response
         text -- explicit request, 2026-09-09: a live debug view of "what we tell the

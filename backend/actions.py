@@ -1932,6 +1932,7 @@ def _declare_conquest(sim, tribe, biome, target):
     tribe.wood -= config.DECLARE_CONQUEST_WOOD_COST
     tribe.stone -= config.DECLARE_CONQUEST_STONE_COST
     _war_cry(sim, tribe, defender, "conquest")
+    note_war_action(tribe, defender)
     # Set on BOTH sides the moment the campaign is actually launched, before
     # any round resolves -- see config.DECLARE_CONQUEST_COOLDOWN_DAYS's own
     # comment for why this needs to cover the defender too, not just whoever
@@ -2849,6 +2850,13 @@ def start_war(sim, declarer, target, restart: bool = False, mutual: bool = False
             x.war_since[y.id] = sim.cycle
 
 
+def note_war_action(a, b) -> None:
+    """A hard exchange between two tribes at war (a raid, a spy, a declaration, a conquest), counted for both (config.WAR_ACTIONS_FOR_RESET)."""
+    if at_war(a, b):
+        a.war_actions[b.id] = a.war_actions.get(b.id, 0) + 1
+        b.war_actions[a.id] = b.war_actions.get(a.id, 0) + 1
+
+
 def end_war(a, b) -> None:
     for x, y in ((a, b), (b, a)):
         x.stance_toward.pop(y.id, None)
@@ -2858,7 +2866,12 @@ def end_war(a, b) -> None:
 def war_remaining(sim, a, b) -> int:
     """Cycles until an envoy may try to end the war between the two (0 once WAR_MIN_CYCLES have passed, or when no start was recorded)."""
     if ladder.is_enemy(a, b.id) or ladder.is_enemy(b, a.id):
-        return 10**6  # an Enemy is never reconciled (standing.py)
+        return 10**6  # an Enemy is not reconciled while the lock holds (released by Simulation._release_cooled_wars)
+    return war_cooldown_left(sim, a, b)
+
+
+def war_cooldown_left(sim, a, b) -> int:
+    """The war's own cooldown (config.WAR_MIN_CYCLES), whatever the Enemy lock says."""
     since = max(a.war_since.get(b.id, -10**9), b.war_since.get(a.id, -10**9))
     return max(0, since + config.WAR_MIN_CYCLES - sim.cycle) if since > -10**9 else 0
 
@@ -2917,6 +2930,7 @@ def _note_raid(sim, attacker, defender, won: bool, people: int) -> None:
 def _raid_defender(sim, tribe, defender, win_bonus: float = 0.0):
     """The raid itself against a chosen rival tribe. win_bonus is added to the attacker's chance (RAID_RIVAL's spy intel)."""
     _war_cry(sim, tribe, defender, "raid")
+    note_war_action(tribe, defender)
 
     # DMM era's combat_boost effect applies here too, not just
     # DECLARE_CONQUEST -- see _created_object_bonus.
@@ -3796,6 +3810,7 @@ def _war_declared(sim, tribe, rival, provoked: bool = False) -> str:
     """2026-10-11 (the owner): one tribe can call a war, and it strikes at once rather than announcing a date: the declarer is at war from now (the other tribe is not until it declares back), a clash is fought on the spot
     and the stronger side carries off a share of the other's stores. Used by DECLARE_WAR and when a tribe catches its third spy from a rival."""
     start_war(sim, tribe, rival)
+    note_war_action(tribe, rival)
     if not provoked:  # 2026-10-11 (the owner: "if they declare war, obviously the relationship falls all the way to enemy"): struck out of the blue, the target never trusts the declarer again (a tribe whose spy was just caught has no such grievance)
         ladder.lock_enemy(rival, tribe.id)
     sim.trauma.radiate_event_wave(rival.x, rival.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
@@ -3933,7 +3948,10 @@ def _spy(sim, tribe, biome, target):
         return "no rival tribe has been encountered nearby yet to send a spy toward"
 
     tribe.spy_missions_run += 1
+    note_war_action(tribe, rival)
+    tribe.spy_cooldown_until_cycle = sim.cycle + config.SPY_COOLDOWN_CYCLES  # 2026-10-11: a spy is not sent every few cycles
     if random.random() < config.SPY_DETECTION_CHANCE:
+        tribe.spy_cooldown_until_cycle = sim.cycle + config.SPY_CAUGHT_COOLDOWN_CYCLES
         tribe.spy_missions_caught += 1
         caught = max(config.SPY_CAUGHT_POPULATION_LOSS, round(tribe.population * config.SPY_CAUGHT_POPULATION_FRACTION))
         sim._lose_population(tribe, caught, cause="spy_caught")

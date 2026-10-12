@@ -166,3 +166,56 @@ def test_a_spy_reports_how_the_target_sees_us_and_a_mismatch_moves_our_view_towa
     with mock.patch("backend.actions.random.random", return_value=0.99):
         note = ACTION_REGISTRY["SPY"](sim, a, "plains", (b.x, b.y))
     assert "the chief hardens" in note and a.standing[b.id] == 7.0 - config.SPY_SUCCESS_STANDING_DROP - 3 * config.SPY_MISMATCH_STANDING_PER_RANK   # conflict: three bands apart (Trusted vs Untrustworthy)
+
+
+def test_spy_is_not_offered_for_a_while_after_a_mission_and_longer_after_a_caught_one():
+    """2026-10-11 (the owner: "cooldown spy"): run_20261011_161130 sent a spy every 4 cycles at war."""
+    sim, a, b = _two()
+    a.has_ever_settled = True
+    sim._found_territory(a)
+    a.era = "tribal_synapse"
+    _req, ctx = sim._prepare_turn(a)
+    assert "SPY" in ctx["available_actions"]
+    with mock.patch("backend.actions.random.random", return_value=0.99):
+        ACTION_REGISTRY["SPY"](sim, a, "plains", (b.x, b.y))
+    assert a.spy_cooldown_until_cycle == sim.cycle + config.SPY_COOLDOWN_CYCLES
+    request, ctx = sim._prepare_turn(a)
+    assert "SPY" not in ctx["available_actions"] and "last spy mission is still fresh" in request["prompt"]
+    sim.cycle = a.spy_cooldown_until_cycle
+    _req, ctx = sim._prepare_turn(a)
+    assert "SPY" in ctx["available_actions"]
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        ACTION_REGISTRY["SPY"](sim, a, "plains", (b.x, b.y))
+    assert a.spy_cooldown_until_cycle == sim.cycle + config.SPY_CAUGHT_COOLDOWN_CYCLES
+
+
+def test_an_enemy_lock_lets_go_after_five_hard_exchanges_once_the_war_cooldown_is_over_and_both_still_stand():
+    """2026-10-11 (the owner: "reset after 5 actions of war and war in cooldown, if they still stand")."""
+    sim, a, b = _two()
+    a.population = b.population = 1000
+    with mock.patch("backend.actions.random.random", return_value=0.0):
+        ACTION_REGISTRY["DECLARE_WAR"](sim, a, "plains", (b.x, b.y))                     # one exchange, and b now holds a as an Enemy
+    assert standing.is_enemy(b, a.id) and a.war_actions[b.id] == 1
+    sim.cycle += config.WAR_MIN_CYCLES
+    sim._release_cooled_wars()
+    assert standing.is_enemy(b, a.id)                                                    # only one exchange so far
+    for _ in range(config.WAR_ACTIONS_FOR_RESET - 1):
+        with mock.patch("backend.actions.random.random", return_value=0.99):
+            ACTION_REGISTRY["SPY"](sim, a, "plains", (b.x, b.y))
+    assert a.war_actions[b.id] == config.WAR_ACTIONS_FOR_RESET
+    sim.cycle = a.war_since[b.id] + config.WAR_MIN_CYCLES - 1                            # the war's own cooldown is not over yet
+    sim._release_cooled_wars()
+    assert standing.is_enemy(b, a.id)
+    sim.cycle += 1
+    sim._release_cooled_wars()
+    assert not standing.is_enemy(b, a.id) and b.id not in a.spies_caught_of and a.war_actions == {} and standing.band(b, a.id) == standing.UNTRUSTED
+    assert at_war(a, b) and war_remaining(sim, a, b) == 0                                # still at war, but an envoy may now be heard
+
+
+def test_every_model_call_asks_for_the_same_context_so_a_model_has_one_runner():
+    import inspect
+
+    from backend.ollama_client import OllamaClient
+    for method in (OllamaClient.generate_json, OllamaClient.generate_json_with_raw):
+        assert inspect.signature(method).parameters["num_ctx"].default == 8192
+    assert config.REFLECTION_CONTEXT_OWN_MODEL == 8192

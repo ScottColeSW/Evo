@@ -62,6 +62,13 @@ def lock_enemy(tribe, other_id: str) -> None:
     tribe.standing[other_id] = config.STANDING_MIN
 
 
+def release(tribe, other_id: str) -> None:
+    """The tribe lets go of `other_id` as an Enemy: back to Untrusted, and the spies it had caught of theirs are forgotten."""
+    tribe.standing_locked.discard(other_id)
+    tribe.standing.pop(other_id, None)
+    tribe.spies_caught_of.pop(other_id, None)
+
+
 def note_spy_caught(catcher, spier) -> bool:
     """The catcher's view of the spying tribe drops config.SPY_CAUGHT_STANDING_DROP; the SPIES_CAUGHT_FOR_ENEMY-th spy caught makes it an Enemy for good. Returns True when it just became one."""
     adjust(catcher, spier.id, -config.SPY_CAUGHT_STANDING_DROP)

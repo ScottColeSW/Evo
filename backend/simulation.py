@@ -15,7 +15,7 @@ from .actions import (
     military_intel_text, research_candidates, research_candidates_with_source,
     ACTION_REGISTRY, BIOME_YIELD_MULTIPLIER, GAME_SPECIES_BY_BIOME, GAME_SPECIES_LABEL,
     _battalion_capacity, _conquest_ready, _created_object_bonus, _dmm_ready, _eligible_breeding_pair, _expedition_speed_bonus,
-    at_war, war_remaining, _food_multiplier, _forge_item, _plant_crop_cost, cycles_until_forage_recovers, forage_recovery_target, forage_yield_now, trade_grievance_active,
+    at_war, war_cooldown_left, war_remaining, _food_multiplier, _forge_item, _plant_crop_cost, cycles_until_forage_recovers, forage_recovery_target, forage_yield_now, trade_grievance_active,
     _generate_raider_name, _has_room_to_grow, _is_departure_dream, _item_storage_cap, _labor_multiplier,
     _long_house_fur_discount, _might_adjusted_win_chance, _mutual_ally_at_top_era, _raider_might_modifier, _push_past_visited_ground, _record_combat, _redeemable_items,
     _storage_cap, _sustainable_population, _territory_has_nearby_threats, _warehouse_upgrade_ready,
@@ -1435,6 +1435,8 @@ class Tribe:
         self.standing: dict[str, float] = {}  # rival id (or "raiders") -> this chief's view of them, see standing.py
         self.standing_locked: set[str] = set()  # rivals this tribe will never trust again (3 spies caught)
         self.spies_caught_of: dict[str, int] = {}  # rival id -> how many of its spies this tribe has caught
+        self.war_actions: dict[str, int] = {}  # rival id -> hard exchanges (raids, spies, a declaration, a conquest) made between the two while at war (config.WAR_ACTIONS_FOR_RESET)
+        self.spy_cooldown_until_cycle = 0  # SPY is not offered before this cycle (config.SPY_COOLDOWN_CYCLES)
         self.war_since: dict[str, int] = {}  # rival tribe id -> the cycle this war began (restarted by a failed envoy); WAR_MIN_CYCLES must pass before SEND_TRADE_EMISSARY may try to end it
         self.alliance_cooldown_until_cycle = 0  # DECLARE_ALLIANCE is not offered before this cycle (set when this tribe's peace overture backfired)
         self.trade_refusals: dict[str, list[int]] = {}  # rival tribe id -> the cycles it refused this tribe's trade over a raid (see actions._trade_grievance_refusal)
@@ -3691,6 +3693,7 @@ class Simulation:
                 if not tribe.extinct:
                     ladder.decay_day(tribe)  # 2026-10-11: trust fades and grudges soften a little each day
                     self._hold_tribal_gathering(tribe)
+            self._release_cooled_wars()
 
         if self.cycle % config.DAY_LENGTH_CYCLES == config.DAY_LENGTH_CYCLES // 2:
             for tribe in self.tribes.values():
@@ -4586,6 +4589,23 @@ class Simulation:
         self._capped_add(owner, "wood", config.TOLL_FEE_WOOD)
         return nx, ny
 
+    def _release_cooled_wars(self) -> None:
+        """2026-10-11 (the owner: "reset after 5 actions of war and war in cooldown, if they still stand"): a war where WAR_ACTIONS_FOR_RESET hard exchanges have been made, its cooldown is over, and both tribes still stand
+        has run its course: each lets go of the other as an Enemy (back to Untrusted), so an envoy may try to end it. The war itself stays until one does."""
+        living = [t for t in self.tribes.values() if not t.extinct]
+        for i, a in enumerate(living):
+            for b in living[i + 1:]:
+                if not at_war(a, b) or a.war_actions.get(b.id, 0) < config.WAR_ACTIONS_FOR_RESET or war_cooldown_left(self, a, b) > 0:
+                    continue
+                if not (ladder.is_enemy(a, b.id) or ladder.is_enemy(b, a.id)):
+                    continue
+                ladder.release(a, b.id)
+                ladder.release(b, a.id)
+                a.war_actions.pop(b.id, None)
+                b.war_actions.pop(a.id, None)
+                for x, y in ((a, b), (b, a)):
+                    x.history.append(f"after {config.WAR_ACTIONS_FOR_RESET} hard exchanges the hatred between {x.name} and {y.name} burns lower: an envoy may be heard now")
+
     def _war_fact(self, tribe: Tribe, other: Tribe, available_actions: list[str]) -> str:
         """The plain facts of being at war (2026-10-11): trade, scouting and peace offers are closed, spying is the way to learn of them, and when an envoy may try to end it."""
         left = war_remaining(self, tribe, other)
@@ -5398,6 +5418,8 @@ class Simulation:
             cooled += [a for a in ("RAID", "RAID_RIVAL") if a in available_actions]
         if self.cycle < tribe.alliance_cooldown_until_cycle and "DECLARE_ALLIANCE" in available_actions:
             cooled.append("DECLARE_ALLIANCE")
+        if self.cycle < tribe.spy_cooldown_until_cycle and "SPY" in available_actions:
+            cooled.append("SPY")
         if cooled and len(available_actions) > len(cooled):
             available_actions = [a for a in available_actions if a not in cooled]
         else:
@@ -5471,6 +5493,8 @@ class Simulation:
             waits = []
             if any(a in cooled for a in ("RAID", "RAID_RIVAL")):
                 waits.append(f"your forces are still recovering from the failed raid, so RAID is not offered until about cycle {tribe.raid_cooldown_until_cycle}")
+            if "SPY" in cooled:
+                waits.append(f"your last spy mission is still fresh, so SPY is not offered until about cycle {tribe.spy_cooldown_until_cycle}")
             if "DECLARE_ALLIANCE" in cooled:
                 waits.append(f"your last offer of peace backfired, so DECLARE_ALLIANCE is not offered until about cycle {tribe.alliance_cooldown_until_cycle}")
             visible_entities.append(("; ".join(waits))[0].upper() + ("; ".join(waits))[1:] + ".")
