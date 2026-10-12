@@ -70,7 +70,7 @@ def test_a_caught_spy_costs_two_points_and_the_third_makes_an_enemy_that_declare
     assert standing.band(a, b.id) == standing.ENEMY and "will never trust" in note
     assert a.stance_toward[b.id] == "WAR" and b.stance_toward.get(a.id) is None                          # the catcher declares; the spying tribe has not
     assert at_war(b, a) and war_remaining(sim, a, b) >= 10**5
-    assert [e["kind"] for e in sim.recent_encounters if e["kind"] == "war_declared"] == ["war_declared"]   # the war card
+    assert [e["battle"]["outcome"] for e in sim.recent_encounters if e["kind"] == "tribe_conquest_battle"] in (["strike_won"], ["strike_repelled"])   # the full-screen war splash
 
 
 def test_a_spy_that_gets_through_lowers_the_spying_chiefs_own_view_whichever_tribe_is_stronger():
@@ -131,16 +131,19 @@ def test_the_warband_standing_falls_with_each_attack_and_a_tribes_to_dict_carrie
     assert sent["raiders"]["band"] == standing.UNTRUSTWORTHY and sent["raiders"]["score"] == -4.0
 
 
-def test_a_war_declared_out_of_the_blue_costs_the_target_four_points_but_a_spy_catchers_war_does_not():
-    """2026-10-11 (the owner: "if I got attacked out of the blue, I would feel both hurt and angry")."""
+def test_a_war_declared_out_of_the_blue_makes_the_target_an_enemy_of_the_declarer_but_a_spy_catchers_war_does_not_lock_the_spier():
+    """2026-10-11 (the owner: "if they declare war, obviously the relationship falls all the way to enemy")."""
     sim, a, b = _two()
     a.population = b.population = 1000
     with mock.patch("backend.actions.random.random", return_value=0.0):
         ACTION_REGISTRY["DECLARE_WAR"](sim, a, "plains", (b.x, b.y))
-    assert b.standing[a.id] == -config.WAR_DECLARED_STANDING_DROP and standing.band(b, a.id) == standing.UNTRUSTWORTHY
+    assert standing.band(b, a.id) == standing.ENEMY and war_remaining(sim, a, b) >= 10**5
+    assert standing.band(a, b.id) == standing.UNTRUSTED                       # the declarer's own view is not changed by declaring
+    battle = [e for e in sim.recent_encounters if e["kind"] == "tribe_conquest_battle"][0]["battle"]
+    assert battle["attacker_name"] == "A" and battle["defender_name"] == "B" and len(battle["rounds"]) == 1
     sim, a, b = _two()
     a.population = b.population = 1000
     with mock.patch("backend.actions.random.random", return_value=0.0):
         for _ in range(3):
             ACTION_REGISTRY["SPY"](sim, b, "plains", (a.x, a.y))
-    assert b.standing.get(a.id, 0.0) == 0.0                                  # the spying tribe was caught at it: no grievance of its own
+    assert not standing.is_enemy(b, a.id)                                    # the spying tribe was caught at it: no grievance of its own

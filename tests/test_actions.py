@@ -5383,7 +5383,7 @@ def test_declare_war_sets_symmetric_stance():
     assert a.stance_toward["tribe_1"] == "WAR"
     assert "tribe_0" not in b.stance_toward                       # 2026-10-11: one side can call the war; the other is not at war until it declares back
     assert "declares war on Mountain Tribe and strikes at once" in result
-    assert [e["kind"] for e in sim.recent_encounters] == ["war_declared"]
+    assert [e["kind"] for e in sim.recent_encounters] == ["tribe_conquest_battle"]      # the full-screen WAR splash (2026-10-11)
 
 
 def test_declare_war_requires_the_rival_to_have_been_discovered():

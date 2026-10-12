@@ -3644,14 +3644,32 @@ def _alliance_backfire_skirmish(sim, tribe, rival, was_already_at_war: bool, sev
     sim.trauma.radiate_event_wave(tribe.x, tribe.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
     # 2026-10-07 (the owner): a one-round skirmish from a botched overture is shown on the skirmish card, not the full-screen WAR splash, which stays for DECLARE_CONQUEST.
     # No merge either way: both tribes are battered and both still stand.
-    sim.recent_encounters.append({
-        "x": rival.x, "y": rival.y, "kind": "war_declared" if declared else "alliance_backfire",
-        "label": (f"{tribe.name} declares war on {rival.name}" if declared else f"{tribe.name}'s peace offer to {rival.name} backfires into open war"), "outcome": "won" if tribe_won else "lost",
-        "skirmish": skirmish(f"{tribe.name} declares war on {rival.name}" if declared else f"{tribe.name}'s peace offer to {rival.name} backfires", tribe.name, rival.name, tribe_won, attacker_chance=win_chance,
-                             attacker_force=attacker_start_population, defender_force=defender_start_population,
-                             attacker_lost=winner_loss if tribe_won else loser_loss, defender_lost=loser_loss if tribe_won else winner_loss,
-                             outcome=(f"{winner.name} gets the better of it and carries off supplies" if declared else f"{winner.name} gets the better of it; both tribes are battered")),
-    })
+    if declared:
+        # 2026-10-11 (the owner: "I meant a full splash like DECLARE_CONQUEST has"): a declared war is shown on the full-screen WAR splash, one round fought on the spot, not the small skirmish card.
+        die, die_target, die_pct = _pick_battle_die(win_chance)
+        die_roll = random.randint(die_target, die) if tribe_won else random.randint(1, die_target - 1)
+        sim.recent_encounters.append({
+            "x": rival.x, "y": rival.y, "kind": "tribe_conquest_battle",
+            "label": f"{tribe.name} declares war on {rival.name}", "outcome": "won" if tribe_won else "lost",
+            "battle": {
+                "attacker_name": tribe.name, "defender_name": rival.name, "attacker_color": tribe.color, "defender_color": rival.color,
+                "attacker_start_population": attacker_start_population, "defender_start_population": defender_start_population,
+                "attacker_might": compute_might(tribe), "defender_might": compute_might(rival),
+                "attacker_armed": _armed_count(tribe), "defender_armed": _armed_count(rival),
+                "rounds": [{"round": 1, "attacker_won": tribe_won, "attacker_population": tribe.population, "defender_population": rival.population,
+                            "die": die, "die_target": die_target, "die_roll": die_roll, "die_effective_pct": die_pct}],
+                "outcome": "strike_won" if tribe_won else "strike_repelled",
+            },
+        })
+    else:
+        sim.recent_encounters.append({
+            "x": rival.x, "y": rival.y, "kind": "alliance_backfire",
+            "label": f"{tribe.name}'s peace offer to {rival.name} backfires into open war", "outcome": "won" if tribe_won else "lost",
+            "skirmish": skirmish(f"{tribe.name}'s peace offer to {rival.name} backfires", tribe.name, rival.name, tribe_won, attacker_chance=win_chance,
+                                 attacker_force=attacker_start_population, defender_force=defender_start_population,
+                                 attacker_lost=winner_loss if tribe_won else loser_loss, defender_lost=loser_loss if tribe_won else winner_loss,
+                                 outcome=f"{winner.name} gets the better of it; both tribes are battered"),
+        })
     if declared:
         return f"{tribe.name} declares war on {rival.name} and strikes at once -- {winner.name} gets the better of it"
     aftermath = "the war continues" if was_already_at_war else "war breaks out instead"
@@ -3775,8 +3793,8 @@ def _war_declared(sim, tribe, rival, provoked: bool = False) -> str:
     """2026-10-11 (the owner): one tribe can call a war, and it strikes at once rather than announcing a date: the declarer is at war from now (the other tribe is not until it declares back), a clash is fought on the spot
     and the stronger side carries off a share of the other's stores. Used by DECLARE_WAR and when a tribe catches its third spy from a rival."""
     start_war(sim, tribe, rival)
-    if not provoked:  # struck out of the blue: hurt and angry (a tribe whose spy was just caught has no such grievance)
-        ladder.adjust(rival, tribe.id, -config.WAR_DECLARED_STANDING_DROP)
+    if not provoked:  # 2026-10-11 (the owner: "if they declare war, obviously the relationship falls all the way to enemy"): struck out of the blue, the target never trusts the declarer again (a tribe whose spy was just caught has no such grievance)
+        ladder.lock_enemy(rival, tribe.id)
     sim.trauma.radiate_event_wave(rival.x, rival.y, config.RAID_TRAUMA_MAGNITUDE, config.RAID_TRAUMA_RADIUS)
     note_conflict(tribe, "War Declared")
     note_conflict(rival, "War Declared Against")

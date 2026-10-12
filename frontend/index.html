@@ -1722,6 +1722,8 @@ const BATTLE_OUTCOME_TEXT = {
   attacker_surrenders: b => `🏳️ Neither side broke outright, but ${escapeHtml(b.attacker_name)}'s campaign is too battered to continue -- ${escapeHtml(b.defender_name)} accepts their surrender.`,
   defender_surrenders: b => `🏳️ Neither side broke outright, but ${escapeHtml(b.defender_name)} is too battered to continue -- ${escapeHtml(b.attacker_name)} accepts their surrender.`,
   stalemate: b => `⚖️ Neither side breaks -- a costly stalemate, both battered but standing.`,
+  strike_won: b => `⚔️ ${escapeHtml(b.attacker_name)} declares war and strikes at once -- ${escapeHtml(b.defender_name)} is beaten and its stores are carried off. The war is on.`,
+  strike_repelled: b => `🛡️ ${escapeHtml(b.attacker_name)} declares war and strikes at once -- ${escapeHtml(b.defender_name)} holds, and takes ${escapeHtml(b.attacker_name)}'s stores for it. The war is on.`,
 };
 
 function finishBattleSplash(battle) {

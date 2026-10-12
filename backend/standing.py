@@ -56,13 +56,18 @@ def trusts_enough_to_trade(a, b) -> bool:
     return rank(band(a, b.id)) >= rank(NEUTRAL) and rank(band(b, a.id)) >= rank(NEUTRAL)
 
 
+def lock_enemy(tribe, other_id: str) -> None:
+    """`other_id` is an Enemy in this tribe's eyes for good: never trusted, no decay, no envoy can end the war."""
+    tribe.standing_locked.add(other_id)
+    tribe.standing[other_id] = config.STANDING_MIN
+
+
 def note_spy_caught(catcher, spier) -> bool:
     """The catcher's view of the spying tribe drops config.SPY_CAUGHT_STANDING_DROP; the SPIES_CAUGHT_FOR_ENEMY-th spy caught makes it an Enemy for good. Returns True when it just became one."""
     adjust(catcher, spier.id, -config.SPY_CAUGHT_STANDING_DROP)
     catcher.spies_caught_of[spier.id] = catcher.spies_caught_of.get(spier.id, 0) + 1
     if catcher.spies_caught_of[spier.id] >= config.SPIES_CAUGHT_FOR_ENEMY and spier.id not in catcher.standing_locked:
-        catcher.standing_locked.add(spier.id)
-        catcher.standing[spier.id] = config.STANDING_MIN
+        lock_enemy(catcher, spier.id)
         return True
     return False
 

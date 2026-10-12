@@ -1703,7 +1703,6 @@ SPIES_CAUGHT_FOR_ENEMY = 3
 RAID_VICTIM_STANDING_DROP = 3.0
 RAID_ATTACKER_STANDING_DROP = 1.0
 RAIDERS_LANDED_DROP = 3.0
-WAR_DECLARED_STANDING_DROP = 4.0  # 2026-10-11 (the owner: "if I got attacked out of the blue, I would feel both hurt and angry"): the tribe a war is declared on, and struck at once, thinks far less of the declarer
 RAIDERS_REPELLED_DROP = 1.0
 RAIDERS_JOINED_GAIN = 2.0
 EMISSARY_BACKFIRE_BY_BAND = {"UNTRUSTWORTHY": 0.35, "UNTRUSTED": 0.2, "NEUTRAL": 0.1, "TRUSTED_TRADE_PARTNER": 0.03}
